@@ -5,13 +5,13 @@ import {
   listAssessmentFeedbackAssessments,
   listAssessmentFeedbackForAssessment,
 } from '../controllers/assessmentFeedbackController.js';
-import { requireAuth, requireCoordinatorPermission, requireStudent } from '../middleware/auth.js';
+import { requireAuth, requireCoordinatorPermission, requireStudent, requireStudentFeature } from '../middleware/auth.js';
 import { feedbackLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
-router.get('/student/:assessmentId', requireAuth, requireStudent, getStudentAssessmentFeedback);
-router.post('/student/:assessmentId', requireAuth, requireStudent, feedbackLimiter, submitStudentAssessmentFeedback);
+router.get('/student/:assessmentId', requireAuth, requireStudent, requireStudentFeature('assessments'), getStudentAssessmentFeedback);
+router.post('/student/:assessmentId', requireAuth, requireStudent, requireStudentFeature('assessments'), feedbackLimiter, submitStudentAssessmentFeedback);
 router.get('/admin/assessments', requireAuth, requireCoordinatorPermission('coordinator.assessment.feedback'), listAssessmentFeedbackAssessments);
 router.get('/admin/assessments/:assessmentId', requireAuth, requireCoordinatorPermission('coordinator.assessment.feedback'), listAssessmentFeedbackForAssessment);
 

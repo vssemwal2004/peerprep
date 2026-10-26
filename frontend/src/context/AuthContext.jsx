@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api, clearApiCache } from '../utils/api';
+import socketService from '../utils/socket';
 
 export const AuthContext = createContext(null);
 
@@ -84,6 +85,13 @@ export function AuthProvider({ children }) {
   const refreshUser = useCallback(() => {
     return fetchUser(true);
   }, [fetchUser]);
+
+  useEffect(() => {
+    if (user?.role !== 'student') return undefined;
+    const handleAccessUpdate = () => { void refreshUser(); };
+    socketService.on('student-access-updated', handleAccessUpdate);
+    return () => socketService.off('student-access-updated', handleAccessUpdate);
+  }, [user?.role, refreshUser]);
 
   const value = {
     user,

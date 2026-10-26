@@ -7,6 +7,7 @@ import ForgotPasswordModal from './ForgotPasswordModal';
 import { isUniversityDeployment } from '../platform/universityPermissions';
 import { useToast } from '../components/CustomToast';
 import { consumeSessionNotice } from './sessionNotice';
+import { firstStudentFeaturePath } from '../student/studentFeatureAccess';
 
 // Small delay to ensure cookie is set before navigation
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -102,7 +103,7 @@ export default function StudentLoginPage() {
             ? (res.user?.mustChangePassword ? '/coordinator/change-password' : '/coordinator')
             : (res.user?.mustChangePassword && res.user?.accessScope !== 'assessment_only'
               ? '/student/change-password'
-              : res.user?.accessScope === 'assessment_only' ? '/student/assessments' : '/student/dashboard');
+              : firstStudentFeaturePath(res.user));
         window.location.replace(`/u/${res.user.universityId}${destination}`);
         return;
       }
@@ -129,7 +130,7 @@ export default function StudentLoginPage() {
         if (res.user?.mustChangePassword && res.user?.accessScope !== 'assessment_only') {
           navigate('/student/change-password', { replace: true });
         } else {
-          navigate(res.user?.accessScope === 'assessment_only' ? '/student/assessments' : '/student/dashboard', { replace: true });
+          navigate(firstStudentFeaturePath(res.user), { replace: true });
         }
       }
     } catch (e) {

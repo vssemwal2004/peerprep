@@ -14,6 +14,8 @@ import {
   loadStudentMasterMaps,
   resolveStudentMasterFields,
 } from '../services/masterDataService.js';
+import { resolveNewStudentFeatureAccess } from './studentAccessController.js';
+import { normalizeStudentFeatureAccess } from '../services/studentFeatureAccess.js';
 
 // Generate random password (7-8 characters)
 function generateRandomPassword() {
@@ -183,7 +185,7 @@ export async function listAllStudents(req, res) {
     const requestedLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 25));
     const paginated = page !== undefined || limit !== undefined;
     const studentQuery = User.find(query)
-      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl mustChangePassword activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt credentialEmailLastAttemptAt')
+      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl mustChangePassword activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt credentialEmailLastAttemptAt accessScope featureAccess')
       .sort({ createdAt: sort, _id: sort });
     if (paginated) {
       studentQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
@@ -228,6 +230,7 @@ export async function listAllStudents(req, res) {
       const lastActive = latestActivity || s.activeSessionCreatedAt || null;
       return {
         ...s,
+        featureAccess: normalizeStudentFeatureAccess(s.featureAccess, { legacyAccessScope: s.accessScope }),
         teacherId: Array.isArray(s.teacherIds) ? s.teacherIds.join(', ') : (s.teacherIds || ''),
         // Legacy/imported students may not have mustChangePassword populated.
         // A missing login marker is the authoritative signal that resetting to a
@@ -777,6 +780,11 @@ export async function uploadStudentsCsv(req, res) {
   }
   
   const results = [];
+  const hasRequestedFeatureAccess = req.body?.featureAccess !== undefined && req.body?.featureAccess !== '';
+  const requestedFeatureAccess = hasRequestedFeatureAccess
+    ? await resolveNewStudentFeatureAccess(req.body.featureAccess, req.user)
+    : null;
+  const defaultFeatureAccess = await resolveNewStudentFeatureAccess(undefined, req.user);
 
   // Required fields for onboarding - password is auto-generated
   const requiredFields = ['name', 'email', 'studentid', 'branch', 'teacherid', 'semester', 'course', 'college'];
@@ -944,6 +952,7 @@ export async function uploadStudentsCsv(req, res) {
           semester: semesterNum,
           group: row.group,
         };
+        if (requestedFeatureAccess) updateData.featureAccess = requestedFeatureAccess;
         
         await User.findByIdAndUpdate(existingUser._id, updateData);
         
@@ -983,6 +992,7 @@ export async function uploadStudentsCsv(req, res) {
         group: row.group,
         mustChangePassword: true,
         credentialEmailStatus: 'not_sent',
+        featureAccess: requestedFeatureAccess || defaultFeatureAccess,
       });
       createdUserIds.push(user._id);
       results.push({ row: row.__row, id: user._id, email, studentid, status: 'created' });
@@ -1068,7 +1078,7 @@ export async function uploadStudentsCsv(req, res) {
 
 export async function createStudent(req, res) {
   try {
-    const { name, email, studentid, branch, course, college, teacherid, semester, group } = req.body || {};
+    const { name, email, studentid, branch, course, college, teacherid, semester, group, featureAccess } = req.body || {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     
     // Check all required fields (password is auto-generated)
@@ -1114,6 +1124,7 @@ export async function createStudent(req, res) {
       college: canonicalMasterFields.college,
       teacherIds: teacherIdList, semester: canonicalMasterFields.semester, mustChangePassword: true,
       credentialEmailStatus: 'not_sent',
+      featureAccess: await resolveNewStudentFeatureAccess(featureAccess, req.user),
     };
     
     // Add group if provided

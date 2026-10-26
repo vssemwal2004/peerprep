@@ -2,6 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { PageSkeleton } from '../components/Skeletons';
 import UniversityFeatureGate from '../platform/UniversityFeatureGate';
+import { featureForStudentPath, firstStudentFeaturePath, hasStudentFeature } from './studentFeatureAccess';
 
 export default function StudentProtectedRoute({ children }) {
   const { user, loading, authChecked } = useAuth();
@@ -27,6 +28,11 @@ export default function StudentProtectedRoute({ children }) {
       || location.pathname === '/student/change-password'
       || location.pathname.startsWith('/student/assessment/');
     if (!assessmentPath) return <Navigate to="/student/assessments" replace />;
+  }
+
+  const requestedFeature = featureForStudentPath(location.pathname);
+  if (requestedFeature && !hasStudentFeature(user, requestedFeature)) {
+    return <Navigate to={firstStudentFeaturePath(user)} replace state={{ accessDenied: requestedFeature }} />;
   }
 
   return <UniversityFeatureGate role="student">{children}</UniversityFeatureGate>;

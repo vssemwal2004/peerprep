@@ -820,10 +820,11 @@ export const api = {
     fd.append("file", file);
     return request("/students/check", { method: "POST", formData: fd });
   },
-  uploadStudentsCsv: (file, batchName = "") => {
+  uploadStudentsCsv: (file, batchName = "", featureAccess) => {
     const fd = new FormData();
     fd.append("file", file);
     if (batchName) fd.append("batchName", batchName);
+    if (featureAccess) fd.append("featureAccess", JSON.stringify(featureAccess));
     return request("/students/upload", {
       method: "POST",
       formData: fd,
@@ -846,6 +847,14 @@ export const api = {
     request(`/students/upload-batches/${batchId}`, { method: "DELETE" }),
   createStudent: (body) =>
     request("/students/create", { method: "POST", body }),
+  getStudentAccessPolicy: () =>
+    request("/students/access-policy", { skipCache: true }),
+  updateStudentAccessPolicy: (body) =>
+    request("/students/access-policy", { method: "PUT", body, skipCache: true }),
+  getStudentAccess: (studentId) =>
+    request(`/students/${encodeURIComponent(studentId)}/access`, { skipCache: true }),
+  updateStudentAccess: (studentId, access) =>
+    request(`/students/${encodeURIComponent(studentId)}/access`, { method: "PATCH", body: { access }, skipCache: true }),
   listPromotionSemesters: () =>
     request("/students/promotion/semesters", { skipCache: true }),
   listPromotionStudents: (semester) =>

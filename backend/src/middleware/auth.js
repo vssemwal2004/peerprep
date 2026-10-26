@@ -6,6 +6,7 @@ import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js'
 import { getValkeyClient, isValkeyEnabled } from '../utils/valkey.js';
 import { currentTenant } from '../platform/tenantContext.js';
 import { deploymentRole } from '../platform/deployment.js';
+import { studentHasFeature } from '../services/studentFeatureAccess.js';
 
 /**
  * Simple in-memory cache for user data to reduce database hits
@@ -113,7 +114,7 @@ async function getSessionState(userId) {
   if (sessionStateLoads.has(key)) return sessionStateLoads.get(key);
 
   const load = User.findById(userId)
-    .select('_id activeSessionToken passwordChangedAt isActive')
+    .select('_id activeSessionToken passwordChangedAt isActive accessScope featureAccess')
     .maxTimeMS(2000)
     .lean()
     .then(async (value) => {
@@ -179,7 +180,7 @@ export async function requireAuth(req, res, next) {
     // All tokens now resolve to the unified User model
     // Use lean() + select() for faster query - only fetch needed fields
     user = await User.findById(payload.sub)
-      .select('_id email name role accessScope semester activeSessionToken passwordChangedAt avatarUrl coordinatorId teacherIds studentId course branch college group department phone isSpecialStudent isActive coordinatorPermissions coordinatorDataScope')
+      .select('_id email name role accessScope featureAccess semester activeSessionToken passwordChangedAt avatarUrl coordinatorId teacherIds studentId course branch college group department phone isSpecialStudent isActive coordinatorPermissions coordinatorDataScope')
       .lean();
     if (!user) throw new HttpError(401, 'User not found');
     
@@ -191,6 +192,8 @@ export async function requireAuth(req, res, next) {
     activeSessionToken: sessionState.activeSessionToken,
     passwordChangedAt: sessionState.passwordChangedAt,
     isActive: sessionState.isActive,
+    accessScope: sessionState.accessScope || user.accessScope,
+    featureAccess: sessionState.featureAccess || user.featureAccess,
   };
   if (user.role === 'coordinator' && user.isActive === false) throw new HttpError(403, 'Coordinator account disabled');
   
@@ -252,6 +255,38 @@ export function requireFullStudent(req, res, next) {
     throw new HttpError(403, 'This account can access assessments only.');
   }
   next();
+}
+
+export function requireStudentFeature(feature) {
+  return (req, res, next) => {
+    if (!req.user) throw new HttpError(401, 'Unauthorized');
+    if (req.user.role !== 'student') return next();
+    if (!studentHasFeature(req.user, feature)) {
+      throw new HttpError(403, 'This feature is not enabled for your account.', { code: 'STUDENT_FEATURE_DISABLED', feature });
+    }
+    return next();
+  };
+}
+
+export function requireAnyStudentFeature(...features) {
+  return (req, res, next) => {
+    if (!req.user) throw new HttpError(401, 'Unauthorized');
+    if (req.user.role !== 'student') return next();
+    if (!features.some((feature) => studentHasFeature(req.user, feature))) {
+      throw new HttpError(403, 'This feature is not enabled for your account.', { code: 'STUDENT_FEATURE_DISABLED', features });
+    }
+    return next();
+  };
+}
+
+export function requireStudentCompilerAccess(req, res, next) {
+  if (!req.user || req.user.role !== 'student') return next();
+  const assessmentId = String(req.body?.assessmentId || req.query?.assessmentId || '').trim();
+  const feature = assessmentId ? 'assessments' : 'prep_coding';
+  if (!studentHasFeature(req.user, feature)) {
+    throw new HttpError(403, 'This coding area is not enabled for your account.', { code: 'STUDENT_FEATURE_DISABLED', feature });
+  }
+  return next();
 }
 
 export function requireAssessmentCompilerStudent(req, res, next) {

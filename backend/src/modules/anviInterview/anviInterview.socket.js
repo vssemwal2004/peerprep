@@ -4,6 +4,7 @@ import { getTenant as defaultGetTenant } from "../../platform/tenantConnections.
 import { runForPlatform, runForTenant } from "../../platform/tenantContext.js";
 import { servicePeriodStatus } from "../../platform/servicePeriod.js";
 import { observeVerifiedInterview } from "../../services/interviewEngagementService.js";
+import { studentHasFeature } from "../../services/studentFeatureAccess.js";
 import { anviConfig } from "./anviInterview.config.js";
 import { createLiveCapacity } from "./anviInterview.capacity.js";
 import { createConductor as defaultCreateConductor } from "./anviInterview.conductor.js";
@@ -306,9 +307,10 @@ export function registerAnviSocketHandlers(io, deps = {}) {
         if (servicePeriodStatus(tenant, new Date(clock.now())) !== "active") throw new JoinError("SERVICE_INACTIVE", "Your university service period is not active.");
         if (tenant.permissions?.interviews !== true) throw new JoinError("MODULE_DISABLED", "AI interviews are not enabled for your university.");
       }
-      const user = await models.User.findById(socket.userId).select("_id name role isActive accessScope college").lean();
+      const user = await models.User.findById(socket.userId).select("_id name role isActive accessScope featureAccess college").lean();
       if (!user || user.role !== "student" || user.isActive === false) throw new JoinError("FORBIDDEN", "Only students can join AI interviews.");
       if (user.accessScope === "assessment_only") throw new JoinError("FORBIDDEN", "This account can access assessments only.");
+      if (!studentHasFeature(user, "ai_interviews")) throw new JoinError("MODULE_DISABLED", "AI interviews are not enabled for your account.");
       return user;
     }
 

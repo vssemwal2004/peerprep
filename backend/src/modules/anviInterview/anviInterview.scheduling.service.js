@@ -9,6 +9,7 @@ import { proctoringSetupOf } from "./anviInterview.proctoring.js";
 import { AnviAssignment, AnviAssignmentTarget, AnviBooking, AnviSlot } from "./anviInterview.scheduling.models.js";
 import { buildAnviBookingIcs } from "./anviInterview.scheduling.ics.js";
 import { createSchedulingNotifier, formatIst } from "./anviInterview.scheduling.notify.js";
+import { studentFeatureQuery } from "../../services/studentFeatureAccess.js";
 
 // ANVI Phase 3 scheduling: assignments of a pinned published revision to a cohort, IST windows,
 // optional capacity-limited slots and bookings. No Mongo transactions are used anywhere in this
@@ -41,7 +42,7 @@ const POLICY_LIMITS = Object.freeze({
   attemptsAllowed: [1, 5, "Attempts allowed"],
 });
 // Students who can never use ANVI are left out of every cohort.
-const ELIGIBLE = Object.freeze({ role: "student", accessScope: { $ne: "assessment_only" }, isActive: { $ne: false } });
+const ELIGIBLE = Object.freeze({ role: "student", accessScope: { $ne: "assessment_only" }, isActive: { $ne: false }, ...studentFeatureQuery("ai_interviews") });
 const LIST_LIMITS = [10, 25, 50, 100];
 const RELEASE_BATCH = 50;
 // A student can hold an interview in only one active schedule (scheduled, open or paused, before it

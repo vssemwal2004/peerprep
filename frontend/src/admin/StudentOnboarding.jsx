@@ -7,6 +7,8 @@ import { useActivityLogger } from "../hooks/useActivityLogger";
 import { useToast } from "../components/CustomToast";
 import { Upload, CheckCircle, AlertCircle, Plus, Loader2, FileText, Download, Users, BookOpen, Shield, ArrowRight, Mail, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import StudentAccessSelector from './components/StudentAccessSelector';
+import { ALL_STUDENT_FEATURES } from '../student/studentFeatureAccess';
 
 export default function StudentOnboarding() {
   const { logBulkCreate, logCreate, logUpload } = useActivityLogger();
@@ -33,6 +35,8 @@ export default function StudentOnboarding() {
   const [sendCredentialsAfterUpload, setSendCredentialsAfterUpload] = useState(false);
   const [showSingleConfirmation, setShowSingleConfirmation] = useState(false);
   const [masterData, setMasterData] = useState([]);
+  const [accessPolicy, setAccessPolicy] = useState({ defaultMode: 'all', defaultFeatures: [...ALL_STUDENT_FEATURES] });
+  const [studentAccess, setStudentAccess] = useState({ mode: 'all', features: [...ALL_STUDENT_FEATURES] });
 
   useEffect(() => {
     let active = true;
@@ -47,6 +51,16 @@ export default function StudentOnboarding() {
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    api.getStudentAccessPolicy().then(({ policy }) => {
+      if (!active) return;
+      setAccessPolicy(policy);
+      setStudentAccess({ mode: policy.defaultMode, features: policy.defaultFeatures });
+    }).catch(() => {});
+    return () => { active = false; };
   }, []);
 
   const masterOptions = (category) =>
@@ -309,7 +323,7 @@ export default function StudentOnboarding() {
     setIsUploading(true);
     setSavingBatchName(true);
     try {
-      const data = await api.uploadStudentsCsv(csvFile, batchName.trim());
+      const data = await api.uploadStudentsCsv(csvFile, batchName.trim(), accessPolicy.defaultMode === 'all' ? undefined : studentAccess);
       setUploadResult(data);
       setNamingBatch(null);
       
@@ -439,7 +453,7 @@ export default function StudentOnboarding() {
     setSingleLoading(true);
     try {
       // Password is auto-generated on backend
-      const data = await api.createStudent(singleForm);
+      const data = await api.createStudent({ ...singleForm, ...(accessPolicy.defaultMode === 'all' ? {} : { featureAccess: studentAccess }) });
       let mailMessage = 'Credential email was not requested.';
       if (sendCredentialsAfterUpload && data.id) {
         try {
@@ -1057,15 +1071,16 @@ export default function StudentOnboarding() {
       <AnimatePresence>
         {namingBatch && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+            <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} className={`w-full ${namingBatch.preUpload && accessPolicy.defaultMode !== 'all' ? 'max-w-4xl' : 'max-w-md'} max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900`}>
               <div className="flex items-start gap-3">
                 <span className="rounded-xl bg-emerald-50 p-2.5 text-emerald-600 dark:bg-emerald-950/40"><CheckCircle className="h-5 w-5" /></span>
                 <div><h2 className="text-lg font-bold text-slate-950 dark:text-white">{namingBatch.preUpload ? 'Confirm student upload' : 'Save this bulk list'}</h2><p className="mt-1 text-sm text-slate-500 dark:text-gray-400">{namingBatch.preUpload ? `Are you sure you want to upload these ${students.length} student records?` : 'Give this student list a clear name so you can find and manage it later.'}</p></div>
               </div>
               <label className="mt-5 block"><span className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-gray-300">Bulk list name</span><input autoFocus maxLength="120" value={batchName} onChange={(event) => setBatchName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveBatchName(); }} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white" /></label>
               <p className="mt-2 text-xs text-slate-400">Original file: {namingBatch.originalFileName}</p>
+              {namingBatch.preUpload && accessPolicy.defaultMode !== 'all' && <div className="mt-5"><div className="mb-3"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Choose access for this student batch</h3><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">The selected modules will be applied to every created or updated student in this upload.</p></div><StudentAccessSelector value={studentAccess} onChange={setStudentAccess} compact /></div>}
               {namingBatch.preUpload && <label className="mt-4 flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800"><span className="flex items-center gap-3"><span className="rounded-lg bg-sky-100 p-2 text-sky-600 dark:bg-sky-950/50"><Mail className="h-4 w-4" /></span><span><span className="block text-sm font-semibold text-slate-800 dark:text-white">Send login credentials</span><span className="block text-xs text-slate-500 dark:text-gray-400">Queue one email for each eligible student</span></span></span><button type="button" role="switch" aria-checked={sendCredentialsAfterUpload} onClick={() => setSendCredentialsAfterUpload((value) => !value)} className={`relative h-6 w-11 rounded-full transition ${sendCredentialsAfterUpload ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${sendCredentialsAfterUpload ? 'left-5.5' : 'left-0.5'}`} /></button></label>}
-              <div className="mt-6 flex justify-end gap-2"><button disabled={savingBatchName} onClick={() => setNamingBatch(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button><button onClick={saveBatchName} disabled={!batchName.trim() || savingBatchName} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50">{savingBatchName && <Loader2 className="h-4 w-4 animate-spin" />}{namingBatch.preUpload ? (savingBatchName ? 'Uploading students...' : 'Confirm & upload') : 'Save & view bulk lists'}</button></div>
+              <div className="mt-6 flex justify-end gap-2"><button disabled={savingBatchName} onClick={() => setNamingBatch(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button><button onClick={saveBatchName} disabled={!batchName.trim() || savingBatchName || (accessPolicy.defaultMode !== 'all' && studentAccess.mode === 'custom' && studentAccess.features.length === 0)} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50">{savingBatchName && <Loader2 className="h-4 w-4 animate-spin" />}{namingBatch.preUpload ? (savingBatchName ? 'Uploading students...' : 'Confirm & upload') : 'Save & view bulk lists'}</button></div>
             </motion.div>
           </motion.div>
         )}
@@ -1074,10 +1089,11 @@ export default function StudentOnboarding() {
       <AnimatePresence>
         {showSingleConfirmation && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+            <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} className={`w-full ${accessPolicy.defaultMode !== 'all' ? 'max-w-4xl' : 'max-w-md'} max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900`}>
               <div className="flex items-start gap-3"><span className="rounded-xl bg-emerald-50 p-2.5 text-emerald-600 dark:bg-emerald-950/40"><CheckCircle className="h-5 w-5" /></span><div><h2 className="text-lg font-bold text-slate-950 dark:text-white">Confirm student creation</h2><p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Are you sure you want to add <strong>{singleForm.name}</strong> ({singleForm.email})?</p></div></div>
               <label className="mt-5 flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800"><span className="flex items-center gap-3"><Mail className="h-5 w-5 text-sky-600" /><span><span className="block text-sm font-semibold text-slate-800 dark:text-white">Send login credentials</span><span className="block text-xs text-slate-500 dark:text-gray-400">Queue the credential email after creation</span></span></span><button type="button" role="switch" aria-checked={sendCredentialsAfterUpload} onClick={() => setSendCredentialsAfterUpload((value) => !value)} className={`relative h-6 w-11 rounded-full transition ${sendCredentialsAfterUpload ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${sendCredentialsAfterUpload ? 'left-5.5' : 'left-0.5'}`} /></button></label>
-              <div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setShowSingleConfirmation(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 dark:border-gray-700 dark:text-gray-300">Cancel</button><button type="button" onClick={performSingleCreate} className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700">Confirm & add</button></div>
+              {accessPolicy.defaultMode !== 'all' && <div className="mt-5"><div className="mb-3"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Choose student access</h3><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Review the modules this student will see after login.</p></div><StudentAccessSelector value={studentAccess} onChange={setStudentAccess} compact /></div>}
+              <div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setShowSingleConfirmation(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 dark:border-gray-700 dark:text-gray-300">Cancel</button><button type="button" onClick={performSingleCreate} disabled={accessPolicy.defaultMode !== 'all' && studentAccess.mode === 'custom' && studentAccess.features.length === 0} className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50">Confirm & add</button></div>
             </motion.div>
           </motion.div>
         )}

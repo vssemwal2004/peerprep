@@ -83,6 +83,7 @@ const AdminLearning = lazy(() => import("./admin/AdminLearning"));
 const AdminLearningDetail = lazy(() => import("./admin/AdminLearningDetail"));
 const StudentOnboarding = lazy(() => import("./admin/StudentOnboarding"));
 const StudentDirectory = lazy(() => import("./admin/StudentDirectory"));
+const StudentAccessSettings = lazy(() => import("./admin/StudentAccessSettings"));
 const StudentBulkLists = lazy(() => import("./admin/StudentBulkLists"));
 const BulkUploads = lazy(() => import("./admin/BulkUploads"));
 const AdminStudentProfile = lazy(() => import("./admin/AdminStudentProfile"));
@@ -459,6 +460,7 @@ function AppContent() {
         <Route path="/admin/event" element={<AdminShell><EventManagement /></AdminShell>} />
         <Route path="/admin/event/create" element={<AdminShell><EventManagement /></AdminShell>} />
         <Route path="/admin/settings/student-progression" element={<AdminShell><EngagementSettings /></AdminShell>} />
+        <Route path="/admin/settings/student-access" element={<AdminShell><StudentAccessSettings /></AdminShell>} />
         <Route path="/admin/quickprep" element={<AdminShell><QuickPrepList /></AdminShell>} />
         <Route path="/admin/quickprep/new" element={<AdminShell><QuickPrepWizard /></AdminShell>} />
         <Route path="/admin/quickprep/insights" element={<AdminShell><QuickPrepInsights /></AdminShell>} />

@@ -6,6 +6,16 @@ import { attachAdminAnalyticsInvalidation } from '../modules/adminAnalytics/admi
 const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['admin', 'student', 'coordinator'], default: 'student' },
   accessScope: { type: String, enum: ['full', 'assessment_only'], default: 'full', index: true },
+  featureAccess: {
+    mode: { type: String, enum: ['all', 'custom'], default: 'all' },
+    features: [{
+      type: String,
+      enum: ['dashboard', 'quickprep', 'analysis', 'rankings', 'interviews', 'ai_interviews', 'assessments', 'learning', 'prep_coding', 'resume', 'prep_coins'],
+    }],
+    source: { type: String, enum: ['default', 'manual', 'legacy'], default: 'default' },
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    updatedAt: Date,
+  },
   username: { type: String, unique: true, sparse: true, trim: true, maxlength: 32 },
   name: String,
   email: { type: String, unique: true, sparse: true },

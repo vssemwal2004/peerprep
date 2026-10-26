@@ -43,45 +43,45 @@ import prepScoreSettingsRoutes from './prepScoreSettings.js';
 import coinPricingSettingsRoutes from './coinPricingSettings.js';
 import overviewRoutes from './overview.js';
 import coinAdminRoutes from './coinAdmin.js';
-import { requireAuth, requireFullStudent } from '../middleware/auth.js';
+import { requireAuth, requireFullStudent, requireStudentFeature } from '../middleware/auth.js';
 
 const router = Router();
 router.use('/platform', platformRoutes);
-router.use('/wallet', walletRoutes);
+router.use('/wallet', requireAuth, requireStudentFeature('prep_coins'), walletRoutes);
 router.use('/platform/admin/prep-score', prepScoreSettingsRoutes);
 router.use('/platform/admin/coin-pricing', coinPricingSettingsRoutes);
 router.use('/platform/admin/coins', coinAdminRoutes);
-router.use('/student/questions', requireAuth, requireFullStudent, questionPracticeRoutes);
+router.use('/student/questions', requireAuth, requireFullStudent, requireStudentFeature('prep_coding'), questionPracticeRoutes);
 // Reserved feature routes must precede the interview identifier routes.
 router.use('/ai-interviews/avatars', avatarRoutes);
 router.use('/ai-interviews/reports', anviAdminReportRoutes);
 router.use('/ai-interviews/schedules', createAnviSchedulingAdminRouter());
 // Student scheduling owns only /assignments and /bookings paths (guarded per route); anything else,
 // such as POST /assignments/:aid/start, falls through to the ANVI student router below.
-router.use('/student/ai-interviews', createAnviSchedulingStudentRouter());
+router.use('/student/ai-interviews', requireAuth, requireStudentFeature('ai_interviews'), createAnviSchedulingStudentRouter());
 router.use('/ai-interviews', aiInterviewRoutes);
-router.use('/student/ai-interviews', aiInterviewStudentRoutes);
+router.use('/student/ai-interviews', requireAuth, requireStudentFeature('ai_interviews'), aiInterviewStudentRoutes);
 router.use('/bulk-uploads', bulkUploadRoutes);
 router.use('/auth', authRoutes);
-router.use('/engagement', engagementRoutes);
-router.use('/quests', questRoutes);
+router.use('/engagement', requireAuth, requireStudentFeature('quickprep'), engagementRoutes);
+router.use('/quests', requireAuth, requireStudentFeature('quickprep'), questRoutes);
 router.use('/interview-companies', interviewCompanyRoutes);
 router.use('/students', requireAuth, requireFullStudent, studentRoutes);
-router.use('/events', requireAuth, requireFullStudent, eventRoutes);
-router.use('/pairing', requireAuth, requireFullStudent, pairingRoutes);
-router.use('/schedule', requireAuth, requireFullStudent, scheduleRoutes);
-router.use('/feedback', requireAuth, requireFullStudent, feedbackRoutes);
+router.use('/events', requireAuth, requireFullStudent, requireStudentFeature('interviews'), eventRoutes);
+router.use('/pairing', requireAuth, requireFullStudent, requireStudentFeature('interviews'), pairingRoutes);
+router.use('/schedule', requireAuth, requireFullStudent, requireStudentFeature('interviews'), scheduleRoutes);
+router.use('/feedback', requireAuth, requireFullStudent, requireStudentFeature('interviews'), feedbackRoutes);
 router.use('/coordinators', coordinatorRoutes);
-router.use('/subjects', requireAuth, requireFullStudent, subjectRoutes);
-router.use('/learning', requireAuth, requireFullStudent, learningRoutes);
-router.use('/activity', requireAuth, requireFullStudent, activityRoutes);
+router.use('/subjects', requireAuth, requireFullStudent, requireStudentFeature('learning'), subjectRoutes);
+router.use('/learning', requireAuth, requireFullStudent, requireStudentFeature('learning'), learningRoutes);
+router.use('/activity', requireAuth, requireFullStudent, requireStudentFeature('analysis'), activityRoutes);
 router.use('/overview', overviewRoutes);
 // Compiler routes perform their own student scope checks. Assessment-only
 // students must be able to execute coding questions inside an assigned test.
 router.use('/compiler', requireAuth, compilerRoutes);
 router.use('/admin/analytics', adminAnalyticsRoutes);
 router.use('/admin/prep-analysis', prepAnalysisRoutes);
-router.use('/problem-lists', problemListRoutes);
+router.use('/problem-lists', requireAuth, requireStudentFeature('prep_coding'), problemListRoutes);
 router.use('/admin', adminAssessmentRoutes);
 router.use('/student', studentAssessmentRoutes);
 router.use('/email-templates', emailTemplateRoutes);
@@ -89,11 +89,11 @@ router.use('/notifications', notificationRoutes);
 router.use('/admin/announcements', announcementAdminRoutes);
 router.use('/student/announcements', requireAuth, requireFullStudent, announcementStudentRoutes);
 router.use('/admin/company-insights', companyInsightsRoutes);
-router.use('/student/analysis', requireAuth, requireFullStudent, studentAnalysisRoutes);
+router.use('/student/analysis', requireAuth, requireFullStudent, requireStudentFeature('analysis'), studentAnalysisRoutes);
 router.use('/results', resultsRoutes);
 router.use('/execute', executeRoutes);
 router.use('/mail-queue', mailQueueRoutes);
-router.use('/resume', requireAuth, requireFullStudent, resumeRoutes);
+router.use('/resume', requireAuth, requireFullStudent, requireStudentFeature('resume'), resumeRoutes);
 router.use('/assessment-feedback', assessmentFeedbackRoutes);
 router.use('/master-data', masterDataRoutes);
 

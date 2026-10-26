@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckSquare, ChevronLeft, ChevronRight, ClipboardCopy, Columns3, Download, Edit2, Eye, FileDown, FileSpreadsheet, Filter, Loader2, Mail, MoreVertical, Save, Search, Trash2, UserX, Users, X } from "lucide-react";
+import { CheckSquare, ChevronLeft, ChevronRight, ClipboardCopy, Columns3, Download, Edit2, Eye, FileDown, FileSpreadsheet, Filter, Loader2, Mail, MoreVertical, Save, Search, ShieldCheck, Trash2, UserX, Users, X } from "lucide-react";
 import ContributionCalendar from "../components/ContributionCalendar";
 import { useToast } from "../components/CustomToast";
 import {
@@ -12,6 +12,9 @@ import {
   mergeFilterOptions,
   mergeSemesterOptions,
 } from "../utils/semesterOptions";
+import StudentAccessSelector from './components/StudentAccessSelector';
+import { normalizeStudentAccess } from '../student/studentFeatureAccess';
+import { useAuth } from '../context/AuthContext';
 
 const EMPTY_FILTERS = {
   semester: '',
@@ -49,6 +52,7 @@ const STUDENT_COLUMNS_PREFERENCE_KEY = 'peerprep.studentColumns';
 const STUDENT_COLUMNS_V2_MIGRATION_KEY = 'peerprep.studentColumns.v2';
 
 export default function StudentDirectory() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [uploadBatchId, setUploadBatchId] = useState(searchParams.get('uploadBatchId') || '');
@@ -109,6 +113,10 @@ export default function StudentDirectory() {
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState(null);
   const [isSelectingAllFiltered, setIsSelectingAllFiltered] = useState(false);
   const [sendingCredentialIds, setSendingCredentialIds] = useState(new Set());
+  const [accessStudent, setAccessStudent] = useState(null);
+  const [accessDraft, setAccessDraft] = useState(null);
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [accessSaving, setAccessSaving] = useState(false);
   const loadRequestRef = useRef(0);
   const credentialRefreshTimersRef = useRef([]);
   const filterPanelRef = useRef(null);
@@ -123,6 +131,34 @@ export default function StudentDirectory() {
   const [coursesEnrolled, setCoursesEnrolled] = useState([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [loadingCourses, setLoadingCourses] = useState(false);
+
+  const openStudentAccess = async (student, event) => {
+    event?.stopPropagation();
+    setActiveRowMenuId(null);
+    setAccessStudent(student);
+    setAccessDraft(normalizeStudentAccess(student.featureAccess, student.accessScope));
+    setAccessLoading(true);
+    try {
+      const result = await api.getStudentAccess(student._id || student.id);
+      setAccessDraft(result.access);
+    } catch (error) { toast.error(error.message || 'Could not load student access.'); }
+    finally { setAccessLoading(false); }
+  };
+
+  const saveStudentAccess = async () => {
+    if (accessDraft?.mode === 'custom' && !accessDraft.features?.length) return toast.error('Enable at least one feature.');
+    setAccessSaving(true);
+    try {
+      const id = accessStudent._id || accessStudent.id;
+      const result = await api.updateStudentAccess(id, accessDraft);
+      const apply = (items) => items.map((student) => String(student._id || student.id) === String(id) ? { ...student, featureAccess: result.access, accessScope: 'full' } : student);
+      setStudents(apply);
+      setFilteredStudents(apply);
+      setAccessStudent(null);
+      toast.success('Student access updated. Their interface and routes now use the new permissions.');
+    } catch (error) { toast.error(error.message || 'Could not update student access.'); }
+    finally { setAccessSaving(false); }
+  };
 
   const fallbackFacets = useMemo(() => deriveStudentFacets(students), [students]);
   const semesterOptions = useMemo(() => mergeSemesterOptions(
@@ -1332,6 +1368,14 @@ export default function StudentDirectory() {
                                     <Edit2 className="h-4 w-4 text-blue-600" />
                                     Edit details
                                   </button>
+                                  {user?.role === 'admin' && <button
+                                    type="button"
+                                    onClick={(event) => openStudentAccess(s, event)}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-sky-50 dark:text-gray-200 dark:hover:bg-sky-950/30"
+                                  >
+                                    <ShieldCheck className="h-4 w-4 text-sky-600" />
+                                    Access & features
+                                  </button>}
                                   <button
                                     type="button"
                                     onClick={(event) => handleCopyStudentValue(s, s.email, 'Email', event)}
@@ -1667,6 +1711,19 @@ export default function StudentDirectory() {
             </motion.div>
           </>
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {accessStudent && <>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => !accessSaving && setAccessStudent(null)} className="fixed inset-0 z-[70] bg-slate-950/55 backdrop-blur-sm" />
+          <div className="fixed inset-0 z-[71] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0, scale: 0.96, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900" onClick={(event) => event.stopPropagation()}>
+              <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white/95 px-6 py-5 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95"><div className="flex items-start gap-3"><span className="rounded-xl bg-sky-600 p-2.5 text-white"><ShieldCheck className="h-5 w-5" /></span><div><h2 className="text-lg font-black text-slate-950 dark:text-white">Student access</h2><p className="mt-0.5 text-sm text-slate-500 dark:text-gray-400">{accessStudent.name} · {accessStudent.email}</p></div></div><button type="button" disabled={accessSaving} onClick={() => setAccessStudent(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-gray-800"><X className="h-5 w-5" /></button></div>
+              <div className="p-6">{accessLoading || !accessDraft ? <div className="flex min-h-48 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-sky-600" /></div> : <StudentAccessSelector value={accessDraft} onChange={setAccessDraft} />}</div>
+              <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-200 bg-white/95 px-6 py-4 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95"><button type="button" disabled={accessSaving} onClick={() => setAccessStudent(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 dark:border-gray-700 dark:text-gray-300">Cancel</button><button type="button" onClick={saveStudentAccess} disabled={accessLoading || accessSaving || !accessDraft || (accessDraft.mode === 'custom' && !accessDraft.features?.length)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-5 py-2 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-50">{accessSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save access</button></div>
+            </motion.div>
+          </div>
+        </>}
       </AnimatePresence>
 
       {/* Edit Student Modal */}

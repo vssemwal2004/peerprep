@@ -17,6 +17,7 @@ import { card, CardTitle, TitleIcon, Unavailable } from './dashboard/ui';
 import BadgeShelf from './dashboard/BadgeShelf';
 import { badgeShelfData, getGreeting, getUpcomingItems, getWeekActivity, numeric, sortAnnouncements } from './dashboard/dashboardUtils';
 import AchievementCelebration from './engagement/AchievementCelebration';
+import { featureForStudentPath, hasStudentFeature } from './studentFeatureAccess';
 
 // The student shell's sticky header is 64px tall plus a 1px border. The rail sticks 16px below
 // it and is capped to the viewport, so only the main column scrolls on large screens.
@@ -38,12 +39,14 @@ function dashboardNudge({ data, loading, firstSession, week, daily, resumeItems,
 export default function StudentDashboard() {
   const { user } = useAuth();
   const { allowsPath } = useUniversityPolicy();
-  const canQuestions = allowsPath('/problems', 'student');
-  const canLearning = allowsPath('/student/learning', 'student');
-  const canAssessments = allowsPath('/student/assessments', 'student');
-  const canEvents = allowsPath('/student/interview', 'student');
-  const canInterviews = allowsPath('/student/ai-interviews', 'student');
-  const sections = useStudentDashboardData({ userId: user?._id || user?.id, canQuestions, canLearning, canEvents, canAssessments, canInterviews });
+  const canQuestions = allowsPath('/problems', 'student') && hasStudentFeature(user, 'prep_coding');
+  const canLearning = allowsPath('/student/learning', 'student') && hasStudentFeature(user, 'learning');
+  const canAssessments = allowsPath('/student/assessments', 'student') && hasStudentFeature(user, 'assessments');
+  const canEvents = allowsPath('/student/interview', 'student') && hasStudentFeature(user, 'interviews');
+  const canInterviews = allowsPath('/student/ai-interviews', 'student') && hasStudentFeature(user, 'ai_interviews');
+  const canQuickPrep = hasStudentFeature(user, 'quickprep');
+  const canRanking = hasStudentFeature(user, 'rankings') || hasStudentFeature(user, 'prep_coins');
+  const sections = useStudentDashboardData({ userId: user?._id || user?.id, canQuestions, canLearning, canEvents, canAssessments, canInterviews, canQuickPrep });
   const [dismissedNotice, dismissNotice] = useDismissedAnnouncement();
   const [allNotices, setAllNotices] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -54,7 +57,12 @@ export default function StudentDashboard() {
 
   const progress = sections.dashboard;
   const data = progress.data;
-  const permittedItems = (items) => (Array.isArray(items) ? items : []).filter((item) => item.href && allowsPath(item.href.split('?')[0], 'student'));
+  const permittedItems = (items) => (Array.isArray(items) ? items : []).filter((item) => {
+    if (!item.href) return false;
+    const path = item.href.split('?')[0];
+    const feature = featureForStudentPath(path);
+    return allowsPath(path, 'student') && (!feature || hasStudentFeature(user, feature));
+  });
   const resumeItems = permittedItems(data?.resumeItems).filter((item) => item.type === 'coding' || item.type === 'quest' ? canQuestions : item.type === 'learning' && canLearning);
   const suggestions = canQuestions ? permittedItems(data?.suggestedPractice) : [];
   const upcoming = useMemo(() => getUpcomingItems(canAssessments ? sections.assessments.data || [] : [], canEvents ? sections.events.data || [] : [], now, canInterviews ? sections.anvi.data || [] : []),
@@ -110,7 +118,7 @@ export default function StudentDashboard() {
             ? <section aria-labelledby="coding-error-title" className={`p-4 ${card}`}><CardTitle id="coding-error-title" title="Coding progress" icon={Gauge} tone="sky" /><Unavailable className="mt-3" message="Coding progress could not be loaded." onRetry={sections.refresh} /></section>
             : <CodingProgress {...(data?.coding || {})} compact loading={progress.loading} description={null} titleIcon={<TitleIcon icon={Gauge} tone="sky" />}
               className="!rounded-2xl !border-[#e9eaee] !p-4 !shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:!border-white/[0.07]" />)}
-          <RankCard ranking={data?.ranking} loading={progress.loading} error={progress.error} onRetry={sections.refresh} />
+          {canRanking && <RankCard ranking={data?.ranking} loading={progress.loading} error={progress.error} onRetry={sections.refresh} />}
           {(canEvents || canAssessments || canInterviews) && <ComingUpCard items={upcoming} loading={dueLoading} error={dueError} onRetry={sections.refresh} canAssessments={canAssessments} canEvents={canEvents} canInterviews={canInterviews} />}
         </aside>
 

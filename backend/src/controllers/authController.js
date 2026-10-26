@@ -17,6 +17,7 @@ import { normalizeCoordinatorPermissions } from '../services/coordinatorPermissi
 import { cacheUserSessionState, invalidateUserCache } from '../middleware/auth.js';
 import { currentTenant } from '../platform/tenantContext.js';
 import { deploymentRole } from '../platform/deployment.js';
+import { normalizeStudentFeatureAccess, studentHasFeature } from '../services/studentFeatureAccess.js';
 
 const tenantTokenClaims = () => deploymentRole() === 'shared'
   ? { tenantId: currentTenant()?.universityId || 'platform' } : {};
@@ -103,7 +104,7 @@ export async function changePassword(req, res) {
   }
 
   // Auto-enroll student in all courses for their semester on first login
-  if (wasFirstLogin && user.accessScope !== 'assessment_only') {
+  if (wasFirstLogin && user.accessScope !== 'assessment_only' && studentHasFeature(user, 'learning')) {
     // Re-fetch with populated semester field (lean object from req.user may be stale)
     const freshStudent = await User.findById(user._id).lean();
     autoEnrollStudentInCourses(freshStudent).then(result => {
@@ -211,7 +212,7 @@ export async function me(req, res) {
   // req.user comes from the auth cache, which does not select the editable profile fields.
   // Read them fresh so bio/username/links (and learner progress) survive a page reload.
   const profile = await User.findById(u._id)
-    .select('username bio linkedinUrl githubUrl portfolioUrl learnerProgress practiceLanguage')
+    .select('username bio linkedinUrl githubUrl portfolioUrl learnerProgress practiceLanguage featureAccess accessScope')
     .lean() || {};
   // Return fields based on role
   const response = {
@@ -239,6 +240,7 @@ export async function me(req, res) {
     response.semester = u.semester;
     response.learnerProgress = profile.learnerProgress || null;
     response.practiceLanguage = profile.practiceLanguage || await latestPracticeLanguage(u._id);
+    response.featureAccess = normalizeStudentFeatureAccess(profile.featureAccess || u.featureAccess, { legacyAccessScope: profile.accessScope || u.accessScope });
 
     // Fetch coordinator names from teacherIds
     if (Array.isArray(u.teacherIds) && u.teacherIds.length > 0) {
@@ -650,6 +652,7 @@ function sanitizeUser(u) {
     id: u._id,
     role: u.role,
     accessScope: u.accessScope || 'full',
+    featureAccess: normalizeStudentFeatureAccess(u.featureAccess, { legacyAccessScope: u.accessScope }),
     name: u.name,
     email: u.email,
     studentId: u.studentId,

@@ -27,6 +27,7 @@ import { getAssessmentInvitationTemplate, renderAssessmentInvitationEmail, sendA
 import { validateAssessmentInvitationTemplate } from '../services/assessmentInvitationTemplate.js';
 import { reconcileExpiredAssessmentSubmissions } from '../services/assessmentExpiryService.js';
 import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js';
+import { studentFeatureQuery } from '../services/studentFeatureAccess.js';
 import {
   getCodingQuestionScore,
   scoreAssessmentWithTestCases,
@@ -444,7 +445,7 @@ function canManageAssessmentForRequest(assessment = {}, user = {}) {
 async function resolveEligibleAssessmentStudents(assessment = {}) {
   const selectedIds = (assessment.assignedStudents || []).map((id) => String(id));
   const query = assessment.targetType === 'all' && selectedIds.length === 0
-    ? { role: 'student', accessScope: { $ne: 'assessment_only' } }
+    ? { role: 'student', accessScope: { $ne: 'assessment_only' }, ...studentFeatureQuery('assessments') }
     : { _id: { $in: selectedIds }, role: 'student' };
   return User.find(query)
     .select('_id name email studentId accessScope +temporaryPasswordEncrypted course branch college semester group teacherIds phone isActive createdAt')
