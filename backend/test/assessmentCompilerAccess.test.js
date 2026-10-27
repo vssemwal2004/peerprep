@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { requireAssessmentCompilerStudent } from '../src/middleware/auth.js';
-import { assessmentIncludesProblem, assessmentSectionsForProblemAccess } from '../src/services/compilerExecutionWorkflowService.js';
+import { assessmentIncludesProblem, assessmentProblemCandidates, assessmentSectionsForProblemAccess } from '../src/services/compilerExecutionWorkflowService.js';
 
 function invoke(user, body = {}, query = {}) {
   let continued = false;
@@ -36,9 +36,9 @@ test('full students retain standalone compiler access', () => {
 });
 
 test('compiler authorization uses the candidate assigned question set', () => {
-  const studentId = '6ab282d167ad76a19eb7001';
-  const setOneProblem = '6ab282d167ad76a19eb7101';
-  const setTwoProblem = '6ab282d167ad76a19eb7102';
+  const studentId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+  const setOneProblem = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+  const setTwoProblem = 'cccccccccccccccccccccccc';
   const assessment = {
     settings: { questionSetEnabled: true },
     sections: [{ type: 'coding', questions: [{ problemId: setOneProblem }] }],
@@ -55,8 +55,8 @@ test('compiler authorization uses the candidate assigned question set', () => {
 });
 
 test('persisted delivery restricts execution to questions actually shown to the student', () => {
-  const selectedProblem = '6ab282d167ad76a19eb7201';
-  const unselectedProblem = '6ab282d167ad76a19eb7202';
+  const selectedProblem = 'dddddddddddddddddddddddd';
+  const unselectedProblem = 'eeeeeeeeeeeeeeeeeeeeeeee';
   const assessment = {
     settings: { questionSetEnabled: false },
     sections: [{ type: 'coding', questions: [{ problemId: selectedProblem }, { problemId: unselectedProblem }] }],
@@ -65,4 +65,22 @@ test('persisted delivery restricts execution to questions actually shown to the 
 
   assert.equal(assessmentIncludesProblem(assessment, selectedProblem, { deliverySections: delivered }), true);
   assert.equal(assessmentIncludesProblem(assessment, unselectedProblem, { deliverySections: delivered }), false);
+});
+
+test('legacy missing clone references expose only fallback IDs frozen on the delivered question', () => {
+  const missingClone = '111111111111111111111111';
+  const sourceProblem = '222222222222222222222222';
+  const unrelatedProblem = '333333333333333333333333';
+  const assessment = {
+    sections: [{ type: 'coding', questions: [{
+      problemId: missingClone,
+      problemDataSnapshot: {
+        _id: missingClone,
+        assessmentSourceProblemId: sourceProblem,
+      },
+    }] }],
+  };
+
+  assert.deepEqual(assessmentProblemCandidates(assessment, missingClone), [missingClone, sourceProblem]);
+  assert.equal(assessmentIncludesProblem(assessment, unrelatedProblem), false);
 });

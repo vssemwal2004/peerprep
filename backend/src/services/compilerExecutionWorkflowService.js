@@ -93,37 +93,60 @@ export function assessmentIncludesProblem(assessment, problemId, {
   studentId = '',
   deliverySections = null,
 } = {}) {
-  const targetId = String(problemId);
+  return assessmentProblemCandidates(assessment, problemId, { studentId, deliverySections }).length > 0;
+}
+
+function codingQuestionProblemIds(question = {}) {
+  return [...new Set([
+    question?.problemId,
+    question?.sourceProblemId,
+    question?.coding?.problemId,
+    question?.problemDataSnapshot?._id,
+    question?.problemDataSnapshot?.id,
+    question?.problemDataSnapshot?.sourceProblemId,
+    question?.problemDataSnapshot?.assessmentSourceProblemId,
+    question?.coding?.problemData?._id,
+    question?.coding?.problemData?.id,
+    question?.coding?.problemData?.sourceProblemId,
+    question?.coding?.problemData?.assessmentSourceProblemId,
+    question?.problemData?._id,
+    question?.problemData?.id,
+  ].filter((id) => validateObjectIdQuietly(id)).map(String))];
+}
+
+function validateObjectIdQuietly(id) {
+  return /^[a-f\d]{24}$/i.test(String(id || ''));
+}
+
+export function assessmentProblemCandidates(assessment, problemId, {
+  studentId = '',
+  deliverySections = null,
+} = {}) {
+  const targetId = String(problemId || '');
   const sections = assessmentSectionsForProblemAccess(assessment, studentId, deliverySections);
-  return sections.some((section) => {
+  for (const section of sections) {
     const questionType = section?.type;
     const questions = Array.isArray(section?.questions) ? section.questions : [];
-    return questions.some((question) => {
+    for (const question of questions) {
       const resolvedType = question?.type || questionType;
-      if (resolvedType !== 'coding') return false;
-      const resolvedProblemId = question?.problemId
-        || question?.coding?.problemId
-        || question?.problemDataSnapshot?._id
-        || question?.coding?.problemData?._id
-        || question?.problemData?._id;
-      return resolvedProblemId && String(resolvedProblemId) === targetId;
-    });
-  });
+      if (resolvedType !== 'coding') continue;
+      const candidates = codingQuestionProblemIds(question);
+      if (candidates.includes(targetId)) return candidates;
+    }
+  }
+  return [];
 }
 
 export async function resolveActiveProblem(problemId, { userId, assessmentId, accessScope } = {}) {
   ensureObjectId(problemId, 'Problem ID');
-  const localProblem = await Problem.findById(problemId).select('+executionHarnesses');
-  const problem = localProblem || await sharedAssessmentProblem(assessmentId, problemId);
-  const normalizedStatus = String(problem?.status || '').toLowerCase();
-  const isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
-  if (!problem || !isPublished) {
-    throw new HttpError(404, 'Problem not found.');
-  }
+  let localProblem = await Problem.findById(problemId).select('+executionHarnesses');
+  let problem = localProblem || await sharedAssessmentProblem(assessmentId, problemId);
+  let normalizedStatus = String(problem?.status || '').toLowerCase();
+  let isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
 
-  const visibility = localProblem ? (problem.visibility || 'public') : 'assessment';
+  let visibility = localProblem ? (problem.visibility || 'public') : 'assessment';
   const requiresAssessmentContext = accessScope === 'assessment_only';
-  if (visibility === 'public' && !requiresAssessmentContext && !assessmentId) {
+  if (problem && isPublished && visibility === 'public' && !requiresAssessmentContext && !assessmentId) {
     return problem;
   }
 
@@ -154,14 +177,41 @@ export async function resolveActiveProblem(problemId, { userId, assessmentId, ac
     }
   }
 
-  if (!assessmentIncludesProblem(assessment, problemId, {
+  const deliverySections = activeSubmission?.deliveryPreparedAt && Array.isArray(activeSubmission.deliverySections)
+    ? activeSubmission.deliverySections
+    : null;
+  const candidateProblemIds = assessmentProblemCandidates(assessment, problemId, {
     studentId: userId,
-    deliverySections: activeSubmission?.deliveryPreparedAt && Array.isArray(activeSubmission.deliverySections)
-      ? activeSubmission.deliverySections
-      : null,
-  })) {
+    deliverySections,
+  });
+  if (!candidateProblemIds.length) {
     throw new HttpError(404, 'Problem not found.');
   }
+
+  // Older assessments can contain a deleted clone ID or a library-row ID in
+  // question.problemId while their frozen snapshot still carries the real
+  // compiler/source problem. Recover only from IDs on this student's delivered
+  // question, preserving the authorization boundary.
+  if (!problem || !isPublished) {
+    const localCandidates = await Problem.find({
+      _id: { $in: candidateProblemIds },
+      status: { $in: ['published', 'active', 'Active', 'Published'] },
+    }).select('+executionHarnesses');
+    const localById = new Map(localCandidates.map((entry) => [String(entry._id), entry]));
+    localProblem = candidateProblemIds.map((id) => localById.get(String(id))).find(Boolean) || null;
+    problem = localProblem;
+    if (!problem) {
+      for (const candidateId of candidateProblemIds) {
+        problem = await sharedAssessmentProblem(assessmentId, candidateId);
+        if (problem) break;
+      }
+    }
+    normalizedStatus = String(problem?.status || '').toLowerCase();
+    isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
+    visibility = localProblem ? (problem?.visibility || 'public') : 'assessment';
+  }
+
+  if (!problem || !isPublished) throw new HttpError(404, 'Problem not found.');
 
   return problem;
 }
