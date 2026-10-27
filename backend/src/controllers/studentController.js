@@ -16,6 +16,7 @@ import {
 } from '../services/masterDataService.js';
 import { resolveNewStudentFeatureAccess } from './studentAccessController.js';
 import { normalizeStudentFeatureAccess } from '../services/studentFeatureAccess.js';
+import { exactEmailPattern, normalizeEmailAddress } from '../utils/emailIdentity.js';
 
 // Generate random password (7-8 characters)
 function generateRandomPassword() {
@@ -297,7 +298,7 @@ export async function resendStudentCredentials(req, res) {
     ...studentScope(req.user),
     _id: { $in: studentIds },
     activeSessionCreatedAt: { $exists: false },
-  }).select('_id name email studentId passwordHash mustChangePassword activeSessionCreatedAt');
+  }).select('_id name email passwordHash mustChangePassword activeSessionCreatedAt');
   const batchId = crypto.randomUUID();
   const students = [];
 
@@ -324,23 +325,23 @@ export async function resendStudentCredentials(req, res) {
         $unset: { credentialEmailLastError: 1 },
       },
       { new: false },
-    ).select('_id name email studentId passwordHash');
+    ).select('_id name email passwordHash');
     if (claimed) students.push(claimed);
   }
 
   const skipped = studentIds.length - students.length;
   const jobs = students.map((student) => {
     const password = generateRandomPassword();
+    const email = normalizeEmailAddress(student.email);
     return {
       type: 'student_credentials',
-      to: student.email,
+      to: email,
       recipientId: student._id,
       targetType: 'STUDENT',
       targetId: student._id,
       idempotencyKey: `student-credentials:${student._id}:${batchId}`,
       payload: {
-        to: student.email,
-        studentId: student.studentId,
+        to: email,
         password,
         previousPasswordHash: student.passwordHash,
       },
@@ -597,7 +598,9 @@ export async function checkStudentsCsv(req, res) {
   const studentIds = normalizedRows.map((r) => r.studentid).filter(Boolean);
 
   // Bulk query existing users in DB to avoid per-row queries
-  const existing = await User.find({ $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }] }).select('email studentId name branch course college teacherIds semester group').lean();
+  const existing = await User.find({ $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }] })
+    .collation({ locale: 'en', strength: 2 })
+    .select('email studentId name branch course college teacherIds semester group').lean();
   const existingByEmail = new Map();
   const existingByStudentId = new Map();
   
@@ -804,7 +807,9 @@ export async function uploadStudentsCsv(req, res) {
   const studentIds = normalizedRows.map((r) => r.studentid).filter(Boolean);
 
   // Bulk query existing users in DB to avoid per-row queries
-  const existing = await User.find({ $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }] }).lean();
+  const existing = await User.find({ $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }] })
+    .collation({ locale: 'en', strength: 2 })
+    .lean();
   const existingByEmail = new Map();
   const existingByStudentId = new Map();
   
@@ -1079,6 +1084,7 @@ export async function uploadStudentsCsv(req, res) {
 export async function createStudent(req, res) {
   try {
     const { name, email, studentid, branch, course, college, teacherid, semester, group, featureAccess } = req.body || {};
+    const normalizedEmail = normalizeEmailAddress(email);
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     
     // Check all required fields (password is auto-generated)
@@ -1091,7 +1097,7 @@ export async function createStudent(req, res) {
       return res.status(400).json({ error: 'Semester must be a number between 1 and 8' });
     }
     
-    if (!emailRegex.test(email)) return res.status(400).json({ error: 'Invalid email format' });
+    if (!emailRegex.test(normalizedEmail || '')) return res.status(400).json({ error: 'Invalid email format' });
     const canonicalMasterFields = await resolveStudentMasterFields({ branch, course, college, semester: semesterNum });
 
     // Parse and validate multiple coordinator IDs
@@ -1111,14 +1117,16 @@ export async function createStudent(req, res) {
       return res.status(400).json({ error: `Teacher ID / Coordinator code(s) "${invalidIds.join(', ')}" do not match any existing coordinator. Please create the coordinator first or correct the Teacher ID.` });
     }
 
-    const exists = await User.findOne({ $or: [{ email }, { studentId: studentid }] });
+    const exists = await User.findOne({
+      $or: [{ email: exactEmailPattern(normalizedEmail) }, { studentId: studentid }],
+    });
     if (exists) return res.status(409).json({ error: 'Student with email or studentId already exists' });
 
     // Generate random password (7-8 characters)
     const generatedPassword = generateRandomPassword();
     const passwordHash = await User.hashPassword(generatedPassword);
     const userData = {
-      role: 'student', name, email, studentId: studentid, passwordHash,
+      role: 'student', name, email: normalizedEmail, studentId: studentid, passwordHash,
       branch: canonicalMasterFields.branch,
       course: canonicalMasterFields.course,
       college: canonicalMasterFields.college,
@@ -1173,7 +1181,7 @@ function normalizeRow(r) {
   for (const [k, v] of Object.entries(r)) map[k.trim().toLowerCase()] = (v ?? '').toString().trim();
   return {
     name: map.name,
-    email: map.email,
+    email: normalizeEmailAddress(map.email),
     studentid: map.studentid || map.student_id || map.sid,
     branch: map.branch,
     teacherid: map.teacherid || map.teacher_id || map.teacherId,
@@ -1588,7 +1596,18 @@ export async function updateStudent(req, res) {
     
     // Update fields
     if (name) student.name = name;
-    if (email) student.email = email;
+    if (email) {
+      const normalizedEmail = normalizeEmailAddress(email);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        return res.status(400).json({ error: 'Invalid email format' });
+      }
+      const emailOwner = await User.findOne({
+        _id: { $ne: student._id },
+        email: exactEmailPattern(normalizedEmail),
+      }).select('_id').lean();
+      if (emailOwner) return res.status(409).json({ error: 'Another user with this email already exists' });
+      student.email = normalizedEmail;
+    }
     if (sid) student.studentId = sid;
     if (canonicalMasterFields.course) student.course = canonicalMasterFields.course;
     if (canonicalMasterFields.branch) student.branch = canonicalMasterFields.branch;

@@ -4,9 +4,10 @@ import { currentTenant, runForTenant } from './tenantContext.js';
 import { getTenant, listActiveUniversityIds } from './tenantConnections.js';
 import User from '../models/User.js';
 import { HttpError } from '../utils/errors.js';
+import { exactEmailPattern, normalizeEmailAddress } from '../utils/emailIdentity.js';
 
 export function normalizedLoginEmail(value) {
-  const email = String(value || '').trim().toLowerCase();
+  const email = normalizeEmailAddress(value) || '';
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254 ? email : '';
 }
 
@@ -42,7 +43,10 @@ export async function findLiveLoginCandidates(email) {
   const normalized = normalizedLoginEmail(email);
   if (!normalized) return [];
   const indexed = await loginDirectoryCandidates(normalized);
-  const scanAll = !(await loginDirectoryComplete());
+  // A legacy mixed-case lookup could previously remove a valid directory row
+  // after failing an exact lowercase tenant query. If no index entry remains,
+  // scan once and rebuild it so existing production users recover automatically.
+  const scanAll = !(await loginDirectoryComplete()) || indexed.length === 0;
   const ids = scanAll ? await listActiveUniversityIds() : [...new Set(indexed.map((row) => row.universityId))];
   const results = [];
   let unavailable = false;
@@ -51,7 +55,7 @@ export async function findLiveLoginCandidates(email) {
     const batch = await Promise.all(ids.slice(offset, offset + 3).map(async (id) => {
       try {
         const tenant = await getTenant(id);
-        const user = await runForTenant(tenant, () => User.findOne({ email: normalized })
+        const user = await runForTenant(tenant, () => User.findOne({ email: exactEmailPattern(normalized) })
           .select('_id email role').lean().maxTimeMS(3000));
         if (user) await syncTenantLoginIdentity(user, id);
         return user ? { universityId: id, userId: user._id } : null;

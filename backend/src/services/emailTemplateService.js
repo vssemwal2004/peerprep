@@ -19,7 +19,7 @@ const defaultTemplates = [
     type: EMAIL_TEMPLATE_TYPES.ONBOARDING,
     name: 'Welcome Email',
     subject: 'Welcome to PeerPrep - Your Account Details',
-    variables: ['studentId', 'password', 'dashboardUrl'],
+    variables: ['email', 'password', 'dashboardUrl'],
     htmlContent: `
       <div style="font-family:Arial,sans-serif;font-size:15px;color:#222;max-width:600px;">
         <p style="margin-bottom:20px;">Dear Student,</p>
@@ -28,8 +28,8 @@ const defaultTemplates = [
           <p style="margin:0 0 12px 0;font-size:17px;font-weight:700;color:#0c4a6e;">Your Login Credentials</p>
           <table style="width:100%;font-size:15px;">
             <tr>
-              <td style="padding:8px 0;color:#475569;width:40%;"><strong>Student ID:</strong></td>
-              <td style="padding:8px 0;color:#0f172a;font-weight:600;">{{studentId}}</td>
+              <td style="padding:8px 0;color:#475569;width:40%;"><strong>Email:</strong></td>
+              <td style="padding:8px 0;color:#0f172a;font-weight:600;">{{email}}</td>
             </tr>
             <tr>
               <td style="padding:8px 0;color:#475569;"><strong>Temporary Password:</strong></td>
@@ -392,15 +392,45 @@ const defaultTemplates = [
   },
 ];
 
+export function normalizeStudentOnboardingTemplate(template = {}) {
+  const variables = Array.isArray(template.variables) ? template.variables : [];
+  const normalizedVariables = [...new Set([
+    ...variables.filter((variable) => variable !== 'studentId'),
+    'email',
+  ])];
+  const replaceStudentId = (value) => String(value || '')
+    .replace(/\{\{\s*studentId\s*\}\}|\{\s*studentId\s*\}/g, '{{email}}')
+    .replace(/Student\s*ID/gi, 'Email');
+
+  return {
+    ...template,
+    subject: replaceStudentId(template.subject),
+    variables: normalizedVariables,
+    htmlContent: replaceStudentId(template.htmlContent),
+  };
+}
+
 export async function seedEmailTemplates() {
   for (const tpl of defaultTemplates) {
     const templateKey = tpl.type;
-    const exists = await EmailTemplate.findOne({ type: tpl.type }).select('_id templateKey').lean();
+    const exists = await EmailTemplate.findOne({ type: tpl.type }).select('_id templateKey subject variables htmlContent').lean();
     if (exists) {
-      if (!exists.templateKey) {
+      const updates = {};
+      if (!exists.templateKey) updates.templateKey = templateKey;
+
+      if (tpl.type === EMAIL_TEMPLATE_TYPES.ONBOARDING) {
+        const normalized = normalizeStudentOnboardingTemplate(exists);
+        if (normalized.subject !== exists.subject) updates.subject = normalized.subject;
+        if (normalized.htmlContent !== exists.htmlContent) updates.htmlContent = normalized.htmlContent;
+        if (JSON.stringify(normalized.variables) !== JSON.stringify(exists.variables || [])) {
+          updates.variables = normalized.variables;
+        }
+      }
+
+      if (Object.keys(updates).length) {
         await EmailTemplate.updateOne(
           { _id: exists._id },
-          { $set: { templateKey } },
+          { $set: updates },
           { runValidators: true }
         );
       }

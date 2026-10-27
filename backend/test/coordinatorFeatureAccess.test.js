@@ -7,6 +7,7 @@ import {
 import {
   EMAIL_TEMPLATE_TYPES,
   getDefaultEmailTemplates,
+  normalizeStudentOnboardingTemplate,
 } from '../src/services/emailTemplateService.js';
 
 test('student promotion is available as an explicit coordinator permission', () => {
@@ -39,4 +40,28 @@ test('assessment invitation and coordinator onboarding templates are seeded', ()
   assert.ok(coordinator);
   assert.ok(coordinator.variables.includes('coordinatorId'));
   assert.match(coordinator.htmlContent, /Temporary password/i);
+});
+
+test('student onboarding template uses email as the login identifier', () => {
+  const onboarding = getDefaultEmailTemplates()
+    .find((template) => template.type === EMAIL_TEMPLATE_TYPES.ONBOARDING);
+
+  assert.ok(onboarding);
+  assert.ok(onboarding.variables.includes('email'));
+  assert.ok(!onboarding.variables.includes('studentId'));
+  assert.match(onboarding.htmlContent, /<strong>Email:<\/strong>/i);
+  assert.match(onboarding.htmlContent, /\{\{email\}\}/);
+  assert.doesNotMatch(onboarding.htmlContent, /Student\s*ID|studentId/i);
+});
+
+test('legacy student onboarding templates are normalized before sending', () => {
+  const normalized = normalizeStudentOnboardingTemplate({
+    subject: 'Login details for Student ID {{studentId}}',
+    variables: ['studentId', 'password'],
+    htmlContent: '<p>Student ID: {{studentId}}</p>',
+  });
+
+  assert.deepEqual(normalized.variables, ['password', 'email']);
+  assert.equal(normalized.subject, 'Login details for Email {{email}}');
+  assert.equal(normalized.htmlContent, '<p>Email: {{email}}</p>');
 });

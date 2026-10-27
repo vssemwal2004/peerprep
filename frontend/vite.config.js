@@ -6,17 +6,27 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Core React — always needed, cache separately
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          // Heavy animation library — shared between pages that use it
-          'animation': ['framer-motion'],
-          // Socket.io — only loaded for authenticated pages
-          'socket': ['socket.io-client'],
-          // NOTE: lucide-react and react-icons are intentionally NOT grouped here.
-          // Grouping them defeats tree-shaking: every lazy route would pull in the
-          // entire icon bundle. Instead we let Rollup tree-shake per route chunk.
-        }
+        manualChunks(id) {
+          const moduleId = id.replaceAll('\\', '/');
+          // Use exact package-path checks rather than the object form. The object
+          // form also captures transitive dependencies and previously pulled the
+          // JSX runtime into the animation chunk, making Framer Motion critical.
+          if (
+            moduleId.includes('/node_modules/react/')
+            || moduleId.includes('/node_modules/react-dom/')
+            || moduleId.includes('/node_modules/react-router/')
+            || moduleId.includes('/node_modules/react-router-dom/')
+          ) return 'react-vendor';
+          if (moduleId.includes('/node_modules/framer-motion/')) return 'animation';
+          if (
+            moduleId.includes('/node_modules/socket.io-client/')
+            || moduleId.includes('/node_modules/engine.io-client/')
+            || moduleId.includes('/node_modules/@socket.io/component-emitter/')
+          ) return 'socket';
+          // lucide-react and react-icons stay ungrouped so route-level
+          // tree-shaking can keep unused icons out of each page.
+          return undefined;
+        },
       }
     },
     chunkSizeWarningLimit: 500,

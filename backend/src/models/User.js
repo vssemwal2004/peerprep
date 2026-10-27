@@ -2,6 +2,7 @@ import { tenantModel, currentTenant } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
 import { attachAdminAnalyticsInvalidation } from '../modules/adminAnalytics/adminAnalytics.invalidation.js';
+import { normalizeEmailAddress } from '../utils/emailIdentity.js';
 
 const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['admin', 'student', 'coordinator'], default: 'student' },
@@ -18,7 +19,14 @@ const userSchema = new mongoose.Schema({
   },
   username: { type: String, unique: true, sparse: true, trim: true, maxlength: 32 },
   name: String,
-  email: { type: String, unique: true, sparse: true },
+  email: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    lowercase: true,
+    set: normalizeEmailAddress,
+  },
   studentId: { type: String, unique: true, sparse: true },
   coordinatorId: { type: String, unique: true, sparse: true },
   teacherIds: [String], // For students: links to coordinator's coordinatorID (supports multiple)

@@ -519,7 +519,7 @@ export async function checkSpecialEventCsv(req, res) {
           { email: { $in: emails } },
           { studentId: { $in: studentIds } },
         ],
-      }).select('email studentId name branch semester group course college teacherIds').lean(),
+      }).collation({ locale: 'en', strength: 2 }).select('email studentId name branch semester group course college teacherIds').lean(),
       User.find({ role: 'coordinator' }).select('coordinatorId').lean(),
     ]);
 
@@ -774,7 +774,9 @@ export async function checkInterviewParticipantCsv(req, res) {
     $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }],
   };
   if (req.user.role === 'coordinator') query.teacherIds = req.user.coordinatorId;
-  const students = await User.find(query).select('_id name email studentId semester branch course college group teacherIds').lean();
+  const students = await User.find(query)
+    .collation({ locale: 'en', strength: 2 })
+    .select('_id name email studentId semester branch course college group teacherIds').lean();
   const byEmail = new Map(students.map((student) => [student.email?.toLowerCase(), student]));
   const byStudentId = new Map(students.map((student) => [String(student.studentId), student]));
   const seen = new Set();
@@ -853,7 +855,7 @@ export async function createSpecialEvent(req, res) {
           { email: { $in: emails } },
           { studentId: { $in: studentIds } },
         ],
-      }).select('email studentId name branch semester group course college teacherIds').lean(),
+      }).collation({ locale: 'en', strength: 2 }).select('email studentId name branch semester group course college teacherIds').lean(),
       User.find({ role: 'coordinator' }).select('coordinatorId').lean(),
     ]);
 

@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import MasterData from '../models/MasterData.js';
 import { invalidateUserCache } from '../middleware/auth.js';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
+import { exactEmailPattern, normalizeEmailAddress } from '../utils/emailIdentity.js';
 
 const MIN_COORDINATOR_ID = 10000;
 const MAX_COORDINATOR_ID_EXCLUSIVE = 100000;
@@ -176,16 +177,17 @@ export async function listAllCoordinators(req, res) {
 export async function createCoordinator(req, res) {
   try {
     const { coordinatorName, coordinatorEmail, coordinatorPassword, phone, department, college, permissions, dataScope } = req.body || {};
+    const normalizedEmail = normalizeEmailAddress(coordinatorEmail);
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!coordinatorName || !coordinatorEmail || !department || !college) {
       return res.status(400).json({ error: 'Name, email, department, and college are required.' });
     }
-    if (!emailRegex.test(coordinatorEmail)) {
+    if (!emailRegex.test(normalizedEmail || '')) {
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
     await validateCoordinatorMasterData(department, college);
-    const exists = await User.findOne({ email: coordinatorEmail });
+    const exists = await User.findOne({ email: exactEmailPattern(normalizedEmail) });
     if (exists) return res.status(409).json({ error: 'Coordinator with this email already exists' });
 
     const coordinatorID = await generateCoordinatorId();
@@ -195,7 +197,7 @@ export async function createCoordinator(req, res) {
     const user = await User.create({
       role: 'coordinator',
       name: coordinatorName,
-      email: coordinatorEmail,
+      email: normalizedEmail,
       coordinatorId: coordinatorID,
       phone,
       department,
@@ -285,15 +287,16 @@ export async function updateCoordinator(req, res) {
       return res.status(404).json({ error: 'Coordinator not found' });
     }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (coordinatorEmail && !emailRegex.test(coordinatorEmail)) {
+    const normalizedEmail = normalizeEmailAddress(coordinatorEmail);
+    if (coordinatorEmail && !emailRegex.test(normalizedEmail)) {
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
     // Teacher IDs are immutable server-generated identifiers.
-    if (coordinatorEmail && coordinatorEmail !== coordinator.email) {
+    if (normalizedEmail && normalizedEmail !== normalizeEmailAddress(coordinator.email)) {
       const exists = await User.findOne({
         _id: { $ne: coordinatorId },
-        email: coordinatorEmail,
+        email: exactEmailPattern(normalizedEmail),
       });
       if (exists) {
         return res.status(409).json({ error: 'Another coordinator with this email already exists' });
@@ -303,7 +306,7 @@ export async function updateCoordinator(req, res) {
     await validateCoordinatorMasterData(department, college);
 
     if (coordinatorName) coordinator.name = coordinatorName;
-    if (coordinatorEmail) coordinator.email = coordinatorEmail;
+    if (normalizedEmail) coordinator.email = normalizedEmail;
     if (phone !== undefined) coordinator.phone = phone;
     if (department !== undefined) coordinator.department = department;
     if (college !== undefined) coordinator.college = college;
@@ -383,7 +386,7 @@ export async function bulkCreateCoordinators(req, res) {
       $or: [
         { email: { $in: validRows.map((row) => row.email) } },
       ],
-    }).select('email coordinatorId').lean() : [];
+    }).collation({ locale: 'en', strength: 2 }).select('email coordinatorId').lean() : [];
     const existingEmails = new Set(existing.map((user) => String(user.email || '').toLowerCase()));
     const created = [];
 

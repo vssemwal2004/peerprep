@@ -28,6 +28,10 @@
     readyQueue.splice(0).forEach(function (fn) {
       try { fn(); } catch (e) { console.error('[PP] init error', e); }
     });
+    // Keep the readable no-JS state until every critical section has had a
+    // chance to initialize. Removing it during parsing made the hero vanish
+    // while the remaining scripts downloaded, producing a black screen.
+    doc.classList.remove('no-js');
     // Sections init in file order, not page order — sort so pins above
     // push the triggers below them correctly, then measure.
     if (window.ScrollTrigger) { ScrollTrigger.sort(); ScrollTrigger.refresh(); }
@@ -312,6 +316,4 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   };
-
-  doc.classList.remove('no-js');
 })();

@@ -7,6 +7,7 @@ import { currentTenant, runForTenant } from './tenantContext.js';
 import { getTenant } from './tenantConnections.js';
 import { findLiveLoginCandidates, normalizedLoginEmail } from './loginDirectory.js';
 import { servicePeriodStatus, servicePeriodMessage } from './servicePeriod.js';
+import { exactEmailPattern } from '../utils/emailIdentity.js';
 
 export async function routeLogin(req, res) {
   if (deploymentRole() !== 'shared' || currentTenant()) return login(req, res);
@@ -16,7 +17,7 @@ export async function routeLogin(req, res) {
 
   // PeerPrep's own admins, coordinators and students stay in the main DB.
   // University accounts use their own DB and carry a university session claim.
-  const platformUser = await User.exists({ email });
+  const platformUser = await User.exists({ email: exactEmailPattern(email) });
   if (platformUser) return login(req, res);
 
   const matches = await findLiveLoginCandidates(email);
@@ -44,7 +45,7 @@ export async function routePasswordResetRequest(req, res) {
   const email = normalizedLoginEmail(req.body?.email);
   const generic = { message: 'If an account exists with this email, a password reset link has been sent.' };
   if (!email) return res.json(generic);
-  if (await User.exists({ email, role: { $in: ['student', 'coordinator'] } })) return requestPasswordReset(req, res);
+  if (await User.exists({ email: exactEmailPattern(email), role: { $in: ['student', 'coordinator'] } })) return requestPasswordReset(req, res);
   const matches = await findLiveLoginCandidates(email);
   if (matches.length !== 1) return res.json(generic);
   const tenant = await getTenant(matches[0].universityId);

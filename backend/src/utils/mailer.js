@@ -1,8 +1,12 @@
 import { currentTenant } from '../platform/tenantContext.js';
 import nodemailer from 'nodemailer';
 import EmailTemplate from '../models/EmailTemplate.js';
-import { EMAIL_TEMPLATE_TYPES } from '../services/emailTemplateService.js';
+import {
+  EMAIL_TEMPLATE_TYPES,
+  normalizeStudentOnboardingTemplate,
+} from '../services/emailTemplateService.js';
 import { normalizeAssessmentInvitationHtml } from '../services/assessmentInvitationTemplate.js';
+import { normalizeEmailAddress } from './emailIdentity.js';
 
 const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
 const smtpPort = Number(process.env.SMTP_PORT) || 587;
@@ -59,8 +63,11 @@ export async function sendMail({ to, subject, html, text, attachments }) {
     throw new Error('SMTP is not configured. Set SMTP_USER and SMTP_PASS in the backend environment.');
   }
   const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@example.com';
-  const info = await transporter.sendMail({ from, to, subject, html, text, attachments });
-  console.log(`[MAIL] Sent to: ${to} | Subject: ${subject}`);
+  const recipient = typeof to === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim())
+    ? normalizeEmailAddress(to)
+    : to;
+  const info = await transporter.sendMail({ from, to: recipient, subject, html, text, attachments });
+  console.log(`[MAIL] Sent to: ${recipient} | Subject: ${subject}`);
   return info;
 }
 
@@ -125,12 +132,19 @@ export function buildICS({ uid, start, end, summary, description, url, organizer
   return lines.join('\r\n');
 }
 
-// Onboarding email: StudentId & Password
-export async function sendOnboardingEmail({ to, studentId, password }) {
-  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.ONBOARDING);
-  const vars = { studentId, password, dashboardUrl: getDashboardUrl() };
+// Student onboarding uses the same email address shown on the login form.
+export async function sendOnboardingEmail({ to, password }) {
+  const email = normalizeEmailAddress(to);
+  const template = normalizeStudentOnboardingTemplate(
+    await getTemplateByType(EMAIL_TEMPLATE_TYPES.ONBOARDING),
+  );
+  const vars = {
+    email: escapeHtml(email),
+    password: escapeHtml(password),
+    dashboardUrl: getDashboardUrl(),
+  };
   return sendMail({
-    to,
+    to: email,
     subject: renderTemplate(template.subject, vars),
     html: renderTemplate(template.htmlContent, vars),
   });
@@ -248,16 +262,17 @@ export async function sendAssessmentInvitationEmail({ to, assessment, student, p
 }
 
 export async function sendCoordinatorOnboardingEmail({ to, name, coordinatorId, password }) {
+  const email = normalizeEmailAddress(to);
   const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.COORDINATOR_ONBOARDING);
   const vars = {
     name: escapeHtml(name || 'Coordinator'),
     coordinatorId: escapeHtml(coordinatorId),
-    email: escapeHtml(to),
+    email: escapeHtml(email),
     password: escapeHtml(password),
     dashboardUrl: getDashboardUrl(),
   };
   return sendMail({
-    to,
+    to: email,
     subject: renderTemplate(template.subject, vars),
     html: renderTemplate(template.htmlContent, vars),
   });

@@ -1983,6 +1983,7 @@ export async function previewAssessmentStudents(req, res) {
   const emails = normalized.map(row => String(row.email || '').toLowerCase()).filter(Boolean);
   const studentIds = normalized.map(row => String(row.studentid || '')).filter(Boolean);
   const existing = await User.find({ $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }] })
+    .collation({ locale: 'en', strength: 2 })
     .select('_id name email studentId role accessScope semester').lean();
   const byEmail = new Map(existing.filter(user => user.email).map(user => [user.email.toLowerCase(), user]));
   const byStudentId = new Map(existing.filter(user => user.studentId).map(user => [String(user.studentId), user]));
@@ -2045,7 +2046,7 @@ async function resolveAssignedStudents({ targetType, assignedStudents, audienceT
       { studentId: { $in: studentIds } },
       { _id: { $in: normalizedRows.map(r => r._id).filter(Boolean) } },
     ],
-  }).select('_id email name studentId role accessScope semester').lean();
+  }).collation({ locale: 'en', strength: 2 }).select('_id email name studentId role accessScope semester').lean();
 
   const existingByEmail = new Map(existing.filter(u => u.email).map(u => [u.email.toLowerCase(), u]));
   const existingByStudentId = new Map(existing.filter(u => u.studentId).map(u => [u.studentId.toString(), u]));
@@ -3143,6 +3144,7 @@ export async function addAssessmentEligibleStudents(req, res) {
       role: 'student',
       $or: lookup,
     })
+      .collation({ locale: 'en', strength: 2 })
       .select('_id name email studentId')
       .lean();
     if (!students.length) {

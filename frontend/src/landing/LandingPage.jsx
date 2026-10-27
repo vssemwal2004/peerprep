@@ -4,6 +4,7 @@ import { hideGlobalLoader } from "../utils/globalLoader";
 
 const LANDING_DOCUMENT_URL = "/landing-page/index.html";
 const LANDING_ASSET_BASE = "/landing-page/";
+const LANDING_MARKUP_READY = "peerprep:landing-markup-ready";
 
 function withTrailingSlash(value) {
   return value.endsWith("/") ? value : `${value}/`;
@@ -17,6 +18,13 @@ function prepareLandingDocument(source, appRoot, appOrigin) {
 
   return source
     .replace("<head>", `<head>\n  <base href="${LANDING_ASSET_BASE}" />`)
+    // The full page markup and blocking CSS are ready at this point, while the
+    // enhancement/animation scripts below can continue without holding the
+    // app-wide loader over an already-readable page.
+    .replace(
+      '  <script src="vendor/gsap.min.js"></script>',
+      `  <script>window.parent.postMessage({ type: ${JSON.stringify(LANDING_MARKUP_READY)} }, ${JSON.stringify(appOrigin)});</script>\n  <script src="vendor/gsap.min.js"></script>`,
+    )
     .replaceAll(
       'href="https://peerprep.co.in/contact"',
       `href="${route("/contact")}" target="_top"`,
@@ -73,6 +81,15 @@ export default function LandingPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleLandingReady = (event) => {
+      if (event.origin !== window.location.origin || event.data?.type !== LANDING_MARKUP_READY) return;
+      setFrameReady(true);
+    };
+    window.addEventListener("message", handleLandingReady);
+    return () => window.removeEventListener("message", handleLandingReady);
+  }, []);
+
   // The index.html boot loader covers the page until the iframe has rendered or failed.
   // Navigating away from "/" earlier is handled by useHideGlobalLoader in App.jsx.
   useEffect(() => {
@@ -95,7 +112,9 @@ export default function LandingPage() {
         height: "100svh",
         minHeight: "100vh",
         overflow: "hidden",
-        background: "#0a0a0b",
+        // Match the HTML boot screen instead of exposing a black frame while
+        // the standalone landing document is parsing its styles and scripts.
+        background: "#f8f8f6",
       }}
     >
       {loadError && (
@@ -127,7 +146,10 @@ export default function LandingPage() {
             height: "100%",
             border: 0,
             display: "block",
-            opacity: frameReady ? 1 : 0,
+            // Allow the iframe to paint progressively. The branded global
+            // loader remains above it until onLoad, so this only eliminates
+            // the blank-frame failure mode if loading is unusually slow.
+            opacity: 1,
           }}
         />
       )}

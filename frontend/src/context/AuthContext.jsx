@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api, clearApiCache } from '../utils/api';
-import socketService from '../utils/socket';
 
 export const AuthContext = createContext(null);
 
@@ -88,9 +87,24 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (user?.role !== 'student') return undefined;
+    let cancelled = false;
+    let socketService;
     const handleAccessUpdate = () => { void refreshUser(); };
-    socketService.on('student-access-updated', handleAccessUpdate);
-    return () => socketService.off('student-access-updated', handleAccessUpdate);
+
+    // Socket.IO is only needed for an authenticated student. Loading it here
+    // keeps the public landing and login paths out of the critical bundle.
+    import('../utils/socket').then(({ default: service }) => {
+      if (cancelled) return;
+      socketService = service;
+      socketService.on('student-access-updated', handleAccessUpdate);
+    }).catch(() => {
+      // Live access updates are optional; the next auth refresh still reconciles state.
+    });
+
+    return () => {
+      cancelled = true;
+      socketService?.off('student-access-updated', handleAccessUpdate);
+    };
   }, [user?.role, refreshUser]);
 
   const value = {

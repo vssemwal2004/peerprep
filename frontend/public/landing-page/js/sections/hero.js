@@ -26,7 +26,9 @@
     factsReveal(hero);
 
     // CSS owns the entrance so the headline never depends on an animation CDN.
-    requestAnimationFrame(function () { hero.classList.add('is-ready'); });
+    // Mark the first viewport ready in the same DOM-ready task. Waiting for a
+    // later frame briefly exposed only the dark page background on slow CPUs.
+    hero.classList.add('is-ready');
   });
 
   function factsReveal(hero) {

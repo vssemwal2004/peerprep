@@ -6,7 +6,6 @@ import { AuthProvider } from './context/AuthContext';
 import { UniversityPolicyProvider } from './platform/UniversityPolicyContext';
 import { canAdjustPrepScore, canManageInterviewCompanies, isUniversityDeployment, LEGACY_PREP_COIN_PRICING_PATH, PREP_COIN_PRICING_PATH, PREP_SCORE_ADJUSTMENT_PATH, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
 import { ToastProvider } from './components/CustomToast';
-import AdminLayout from './admin/AdminLayout';
 import AdminProtectedRoute from './admin/AdminProtectedRoute';
 import CoordinatorProtectedRoute from './coordinator/CoordinatorProtectedRoute';
 import StudentProtectedRoute from './student/StudentProtectedRoute';
@@ -15,12 +14,13 @@ import { hideGlobalLoader } from './utils/globalLoader';
 import { useAuth } from './context/AuthContext';
 import { hasPermission } from './admin/coordinatorPermissions';
 import PopupDismissManager from './components/PopupDismissManager';
-import GlobalSidebar from './components/GlobalSidebar';
-import StudentDashboardHeader from './components/StudentDashboardHeader';
 import { STUDENT_SIDEBAR_PANEL_WIDTH, STUDENT_SIDEBAR_RAIL_WIDTH } from './components/sidebarLayout';
 
-// Lazy-load navbars to keep them out of the main bundle
+// Shells are role-specific and should not delay the public landing/login bundle.
+const AdminLayout = lazy(() => import('./admin/AdminLayout'));
 const CoordinatorLayout = lazy(() => import('./coordinator/CoordinatorLayout'));
+const GlobalSidebar = lazy(() => import('./components/GlobalSidebar'));
+const StudentDashboardHeader = lazy(() => import('./components/StudentDashboardHeader'));
 const Footer = lazy(() => import('./components/Footer').then(m => ({ default: m.Footer })));
 
 // Lazy load all route components for code splitting
@@ -137,7 +137,7 @@ const LAZY_IMPORT_RETRY_KEY = 'peerprep:lazy-import-retry';
 // the current tab holding an obsolete dynamic-module URL. One guarded reload
 // fetches the current module graph without creating a reload loop.
 function lazy(loader) {
-  return reactLazy(async () => {
+  const load = async () => {
     try {
       const module = await loader();
       window.sessionStorage.removeItem(LAZY_IMPORT_RETRY_KEY);
@@ -153,7 +153,12 @@ function lazy(loader) {
       }
       throw error;
     }
-  });
+  };
+  const Component = reactLazy(load);
+  // Calling preload uses the same browser module cache as React.lazy. This lets
+  // idle/intent prefetching warm a route without downloading it twice.
+  Component.preload = () => load().catch(() => undefined);
+  return Component;
 }
 
 /**
@@ -188,9 +193,10 @@ function RoutePrefetcher() {
   }, [user?.accessScope]);
 
   const prefetchAdminRoutes = useCallback(() => {
-    import("./admin/AssessmentDashboard");
-    import("./admin/library/LibraryWorkspace");
-    import("./admin/StudentDirectory");
+    AssessmentDashboard.preload();
+    CreateAssessment.preload();
+    LibraryWorkspace.preload();
+    StudentDirectory.preload();
   }, []);
 
   const prefetchCoordinatorRoutes = useCallback(() => {
@@ -308,6 +314,7 @@ function CoordinatorShell({ children, layout = true, permission }) {
 
 function AppContent() {
   const location = useLocation();
+  const navigationKey = `${location.pathname}${location.search}`;
   useHideGlobalLoader(location.pathname);
   const { user } = useAuth();
   const [isStudentSidebarPinned, setIsStudentSidebarPinned] = useState(() => {
@@ -363,14 +370,16 @@ function AppContent() {
           Shows NavbarSkeleton briefly instead of nothing, so the page structure
           streams in progressively (navbar skeleton â†’ navbar â†’ content skeleton â†’ content) */}
       {isStudentShell && (
-        <GlobalSidebar
-          role="student"
-          isExpanded={isStudentSidebarExpanded}
-          isPinned={isStudentSidebarPinned}
-          onTogglePin={toggleStudentSidebarPin}
-          onExpand={() => setIsStudentSidebarHovered(true)}
-          onCollapse={() => setIsStudentSidebarHovered(false)}
-        />
+        <Suspense fallback={null}>
+          <GlobalSidebar
+            role="student"
+            isExpanded={isStudentSidebarExpanded}
+            isPinned={isStudentSidebarPinned}
+            onTogglePin={toggleStudentSidebarPin}
+            onExpand={() => setIsStudentSidebarHovered(true)}
+            onCollapse={() => setIsStudentSidebarHovered(false)}
+          />
+        </Suspense>
       )}
      
       {/* Main content: Each route section gets a role-appropriate skeleton.
@@ -378,12 +387,14 @@ function AppContent() {
           immediately as skeleton shapes, then real content swaps in when loaded */}
       <main data-app-scroll-container={isStudentShell ? true : undefined} tabIndex="-1" className={gradientBg + ` dark:bg-gray-900 flex-grow outline-none transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isStudentShell ? 'h-screen min-h-0 overflow-y-auto overscroll-contain' : ''}`} style={isStudentShell ? { paddingLeft: 'var(--admin-sidebar-width)', scrollPaddingTop: showStudentHeader ? 'calc(5rem + 1px)' : undefined } : undefined}>
         {showStudentHeader && (
-          <StudentDashboardHeader
-            sidebarPinned={isStudentSidebarPinned}
-            onToggleSidebar={toggleStudentSidebarPin}
-          />
+          <Suspense fallback={null}>
+            <StudentDashboardHeader
+              sidebarPinned={isStudentSidebarPinned}
+              onToggleSidebar={toggleStudentSidebarPin}
+            />
+          </Suspense>
         )}
-        <Suspense fallback={
+        <Suspense key={navigationKey} fallback={
           isMain ? <LandingPageSkeleton /> :
           isAdmin ? <DashboardSkeleton /> :
           isCoordinator ? <DashboardSkeleton /> :
