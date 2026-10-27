@@ -35,6 +35,8 @@ Thumbs.db
 
 # Build outputs
 dist/
+.dist-next/
+.dist-previous/
 build/
 *.local
 

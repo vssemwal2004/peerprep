@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "dev:local-repair": "vite --mode local-repair --host localhost --port 5173",
-    "build": "vite build",
+    "build": "node scripts/build-production.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
