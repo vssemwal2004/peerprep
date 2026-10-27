@@ -229,6 +229,26 @@ const problemSchema = new mongoose.Schema({
     enum: ['public', 'assessment', 'private'],
     default: 'public',
   },
+  // Assessment copies are deliberately separate compiler problems. This keeps
+  // edits made in the assessment builder from changing the reusable library
+  // question while preserving the private runner and hidden test cases.
+  assessmentOwnerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Assessment',
+    index: true,
+  },
+  assessmentSourceProblemId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Problem',
+    index: true,
+  },
+  assessmentDraftKey: {
+    type: String,
+    default: '',
+    trim: true,
+    maxlength: 200,
+    select: false,
+  },
   previewValidated: {
     type: Boolean,
     default: false,
@@ -300,5 +320,7 @@ problemSchema.index({ status: 1, visibility: 1, difficulty: 1, createdAt: -1 });
 problemSchema.index({ topicIds: 1, status: 1, updatedAt: -1 });
 problemSchema.index({ topicAncestorIds: 1, status: 1, updatedAt: -1 });
 problemSchema.index({ codingTagIds: 1, status: 1, updatedAt: -1 });
+problemSchema.index({ assessmentOwnerId: 1, assessmentSourceProblemId: 1 });
+problemSchema.index({ createdBy: 1, assessmentDraftKey: 1, assessmentSourceProblemId: 1 });
 
 export default tenantModel(mongoose.model('Problem', problemSchema));

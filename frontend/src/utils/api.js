@@ -1689,6 +1689,12 @@ export const api = {
   },
   updateCompilerProblem: (problemId, formData) =>
     request(`/compiler/problems/${problemId}`, { method: "PUT", formData }),
+  cloneCompilerProblemForAssessment: (problemId, { assessmentId, draftKey } = {}) => {
+    const fd = new FormData();
+    if (assessmentId) fd.append("assessmentId", assessmentId);
+    if (draftKey) fd.append("draftKey", draftKey);
+    return request(`/compiler/problems/${problemId}/assessment-clone`, { method: "POST", formData: fd });
+  },
   updateCompilerProblemVisibility: (problemId, visibility) => {
     const fd = new FormData();
     fd.append("visibility", visibility);

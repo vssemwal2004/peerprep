@@ -616,11 +616,58 @@ export default function CreateAssessment({ viewOnly = false }) {
 
   const handleOpenCodingEditor = async (sectionIndex, questionIndex) => {
     const section = sections[sectionIndex];
-    const question = section?.questions?.[questionIndex];
+    let question = section?.questions?.[questionIndex];
     if (!question) return;
 
-    if (dirty) {
-      saveAssessmentDraft(assessmentKey, { form, sections, questionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
+    let workingQuestionSets = questionSets;
+    const sourceProblemId = question.problemId
+      || question.problemDataSnapshot?._id
+      || question.coding?.problemId
+      || question.coding?.problemData?._id;
+    const existingProblem = question.problemDataSnapshot || question.coding?.problemData || question.coding || {};
+    if (sourceProblemId && !existingProblem.assessmentOwnerId && !existingProblem.assessmentSourceProblemId) {
+      try {
+        const clonedProblem = await api.cloneCompilerProblemForAssessment(sourceProblemId, {
+          assessmentId: currentId,
+          draftKey: assessmentKey,
+        });
+        const snapshot = toAssessmentProblemSnapshot(clonedProblem);
+        question = {
+          ...question,
+          codingEditorId: String(clonedProblem._id),
+          problemId: clonedProblem._id,
+          problemDataSnapshot: snapshot,
+          questionText: snapshot.title || question.questionText,
+          coding: {
+            ...(question.coding || {}),
+            problemId: clonedProblem._id,
+            problemData: snapshot,
+          },
+        };
+        workingQuestionSets = questionSets.map((questionSet, setIndex) => (
+          setIndex !== activeQuestionSet ? questionSet : {
+            ...questionSet,
+            sections: (questionSet.sections || []).map((sectionItem, sIdx) => (
+              sIdx !== sectionIndex ? sectionItem : {
+                ...sectionItem,
+                questions: (sectionItem.questions || []).map((item, qIdx) => (
+                  qIdx === questionIndex ? question : item
+                )),
+              }
+            )),
+          }
+        ));
+        setQuestionSets(workingQuestionSets);
+        setDirty(true);
+      } catch (error) {
+        toast.error(error.message || 'Could not create an assessment copy of this coding question.');
+        return;
+      }
+    }
+
+    if (dirty || workingQuestionSets !== questionSets) {
+      const workingSections = workingQuestionSets[activeQuestionSet]?.sections || sections;
+      saveAssessmentDraft(assessmentKey, { form, sections: workingSections, questionSets: workingQuestionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
     }
 
     let editorId = question.codingEditorId

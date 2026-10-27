@@ -19,7 +19,8 @@ import Submission from '../models/Submission.js';
 import User from '../models/User.js';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
-import { removeAssessmentQuestionsFromLibrary, syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
+import { syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
+import { deleteAssessmentQuestionArtifacts } from '../services/assessmentQuestionCleanupService.js';
 import { logActivity } from './adminActivityController.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
 import { decryptAssessmentPassword, encryptAssessmentPassword } from '../services/assessmentPasswordService.js';
@@ -28,6 +29,7 @@ import { validateAssessmentInvitationTemplate } from '../services/assessmentInvi
 import { reconcileExpiredAssessmentSubmissions } from '../services/assessmentExpiryService.js';
 import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js';
 import { studentFeatureQuery } from '../services/studentFeatureAccess.js';
+import { claimAssessmentDraftProblems } from '../services/assessmentProblemCloneService.js';
 import {
   getCodingQuestionScore,
   scoreAssessmentWithTestCases,
@@ -633,7 +635,7 @@ export async function hydrateAssessmentCodingRuntime(assessment) {
 
   const [problems, liveSamples] = await Promise.all([
     Problem.find({ _id: { $in: problemIds } })
-      .select('_id supportedLanguages codeTemplates category sqlConfig executionMode functionContract contentImages')
+      .select('_id supportedLanguages codeTemplates category sqlConfig executionMode functionContract contentImages assessmentOwnerId assessmentSourceProblemId')
       .lean(),
     TestCase.find({ problem: { $in: problemIds }, kind: 'sample' })
       .select('problem position input output images')
@@ -673,6 +675,8 @@ export async function hydrateAssessmentCodingRuntime(assessment) {
         const problemDataSnapshot = {
           ...existingSnapshot,
           _id: liveProblem._id,
+          assessmentOwnerId: liveProblem.assessmentOwnerId,
+          assessmentSourceProblemId: liveProblem.assessmentSourceProblemId,
           supportedLanguages,
           codeTemplates,
           executionMode: liveProblem.executionMode || 'function',
@@ -2363,7 +2367,14 @@ export async function createAssessment(req, res) {
       }
     }
 
+    const newAssessmentId = new mongoose.Types.ObjectId();
+    await claimAssessmentDraftProblems(effectiveQuestionSets, {
+      assessmentId: newAssessmentId,
+      userId: req.user._id,
+    });
+
     const assessment = new Assessment({
+      _id: newAssessmentId,
       title: title || '',
       description: description || '',
       instructions: instructions || '',
@@ -2863,6 +2874,15 @@ export async function updateAssessment(req, res) {
       if (deliveryError) return res.status(400).json({ error: deliveryError });
     }
 
+    const ownedQuestionSets = await claimAssessmentDraftProblems(
+      (assessment.questionSets || []).map((entry) => entry?.toObject?.() || entry),
+      { assessmentId: assessment._id, userId: req.user._id },
+    );
+    assessment.questionSets = ownedQuestionSets;
+    assessment.sections = ownedQuestionSets[0]?.sections || assessment.sections;
+    assessment.markModified('questionSets');
+    assessment.markModified('sections');
+
     assessment.version = (assessment.version || 1) + 1;
     assessment.versionUpdatedAt = new Date();
 
@@ -2976,9 +2996,8 @@ export async function deleteAssessment(req, res) {
     const { id } = req.params;
     const assessment = await Assessment.findByIdAndDelete(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
-    await removeAssessmentQuestionsFromLibrary(id);
-
     await deleteAssessmentAttemptData({ assessmentId: id });
+    await deleteAssessmentQuestionArtifacts(assessment._id);
 
     logActivity({
       userEmail: req.user?.email,

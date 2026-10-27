@@ -12,6 +12,7 @@ import {
 import {
   approveProblemPreview,
   createProblem,
+  cloneProblemIntoAssessment,
   deleteProblem,
   getCompilerOverview,
   getProblemDetail,
@@ -72,6 +73,7 @@ router.post('/problems/:id/preview/approve', requireCoordinatorPermission('coord
 router.get('/problems', requireAdminCoordinatorOrStudent, requireFullStudent, requireStudentFeature('prep_coding'), listProblems);
 router.get('/problem-companies', requireStudent, requireFullStudent, requireStudentFeature('prep_coding'), compilerCache, listStudentProblemCompanies);
 router.post('/problems', requireCoordinatorPermission('coordinator.compiler.create'), invalidateCompilerCache, upload.any(), createProblem);
+router.post('/problems/:id/assessment-clone', requireCoordinatorPermission('coordinator.compiler.manage'), invalidateCompilerCache, upload.none(), cloneProblemIntoAssessment);
 router.get('/problems/:id/submissions', requireStudent, requireFullStudent, requireStudentFeature('prep_coding'), listProblemSubmissions);
 router.get('/problems/:id', requireAdminCoordinatorOrStudent, requireFullStudent, requireStudentFeature('prep_coding'), getProblemDetail);
 router.put('/problems/:id', requireCoordinatorPermission('coordinator.compiler.manage'), invalidateCompilerCache, upload.any(), updateProblem);

@@ -100,6 +100,25 @@ test('full-program mode never injects a configured runner', () => {
   }, 'cpp', source), source);
 });
 
+test('generates a private C++ main for a legacy function-only question', () => {
+  const executable = prepareFunctionSourceForExecution({
+    executionMode: 'function',
+    functionContract: {
+      kind: 'function',
+      className: 'Solution',
+      methodName: 'add',
+      parameters: [{ name: 'left', type: 'integer' }, { name: 'right', type: 'integer' }],
+      returnType: 'integer',
+      outputMode: 'return',
+    },
+  }, 'cpp', 'class Solution { public: int add(int left, int right) { return left + right; } };', 'left = 2, right = 5');
+
+  assert.match(executable, /#include <bits\/stdc\+\+\.h>/);
+  assert.match(executable, /int main\(\)/);
+  assert.match(executable, /Solution\(\)\.add\(__ppArg0, __ppArg1\)/);
+  assert.doesNotMatch(executable, /\{\{USER_CODE\}\}/);
+});
+
 test('serialization keeps hidden runners private from students and exposes them only to authoring requests', () => {
   const base = {
     _id: 'runner-privacy', title: 'Runner privacy', description: '', difficulty: 'Easy',

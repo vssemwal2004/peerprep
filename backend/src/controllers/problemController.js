@@ -8,6 +8,7 @@ import CodingTopic from '../models/CodingTopic.js';
 import CodingTag from '../models/CodingTag.js';
 import Submission from '../models/Submission.js';
 import TestCase from '../models/TestCase.js';
+import Assessment from '../models/Assessment.js';
 import { HttpError } from '../utils/errors.js';
 import { sanitizeSearchQuery, sanitizeString, validateObjectId, validatePagination } from '../utils/validators.js';
 import { refreshProblemStats, serializeProblem, serializeSubmission, serializeSubmissionForRealtime, serializeStudentSubmission } from './compilerHelpers.js';
@@ -20,6 +21,7 @@ import { sqlStatementKinds } from '../services/sqlMutationContractService.js';
 import { questionQuickPreps } from '../services/questService.js';
 import { persistedTestCaseInputLimitBytes } from '../services/trustedLargeInputPolicyService.js';
 import { parseSerialSearch, serialSearchClause } from '../utils/problemSerial.js';
+import { cloneProblemForAssessment } from '../services/assessmentProblemCloneService.js';
 
 const STATUS_MAP = {
   draft: 'draft',
@@ -1407,7 +1409,9 @@ export async function listProblems(req, res) {
     : isCoordinatorRequest(req)
       ? (coordinatorRequiresOwnership(req) ? { createdBy: req.user._id } : {})
       : { status: { $in: ['published', 'Active', 'active'] }, $or: [{ visibility: 'public' }, { visibility: { $exists: false } }] };
-  const query = { ...accessQuery };
+  // Assessment-owned compiler copies are private implementation records. They
+  // are loaded by their assessment/problem ID, never shown as library items.
+  const query = { ...accessQuery, assessmentSourceProblemId: { $exists: false } };
 
   if (req.query.ids !== undefined) {
     query._id = { $in: idFilters.map((id) => new mongoose.Types.ObjectId(id)) };
@@ -1683,6 +1687,36 @@ export async function createProblem(req, res) {
   res.status(201).json(serializedProblem);
 }
 
+export async function cloneProblemIntoAssessment(req, res) {
+  ensureObjectId(req.params.id, 'Problem ID');
+  const sourceProblem = await Problem.findById(req.params.id).select('visibility status createdBy');
+  if (!sourceProblem || (coordinatorRequiresOwnership(req)
+    && sourceProblem.visibility !== 'public'
+    && String(sourceProblem.createdBy || '') !== String(req.user._id))) {
+    throw new HttpError(404, 'Problem not found.');
+  }
+  if (req.body?.assessmentId) {
+    ensureObjectId(req.body.assessmentId, 'Assessment ID');
+    const assessment = await Assessment.findById(req.body.assessmentId).select('createdBy');
+    if (!assessment || (coordinatorRequiresOwnership(req)
+      && String(assessment.createdBy || '') !== String(req.user._id))) {
+      throw new HttpError(404, 'Assessment not found.');
+    }
+  }
+  const problem = await cloneProblemForAssessment(req.params.id, {
+    assessmentId: req.body?.assessmentId,
+    draftKey: req.body?.draftKey,
+    userId: req.user._id,
+  });
+  const { serializedProblem } = await loadProblemShape(problem._id, {
+    includeHiddenTestCases: true,
+    includeReferenceSolutions: true,
+    includeExecutionHarnesses: true,
+    problemDocument: problem,
+  });
+  res.status(201).json(serializedProblem);
+}
+
 export async function updateProblem(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 
@@ -1703,7 +1737,9 @@ export async function updateProblem(req, res) {
     existingTotalMarks: Number(existingProblem.totalMarks || 1),
   }));
   await attachCodingClassification(payload.problem);
-  await ensureUniqueProblemTitle(payload.problem.title, existingProblem._id);
+  if (!existingProblem.assessmentOwnerId && existingProblem.visibility !== 'assessment') {
+    await ensureUniqueProblemTitle(payload.problem.title, existingProblem._id);
+  }
   const {
     referenceSolutions: payloadReferenceSolutions,
     ...problemFields
@@ -1791,7 +1827,9 @@ export async function updateProblem(req, res) {
   }
 
   await refreshProblemStats(existingProblem._id);
-  await syncProblemToLibrary(await Problem.findById(existingProblem._id).select('+executionHarnesses').lean());
+  if (!existingProblem.assessmentOwnerId && existingProblem.visibility !== 'assessment') {
+    await syncProblemToLibrary(await Problem.findById(existingProblem._id).select('+executionHarnesses').lean());
+  }
 
   const { serializedProblem } = await loadProblemShape(existingProblem._id, { includeExecutionHarnesses: true });
   res.json(serializedProblem);

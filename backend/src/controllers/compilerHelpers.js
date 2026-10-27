@@ -146,6 +146,8 @@ export function serializeProblem(
     hiddenTestCaseTotalMarks: Number(hiddenTestCaseTotalMarks || problem.totalMarks || hiddenTestCaseCount || 1),
     status,
     visibility: problem.visibility || 'public',
+    assessmentOwnerId: problem.assessmentOwnerId || undefined,
+    assessmentSourceProblemId: problem.assessmentSourceProblemId || undefined,
     previewValidated: Boolean(previewValidated),
     totalSubmissions: problem.stats?.totalSubmissions || 0,
     acceptedSubmissions: problem.stats?.acceptedSubmissions || 0,
