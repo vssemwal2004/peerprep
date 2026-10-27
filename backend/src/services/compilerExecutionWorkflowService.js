@@ -72,9 +72,29 @@ function ensureObjectId(id, fieldName) {
   }
 }
 
-function assessmentIncludesProblem(assessment, problemId) {
+export function assessmentSectionsForProblemAccess(assessment, studentId = '', deliverySections = null) {
+  if (Array.isArray(deliverySections)) return deliverySections;
+  const source = assessment || {};
+  if (!source.settings?.questionSetEnabled) return Array.isArray(source.sections) ? source.sections : [];
+
+  const assignment = (source.candidateSetAssignments || []).find((entry) => (
+    String(entry?.student?._id || entry?.student || '') === String(studentId || '')
+  ));
+  const assignedSetNumber = Math.max(1, Number(assignment?.setNumber) || 1);
+  const selectedSet = (source.questionSets || []).find((entry) => (
+    Number(entry?.setNumber) === assignedSetNumber
+  ));
+  return Array.isArray(selectedSet?.sections)
+    ? selectedSet.sections
+    : (Array.isArray(source.sections) ? source.sections : []);
+}
+
+export function assessmentIncludesProblem(assessment, problemId, {
+  studentId = '',
+  deliverySections = null,
+} = {}) {
   const targetId = String(problemId);
-  const sections = Array.isArray(assessment?.sections) ? assessment.sections : [];
+  const sections = assessmentSectionsForProblemAccess(assessment, studentId, deliverySections);
   return sections.some((section) => {
     const questionType = section?.type;
     const questions = Array.isArray(section?.questions) ? section.questions : [];
@@ -117,9 +137,14 @@ export async function resolveActiveProblem(problemId, { userId, assessmentId, ac
     throw new HttpError(404, 'Problem not found.');
   }
 
-  if ((assessment.platformPublished === false || assessment.lifecycleStatus === 'draft') && !(await AssessmentSubmission.exists({
-    assessmentId, studentId: userId, status: 'in_progress',
-  }))) throw new HttpError(404, 'Problem not found.');
+  const activeSubmission = await AssessmentSubmission.findOne({
+    assessmentId,
+    studentId: userId,
+    status: 'in_progress',
+  }).select('deliveryPreparedAt deliverySections').lean();
+  if ((assessment.platformPublished === false || assessment.lifecycleStatus === 'draft') && !activeSubmission) {
+    throw new HttpError(404, 'Problem not found.');
+  }
 
   const studentId = String(userId);
   if (assessment.targetType !== 'all') {
@@ -129,7 +154,12 @@ export async function resolveActiveProblem(problemId, { userId, assessmentId, ac
     }
   }
 
-  if (!assessmentIncludesProblem(assessment, problemId)) {
+  if (!assessmentIncludesProblem(assessment, problemId, {
+    studentId: userId,
+    deliverySections: activeSubmission?.deliveryPreparedAt && Array.isArray(activeSubmission.deliverySections)
+      ? activeSubmission.deliverySections
+      : null,
+  })) {
     throw new HttpError(404, 'Problem not found.');
   }
 
