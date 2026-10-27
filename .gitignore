@@ -145,6 +145,7 @@ mongo-backup.bat
 # Local frontend debugging scripts and generated package archives
 /frontend/scripts/*
 !/frontend/scripts/compress-images.mjs
+!/frontend/scripts/build-production.mjs
 *.tgz
 
 # Python caches and local virtual environments

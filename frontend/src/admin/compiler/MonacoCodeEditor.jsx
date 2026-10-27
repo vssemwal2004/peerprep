@@ -5,6 +5,10 @@ import { AlertCircle } from 'lucide-react';
 // providers can return items while no autocomplete widget ever opens.
 import * as bundledMonaco from 'monaco-editor/esm/vs/editor/edcore.main';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+// C/C++ is used in assessments and must be available immediately. Keeping it
+// in the editor bundle avoids a stale/missing lazy chunk leaving production in
+// plaintext mode after a deployment.
+import 'monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution';
 import { getMonacoLanguage } from './compilerUtils';
 import {
   acquireIdentifierCompletions,
@@ -16,8 +20,8 @@ const MAX_CACHED_MODELS = 24;
 let rCompletionProviderRegistered = false;
 
 const languageContributionLoaders = {
-  c: () => import('monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution'),
-  cpp: () => import('monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution'),
+  c: () => Promise.resolve(),
+  cpp: () => Promise.resolve(),
   csharp: () => import('monaco-editor/esm/vs/basic-languages/csharp/csharp.contribution'),
   go: () => import('monaco-editor/esm/vs/basic-languages/go/go.contribution'),
   java: () => import('monaco-editor/esm/vs/basic-languages/java/java.contribution'),
@@ -399,7 +403,10 @@ export default function MonacoCodeEditor({
         fontFamily: "'JetBrains Mono', 'Cascadia Code', Consolas, monospace",
         fontSize: 14,
         lineHeight: 23,
-        fontLigatures: true,
+        // Show the exact source characters. With ligatures enabled, valid C++
+        // `!=` looked like a Unicode `≠`, which was easily mistaken for a
+        // compiler-breaking character.
+        fontLigatures: false,
         smoothScrolling: true,
         cursorBlinking: 'smooth',
         cursorSmoothCaretAnimation: 'explicit',
