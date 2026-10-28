@@ -12,8 +12,8 @@ test('invitation HTML remains markup and includes the rendered access sections',
   const template = validateAssessmentInvitationTemplate(input);
   const email = renderAssessmentInvitationEmail({
     to: 'candidate@example.com',
-    assessment: { title: 'Coding test', passwordEnabled: true },
-    student: { name: 'Candidate' },
+    assessment: { title: 'Coding test', passwordEnabled: true, settings: { candidateCredentialMode: 'student_id' } },
+    student: { name: 'Candidate', studentId: 'STUDENT-101' },
     password: 'exam-secret',
     accountPassword: 'login-secret',
     assessmentOnly: true,
@@ -22,6 +22,9 @@ test('invitation HTML remains markup and includes the rendered access sections',
   assert.match(email.html, /^<div style="color:#123456">/);
   assert.match(email.html, /login-secret/);
   assert.match(email.html, /exam-secret/);
+  assert.match(email.html, /STUDENT-101/);
+  assert.match(email.html, /sign in with either your email or Student ID/i);
+  assert.match(email.html, /initial password is your Student ID/i);
   assert.equal(email.subject, 'Invitation: Coding test');
 });
 

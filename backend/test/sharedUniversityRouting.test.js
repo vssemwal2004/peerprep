@@ -89,6 +89,12 @@ test('one API isolates university users, sessions and student lists with duplica
     });
     assert.equal(mainStudentWallet.status, 200);
     assert.equal((await mainStudentWallet.json()).balance, 0);
+    const mainStudentIdLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: 'PEERPREP-S1', password: 'student-password' }) });
+    const mainStudentIdPayload = await mainStudentIdLogin.json();
+    assert.equal(mainStudentIdLogin.status, 200, JSON.stringify(mainStudentIdPayload));
+    assert.equal(mainStudentIdPayload.user.universityId, null);
     const mainRecipientSearch = await fetch(`${origin}/api/platform/admin/wallet-recipients?role=student&search=peerprep-student`, {
       headers: { Cookie: platformCookie },
     });
@@ -181,7 +187,8 @@ test('one API isolates university users, sessions and student lists with duplica
     const idOnlyLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier: 'same-student-id', password: 'student-password' }) });
-    assert.equal(idOnlyLogin.status, 400);
+    assert.equal(idOnlyLogin.status, 409);
+    assert.match((await idOnlyLogin.json()).error, /more than one university/i);
     const {
       backfillLoginDirectory,
       loginDirectoryComplete,
@@ -200,6 +207,12 @@ test('one API isolates university users, sessions and student lists with duplica
       body: JSON.stringify({ identifier: 'late@example.test', password: 'late-password' }) });
     assert.equal(indexedLogin.status, 200);
     assert.equal((await indexedLogin.json()).user.universityId, 'gamma');
+    const indexedStudentIdLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: 'late-001', password: 'late-password' }) });
+    const indexedStudentIdPayload = await indexedStudentIdLogin.json();
+    assert.equal(indexedStudentIdLogin.status, 200, JSON.stringify(indexedStudentIdPayload));
+    assert.equal(indexedStudentIdPayload.user.universityId, 'gamma');
 
     // Existing production rows may retain mixed-case emails from older imports.
     // Both the root router and university-specific login must still resolve them.

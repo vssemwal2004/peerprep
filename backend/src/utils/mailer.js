@@ -219,13 +219,18 @@ export function renderAssessmentInvitationEmail({ to, assessment, student, passw
   const start = assessment.startTime ? new Date(assessment.startTime) : null;
   const end = assessment.endTime ? new Date(assessment.endTime) : null;
   const assessmentUrl = `${getDashboardUrl()}student/assessments`;
+  const studentId = String(student?.studentId || '').trim();
+  const usesStudentIdPassword = assessment?.settings?.candidateCredentialMode === 'student_id';
+  const signInIdentifiers = studentId
+    ? `<div style="margin-top:7px;font-size:14px;"><strong>Student ID:</strong> ${escapeHtml(studentId)}</div><div style="margin-top:7px;font-size:12px;color:#475569;">You can sign in with either your email or Student ID.</div>`
+    : '';
   const passwordSection = assessment.passwordEnabled
     ? `<div style="margin:20px 0;padding:16px;border:1px solid #fde68a;border-radius:10px;background:#fffbeb;color:#78350f;"><div style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;">Assessment password</div><div style="margin-top:7px;font-size:19px;font-weight:800;letter-spacing:.08em;">${escapeHtml(password)}</div><div style="margin-top:7px;font-size:12px;">Keep this password private.</div></div>`
     : '<div style="margin:20px 0;padding:14px;border-radius:10px;background:#ecfdf5;color:#065f46;font-size:13px;font-weight:700;">No assessment password is required.</div>';
   const credentialsSection = accountPassword
-    ? `<div style="margin:20px 0;padding:18px;border:1px solid #bae6fd;border-radius:12px;background:#f0f9ff;color:#0c4a6e;"><div style="font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;">Your PeerPrep login</div><div style="margin-top:10px;font-size:14px;"><strong>Email:</strong> ${escapeHtml(to)}</div><div style="margin-top:7px;font-size:14px;"><strong>Temporary password:</strong> ${escapeHtml(accountPassword)}</div><div style="margin-top:9px;font-size:12px;color:#475569;">Sign in to access this assessment. You will be asked to change the temporary password.</div></div>`
+    ? `<div style="margin:20px 0;padding:18px;border:1px solid #bae6fd;border-radius:12px;background:#f0f9ff;color:#0c4a6e;"><div style="font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;">Your PeerPrep login</div><div style="margin-top:10px;font-size:14px;"><strong>Email:</strong> ${escapeHtml(to)}</div>${signInIdentifiers}<div style="margin-top:7px;font-size:14px;"><strong>${usesStudentIdPassword ? 'Initial password' : 'Temporary password'}:</strong> ${escapeHtml(accountPassword)}</div><div style="margin-top:9px;font-size:12px;color:#475569;">Sign in to access this assessment.${usesStudentIdPassword ? ' For this assessment account, the initial password is your Student ID.' : ' You will be asked to change the temporary password.'}</div></div>`
     : assessmentOnly
-      ? '<div style="margin:20px 0;padding:14px;border-radius:10px;background:#f0f9ff;color:#0c4a6e;font-size:13px;">Use your existing assessment-candidate login to continue.</div>'
+      ? `<div style="margin:20px 0;padding:14px;border-radius:10px;background:#f0f9ff;color:#0c4a6e;font-size:13px;">Use your existing assessment-candidate login to continue.${studentId ? ` You may sign in with your email or Student ID <strong>${escapeHtml(studentId)}</strong>.` : ''}</div>`
       : '';
   const vars = {
     studentName: escapeHtml(student?.name || 'Student'),
