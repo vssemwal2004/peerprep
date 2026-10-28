@@ -155,6 +155,58 @@ test('common-set delivery shuffles questions deterministically on the server', (
   assert.deepEqual([...ids(first)].sort(), assessment.sections[0].questions.map((question) => question.questionId).sort());
 });
 
+test('question pool delivers only 25 of 100 questions as a fixed backend-selected subset', () => {
+  const poolIds = Array.from({ length: 100 }, (_, index) => `pool-${index + 1}`);
+  const assessment = {
+    _id: 'question-pool-assessment',
+    settings: {
+      questionSelectionEnabled: true,
+      questionRequirements: { mcq: 25 },
+      questionAttemptRequirements: { mcq: 25 },
+      questionDistributionMode: 'random_per_student',
+      questionDistributionModes: { mcq: 'random_per_student' },
+    },
+    sections: [{
+      sectionName: 'MCQ pool',
+      type: 'mcq',
+      questions: poolIds.map((questionId) => ({ questionId, type: 'mcq' })),
+    }],
+  };
+
+  const ids = (studentId) => buildDeliverySections(assessment, studentId)
+    .sections.flatMap((section) => section.questions.map((question) => question.questionId));
+  const firstDelivery = ids('student-1');
+  const resumedDelivery = ids('student-1');
+  const anotherStudentDelivery = ids('student-2');
+
+  assert.equal(firstDelivery.length, 25);
+  assert.equal(new Set(firstDelivery).size, 25);
+  assert.ok(firstDelivery.every((questionId) => poolIds.includes(questionId)));
+  assert.deepEqual(firstDelivery, resumedDelivery);
+  assert.notDeepEqual(firstDelivery, anotherStudentDelivery);
+});
+
+test('question pool can deliver the same fixed subset to every student', () => {
+  const assessment = {
+    _id: 'shared-question-pool-assessment',
+    settings: {
+      questionSelectionEnabled: true,
+      questionRequirements: { mcq: 5 },
+      questionDistributionModes: { mcq: 'same_for_all' },
+    },
+    sections: [{
+      sectionName: 'MCQ pool',
+      type: 'mcq',
+      questions: Array.from({ length: 20 }, (_, index) => ({ questionId: `shared-${index + 1}`, type: 'mcq' })),
+    }],
+  };
+
+  const first = buildDeliverySections(assessment, 'student-1').sections[0].questions;
+  const second = buildDeliverySections(assessment, 'student-2').sections[0].questions;
+  assert.equal(first.length, 5);
+  assert.deepEqual(first, second);
+});
+
 test('multi-set delivery shuffles only the assigned set and keeps it fixed for the candidate', () => {
   const makeQuestions = (prefix) => Array.from({ length: 8 }, (_, index) => ({
     questionId: `${prefix}${index + 1}`,

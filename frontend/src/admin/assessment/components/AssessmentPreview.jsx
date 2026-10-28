@@ -60,7 +60,7 @@ export default function AssessmentPreview({ assessment }) {
 
         {settings.questionSelectionEnabled && (
           <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/60 p-3 dark:border-sky-900/50 dark:bg-sky-950/20">
-            <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold text-slate-800 dark:text-white">Candidate question delivery</p><p className="mt-0.5 text-[10px] text-slate-500 dark:text-gray-400">Final rules configured independently for each question type.</p></div><span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300">Choice enabled</span></div>
+            <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold text-slate-800 dark:text-white">Question pool delivery</p><p className="mt-0.5 text-[10px] text-slate-500 dark:text-gray-400">The backend selects a fixed subset independently for each question type.</p></div><span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300">Pool shuffle enabled</span></div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {[
                 ['mcq', 'MCQ'],

@@ -1898,11 +1898,11 @@ export default function CreateAssessment({ viewOnly = false }) {
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-4 py-4 dark:border-gray-800">
               <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Question choice</h3>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">Control how many questions each student sees and needs to answer.</p>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Question pool shuffle</h3>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">Upload a larger pool and let the backend select only the configured number for each student.</p>
               </div>
               <label className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-800">
-                <span className="text-right"><span className="block text-xs font-bold text-slate-700 dark:text-gray-200">Enable choice</span><span className="block text-[10px] text-slate-500">Optional questions</span></span>
+                <span className="text-right"><span className="block text-xs font-bold text-slate-700 dark:text-gray-200">Enable pool shuffle</span><span className="block text-[10px] text-slate-500">Random backend subset</span></span>
                 <Toggle value={Boolean(form.settings?.questionSelectionEnabled)} onChange={toggleQuestionSelection} />
               </label>
             </div>
@@ -1910,8 +1910,8 @@ export default function CreateAssessment({ viewOnly = false }) {
               <div className="space-y-4 p-4">
                 <div className="grid gap-2 sm:grid-cols-3">
                   {[
-                    { label: 'Total questions', value: questionChoiceSummary.created, helper: `Created by ${managerLabel}` },
-                    { label: 'Each student sees', value: questionChoiceSummary.shown, helper: 'Selected from total' },
+                    { label: 'Question pool', value: questionChoiceSummary.created, helper: `Uploaded by ${managerLabel}` },
+                    { label: 'Delivered per student', value: questionChoiceSummary.shown, helper: 'Selected securely on backend' },
                     { label: 'Student answers', value: questionChoiceSummary.required, helper: 'Required to attempt' },
                   ].map((item) => <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 dark:border-gray-700 dark:bg-gray-800/70"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{item.label}</p><p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{item.value}</p><p className="text-[10px] text-slate-500">{item.helper}</p></div>)}
                 </div>
@@ -1951,7 +1951,7 @@ export default function CreateAssessment({ viewOnly = false }) {
                       <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600 dark:bg-gray-800 dark:text-gray-300">From <strong>{activeDeliveryCount}</strong> {activeDeliveryDefinition.label.toLowerCase()} question{activeDeliveryCount === 1 ? '' : 's'}, each student sees <strong>{activeDeliveryShown}</strong> and must answer <strong>{activeDeliveryRequired}</strong>.</p>
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-slate-800 dark:text-white">Who receives which questions?</p>
+                      <p className="text-xs font-bold text-slate-800 dark:text-white">How should the backend select the subset?</p>
                       <div className="mt-2 grid gap-2">
                         {QUESTION_DISTRIBUTION_MODES.map((mode) => {
                           const active = activeDistributionMode === mode.id;
@@ -1963,11 +1963,11 @@ export default function CreateAssessment({ viewOnly = false }) {
                 </div>
 
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2.5 text-xs leading-5 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200">
-                  <strong>Current rule:</strong> {activeDistributionMode === 'random_per_student' ? 'students can receive different fixed sets' : 'every student receives the same fixed set'} of {activeDeliveryShown} {activeDeliveryDefinition.label.toLowerCase()} question{activeDeliveryShown === 1 ? '' : 's'}, and they must answer {activeDeliveryRequired}.
+                  <strong>Current rule:</strong> the backend shuffles the pool and {activeDistributionMode === 'random_per_student' ? 'gives each student a fixed random subset' : 'gives every student the same fixed subset'} of {activeDeliveryShown} {activeDeliveryDefinition.label.toLowerCase()} question{activeDeliveryShown === 1 ? '' : 's'}. Students must answer {activeDeliveryRequired}. The subset stays unchanged after refresh or resume.
                 </div>
               </div>
             )}
-            {!form.settings?.questionSelectionEnabled && <div className="px-4 py-3 text-xs text-slate-500 dark:text-gray-400">Choice is off: every student will see all {questionChoiceSummary.created} questions, with no optional-question rule applied.</div>}
+            {!form.settings?.questionSelectionEnabled && <div className="px-4 py-3 text-xs text-slate-500 dark:text-gray-400">Pool shuffle is off: every student will receive all {questionChoiceSummary.created} questions. Example: upload 100 questions, enable this feature, and set Show to 25 to deliver only 25.</div>}
           </section>
         )}
       </div>
