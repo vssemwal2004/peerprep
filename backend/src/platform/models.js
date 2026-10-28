@@ -87,7 +87,9 @@ const settingsSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const loginIdentitySchema = new mongoose.Schema({
-  emailKey: { type: String, required: true, index: true },
+  emailKey: { type: String, index: true },
+  // Keyed digest of a student's ID, so the main login also accepts Student ID.
+  studentIdKey: { type: String, index: { sparse: true } },
   universityId: { type: String, required: true },
   userId: { type: mongoose.Schema.Types.ObjectId, required: true },
 }, { timestamps: true });

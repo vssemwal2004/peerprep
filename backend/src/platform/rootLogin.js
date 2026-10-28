@@ -5,15 +5,45 @@ import { login, requestPasswordReset } from '../controllers/authController.js';
 import { deploymentRole } from './deployment.js';
 import { currentTenant, runForTenant } from './tenantContext.js';
 import { getTenant } from './tenantConnections.js';
-import { findLiveLoginCandidates, normalizedLoginEmail } from './loginDirectory.js';
+import { findLiveLoginCandidates, findLiveStudentIdCandidates, normalizedLoginEmail, normalizedLoginStudentId } from './loginDirectory.js';
 import { servicePeriodStatus, servicePeriodMessage } from './servicePeriod.js';
 import { exactEmailPattern } from '../utils/emailIdentity.js';
 
+// Student IDs are not unique across universities: sign in only when exactly
+// one student account has this ID and the password matches it.
+async function routeStudentIdLogin(req, res, studentId, password) {
+  const matches = [];
+  const platformStudent = await User.findOne({ role: 'student', studentId }).select('passwordHash').lean();
+  if (platformStudent?.passwordHash && await bcrypt.compare(password, platformStudent.passwordHash)) {
+    matches.push({ platform: true });
+  }
+  for (const candidate of await findLiveStudentIdCandidates(studentId)) {
+    const tenant = await getTenant(candidate.universityId);
+    const user = await runForTenant(tenant, () => User.findById(candidate.userId).select('passwordHash').lean());
+    if (user?.passwordHash && await bcrypt.compare(password, user.passwordHash)) matches.push({ tenant });
+  }
+  if (!matches.length) throw new HttpError(401, 'Invalid credentials');
+  if (matches.length > 1) {
+    throw new HttpError(409, 'This student ID is used at more than one university. Sign in with your email or use the login link from your university.');
+  }
+  const [{ platform, tenant }] = matches;
+  if (platform) return login(req, res);
+  const period = servicePeriodStatus(tenant);
+  if (period !== 'active') throw new HttpError(403, servicePeriodMessage(tenant, period));
+  return runForTenant(tenant, () => login(req, res));
+}
+
 export async function routeLogin(req, res) {
   if (deploymentRole() !== 'shared' || currentTenant()) return login(req, res);
-  const email = normalizedLoginEmail(req.body?.identifier || req.body?.email);
+  const identifier = req.body?.identifier || req.body?.email;
+  const email = normalizedLoginEmail(identifier);
   const password = req.body?.password;
-  if (!email || !password) throw new HttpError(400, 'Enter your email and password');
+  if (!password) throw new HttpError(400, 'Enter your email or student ID and password');
+  if (!email) {
+    const studentId = normalizedLoginStudentId(identifier);
+    if (!studentId) throw new HttpError(400, 'Enter your email or student ID and password');
+    return routeStudentIdLogin(req, res, studentId, password);
+  }
 
   // PeerPrep's own admins, coordinators and students stay in the main DB.
   // University accounts use their own DB and carry a university session claim.

@@ -181,7 +181,10 @@ test('roster: full list with not-started candidates, graded-only scores, no heav
   assert.equal(full.body.full, true);
   assert.equal(full.body.rows.length, 3);
   assert.doesNotMatch(JSON.stringify(full.body), /HEAVY-SNAPSHOT|First\?|correctOptionIndex|secret-hash|deliverySections|"answers"/);
-  assert.deepEqual(Object.keys(full.body.assessment).sort(), ['_id', 'duration', 'endTime', 'passPercentage', 'startTime', 'status', 'title', 'totalMarks', 'totalQuestions']);
+  assert.deepEqual(Object.keys(full.body.assessment).sort(), ['_id', 'duration', 'endTime', 'passPercentage', 'resultsReleasedAt',
+    'showResultsAfterSubmit', 'startTime', 'status', 'title', 'totalMarks', 'totalQuestions']);
+  assert.equal(full.body.assessment.resultsReleasedAt, null);
+  assert.equal(full.body.assessment.showResultsAfterSubmit, false);
   assert.equal(full.body.assessment.totalQuestions, 2);
   assert.equal(full.body.assessment.status, 'Active');
   const byKey = new Map(full.body.rows.map((row) => [row.key, row]));
@@ -244,6 +247,8 @@ test('release-results: permission matrix, idempotent release time, and the stude
   assert.ok(released.body.resultsReleasedAt);
   const again = await call(admin, path, { method: 'POST', body: { release: true } });
   assert.equal(again.body.resultsReleasedAt, released.body.resultsReleasedAt);
+  const roster = await call(admin, `/admin/assessment/${assessment._id}/report/roster`);
+  assert.equal(roster.body.assessment.resultsReleasedAt, released.body.resultsReleasedAt);
   const open = await studentRow();
   assert.equal(open.permissions.resultReleased, true);
   assert.equal(open.score, 3);

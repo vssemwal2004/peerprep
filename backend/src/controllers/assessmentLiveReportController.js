@@ -57,6 +57,7 @@ async function loadRosterAssessment(assessmentId) {
     { $project: {
       title: 1, totalMarks: 1, startTime: 1, endTime: 1, duration: 1, lifecycleStatus: 1, manuallyCompletedAt: 1,
       targetType: 1, passPercentage: '$settings.passPercentage',
+      resultsReleasedAt: '$settings.resultsReleasedAt', showResultsAfterSubmit: '$settings.showResultsAfterSubmit',
       assignedCount: { $size: { $ifNull: ['$assignedStudents', []] } },
       totalQuestions: questionCountExpression('$sections'),
     } },
@@ -68,6 +69,7 @@ async function loadRosterAssessment(assessmentId) {
     _id: shared._id, title: shared.title, totalMarks: shared.totalMarks, startTime: shared.startTime, endTime: shared.endTime,
     duration: shared.duration, lifecycleStatus: shared.lifecycleStatus, manuallyCompletedAt: shared.manuallyCompletedAt,
     targetType: shared.targetType, passPercentage: shared.settings?.passPercentage,
+    resultsReleasedAt: shared.settings?.resultsReleasedAt, showResultsAfterSubmit: shared.settings?.showResultsAfterSubmit,
     assignedCount: (shared.assignedStudents || []).length, assignedStudents: shared.assignedStudents || [],
     totalQuestions: (shared.sections || []).reduce((sum, section) => sum + (section?.questions || []).length, 0),
     shared: true,
@@ -257,6 +259,8 @@ export async function getAssessmentRoster(req, res) {
         endTime: isoOrNull(assessment.endTime),
         duration: finiteOrNull(assessment.duration),
         status: assessmentStatus(assessment, now),
+        resultsReleasedAt: isoOrNull(normalizeAssessmentSettings({ resultsReleasedAt: assessment.resultsReleasedAt }).resultsReleasedAt),
+        showResultsAfterSubmit: Boolean(assessment.showResultsAfterSubmit),
       },
     });
   } catch (error) { return respondAccessError(res, error); }

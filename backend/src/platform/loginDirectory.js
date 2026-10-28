@@ -18,15 +18,37 @@ export function loginEmailKey(value) {
     .update(email).digest('hex');
 }
 
+// Student IDs are matched exactly, as the tenant login does. Bounded so a
+// login request cannot carry an arbitrary payload into the lookup.
+export function normalizedLoginStudentId(value) {
+  const studentId = String(value ?? '').trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$/.test(studentId) ? studentId : '';
+}
+
+export function loginStudentIdKey(value) {
+  const studentId = normalizedLoginStudentId(value);
+  if (!studentId) return '';
+  return crypto.createHmac('sha256', Buffer.from(process.env.PEERPREP_TENANT_SECRET_KEY || '', 'base64'))
+    .update(`student-id:${studentId}`).digest('hex');
+}
+
 export async function syncTenantLoginIdentity(user, universityId = currentTenant()?.universityId) {
   if (!universityId || !user?._id) return;
   const filter = { universityId, userId: user._id };
   const emailKey = loginEmailKey(user.email);
-  if (!emailKey) {
+  const studentIdKey = user.role === 'student' ? loginStudentIdKey(user.studentId) : '';
+  if (!emailKey && !studentIdKey) {
     await PlatformLoginIdentity.deleteOne(filter);
     return;
   }
-  await PlatformLoginIdentity.updateOne(filter, { $set: { emailKey } }, { upsert: true });
+  const set = {};
+  const unset = {};
+  if (emailKey) set.emailKey = emailKey; else unset.emailKey = '';
+  if (studentIdKey) set.studentIdKey = studentIdKey; else unset.studentIdKey = '';
+  await PlatformLoginIdentity.updateOne(filter, {
+    $set: set,
+    ...(Object.keys(unset).length ? { $unset: unset } : {}),
+  }, { upsert: true });
 }
 
 export async function loginDirectoryCandidates(email) {
@@ -56,7 +78,7 @@ export async function findLiveLoginCandidates(email) {
       try {
         const tenant = await getTenant(id);
         const user = await runForTenant(tenant, () => User.findOne({ email: exactEmailPattern(normalized) })
-          .select('_id email role').lean().maxTimeMS(3000));
+          .select('_id email role studentId').lean().maxTimeMS(3000));
         if (user) await syncTenantLoginIdentity(user, id);
         return user ? { universityId: id, userId: user._id } : null;
       } catch { return { unavailable: true }; }
@@ -69,7 +91,8 @@ export async function findLiveLoginCandidates(email) {
   // A deleted or renamed account cannot be used to route a login.
   for (const row of indexed) {
     if (!results.some((result) => result.universityId === row.universityId && String(result.userId) === String(row.userId))) {
-      await PlatformLoginIdentity.deleteOne({ _id: row._id });
+      // The row may still route the same user's student ID.
+      await PlatformLoginIdentity.updateOne({ _id: row._id }, { $unset: { emailKey: '' } });
     }
   }
   return results;
@@ -78,9 +101,10 @@ export async function findLiveLoginCandidates(email) {
 export async function backfillTenantLoginDirectory(tenant) {
   let lastId;
   while (true) {
-    const users = await runForTenant(tenant, () => User.find({ email: { $type: 'string', $ne: '' },
+    const users = await runForTenant(tenant, () => User.find({
+      $or: [{ email: { $type: 'string', $ne: '' } }, { role: 'student', studentId: { $type: 'string', $ne: '' } }],
       ...(lastId ? { _id: { $gt: lastId } } : {}) })
-      .sort({ _id: 1 }).limit(250).select('_id email').lean());
+      .sort({ _id: 1 }).limit(250).select('_id email role studentId').lean());
     if (!users.length) break;
     for (const user of users) await syncTenantLoginIdentity(user, tenant.universityId);
     lastId = users.at(-1)._id;
@@ -92,5 +116,46 @@ export async function backfillLoginDirectory() {
     const tenant = await getTenant(id);
     await backfillTenantLoginDirectory(tenant);
   }
-  await PlatformLoginDirectoryState.updateOne({ _id: 'email' }, { $set: { completedAt: new Date() } }, { upsert: true });
+  const completedAt = new Date();
+  await PlatformLoginDirectoryState.updateOne({ _id: 'email' }, { $set: { completedAt } }, { upsert: true });
+  await PlatformLoginDirectoryState.updateOne({ _id: 'studentId' }, { $set: { completedAt } }, { upsert: true });
+}
+
+export async function studentIdDirectoryComplete() {
+  return Boolean((await PlatformLoginDirectoryState.findById('studentId').select('completedAt').lean())?.completedAt);
+}
+
+// University students whose ID matches. Same recovery rule as email: rows
+// imported without save hooks (bulk uploads) are found by a bounded scan and
+// written back to the directory.
+export async function findLiveStudentIdCandidates(value) {
+  const studentId = normalizedLoginStudentId(value);
+  const studentIdKey = loginStudentIdKey(studentId);
+  if (!studentIdKey) return [];
+  const indexed = await PlatformLoginIdentity.find({ studentIdKey }).select('universityId userId').lean();
+  const scanAll = !(await studentIdDirectoryComplete()) || indexed.length === 0;
+  const ids = scanAll ? await listActiveUniversityIds() : [...new Set(indexed.map((row) => row.universityId))];
+  const results = [];
+  let unavailable = false;
+  for (let offset = 0; offset < ids.length; offset += 3) {
+    const batch = await Promise.all(ids.slice(offset, offset + 3).map(async (id) => {
+      try {
+        const tenant = await getTenant(id);
+        const user = await runForTenant(tenant, () => User.findOne({ role: 'student', studentId })
+          .select('_id email role studentId').lean().maxTimeMS(3000));
+        if (user) await syncTenantLoginIdentity(user, id);
+        return user ? { universityId: id, userId: user._id } : null;
+      } catch { return { unavailable: true }; }
+    }));
+    if (batch.some((row) => row?.unavailable)) unavailable = true;
+    results.push(...batch.filter((row) => row && !row.unavailable));
+  }
+  if (unavailable) throw new HttpError(503, 'University login is temporarily unavailable');
+  if (scanAll) return results;
+  for (const row of indexed) {
+    if (!results.some((result) => result.universityId === row.universityId && String(result.userId) === String(row.userId))) {
+      await PlatformLoginIdentity.updateOne({ _id: row._id }, { $unset: { studentIdKey: '' } });
+    }
+  }
+  return results;
 }
