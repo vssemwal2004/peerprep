@@ -3,21 +3,71 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import {
-  ArrowLeft, ArrowRight, BarChart3, Download, FileSpreadsheet,
-  GraduationCap, Layers, LayoutDashboard, RotateCcw, Search,
+  ArrowLeft, ArrowRight, BarChart3, Clock, Download, FileSpreadsheet, Filter,
+  GraduationCap, LayoutDashboard, Megaphone, RotateCcw, Search,
   ShieldAlert, SlidersHorizontal, Target, TrendingUp, Users, X,
 } from 'lucide-react';
-import { Sparkline } from './reports/ReportCharts';
 import {
-  TrendBadge, KpiCard, FilterChip, SortHeader,
-  AssessmentListItem, TableEmpty, TableRow, SkeletonRow,
+  KpiCard, FilterChip, SortHeader,
+  TableEmpty, TableRow, SkeletonRow,
   formatDuration, formatDateTime,
 } from './reports/ReportComponents';
 import ReportDetailDrawer from './reports/ReportDetailDrawer';
 import ReportViolationModal from './reports/ReportViolationModal';
 import { assessmentAnalysisPath } from './prepAnalysis/analysisPreset';
+import useLiveAssessmentRoster from './reports/useLiveAssessmentRoster';
+import {
+  DEFAULT_ROSTER_FILTERS, DISTRIBUTION_BUCKETS, ROSTER_EVALUATION_OPTIONS, ROSTER_PAGE_SIZES,
+  ROSTER_STATUS_OPTIONS, ROSTER_TYPE_OPTIONS, computeRosterStats, filterRosterRows,
+  formatRelativeAge, hasActiveRosterFilters, paginateRows, rowHasViolations, rowViolationCount,
+  sortRosterRows,
+} from './reports/rosterModel';
 
-const PAGE_SIZES = [25, 50, 100, 250];
+const PAGE_SIZES = ROSTER_PAGE_SIZES;
+
+const ROSTER_COLUMN_LABELS = {
+  student: 'Candidate', status: 'Status', progress: 'Progress', score: 'Score',
+  startedAt: 'Started', submittedAt: 'Submitted', time: 'Time', violations: 'Flags',
+};
+
+const OUTCOME_SEGMENTS = [
+  { key: 'passed', label: 'Passed', bar: 'bg-lime-500', tile: 'bg-lime-50 text-lime-700 dark:bg-lime-900/15 dark:text-lime-400' },
+  { key: 'failed', label: 'Failed', bar: 'bg-rose-400', tile: 'bg-rose-50 text-rose-700 dark:bg-rose-900/15 dark:text-rose-300' },
+  { key: 'graded', label: 'Graded', bar: 'bg-sky-600', tile: 'bg-sky-50 text-sky-700 dark:bg-sky-900/15 dark:text-sky-300', optional: true },
+  { key: 'evaluating', label: 'Evaluating', bar: 'bg-slate-400', tile: 'bg-slate-50 text-slate-600 dark:bg-gray-800 dark:text-gray-300' },
+  { key: 'needs_review', label: 'Needs review', bar: 'bg-amber-400', tile: 'bg-amber-50 text-amber-700 dark:bg-amber-900/15 dark:text-amber-300', optional: true },
+  { key: 'in_progress', label: 'In progress', bar: 'bg-sky-400', tile: 'bg-sky-50 text-sky-700 dark:bg-sky-900/15 dark:text-sky-300' },
+  { key: 'not_started', label: 'Not started', bar: 'bg-slate-200 dark:bg-gray-700', tile: 'bg-slate-50 text-slate-500 dark:bg-gray-800 dark:text-gray-400' },
+];
+
+/** Shape a roster row the way the detail drawer and violation modal expect. */
+const toDrawerStudent = (row) => ({
+  ...row,
+  _id: row.submissionId,
+  studentName: row.name,
+  studentId: row.rollNo || row.email || '',
+  attemptDate: row.startedAt,
+  violationCount: rowViolationCount(row),
+});
+
+function LiveIndicator({ live, lastUpdatedAt, mode, loading }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const label = live ? 'Live' : mode === 'legacy' ? 'Auto-refresh' : 'Offline · retrying';
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${live ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}
+      title={live ? 'Updates arrive as candidates save answers' : 'Live updates unavailable; refreshing every 60 seconds'}
+      aria-live="polite"
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${live ? 'animate-pulse bg-emerald-500' : 'bg-slate-400'}`} />
+      {label} · {loading && !lastUpdatedAt ? 'loading…' : `updated ${formatRelativeAge(lastUpdatedAt, now)}`}
+    </span>
+  );
+}
 
 const reportAssessmentStatus = (assessment, now = Date.now()) => {
   if (assessment.isVisible === false) return 'Archived';
@@ -144,16 +194,11 @@ export default function AssessmentReports() {
 
   /* View state */
   const [activeTab, setActiveTab] = useState('overview');
-  const [selectedAssessmentId, setSelectedAssessmentId] = useState('');
+  const [selectedAssessmentId, setSelectedAssessmentId] = useState(initialAssessmentId);
 
-  /* Filters */
-  const [filters, setFilters] = useState({
-    assessmentId: initialAssessmentId, assessmentType: '', studentQuery: '', status: '',
-    createdBy: '', tag: '', department: '', difficulty: '',
-    from: '', to: '', scoreMin: '', scoreMax: '',
-    completionRateMin: '', completionRateMax: '', attemptsMin: '', attemptsMax: '',
-    assessmentWindow: 'all',
-  });
+  /* Candidate filters (all client-side, applied to the live roster) */
+  const [rosterFilters, setRosterFilters] = useState(DEFAULT_ROSTER_FILTERS);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [assessmentSearch, setAssessmentSearch] = useState('');
   const [statusTime, setStatusTime] = useState(() => Date.now());
 
@@ -162,36 +207,40 @@ export default function AssessmentReports() {
     return () => window.clearInterval(timer);
   }, []);
 
-  /* Data */
+  /* Page shell data (assessment list); loaded once, not per filter change */
   const [assessments, setAssessments] = useState([]);
   const [allAssessments, setAllAssessments] = useState([]);
-  const [students, setStudents] = useState([]);
-  const [summary, setSummary] = useState({});
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0 });
-  const [loading, setLoading] = useState(true);
-  const [sort, setSort] = useState({ key: 'attemptDate', dir: 'desc' });
+  const [shellLoading, setShellLoading] = useState(true);
+  const [shellVersion, setShellVersion] = useState(0);
+  const [sort, setSort] = useState({ key: 'status', dir: 'asc' });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   /* Detail drawer */
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState(null);
+  const detailRequestRef = useRef(0);
+  const detailVersionRef = useRef('');
 
   /* Violation modal */
   const [violationReport, setViolationReport] = useState(null);
   const [violationsLoading, setViolationsLoading] = useState(false);
 
+  /* Results release */
+  const [releaseSettings, setReleaseSettings] = useState(null);
+  const [releaseBusy, setReleaseBusy] = useState(false);
+  const [releaseConfirm, setReleaseConfirm] = useState(null);
+
   /* Column visibility */
   const [visibleColumns, setVisibleColumns] = useState({
-    student: true, attemptDate: true, attempts: true, score: true,
-    accuracy: true, time: true, violations: true, status: true,
-    rank: false, percentile: false, sectionBreakdown: false,
+    student: true, status: true, progress: true, score: true,
+    startedAt: true, submittedAt: false, time: true, violations: true,
   });
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportColumns, setExportColumns] = useState(loadSavedExportColumns);
-  const [availableExportKeys, setAvailableExportKeys] = useState([]);
-  const [loadingExportMeta, setLoadingExportMeta] = useState(false);
 
   const selectedAssessment = useMemo(
     () => allAssessments.find((a) => String(a._id) === String(selectedAssessmentId))
@@ -199,9 +248,26 @@ export default function AssessmentReports() {
     [allAssessments, assessments, selectedAssessmentId]
   );
 
-  const updateFilter = useCallback((key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
-    setPagination((p) => ({ ...p, page: 1 }));
+  const roster = useLiveAssessmentRoster(selectedAssessmentId, { fallbackAssessment: selectedAssessment });
+
+  /* Shell metadata merged with the roster's authoritative assessment summary. */
+  const reportAssessment = useMemo(() => {
+    if (!selectedAssessment && !roster.assessment) return null;
+    return { ...(selectedAssessment || {}), ...(roster.assessment || {}) };
+  }, [selectedAssessment, roster.assessment]);
+  const passPercentage = reportAssessment?.passPercentage ?? reportAssessment?.settings?.passPercentage ?? null;
+
+  const updateRosterFilter = useCallback((key, value) => {
+    setRosterFilters((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const toggleStatusFilter = useCallback((status) => {
+    setRosterFilters((prev) => ({
+      ...prev,
+      statuses: prev.statuses.includes(status)
+        ? prev.statuses.filter((item) => item !== status)
+        : [...prev.statuses, status],
+    }));
   }, []);
 
   const selectAssessmentReport = useCallback((assessmentOrId, options = {}) => {
@@ -211,8 +277,6 @@ export default function AssessmentReports() {
     if (!id) return;
 
     setSelectedAssessmentId(id);
-    setFilters((prev) => ({ ...prev, assessmentId: id }));
-    setPagination((p) => ({ ...p, page: 1 }));
     if (options.openOverview !== false) setActiveTab('overview');
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -234,72 +298,128 @@ export default function AssessmentReports() {
     return () => { active = false; };
   }, [toast]);
 
-  useEffect(() => {
-    setSelectedAssessmentId(filters.assessmentId || '');
-  }, [filters.assessmentId]);
-
-  /* ── Load reports (debounced) ── */
+  /* ── Page shell: assessment list from the reports endpoint, loaded once (and on manual refresh) ── */
   useEffect(() => {
     let active = true;
-    const timeout = setTimeout(async () => {
-      setLoading(true);
+    const loadShell = async () => {
+      setShellLoading(true);
       try {
-        const params = { ...filters, page: pagination.page, limit: pagination.limit, sortKey: sort.key, sortDir: sort.dir };
-        if (activeTab === 'violations') params.hasViolations = 'true';
-        const data = await api.getAssessmentReports(params);
+        const data = await api.getAssessmentReports({ page: 1, limit: 25 });
         if (!active) return;
-        // Handle different data structures
-        const assessments = data.assessments || data || [];
-        const students = data.students || data.reports || [];
-        const summary = data.summary || data.analytics || {};
-        const total = data.pagination?.total || data.total || 0;
-        setAssessments(Array.isArray(assessments) ? assessments : []);
-        setStudents(Array.isArray(students) ? students : []);
-        setSummary(summary);
-        setPagination((prev) => ({ ...prev, total }));
+        setAssessments(Array.isArray(data?.assessments) ? data.assessments : []);
       } catch (err) {
+        if (!active) return;
         console.error('Error loading reports:', err);
         toast.error(err.message || 'Failed to load reports');
-        // Set empty data on error to prevent UI from hanging
         setAssessments([]);
-        setStudents([]);
-        setSummary({});
-        setPagination((prev) => ({ ...prev, total: 0 }));
       } finally {
-        if (active) setLoading(false);
+        if (active) setShellLoading(false);
       }
-    }, 350);
-    return () => { active = false; clearTimeout(timeout); };
-  }, [filters, pagination.page, pagination.limit, sort, activeTab, toast]);
+    };
+    void loadShell();
+    return () => { active = false; };
+  }, [shellVersion, toast]);
 
   useEffect(() => {
-    if (!selectedAssessmentId) return;
-    const source = allAssessments.length ? allAssessments : assessments;
-    if (!source.length) {
-      if (selectedAssessmentId) setSelectedAssessmentId('');
-      return;
-    }
-    const selectedStillExists = source.some((a) => String(a._id) === String(selectedAssessmentId));
-    if (!selectedStillExists) {
-      setSelectedAssessmentId('');
-      setFilters((prev) => ({ ...prev, assessmentId: '' }));
-    }
+    // Validate only against the full assessment list; the shell list may be partial.
+    if (!selectedAssessmentId || !allAssessments.length) return;
+    const selectedStillExists = allAssessments.some((a) => String(a._id) === String(selectedAssessmentId))
+      || assessments.some((a) => String(a._id) === String(selectedAssessmentId));
+    if (!selectedStillExists) setSelectedAssessmentId('');
   }, [allAssessments, assessments, selectedAssessmentId]);
 
-  /* ── Load student detail ── */
-  const openStudentDetail = useCallback(async (studentRow) => {
-    setSelectedStudent(studentRow);
-    setDetailLoading(true);
-    setDetailData(null);
+  /* Client pagination returns to page 1 whenever the visible set changes shape. */
+  useEffect(() => { setPage(1); }, [rosterFilters, sort, selectedAssessmentId, activeTab, pageSize]);
+
+  /* ── Results release state for the selected assessment ── */
+  useEffect(() => {
+    setReleaseSettings(null);
+    setReleaseConfirm(null);
+    if (!selectedAssessmentId) return undefined;
+    let active = true;
+    api.getAssessmentById(selectedAssessmentId)
+      .then((data) => {
+        if (!active) return;
+        const settings = data?.assessment?.settings || {};
+        setReleaseSettings({
+          showResultsAfterSubmit: Boolean(settings.showResultsAfterSubmit),
+          resultsReleasedAt: settings.resultsReleasedAt || data?.assessment?.resultsReleasedAt || null,
+        });
+      })
+      .catch(() => { if (active) setReleaseSettings({ showResultsAfterSubmit: false, resultsReleasedAt: null, unknown: true }); });
+    return () => { active = false; };
+  }, [selectedAssessmentId]);
+
+  // A release/withdraw made on this page wins; otherwise prefer the roster's copy if it sends one.
+  const resultsReleasedAt = !releaseSettings?.changedHere && roster.assessment
+    && Object.prototype.hasOwnProperty.call(roster.assessment, 'resultsReleasedAt')
+    ? roster.assessment.resultsReleasedAt
+    : releaseSettings?.resultsReleasedAt || null;
+
+  const confirmReleaseChange = useCallback(async () => {
+    if (!releaseConfirm || !selectedAssessmentId) return;
+    const release = releaseConfirm === 'release';
+    setReleaseBusy(true);
     try {
-      const data = await api.getStudentAssessmentReport(studentRow._id);
-      setDetailData(data);
+      const data = await api.releaseAssessmentResults(selectedAssessmentId, release);
+      setReleaseSettings((prev) => ({ ...(prev || {}), changedHere: true, resultsReleasedAt: release ? data?.resultsReleasedAt || new Date().toISOString() : null }));
+      toast.success(release ? 'Results released to students' : 'Results hidden from students');
+      setReleaseConfirm(null);
     } catch (err) {
-      toast.error(err.message || 'Failed to load student report');
+      toast.error(err?.response?.status === 404
+        ? 'Releasing results is not available on this server yet.'
+        : err.message || 'Failed to update result release');
     } finally {
-      setDetailLoading(false);
+      setReleaseBusy(false);
+    }
+  }, [releaseConfirm, selectedAssessmentId, toast]);
+
+  /* ── Load student detail ── */
+  const loadStudentDetail = useCallback(async (submissionId, { silent = false } = {}) => {
+    const requestId = detailRequestRef.current + 1;
+    detailRequestRef.current = requestId;
+    if (!silent) {
+      setDetailLoading(true);
+      setDetailData(null);
+    }
+    try {
+      const data = await api.getStudentAssessmentReport(submissionId);
+      if (detailRequestRef.current === requestId) setDetailData(data);
+    } catch (err) {
+      if (!silent && detailRequestRef.current === requestId) toast.error(err.message || 'Failed to load student report');
+    } finally {
+      if (!silent && detailRequestRef.current === requestId) setDetailLoading(false);
     }
   }, [toast]);
+
+  const openStudentDetail = useCallback((studentRow) => {
+    if (!studentRow?.submissionId) return;
+    setSelectedStudent(studentRow);
+    detailVersionRef.current = `${studentRow.updatedAt || ''}|${studentRow.status}|${studentRow.evaluationStatus}|${studentRow.answeredCount}`;
+    void loadStudentDetail(studentRow.submissionId);
+  }, [loadStudentDetail]);
+
+  const closeStudentDetail = useCallback(() => {
+    detailRequestRef.current += 1;
+    detailVersionRef.current = '';
+    setSelectedStudent(null);
+    setDetailData(null);
+    setDetailLoading(false);
+  }, []);
+
+  /* Keep an open drawer in step with live roster changes for that candidate. */
+  const openRosterRow = useMemo(
+    () => (selectedStudent ? roster.rows.find((row) => row.key === selectedStudent.key) || null : null),
+    [roster.rows, selectedStudent],
+  );
+  const openRowVersion = openRosterRow
+    ? `${openRosterRow.updatedAt || ''}|${openRosterRow.status}|${openRosterRow.evaluationStatus}|${openRosterRow.answeredCount}`
+    : '';
+  useEffect(() => {
+    if (!openRosterRow?.submissionId || !openRowVersion || openRowVersion === detailVersionRef.current) return;
+    detailVersionRef.current = openRowVersion;
+    void loadStudentDetail(openRosterRow.submissionId, { silent: true });
+  }, [loadStudentDetail, openRosterRow, openRowVersion]);
 
   /* ── Violation report ── */
   const openViolationReport = useCallback(async (submissionId) => {
@@ -320,22 +440,23 @@ export default function AssessmentReports() {
     toast.success('Export preferences saved');
   }, [exportColumns, toast]);
 
+  // There is no export-metadata endpoint; the column list is the static
+  // EXPORT_COLUMN_DEFS contract, so opening the modal costs no request.
   const setAllExportColumns = useCallback((checked) => {
     setExportColumns((prev) => ({
       ...prev,
-      ...Object.fromEntries(
-        EXPORT_COLUMN_DEFS
-          .filter(({ key }) => !availableExportKeys.length || availableExportKeys.includes(key))
-          .map(({ key }) => [key, checked]),
-      ),
+      ...Object.fromEntries(EXPORT_COLUMN_DEFS.map(({ key }) => [key, checked])),
     }));
-  }, [availableExportKeys]);
+  }, []);
 
-  const visibleExportDefs = useMemo(() => {
-    if (!availableExportKeys.length) return EXPORT_COLUMN_DEFS;
-    const availableSet = new Set(availableExportKeys);
-    return EXPORT_COLUMN_DEFS.filter(({ key }) => availableSet.has(key));
-  }, [availableExportKeys]);
+  const visibleExportDefs = EXPORT_COLUMN_DEFS;
+
+  const buildExportParams = useCallback((selectedDefs) => {
+    const params = {};
+    if (selectedAssessmentId) params.assessmentId = selectedAssessmentId;
+    params.columns = selectedDefs.map(({ key }) => key).join(',');
+    return params;
+  }, [selectedAssessmentId]);
 
   const buildExportValue = useCallback((row, key) => {
     const value = row?.[key];
@@ -356,10 +477,7 @@ export default function AssessmentReports() {
 
     setExportingExcel(true);
     try {
-      const exportParams = { ...filters };
-      if (selectedAssessmentId) exportParams.assessmentId = selectedAssessmentId;
-      exportParams.columns = selectedDefs.map(({ key }) => key).join(',');
-      const payload = await api.getAssessmentReportsExportData(exportParams);
+      const payload = await api.getAssessmentReportsExportData(buildExportParams(selectedDefs));
       const rows = Array.isArray(payload?.rows) ? payload.rows : [];
       const sectionRows = Array.isArray(payload?.sectionRows) ? payload.sectionRows : [];
       const summary = payload?.summary || {};
@@ -452,7 +570,7 @@ export default function AssessmentReports() {
       summarySheet.headerFooter.oddFooter = '&RPage &P of &N';
       const kpis = [
         ['Candidates', summary.totalCandidates || rows.length || 0, palette.blue, palette.sky],
-        ['Average score', summary.avgScore ?? 'Awaiting results', palette.navy, 'FFE8EEF5'],
+        ['Average score', summary.avgScore ?? '—', palette.navy, 'FFE8EEF5'],
         ['Passed', summary.passCount || 0, palette.green, palette.greenPale],
         ['Failed', summary.failCount || 0, palette.red, palette.redPale],
       ];
@@ -481,8 +599,8 @@ export default function AssessmentReports() {
       summarySheet.getCell('A8').font = { name: 'Aptos', size: 11, bold: true, color: { argb: palette.navy } };
       const totalResults = Number(summary.passCount || 0) + Number(summary.failCount || 0);
       const detailRows = [
-        ['Highest score', summary.maxScore ?? 'Awaiting results'],
-        ['Lowest score', summary.minScore ?? 'Awaiting results'],
+        ['Highest score', summary.maxScore ?? '—'],
+        ['Lowest score', summary.minScore ?? '—'],
         ['Pass rate', totalResults ? Number(((Number(summary.passCount || 0) / totalResults) * 100).toFixed(1)) : 0],
       ];
       detailRows.forEach(([label, value], index) => {
@@ -531,7 +649,7 @@ export default function AssessmentReports() {
     } finally {
       setExportingExcel(false);
     }
-  }, [buildExportValue, exportColumns, filters, selectedAssessment, selectedAssessmentId, toast, visibleExportDefs]);
+  }, [buildExportParams, buildExportValue, exportColumns, selectedAssessment, toast, visibleExportDefs]);
 
   const handleCsvExport = useCallback(async () => {
     const selectedDefs = visibleExportDefs.filter(({ key }) => exportColumns[key]);
@@ -541,10 +659,7 @@ export default function AssessmentReports() {
     }
     setExportingExcel(true);
     try {
-      const exportParams = { ...filters };
-      if (selectedAssessmentId) exportParams.assessmentId = selectedAssessmentId;
-      exportParams.columns = selectedDefs.map(({ key }) => key).join(',');
-      const payload = await api.getAssessmentReportsExportData(exportParams);
+      const payload = await api.getAssessmentReportsExportData(buildExportParams(selectedDefs));
       const rows = Array.isArray(payload?.rows) ? payload.rows : [];
       if (!rows.length) {
         toast.error('No candidate report data found for the selected filters.');
@@ -571,7 +686,7 @@ export default function AssessmentReports() {
     } finally {
       setExportingExcel(false);
     }
-  }, [buildExportValue, exportColumns, filters, selectedAssessmentId, toast, visibleExportDefs]);
+  }, [buildExportParams, buildExportValue, exportColumns, toast, visibleExportDefs]);
 
   const handlePdfExport = useCallback(async () => {
     const selectedDefs = visibleExportDefs.filter(({ key }) => exportColumns[key]);
@@ -581,10 +696,7 @@ export default function AssessmentReports() {
     }
     setExportingExcel(true);
     try {
-      const exportParams = { ...filters };
-      if (selectedAssessmentId) exportParams.assessmentId = selectedAssessmentId;
-      exportParams.columns = selectedDefs.map(({ key }) => key).join(',');
-      const payload = await api.getAssessmentReportsExportData(exportParams);
+      const payload = await api.getAssessmentReportsExportData(buildExportParams(selectedDefs));
       const rows = Array.isArray(payload?.rows) ? payload.rows : [];
       if (!rows.length) {
         toast.error('No candidate report data found for the selected filters.');
@@ -642,41 +754,7 @@ export default function AssessmentReports() {
     } finally {
       setExportingExcel(false);
     }
-  }, [buildExportValue, exportColumns, filters, selectedAssessment, selectedAssessmentId, toast, visibleExportDefs]);
-
-  useEffect(() => {
-    if (!showExportModal) return;
-    let active = true;
-    const loadExportMeta = async () => {
-      setLoadingExportMeta(true);
-      try {
-        const exportParams = { ...filters };
-        if (selectedAssessmentId) exportParams.assessmentId = selectedAssessmentId;
-        const payload = await api.getAssessmentReportsExportData(exportParams);
-        if (!active) return;
-        const keys = Array.isArray(payload?.availableColumns) ? payload.availableColumns : [];
-        setAvailableExportKeys(keys);
-        if (keys.length) {
-          const allowed = new Set(keys);
-          setExportColumns((prev) => {
-            const next = { ...prev };
-            Object.keys(next).forEach((key) => {
-              if (!allowed.has(key)) next[key] = false;
-            });
-            return next;
-          });
-        }
-      } catch (err) {
-        if (!active) return;
-        toast.error(err.message || 'Failed to load export fields');
-        setAvailableExportKeys([]);
-      } finally {
-        if (active) setLoadingExportMeta(false);
-      }
-    };
-    void loadExportMeta();
-    return () => { active = false; };
-  }, [showExportModal, filters, selectedAssessmentId, toast]);
+  }, [buildExportParams, buildExportValue, exportColumns, selectedAssessment, toast, visibleExportDefs]);
 
   /* ── Sorting ── */
   const handleSort = useCallback((key) => {
@@ -685,199 +763,117 @@ export default function AssessmentReports() {
 
   /* ── Clear ── */
   const clearFilters = useCallback(() => {
-    setFilters({
-      assessmentId: '', assessmentType: '', studentQuery: '', status: '', createdBy: '', tag: '',
-      department: '', difficulty: '', from: '', to: '', scoreMin: '', scoreMax: '',
-      completionRateMin: '', completionRateMax: '', attemptsMin: '', attemptsMax: '',
-      assessmentWindow: 'all',
-    });
-    setSelectedAssessmentId('');
-    setPagination((p) => ({ ...p, page: 1 }));
+    setRosterFilters(DEFAULT_ROSTER_FILTERS);
   }, []);
 
   /* ── Active chips ── */
   const activeChips = useMemo(() => {
     const chips = [];
-    if (filters.assessmentId) {
-      const a = allAssessments.find((x) => String(x._id) === String(filters.assessmentId))
-        || assessments.find((x) => String(x._id) === String(filters.assessmentId));
-      chips.push({ key: 'assessmentId', label: `Assessment: ${a?.title || filters.assessmentId}`, clear: () => updateFilter('assessmentId', '') });
-    }
-    if (filters.assessmentType) chips.push({ key: 'assessmentType', label: `Type: ${filters.assessmentType}`, clear: () => updateFilter('assessmentType', '') });
-    if (filters.status) chips.push({ key: 'status', label: `Status: ${filters.status}`, clear: () => updateFilter('status', '') });
-    if (filters.studentQuery) chips.push({ key: 'studentQuery', label: `Search: ${filters.studentQuery}`, clear: () => updateFilter('studentQuery', '') });
-    if (filters.createdBy) chips.push({ key: 'createdBy', label: `Created: ${filters.createdBy}`, clear: () => updateFilter('createdBy', '') });
-    if (filters.tag) chips.push({ key: 'tag', label: `Tag: ${filters.tag}`, clear: () => updateFilter('tag', '') });
-    if (filters.department) chips.push({ key: 'department', label: `Dept: ${filters.department}`, clear: () => updateFilter('department', '') });
-    if (filters.difficulty) chips.push({ key: 'difficulty', label: `Difficulty: ${filters.difficulty}`, clear: () => updateFilter('difficulty', '') });
-    if (filters.assessmentWindow && filters.assessmentWindow !== 'all') chips.push({ key: 'assessmentWindow', label: `Window: ${filters.assessmentWindow}`, clear: () => updateFilter('assessmentWindow', 'all') });
-    if (filters.from || filters.to) chips.push({ key: 'dateRange', label: `Date: ${filters.from || '…'} → ${filters.to || '…'}`, clear: () => { setFilters((p) => ({ ...p, from: '', to: '' })); } });
-    if (filters.scoreMin || filters.scoreMax) chips.push({ key: 'scoreRange', label: `Score: ${filters.scoreMin || 0} - ${filters.scoreMax || '∞'}`, clear: () => { setFilters((p) => ({ ...p, scoreMin: '', scoreMax: '' })); } });
+    const f = rosterFilters;
+    if (f.query.trim()) chips.push({ key: 'query', label: `Search: ${f.query.trim()}`, clear: () => updateRosterFilter('query', '') });
+    f.statuses.forEach((status) => {
+      const label = ROSTER_STATUS_OPTIONS.find((option) => option.value === status)?.label || status;
+      chips.push({ key: `status-${status}`, label: `Status: ${label}`, clear: () => toggleStatusFilter(status) });
+    });
+    if (f.evaluation !== 'all') chips.push({ key: 'evaluation', label: `Evaluation: ${ROSTER_EVALUATION_OPTIONS.find((option) => option.value === f.evaluation)?.label || f.evaluation}`, clear: () => updateRosterFilter('evaluation', 'all') });
+    if (f.submissionType !== 'all') chips.push({ key: 'submissionType', label: `Submission: ${ROSTER_TYPE_OPTIONS.find((option) => option.value === f.submissionType)?.label || f.submissionType}`, clear: () => updateRosterFilter('submissionType', 'all') });
+    if (f.scoreMin !== '' || f.scoreMax !== '') chips.push({ key: 'score', label: `Score: ${f.scoreMin || 0}% - ${f.scoreMax || 100}%`, clear: () => setRosterFilters((prev) => ({ ...prev, scoreMin: '', scoreMax: '' })) });
+    if (f.flaggedOnly) chips.push({ key: 'flagged', label: 'Flagged only', clear: () => updateRosterFilter('flaggedOnly', false) });
+    if (f.hasViolations) chips.push({ key: 'violations', label: 'Has violations', clear: () => updateRosterFilter('hasViolations', false) });
     return chips;
-  }, [filters, allAssessments, assessments, updateFilter]);
+  }, [rosterFilters, toggleStatusFilter, updateRosterFilter]);
+
+  /* ── Roster derived data (client-side, instant) ── */
+  const stats = useMemo(
+    () => computeRosterStats(roster.rows, { passPercentage }),
+    [roster.rows, passPercentage],
+  );
+
+  const statusCounts = useMemo(() => {
+    const counts = {};
+    roster.rows.forEach((row) => { counts[row.status] = (counts[row.status] || 0) + 1; });
+    return counts;
+  }, [roster.rows]);
+
+  const tabRows = useMemo(
+    () => (activeTab === 'violations' ? roster.rows.filter((row) => row.flagged || rowHasViolations(row)) : roster.rows),
+    [activeTab, roster.rows],
+  );
+  const visibleRows = useMemo(
+    () => sortRosterRows(filterRosterRows(tabRows, rosterFilters), sort),
+    [rosterFilters, sort, tabRows],
+  );
+  const pageData = useMemo(() => paginateRows(visibleRows, page, pageSize), [page, pageSize, visibleRows]);
+  const filtersActive = hasActiveRosterFilters(rosterFilters);
 
   /* ── KPI data ── */
   const kpiData = useMemo(() => {
-    const s = summary || {};
-    const totalStudents = pagination.total || 0;
-    const uniqueCandidates = new Set(students.map((st) => st.studentId)).size;
-    const passCount = Number(s.passCount) || 0;
-    const failCount = Number(s.failCount) || Math.max(0, totalStudents - passCount);
-    const totalForPassRate = passCount + failCount;
-    const passRate = totalForPassRate > 0 ? (passCount / totalForPassRate) * 100 : 0;
-    const avgScore = Number(s.avgScore) || 0;
-    const avgTimeSec = Number(s.avgTimeSec) || 0;
-    const violationCount = Number(s.violationCount) || 0;
-
-    const baseKPIs = [
+    const pct = (value) => (value == null ? '—' : `${value}%`);
+    const gradedParts = [`${stats.graded} graded`];
+    if (stats.evaluating) gradedParts.push(`${stats.evaluating} evaluating`);
+    if (stats.needsReview) gradedParts.push(`${stats.needsReview} need review`);
+    let passInsight = 'No graded attempts yet';
+    if (stats.passRate != null) passInsight = `${stats.passed} of ${stats.graded} graded passed`;
+    else if (stats.graded && passPercentage == null) passInsight = 'Pass mark not set';
+    return [
       {
-        icon: Layers, label: 'Questions', value: selectedAssessment?.totalQuestions || 0,
-        insight: `${selectedAssessment?.totalMarks || 0} total marks`,
-        trend: s.assessmentGrowth, tone: 'sky',
+        icon: Users, label: 'Candidates', value: stats.total,
+        insight: `${stats.started} started · ${stats.notStarted} not started`, tone: 'sky',
       },
       {
-        icon: GraduationCap, label: 'Total Attempts', value: totalStudents,
-        insight: uniqueCandidates ? `${uniqueCandidates} unique candidates` : undefined,
-        trend: s.attemptGrowth, tone: 'lime',
-        chart: Array.isArray(s.attemptTrend) && s.attemptTrend.length > 1 ? <Sparkline data={s.attemptTrend} stroke="#84cc16" /> : null,
+        icon: Clock, label: 'In progress', value: stats.inProgress,
+        insight: reportAssessment?.totalQuestions ? `${reportAssessment.totalQuestions} questions · ${reportAssessment.totalMarks || 0} marks` : undefined,
+        tone: 'sky',
       },
       {
-        icon: TrendingUp, label: 'Avg Score', value: s.avgScore == null ? 'Awaiting results' : `${avgScore.toFixed(1)}%`,
-        sub: `of ${s.maxScore || 100} max`, insight: s.medianScore ? `Median: ${s.medianScore}%` : undefined,
-        trend: s.scoreGrowth, tone: 'lime',
-        chart: Array.isArray(s.scoreTrend) && s.scoreTrend.length > 1 ? <Sparkline data={s.scoreTrend} stroke="#84cc16" /> : null,
+        icon: GraduationCap, label: 'Submitted', value: stats.submitted,
+        insight: gradedParts.join(' · '), tone: 'lime',
       },
       {
-        icon: BarChart3, label: 'Pass Rate', value: totalForPassRate > 0 ? `${passRate.toFixed(1)}%` : 'Awaiting results',
-        insight: totalForPassRate > 0 ? `${passCount} passed, ${failCount} failed` : undefined,
-        trend: s.passRateGrowth, tone: 'lime',
+        icon: TrendingUp, label: 'Avg Score', value: pct(stats.avgPercentage),
+        insight: stats.avgPercentage == null ? 'No graded attempts yet' : `Low ${stats.minPercentage}% · High ${stats.maxPercentage}%`,
+        tone: 'lime',
       },
       {
-        icon: Search, label: 'Avg Time', value: formatDuration(avgTimeSec),
-        insight: s.fastestTime ? `Fastest: ${formatDuration(Number(s.fastestTime))}` : undefined, tone: 'sky',
+        icon: BarChart3, label: 'Pass Rate', value: pct(stats.passRate),
+        insight: passInsight, tone: 'lime',
       },
       {
-        icon: ShieldAlert, label: 'Violations', value: violationCount,
-        insight: totalStudents > 0 ? `${((violationCount / totalStudents)).toFixed(1)} per session` : undefined,
-        trend: s.violationGrowth, tone: 'sky', invert: true,
+        icon: ShieldAlert, label: 'Flagged', value: stats.flaggedSessions,
+        insight: `${stats.violationEvents} integrity events`, tone: 'sky',
       },
     ];
+  }, [passPercentage, reportAssessment, stats]);
 
-    // For violations tab, show violation-specific KPIs
-    if (activeTab === 'violations') {
-      return [
-        {
-          icon: ShieldAlert, label: 'Total Violations', value: s.violationCount || 0,
-          insight: s.violationRate ? `${s.violationRate}% violation rate` : undefined,
-          tone: 'sky',
-        },
-        {
-          icon: GraduationCap, label: 'Flagged Sessions', value: pagination.total || 0,
-          insight: 'Sessions with security violations', tone: 'lime',
-        },
-        {
-          icon: Search, label: 'Tab Switches', value: s.tabSwitches || 0,
-          insight: 'Total tab switch events', tone: 'sky',
-        },
-        {
-          icon: BarChart3, label: 'Fullscreen Exits', value: s.fullscreenExits || 0,
-          insight: 'Fullscreen mode violations', tone: 'sky',
-        },
-        {
-          icon: TrendingUp, label: 'Camera Flags', value: s.cameraFlags || 0,
-          insight: 'Camera monitoring violations', tone: 'sky',
-        },
-        {
-          icon: Users, label: 'Unique Candidates', value: s.uniqueCandidates || 0,
-          insight: 'Students with violations', tone: 'lime',
-        },
-      ];
-    }
+  const distributionMaximum = Math.max(1, ...stats.distribution);
+  const outcomeSegments = OUTCOME_SEGMENTS
+    .map((segment) => ({ ...segment, count: stats.outcome[segment.key] || 0 }))
+    .filter((segment) => !segment.optional || segment.count > 0);
 
-    return baseKPIs;
-  }, [summary, selectedAssessment, pagination.total, activeTab, students]);
-
-  const distributionLabels = ['0-25', '26-50', '51-75', '76-90', '91-100'];
-  const distributionData = useMemo(() => {
-    const sd = summary?.scoreDistribution;
-    if (Array.isArray(sd) && sd.length === 5) return sd;
-    // Fallback: compute from student scores
-    const buckets = [0, 0, 0, 0, 0];
-    students.forEach((st) => {
-      if (st.score == null || ['processing', 'failed'].includes(st.evaluationStatus)) return;
-      const score = Number(st.score) || 0;
-      if (score < 26) buckets[0]++;
-      else if (score < 51) buckets[1]++;
-      else if (score < 76) buckets[2]++;
-      else if (score < 91) buckets[3]++;
-      else buckets[4]++;
-    });
-    return buckets;
-  }, [summary, students]);
-
-  const distributionMaximum = Math.max(1, ...distributionData);
-  const overviewPassCount = Number(summary?.passCount || 0);
-  const overviewReviewCount = Number(summary?.failCount || 0);
-  const overviewOutcomeTotal = overviewPassCount + overviewReviewCount;
-  const overviewPassRate = overviewOutcomeTotal > 0
-    ? Math.round((overviewPassCount / overviewOutcomeTotal) * 100)
-    : 0;
-
-  // Violation-specific chart data
-  const violationLabels = ['Tab Switch', 'Fullscreen Exit', 'Camera Off', 'Copy/Paste'];
-  const violationData = useMemo(() => {
-    // Use backend summary if it has data
-    const backendData = [
-      Number(summary?.tabSwitches) || 0,
-      Number(summary?.fullscreenExits) || 0,
-      Number(summary?.cameraFlags) || 0,
-      Number(summary?.copyPasteCount) || 0,
-    ];
-
-    // If backend has no violation data, compute from student rows
-    if (backendData.every(v => v === 0) && students.length > 0) {
-      const computed = [
-        students.reduce((sum, st) => sum + (Number(st.tabSwitches) || 0), 0),
-        students.reduce((sum, st) => sum + (Number(st.fullscreenExits) || 0), 0),
-        students.reduce((sum, st) => sum + (Number(st.cameraFlags) || 0), 0),
-        students.reduce((sum, st) => sum + (Number(st.copyPasteCount) || 0), 0),
-      ];
-      return computed;
-    }
-
-    return backendData;
-  }, [summary, students]);
-  const totalViolationEvents = violationData.reduce((total, count) => total + count, 0)
-    || Number(summary?.violationCount)
-    || 0;
+  // Violation chart data, from the live roster
+  const violationLabels = ['Tab Switch', 'Fullscreen Exit', 'Camera Flags', 'AI Flags'];
+  const violationData = [stats.tabSwitches, stats.fullscreenExits, stats.cameraFlags, stats.aiViolations];
+  const totalViolationEvents = stats.violationEvents;
   const highestViolationCategoryCount = Math.max(1, ...violationData);
-  const mostFlaggedCandidate = summary?.topViolators?.[0] || null;
+  const mostFlaggedCandidate = stats.topViolator;
 
   const assessmentSidebarItems = useMemo(() => {
-    const now = statusTime;
     const source = allAssessments.length ? allAssessments : assessments;
-    const getBucket = (assessment) => {
-      const status = reportAssessmentStatus(assessment, now);
-      if (status === 'Scheduled') return 'upcoming';
-      if (status === 'Live') return 'current';
-      return status.toLowerCase();
-    };
     const search = assessmentSearch.trim().toLowerCase();
     return source
-      .map((assessment) => ({ ...assessment, lifecycleBucket: getBucket(assessment) }))
       .filter((assessment) => {
-        const matchesWindow = filters.assessmentWindow === 'all' || assessment.lifecycleBucket === filters.assessmentWindow;
         const haystack = `${assessment.title || ''} ${assessment.assessmentType || ''} ${assessment.assessmentId || ''}`.toLowerCase();
-        return matchesWindow && (!search || haystack.includes(search));
+        return !search || haystack.includes(search);
       })
       .sort((a, b) => {
         const aTime = new Date(a.startTime || a.createdAt || 0).getTime();
         const bTime = new Date(b.startTime || b.createdAt || 0).getTime();
         return bTime - aTime;
-      })
-  }, [allAssessments, assessments, assessmentSearch, filters.assessmentWindow, statusTime]);
+      });
+  }, [allAssessments, assessments, assessmentSearch]);
 
-  const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / pagination.limit));
+  const totalPages = pageData.totalPages;
+  const currentPage = pageData.page;
 
   const assessmentRail = (
     <div className="flex h-full min-h-0 flex-col border-r border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950">
@@ -897,7 +893,7 @@ export default function AssessmentReports() {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         <div>
-          {loading && !assessments.length ? (
+          {shellLoading && !assessmentSidebarItems.length ? (
             Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="h-12 animate-pulse rounded-md bg-slate-100 dark:bg-gray-800" />
             ))
@@ -961,7 +957,7 @@ export default function AssessmentReports() {
             <div>
               <h1 className="text-lg font-semibold text-slate-950 dark:text-white">Assessment Reports</h1>
               <p className="text-xs text-slate-500 dark:text-gray-400">
-                {selectedAssessment ? `${selectedAssessment.title} · ${pagination.total || 0} candidate records` : 'Choose an assessment to view its report'}
+                {selectedAssessment ? `${selectedAssessment.title} · ${roster.rows.length} candidates` : 'Choose an assessment to view its report'}
               </p>
             </div>
           </div>
@@ -972,8 +968,8 @@ export default function AssessmentReports() {
                 <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
                   ref={searchRef}
-                  value={filters.studentQuery}
-                  onChange={(e) => updateFilter('studentQuery', e.target.value)}
+                  value={rosterFilters.query}
+                  onChange={(e) => updateRosterFilter('query', e.target.value)}
                   placeholder="Search candidates..."
                   className="h-9 w-56 rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs text-slate-700 outline-none ring-sky-200 transition-all placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:ring-sky-900"
                 />
@@ -981,8 +977,8 @@ export default function AssessmentReports() {
 
               <div className="relative lg:hidden">
                 <select
-                  value={filters.assessmentId || ''}
-                  onChange={(e) => updateFilter('assessmentId', e.target.value)}
+                  value={selectedAssessmentId || ''}
+                  onChange={(e) => setSelectedAssessmentId(e.target.value)}
                   className="h-9 w-48 rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-xs text-slate-700 outline-none ring-sky-200 transition-all focus:border-sky-400 focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900"
                 >
                   <option value="">Choose assessment</option>
@@ -990,9 +986,9 @@ export default function AssessmentReports() {
                     <option key={a._id} value={a._id}>{a.title || 'Untitled'}</option>
                   ))}
                 </select>
-                {filters.assessmentId && (
+                {selectedAssessmentId && (
                   <button
-                    onClick={() => updateFilter('assessmentId', '')}
+                    onClick={() => setSelectedAssessmentId('')}
                     className="absolute right-7 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300"
                   >
                     <X className="h-3 w-3" />
@@ -1002,7 +998,7 @@ export default function AssessmentReports() {
             </div>
 
             {activeTab !== 'analytics' && (activeTab !== 'overview' || selectedAssessment) && <div className="flex items-center gap-2">
-              <button onClick={() => setPagination((p) => ({ ...p, page: 1 }))} className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" title="Refresh">
+              <button onClick={() => { void roster.refresh(); setShellVersion((value) => value + 1); }} className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" title="Refresh">
                 <RotateCcw className="h-3.5 w-3.5" />
               </button>
 
@@ -1034,9 +1030,9 @@ export default function AssessmentReports() {
                   }} className={`relative flex items-center gap-1.5 border-b-2 px-3 py-3 text-xs font-semibold transition-colors ${active ? 'border-sky-600 text-sky-700 dark:border-sky-400 dark:text-sky-300' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-300'}`}>
                     <Icon className="h-3.5 w-3.5" />
                     {tab.label}
-                    {tab.id === 'violations' && (summary?.violationCount || 0) > 0 && (
+                    {tab.id === 'violations' && stats.flaggedSessions > 0 && (
                       <span className="ml-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sky-600 px-1 text-[9px] font-bold text-white">
-                        {summary.violationCount}
+                        {stats.flaggedSessions}
                       </span>
                     )}
                   </button>
@@ -1079,13 +1075,43 @@ export default function AssessmentReports() {
                 <span>{selectedAssessment.assessmentType || selectedAssessment.testType || 'Mixed'}</span>
                 <span aria-hidden="true">·</span>
                 <span>ID {selectedAssessment.assessmentId || '—'}</span>
+                <LiveIndicator live={roster.live} lastUpdatedAt={roster.lastUpdatedAt} mode={roster.mode} loading={roster.loading} />
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-5 text-xs">
-              <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Starts</div><div className="mt-0.5 font-semibold text-slate-700 dark:text-gray-200">{formatDateTime(selectedAssessment.startTime)}</div></div>
-              <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Duration</div><div className="mt-0.5 font-semibold text-slate-700 dark:text-gray-200">{selectedAssessment.duration ? `${selectedAssessment.duration} min` : 'Not set'}</div></div>
+            <div className="flex shrink-0 flex-wrap items-center gap-5 text-xs">
+              <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Starts</div><div className="mt-0.5 font-semibold text-slate-700 dark:text-gray-200">{formatDateTime(reportAssessment?.startTime)}</div></div>
+              <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Duration</div><div className="mt-0.5 font-semibold text-slate-700 dark:text-gray-200">{reportAssessment?.duration ? `${reportAssessment.duration} min` : 'Not set'}</div></div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Student results</div>
+                {!releaseSettings ? (
+                  <div className="mt-0.5 h-4 w-24 animate-pulse rounded bg-slate-100 dark:bg-gray-800" />
+                ) : releaseSettings.showResultsAfterSubmit ? (
+                  <div className="mt-0.5 font-semibold text-slate-700 dark:text-gray-200" title="Students see their result after submitting, once evaluation completes. Change this in the assessment's Results settings.">Shown after submission</div>
+                ) : (
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${resultsReleasedAt ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>
+                      {resultsReleasedAt ? `Released ${formatDateTime(resultsReleasedAt)}` : 'Not announced'}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={releaseBusy}
+                      onClick={() => setReleaseConfirm(resultsReleasedAt ? 'withdraw' : 'release')}
+                      className={`inline-flex h-7 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold transition-colors disabled:opacity-60 ${resultsReleasedAt ? 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700' : 'bg-sky-600 text-white hover:bg-sky-500'}`}
+                    >
+                      <Megaphone className="h-3 w-3" />
+                      {resultsReleasedAt ? 'Withdraw' : 'Release results'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </section>
+        )}
+
+        {activeTab === 'overview' && selectedAssessment && roster.error && (
+          <div role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+            {roster.error}{roster.rows.length ? ' Showing the last loaded data.' : ''}
+          </div>
         )}
 
         {/* ── KPI Cards ── */}
@@ -1105,9 +1131,9 @@ export default function AssessmentReports() {
                 </span>
                 <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Candidates</span>
               </header>
-              <div className="grid flex-1 grid-cols-5 items-end gap-2 px-4 pb-3 pt-4">
-                {distributionLabels.map((label, index) => {
-                  const count = Number(distributionData[index] || 0);
+              <div className="grid flex-1 grid-cols-4 items-end gap-2 px-4 pb-3 pt-4">
+                {DISTRIBUTION_BUCKETS.map((label, index) => {
+                  const count = Number(stats.distribution[index] || 0);
                   return (
                     <div key={label} className="flex min-w-0 flex-col items-center">
                       <strong className="mb-1 text-xs tabular-nums text-slate-900 dark:text-white">{count}</strong>
@@ -1122,6 +1148,9 @@ export default function AssessmentReports() {
                   );
                 })}
               </div>
+              <p className="px-4 pb-3 text-[10px] text-slate-400 dark:text-gray-500">
+                {stats.graded ? `${stats.graded} graded attempt${stats.graded === 1 ? '' : 's'}, by percentage` : 'Appears as attempts are graded'}
+              </p>
             </article>
 
             <article className="flex min-h-44 flex-col bg-white dark:bg-gray-900">
@@ -1132,12 +1161,12 @@ export default function AssessmentReports() {
               </header>
               <div className="grid flex-1 grid-cols-3 items-center divide-x divide-slate-100 px-2 dark:divide-gray-800">
                 {[
-                  ['Lowest', summary?.minScore],
-                  ['Average', summary?.avgScore],
-                  ['Highest', summary?.maxScore],
+                  ['Lowest', stats.minPercentage],
+                  ['Average', stats.avgPercentage],
+                  ['Highest', stats.maxPercentage],
                 ].map(([label, value]) => (
                   <div key={label} className="px-2 text-center">
-                    <strong className="text-xl tabular-nums text-slate-950 dark:text-white">{Math.round(Number(value || 0) * 10) / 10}%</strong>
+                    <strong className="text-xl tabular-nums text-slate-950 dark:text-white">{value == null ? '—' : `${value}%`}</strong>
                     <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
                   </div>
                 ))}
@@ -1149,28 +1178,25 @@ export default function AssessmentReports() {
                 <span className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
                   <Target className="h-3.5 w-3.5 text-lime-600" />Completion outcome
                 </span>
-                <strong className="text-xs text-lime-600 dark:text-lime-400">{overviewPassRate}% pass</strong>
+                <strong className="text-xs text-lime-600 dark:text-lime-400">{stats.passRate == null ? '—' : `${stats.passRate}% pass`}</strong>
               </header>
               <div className="flex flex-1 flex-col justify-center px-4 py-4">
-                <div className="flex h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800">
-                  {overviewOutcomeTotal > 0 ? (
-                    <>
-                      <span className="h-full bg-lime-500" style={{ width: `${overviewPassRate}%` }} />
-                      <span className="h-full flex-1 bg-sky-500" />
-                    </>
-                  ) : (
+                <div className="flex h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800" role="img" aria-label={outcomeSegments.map((segment) => `${segment.label} ${segment.count}`).join(', ')}>
+                  {stats.total > 0 ? outcomeSegments.filter((segment) => segment.count > 0).map((segment) => (
+                    <span key={segment.key} className={`h-full transition-[width] duration-500 ${segment.bar}`} style={{ width: `${(segment.count / stats.total) * 100}%` }} title={`${segment.label}: ${segment.count}`} />
+                  )) : (
                     <span className="h-full w-full bg-slate-200 dark:bg-gray-700" />
                   )}
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <div className="rounded-lg bg-lime-50 px-3 py-2 dark:bg-lime-900/15">
-                    <p className="text-[9px] font-bold uppercase tracking-wide text-lime-700 dark:text-lime-400">Passed</p>
-                    <strong className="mt-0.5 block text-lg text-slate-950 dark:text-white">{overviewPassCount}</strong>
-                  </div>
-                  <div className="rounded-lg bg-sky-50 px-3 py-2 dark:bg-sky-900/15">
-                    <p className="text-[9px] font-bold uppercase tracking-wide text-sky-700 dark:text-sky-400">Needs review</p>
-                    <strong className="mt-0.5 block text-lg text-slate-950 dark:text-white">{overviewReviewCount}</strong>
-                  </div>
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {outcomeSegments.map((segment) => (
+                    <div key={segment.key} className={`rounded-lg px-2.5 py-1.5 ${segment.tile}`}>
+                      <p className="flex items-center gap-1.5 truncate text-[9px] font-bold uppercase tracking-wide">
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${segment.bar}`} />{segment.label}
+                      </p>
+                      <strong className="mt-0.5 block text-base text-slate-950 dark:text-white">{segment.count}</strong>
+                    </div>
+                  ))}
                 </div>
               </div>
             </article>
@@ -1189,7 +1215,7 @@ export default function AssessmentReports() {
                   <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-gray-500">Integrity events</p>
                   <div className="mt-0.5 flex items-baseline gap-2">
                     <strong className="text-xl leading-none text-slate-950 dark:text-white">{totalViolationEvents}</strong>
-                    <span className="text-[10px] text-slate-500 dark:text-gray-400">{pagination.total || 0} flagged sessions</span>
+                    <span className="text-[10px] text-slate-500 dark:text-gray-400">{stats.flaggedSessions} flagged sessions</span>
                   </div>
                 </div>
               </div>
@@ -1216,17 +1242,17 @@ export default function AssessmentReports() {
 
               <div className="flex items-center gap-3 px-4 py-3">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600 dark:bg-gray-800 dark:text-gray-300">
-                  {(mostFlaggedCandidate?.studentName || '?').trim().charAt(0).toUpperCase() || '?'}
+                  {(mostFlaggedCandidate?.name || '?').trim().charAt(0).toUpperCase() || '?'}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-gray-500">Most flagged candidate</p>
                   <p className="mt-0.5 truncate text-xs font-semibold text-slate-800 dark:text-gray-200">
-                    {mostFlaggedCandidate?.studentName || 'No flagged candidate'}
+                    {mostFlaggedCandidate?.name || 'No flagged candidate'}
                   </p>
                 </div>
                 {mostFlaggedCandidate && (
                   <span className="shrink-0 rounded-md bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700 dark:bg-sky-900/25 dark:text-sky-300">
-                    {mostFlaggedCandidate.violationCount || 0} flags
+                    {mostFlaggedCandidate.count || 0} flags
                   </span>
                 )}
               </div>
@@ -1235,7 +1261,7 @@ export default function AssessmentReports() {
         )}
 
         {/* ── Active Filter Chips ── */}
-        {activeChips.length > 0 && (
+        {activeTab !== 'overview' && activeChips.length > 0 && (
           <div className="mb-4 flex flex-wrap items-center gap-2">
             {activeChips.map((chip) => <FilterChip key={chip.key} label={chip.label} onRemove={chip.clear} />)}
             <button onClick={clearFilters} className="text-[11px] font-medium text-sky-600 hover:underline dark:text-sky-400">Clear all</button>
@@ -1254,20 +1280,30 @@ export default function AssessmentReports() {
                     {activeTab === 'violations' ? 'Flagged Sessions' : 'Candidate Performance'}
                   </span>
                   {selectedAssessment && <span className="text-xs text-slate-400 dark:text-gray-500">- {selectedAssessment.title}</span>}
-                  {activeTab === 'candidates' && (
+                  {selectedAssessment && <LiveIndicator live={roster.live} lastUpdatedAt={roster.lastUpdatedAt} mode={roster.mode} loading={roster.loading} />}
+                  {activeTab !== 'overview' && (
                     <div className="relative w-full sm:ml-2 sm:w-64 sm:max-w-[40vw]">
                       <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                       <input
                         type="search"
-                        value={filters.studentQuery}
-                        onChange={(e) => updateFilter('studentQuery', e.target.value)}
-                        placeholder="Search name, ID or email"
+                        value={rosterFilters.query}
+                        onChange={(e) => updateRosterFilter('query', e.target.value)}
+                        placeholder="Search name, roll no., email or ID"
+                        aria-label="Search candidates"
                         className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-700 outline-none placeholder:text-slate-400 focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-600"
                       />
                     </div>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowFilterPanel((open) => !open)}
+                    aria-expanded={showFilterPanel}
+                    className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors ${showFilterPanel || filtersActive ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+                  >
+                    <Filter className="h-3 w-3" />Filters{activeChips.length ? ` (${activeChips.length})` : ''}
+                  </button>
                   <button
                     onClick={() => setShowExportModal(true)}
                     className="inline-flex h-8 items-center gap-1 rounded-lg border border-lime-200 bg-lime-50 px-2.5 text-xs font-medium text-lime-700 hover:bg-lime-100 dark:border-lime-800 dark:bg-lime-900/20 dark:text-lime-300 dark:hover:bg-lime-900/30"
@@ -1284,45 +1320,112 @@ export default function AssessmentReports() {
                         {Object.entries(visibleColumns).map(([key, visible]) => (
                           <label key={key} className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
                             <input type="checkbox" checked={visible} onChange={() => setVisibleColumns((p) => ({ ...p, [key]: !p[key] }))} className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
-                            {key.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase())}
+                            {ROSTER_COLUMN_LABELS[key] || key}
                           </label>
                         ))}
                       </div>
                     )}
                   </div>
-                  <select value={pagination.limit} onChange={(e) => setPagination((p) => ({ ...p, page: 1, limit: Number(e.target.value) }))} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                  <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} aria-label="Rows per page" className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                     {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / page</option>)}
                   </select>
                 </div>
               </div>
 
+              {showFilterPanel && (
+                <div className="shrink-0 space-y-3 border-b border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-gray-700 dark:bg-gray-950/40">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="mr-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Status</span>
+                    {ROSTER_STATUS_OPTIONS.map((option) => {
+                      const active = rosterFilters.statuses.includes(option.value);
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => toggleStatusFilter(option.value)}
+                          className={`inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-[11px] font-semibold transition-colors ${active ? 'border-sky-400 bg-sky-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                        >
+                          {option.label}
+                          <span className={`tabular-nums ${active ? 'text-sky-100' : 'text-slate-400'}`}>{statusCounts[option.value] || 0}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      Evaluation
+                      <select value={rosterFilters.evaluation} onChange={(e) => updateRosterFilter('evaluation', e.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium normal-case tracking-normal text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                        {ROSTER_EVALUATION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      Submission
+                      <select value={rosterFilters.submissionType} onChange={(e) => updateRosterFilter('submissionType', e.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium normal-case tracking-normal text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                        {ROSTER_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <fieldset className="flex flex-col gap-1">
+                      <legend className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Score %</legend>
+                      <div className="flex items-center gap-1.5">
+                        <input type="number" min={0} max={100} inputMode="decimal" placeholder="0" value={rosterFilters.scoreMin} onChange={(e) => updateRosterFilter('scoreMin', e.target.value)} aria-label="Minimum score percentage" className="h-8 w-16 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+                        <span className="text-xs text-slate-400">to</span>
+                        <input type="number" min={0} max={100} inputMode="decimal" placeholder="100" value={rosterFilters.scoreMax} onChange={(e) => updateRosterFilter('scoreMax', e.target.value)} aria-label="Maximum score percentage" className="h-8 w-16 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+                      </div>
+                    </fieldset>
+                    <label className="flex h-8 cursor-pointer items-center gap-2 text-xs text-slate-700 dark:text-gray-200">
+                      <input type="checkbox" checked={rosterFilters.flaggedOnly} onChange={(e) => updateRosterFilter('flaggedOnly', e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+                      Flagged only
+                    </label>
+                    <label className="flex h-8 cursor-pointer items-center gap-2 text-xs text-slate-700 dark:text-gray-200">
+                      <input type="checkbox" checked={rosterFilters.hasViolations} onChange={(e) => updateRosterFilter('hasViolations', e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+                      Has violations
+                    </label>
+                    {filtersActive && (
+                      <button type="button" onClick={clearFilters} className="h-8 text-[11px] font-semibold text-sky-600 hover:underline dark:text-sky-400">Clear filters</button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {roster.error && activeTab !== 'overview' && (
+                <div role="alert" className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                  {roster.error}{roster.rows.length ? ' Showing the last loaded data.' : ''}
+                </div>
+              )}
+
               <div className={activeTab === 'candidates' ? 'min-h-0 flex-1 overflow-auto' : 'overflow-x-auto'}>
-                <table className="min-w-full text-left" style={{ '--serial-start': (pagination.page - 1) * pagination.limit }}>
+                <table className="min-w-full text-left" style={{ '--serial-start': pageData.start }}>
                   <thead className={`${activeTab === 'candidates' ? 'sticky top-0 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] dark:shadow-[0_1px_0_0_rgba(55,65,81,1)]' : ''} bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:bg-gray-800 dark:text-gray-400`}>
                     <tr>
-                      {visibleColumns.student && <SortHeader label="Candidate" sortKey="studentName" currentSort={sort} onSort={handleSort} />}
-                      {visibleColumns.attemptDate && <SortHeader label="Attempted" sortKey="attemptDate" currentSort={sort} onSort={handleSort} />}
-                      {visibleColumns.attempts && <SortHeader label="Tries" sortKey="attempts" currentSort={sort} onSort={handleSort} align="center" />}
+                      {visibleColumns.student && <SortHeader label="Candidate" sortKey="name" currentSort={sort} onSort={handleSort} />}
+                      {visibleColumns.status && <SortHeader label="Status" sortKey="status" currentSort={sort} onSort={handleSort} align="center" />}
+                      {visibleColumns.progress && <SortHeader label="Progress" sortKey="progress" currentSort={sort} onSort={handleSort} align="center" />}
                       {visibleColumns.score && <SortHeader label="Score" sortKey="score" currentSort={sort} onSort={handleSort} align="right" />}
-                      {visibleColumns.accuracy && <SortHeader label="Accuracy" sortKey="accuracy" currentSort={sort} onSort={handleSort} align="center" />}
+                      {visibleColumns.startedAt && <SortHeader label="Started" sortKey="startedAt" currentSort={sort} onSort={handleSort} />}
+                      {visibleColumns.submittedAt && <SortHeader label="Submitted" sortKey="submittedAt" currentSort={sort} onSort={handleSort} />}
                       {visibleColumns.time && <SortHeader label="Time" sortKey="timeTakenSec" currentSort={sort} onSort={handleSort} align="right" />}
-                      {visibleColumns.violations && <SortHeader label="Flags" sortKey="violationCount" currentSort={sort} onSort={handleSort} align="center" />}
-                      {visibleColumns.status && <th className="px-4 py-3 text-center">Status</th>}
-                      {visibleColumns.rank && <SortHeader label="Rank" sortKey="rank" currentSort={sort} onSort={handleSort} align="center" />}
+                      {visibleColumns.violations && <SortHeader label="Flags" sortKey="violations" currentSort={sort} onSort={handleSort} align="center" />}
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-                    {loading ? (
+                    {!selectedAssessmentId ? (
+                      <TableEmpty title="Select an assessment" message="Choose an assessment to see its candidates." />
+                    ) : roster.loading && !roster.rows.length ? (
                       Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
-                    ) : students.length === 0 ? (
-                      <TableEmpty />
+                    ) : pageData.rows.length === 0 ? (
+                      <TableEmpty
+                        title={roster.rows.length ? 'No candidates match' : 'No candidates yet'}
+                        message={roster.rows.length ? 'Adjust your filters or search to see results.' : 'Assigned students appear here as soon as the roster loads.'}
+                      />
                     ) : (
-                      students.map((row) => (
+                      pageData.rows.map((row) => (
                         <TableRow
-                          key={row._id}
+                          key={row.key}
                           row={row}
                           visibleColumns={visibleColumns}
+                          highlighted={roster.recentlyChanged.has(row.key)}
                           openStudentDetail={openStudentDetail}
                           openViolationReport={openViolationReport}
                           toast={toast}
@@ -1335,28 +1438,33 @@ export default function AssessmentReports() {
 
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 dark:border-gray-700">
                 <span className="text-xs text-slate-500 dark:text-gray-400">
-                  Showing <span className="font-semibold text-slate-700 dark:text-gray-300">{students.length}</span> of{' '}
-                  <span className="font-semibold text-slate-700 dark:text-gray-300">{pagination.total}</span> results
+                  {visibleRows.length ? (
+                    <>
+                      Showing <span className="font-semibold text-slate-700 dark:text-gray-300">{pageData.start + 1}–{pageData.start + pageData.rows.length}</span> of{' '}
+                      <span className="font-semibold text-slate-700 dark:text-gray-300">{visibleRows.length}</span>
+                      {visibleRows.length !== tabRows.length ? ` (filtered from ${tabRows.length})` : ''} candidates
+                    </>
+                  ) : '0 candidates'}
                 </span>
                 <div className="flex items-center gap-1.5">
-                  <button type="button" disabled={pagination.page <= 1} onClick={() => setPagination((p) => ({ ...p, page: Math.max(1, p.page - 1) }))} className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
+                  <button type="button" disabled={currentPage <= 1} onClick={() => setPage(Math.max(1, currentPage - 1))} className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
                     <ArrowLeft className="h-3 w-3" />Prev
                   </button>
                   <div className="flex items-center gap-1">
                     {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
                       let p;
                       if (totalPages <= 7) p = i + 1;
-                      else if (pagination.page <= 4) p = i + 1;
-                      else if (pagination.page >= totalPages - 3) p = totalPages - 6 + i;
-                      else p = pagination.page - 3 + i;
+                      else if (currentPage <= 4) p = i + 1;
+                      else if (currentPage >= totalPages - 3) p = totalPages - 6 + i;
+                      else p = currentPage - 3 + i;
                       return (
-                        <button key={p} onClick={() => setPagination((prev) => ({ ...prev, page: p }))} className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors ${p === pagination.page ? 'bg-sky-600 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>
+                        <button key={p} onClick={() => setPage(p)} className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors ${p === currentPage ? 'bg-sky-600 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>
                           {p}
                         </button>
                       );
                     })}
                   </div>
-                  <button type="button" disabled={pagination.page >= totalPages} onClick={() => setPagination((p) => ({ ...p, page: Math.min(totalPages, p.page + 1) }))} className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
+                  <button type="button" disabled={currentPage >= totalPages} onClick={() => setPage(Math.min(totalPages, currentPage + 1))} className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
                     Next<ArrowRight className="h-3 w-3" />
                   </button>
                 </div>
@@ -1387,11 +1495,7 @@ export default function AssessmentReports() {
                 <button onClick={saveExportPreferences} className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30">Save Preferred Export Settings</button>
               </div>
               <div className="grid max-h-[420px] gap-2 overflow-y-auto rounded-xl border border-slate-200 p-3 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-700">
-                {loadingExportMeta ? (
-                  <div className="col-span-full py-8 text-center text-xs text-slate-500 dark:text-gray-400">
-                    Loading available fields from the selected assessment...
-                  </div>
-                ) : visibleExportDefs.length ? visibleExportDefs.map(({ key, label }) => (
+                {visibleExportDefs.length ? visibleExportDefs.map(({ key, label }) => (
                   <label key={key} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-xs text-slate-700 hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
                     <input type="checkbox" checked={Boolean(exportColumns[key])} onChange={() => setExportColumns((prev) => ({ ...prev, [key]: !prev[key] }))} className="h-4 w-4 rounded border-slate-300 text-lime-600 focus:ring-lime-500" />
                     <span>{label}</span>
@@ -1407,9 +1511,9 @@ export default function AssessmentReports() {
               <div className="text-xs text-slate-500 dark:text-gray-400">{visibleExportDefs.filter(({ key }) => exportColumns[key]).length} column(s) selected</div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowExportModal(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</button>
-                <button onClick={handlePdfExport} disabled={exportingExcel || loadingExportMeta || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">PDF</button>
-                <button onClick={handleCsvExport} disabled={exportingExcel || loadingExportMeta || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">CSV</button>
-                <button onClick={handleExcelExport} disabled={exportingExcel || loadingExportMeta || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="inline-flex items-center gap-1 rounded-lg bg-lime-600 px-4 py-2 text-xs font-semibold text-white hover:bg-lime-500 disabled:opacity-60">
+                <button onClick={handlePdfExport} disabled={exportingExcel || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">PDF</button>
+                <button onClick={handleCsvExport} disabled={exportingExcel || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">CSV</button>
+                <button onClick={handleExcelExport} disabled={exportingExcel || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="inline-flex items-center gap-1 rounded-lg bg-lime-600 px-4 py-2 text-xs font-semibold text-white hover:bg-lime-500 disabled:opacity-60">
                   <FileSpreadsheet className="h-3.5 w-3.5" />
                   {exportingExcel ? 'Preparing Excel...' : 'Download Excel'}
                 </button>
@@ -1419,11 +1523,33 @@ export default function AssessmentReports() {
         </div>
       )}
 
+      {releaseConfirm && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/45 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="release-results-title">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+            <h2 id="release-results-title" className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-white">
+              <Megaphone className="h-4 w-4 text-sky-600" />
+              {releaseConfirm === 'release' ? 'Release results to students?' : 'Withdraw released results?'}
+            </h2>
+            <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-gray-300">
+              {releaseConfirm === 'release'
+                ? `Every candidate of "${selectedAssessment?.title || 'this assessment'}" will see their score and report once their attempt is evaluated.${stats.inProgress ? ` ${stats.inProgress} candidate${stats.inProgress === 1 ? ' is' : 's are'} still writing; they will see results after submitting.` : ''}${stats.evaluating ? ` ${stats.evaluating} attempt${stats.evaluating === 1 ? ' is' : 's are'} still being evaluated.` : ''}`
+                : 'Students will see "Result not announced yet" again until you release results.'}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setReleaseConfirm(null)} disabled={releaseBusy} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</button>
+              <button type="button" onClick={confirmReleaseChange} disabled={releaseBusy} className={`rounded-lg px-4 py-2 text-xs font-semibold text-white disabled:opacity-60 ${releaseConfirm === 'release' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-rose-600 hover:bg-rose-500'}`}>
+                {releaseBusy ? 'Saving…' : releaseConfirm === 'release' ? 'Release results' : 'Withdraw results'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ReportDetailDrawer
-        student={selectedStudent}
+        student={selectedStudent ? toDrawerStudent(openRosterRow || selectedStudent) : null}
         loading={detailLoading}
         data={detailData}
-        onClose={() => { setSelectedStudent(null); setDetailData(null); }}
+        onClose={closeStudentDetail}
         openViolationReport={openViolationReport}
       />
 

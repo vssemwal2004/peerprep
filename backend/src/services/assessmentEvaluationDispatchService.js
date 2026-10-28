@@ -7,6 +7,7 @@ import { mutateAssessmentSubmission } from './assessmentPersistenceService.js';
 import { getIo } from '../utils/io.js';
 import { personalRoom } from '../utils/realtime.js';
 import { requestAssessmentReportRefresh } from './assessmentReportSummaryService.js';
+import { notifyAssessmentReportChanged } from './assessmentReportRealtime.js';
 
 const LEASE_MS = 120_000;
 const RECHECK_MS = 30_000;
@@ -83,6 +84,8 @@ export async function dispatchPendingAssessmentEvaluations({ limit = 25, now = n
         },
       });
       dispatched += 1;
+      // Attempts without coding jobs are graded during dispatch.
+      notifyAssessmentReportChanged(submission.assessmentId, 'evaluation');
     } catch (error) {
       const retryMs = Math.min(15 * 60_000, 2000 * 2 ** Math.min(9, Number(submission.pendingWork?.attempts || 1)));
       await AssessmentSubmission.updateOne(releaseFilter, {

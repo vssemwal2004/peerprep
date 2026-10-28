@@ -1,11 +1,10 @@
 import {
   ArrowDownRight, ArrowUpRight, ArrowRight, BookOpen, ChevronDown, ChevronUp,
-  Clock, Copy, Download, Eye, GraduationCap, Layers, Save, Search,
-  ShieldAlert, Sparkles, Target, Timer, Trophy, TrendingUp, User, X, Zap,
-  LayoutDashboard, BarChart3,
+  Clock, Copy, Eye, Flag, Search, ShieldAlert, Timer, Trophy, X, CircleDashed,
 } from 'lucide-react';
-import { DonutChart, HorizontalProgress, Sparkline } from './ReportCharts';
+import { DonutChart, HorizontalProgress } from './ReportCharts';
 import { assessmentEvaluationLabel } from '../../utils/assessmentEvaluation';
+import { isSubmittedRow, rowPercentage, rowViolationCount } from './rosterModel';
 
 /* ═════════════════ FORMATTERS ═════════════════ */
 export const formatDateTime = (value) => {
@@ -29,6 +28,12 @@ export const formatDuration = (seconds = 0) => {
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
 };
+export const formatClockTime = (value) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+};
 
 /* ═════════════════ STATUS METADATA ═════════════════ */
 export const statusMeta = {
@@ -37,6 +42,7 @@ export const statusMeta = {
   in_progress: { label: 'In Progress', tone: 'sky', icon: Clock },
   expired: { label: 'Expired', tone: 'amber', icon: Timer },
   incomplete: { label: 'Incomplete', tone: 'slate', icon: BookOpen },
+  not_started: { label: 'Not started', tone: 'slate', icon: CircleDashed },
 };
 export const assessmentStatusMeta = {
   draft: { label: 'Draft', bg: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
@@ -147,7 +153,7 @@ export function AssessmentListItem({ assessment, isActive, onClick, stats }) {
         <div className="mt-1">
           <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-gray-500">
             <span>Avg score</span>
-            <span className="font-medium text-slate-600 dark:text-gray-300">{stats.avgScore == null ? 'Awaiting results' : `${stats.avgScore.toFixed(1)}%`}</span>
+            <span className="font-medium text-slate-600 dark:text-gray-300">{stats.avgScore == null ? '—' : `${stats.avgScore.toFixed(1)}%`}</span>
           </div>
           {stats.avgScore != null && <HorizontalProgress value={stats.avgScore} max={100} height={3} color="#0ea5e9" />}
         </div>
@@ -157,75 +163,112 @@ export function AssessmentListItem({ assessment, isActive, onClick, stats }) {
 }
 
 /* ═════════════════ TABLE EMPTY STATE ═════════════════ */
-export function TableEmpty() {
+export function TableEmpty({ title = 'No candidates found', message = 'Adjust your filters or search to see results.' }) {
   return (
     <tr><td colSpan={12} className="px-6 py-16 text-center">
       <div className="flex flex-col items-center gap-3">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 dark:bg-gray-800">
           <Search className="h-6 w-6 text-slate-300 dark:text-gray-600" />
         </div>
-        <div className="text-sm font-semibold text-slate-700 dark:text-gray-300">No candidates found</div>
-        <div className="max-w-xs text-xs text-slate-400 dark:text-gray-500">Adjust your filters or search to see results.</div>
+        <div className="text-sm font-semibold text-slate-700 dark:text-gray-300">{title}</div>
+        <div className="max-w-xs text-xs text-slate-400 dark:text-gray-500">{message}</div>
       </div>
     </td></tr>
   );
 }
 
-/* ═════════════════ TABLE ROW ═════════════════ */
-export function TableRow({ row, visibleColumns, openStudentDetail, openViolationReport, toast }) {
+/* ═════════════════ EVALUATION CHIP ═════════════════ */
+export function EvaluationChip({ label }) {
+  if (!label) return null;
+  const review = label === 'Needs review';
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${review ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300' : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>
+      {label}
+    </span>
+  );
+}
+
+/* ═════════════════ ROSTER TABLE ROW ═════════════════ */
+// Columns: student, status, progress, score, startedAt, submittedAt, time, violations.
+export function TableRow({ row, visibleColumns, highlighted = false, openStudentDetail, openViolationReport, toast }) {
   const evaluationLabel = assessmentEvaluationLabel(row);
+  const submitted = isSubmittedRow(row);
+  const pct = submitted && !evaluationLabel ? rowPercentage(row) : null;
+  const flags = rowViolationCount(row);
+  const canOpen = Boolean(row.submissionId);
+  const answered = row.answeredCount;
+  const total = row.totalQuestions;
   const getInitials = (name) => (name || 'U').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   return (
-    <tr key={row._id} className="group cursor-pointer text-slate-700 transition-colors hover:bg-sky-50/40 dark:text-slate-200 dark:hover:bg-sky-900/10" onClick={() => openStudentDetail(row)}>
+    <tr
+      className={`group text-slate-700 transition-colors duration-700 dark:text-slate-200 ${canOpen ? 'cursor-pointer hover:bg-sky-50/40 dark:hover:bg-sky-900/10' : ''} ${highlighted ? 'bg-amber-50/70 dark:bg-amber-900/10' : ''}`}
+      onClick={canOpen ? () => openStudentDetail(row) : undefined}
+      data-row-key={row.key}
+    >
       {visibleColumns.student && (
         <td className="px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-100 text-[10px] font-bold text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">{getInitials(row.studentName)}</div>
-            <div>
-              <div className="text-sm font-semibold text-slate-900 dark:text-white">{row.studentName || 'Unknown'}</div>
-              <div className="text-[10px] tabular-nums text-slate-400 dark:text-gray-500">{row.studentId || row.studentRollNo || '—'}</div>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-[10px] font-bold text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">{getInitials(row.name)}</div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-white">
+                <span className="truncate">{row.name || 'Unknown'}</span>
+                {row.flagged && <Flag className="h-3 w-3 shrink-0 text-rose-500" aria-label="Flagged" />}
+              </div>
+              <div className="truncate text-[10px] tabular-nums text-slate-400 dark:text-gray-500">{[row.rollNo, row.email].filter(Boolean).join(' · ') || '—'}</div>
             </div>
           </div>
         </td>
       )}
-      {visibleColumns.attemptDate && <td className="px-4 py-3 text-xs text-slate-600 dark:text-gray-300">{formatDateTime(row.attemptDate)}</td>}
-      {visibleColumns.attempts && <td className="px-4 py-3 text-center text-xs">{row.attempts || 1}</td>}
+      {visibleColumns.status && (
+        <td className="px-4 py-3 text-center">
+          <div className="inline-flex items-center gap-1">
+            <StatusBadge value={row.status} />
+            {submitted && row.isLate && <span className="rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">Late</span>}
+          </div>
+        </td>
+      )}
+      {visibleColumns.progress && (
+        <td className="px-4 py-3 text-center">
+          {answered == null ? <span className="text-xs text-slate-300 dark:text-gray-600">—</span> : (
+            <div className="mx-auto w-24">
+              <div className="text-[11px] font-semibold tabular-nums text-slate-700 dark:text-gray-200">{answered}{total ? ` / ${total}` : ''}</div>
+              {total ? <HorizontalProgress value={answered} max={total} height={3} color="#0ea5e9" /> : null}
+              {row.status === 'in_progress' && row.lastSavedAt && <div className="mt-0.5 text-[9px] text-slate-400 dark:text-gray-500">saved {formatClockTime(row.lastSavedAt)}</div>}
+            </div>
+          )}
+        </td>
+      )}
       {visibleColumns.score && (
         <td className="px-4 py-3 text-right">
-          <div className="flex items-center justify-end gap-2">
-            {!evaluationLabel && row.score != null && <DonutChart value={row.score} total={row.totalMarks || 100} size={32} stroke={3} />}
-            <span className="text-sm font-bold text-slate-900 dark:text-white">{evaluationLabel || (row.score == null ? 'Not available' : `${row.score}/${row.totalMarks || 100}`)}</span>
-          </div>
+          {evaluationLabel ? <EvaluationChip label={evaluationLabel} /> : pct == null ? (
+            <span className="text-sm text-slate-300 dark:text-gray-600">—</span>
+          ) : (
+            <div className="flex items-center justify-end gap-2">
+              <DonutChart value={pct} total={100} size={32} stroke={3} />
+              <div className="text-right">
+                <div className="text-sm font-bold text-slate-900 dark:text-white">{row.score != null && row.maxMarks ? `${row.score}/${row.maxMarks}` : `${Math.round(pct * 10) / 10}%`}</div>
+                {row.score != null && row.maxMarks ? <div className="text-[10px] tabular-nums text-slate-400 dark:text-gray-500">{Math.round(pct * 10) / 10}%</div> : null}
+              </div>
+            </div>
+          )}
         </td>
       )}
-      {visibleColumns.accuracy && (
-        <td className="px-4 py-3 text-center">
-          <div className="mx-auto w-24">
-            <div className="text-[10px] text-slate-400 dark:text-gray-500">{evaluationLabel || (row.accuracy == null ? 'Not available' : `${row.accuracy}%`)}</div>
-            {!evaluationLabel && row.accuracy != null && <HorizontalProgress value={row.accuracy} max={100} height={3} color={row.accuracy >= 75 ? '#84cc16' : '#0ea5e9'} />}
-          </div>
-        </td>
-      )}
-      {visibleColumns.time && <td className="px-4 py-3 text-right text-xs tabular-nums text-slate-600 dark:text-gray-300">{formatDuration(row.timeTakenSec)}</td>}
+      {visibleColumns.startedAt && <td className="px-4 py-3 text-xs text-slate-600 dark:text-gray-300">{formatDateTime(row.startedAt)}</td>}
+      {visibleColumns.submittedAt && <td className="px-4 py-3 text-xs text-slate-600 dark:text-gray-300">{submitted ? formatDateTime(row.submittedAt) : '—'}</td>}
+      {visibleColumns.time && <td className="px-4 py-3 text-right text-xs tabular-nums text-slate-600 dark:text-gray-300">{row.timeTakenSec == null ? '—' : formatDuration(row.timeTakenSec)}</td>}
       {visibleColumns.violations && (
         <td className="px-4 py-3 text-center">
-          {row.violationCount ? (
-            <button type="button" onClick={(e) => { e.stopPropagation(); openViolationReport(row._id); }} className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700 transition-colors hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30">
-              <ShieldAlert className="h-3 w-3" />{row.violationCount}
+          {flags || Number(row.violationScore) > 0 ? (
+            <button type="button" disabled={!canOpen} onClick={(e) => { e.stopPropagation(); openViolationReport(row.submissionId); }} title={`Violation score ${Number(row.violationScore) || 0}`} className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700 transition-colors hover:bg-sky-100 disabled:cursor-default dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30">
+              <ShieldAlert className="h-3 w-3" />{flags}
             </button>
           ) : (<span className="text-xs text-slate-300 dark:text-gray-600">—</span>)}
         </td>
       )}
-      {visibleColumns.status && (
-        <td className="px-4 py-3 text-center">
-          <StatusBadge value={row.status} />
-        </td>
-      )}
-      {visibleColumns.rank && <td className="px-4 py-3 text-center text-xs font-semibold">{row.rank ?? '—'}</td>}
       <td className="px-4 py-3 text-right">
         <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <button type="button" onClick={(e) => { e.stopPropagation(); openStudentDetail(row); }} className="rounded-md p-1.5 text-slate-500 hover:bg-sky-50 hover:text-sky-600 dark:text-gray-400 dark:hover:bg-sky-900/20 dark:hover:text-sky-400" title="View report"><Eye className="h-3.5 w-3.5" /></button>
-          <button type="button" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(row.studentId || row._id); toast.success('ID copied'); }} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" title="Copy ID"><Copy className="h-3.5 w-3.5" /></button>
+          {canOpen && <button type="button" onClick={(e) => { e.stopPropagation(); openStudentDetail(row); }} className="rounded-md p-1.5 text-slate-500 hover:bg-sky-50 hover:text-sky-600 dark:text-gray-400 dark:hover:bg-sky-900/20 dark:hover:text-sky-400" title="View report"><Eye className="h-3.5 w-3.5" /></button>}
+          <button type="button" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(row.rollNo || row.studentId || row.key); toast.success('ID copied'); }} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" title="Copy ID"><Copy className="h-3.5 w-3.5" /></button>
         </div>
       </td>
     </tr>

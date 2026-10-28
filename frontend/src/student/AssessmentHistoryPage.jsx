@@ -4,6 +4,7 @@ import AssessmentModuleLayout from './assessment-dashboard/AssessmentModuleLayou
 import AssessmentReportModal from './assessment-dashboard/AssessmentReportModal';
 import { useStudentAssessmentDashboardData } from './assessment-dashboard/useStudentAssessmentDashboardData';
 import { formatScore, formatShortDate, formatSeconds } from './assessment-dashboard/assessmentDashboardUtils';
+import { RESULT_NOT_ANNOUNCED, isResultAnnounced } from '../utils/assessmentEvaluation';
 
 const PAGE_SIZE = 8;
 
@@ -23,18 +24,20 @@ export default function AssessmentHistoryPage() {
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const pagedRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const completedCount = dashboard.history?.length || 0;
-  const scoredRows = (dashboard.history || []).filter((row) => row.score !== null && row.score !== undefined);
-  const bestScore = scoredRows.length ? Math.max(...scoredRows.map((row) => Number(row.score || 0))) : 0;
+  // Only announced results count; unreleased or still-evaluating attempts carry no score.
+  const announcedRows = (dashboard.history || []).filter(isResultAnnounced);
+  const bestScore = announcedRows.length ? Math.max(...announcedRows.map((row) => Number(row.score || 0))) : 0;
+  const summaryCards = [
+    { label: 'Completed Tests', value: completedCount, Icon: CheckCircle2, tone: 'emerald' },
+    ...(announcedRows.length ? [{ label: 'Best Score', value: formatScore(bestScore), Icon: Trophy, tone: 'amber' }] : []),
+    { label: 'Results Announced', value: announcedRows.length, Icon: FileText, tone: 'sky' },
+  ];
 
   return (
     <AssessmentModuleLayout title="Assessment History">
       <div className="space-y-5">
-        <div className="grid gap-4 md:grid-cols-3">
-          {[
-            { label: 'Completed Tests', value: completedCount, Icon: CheckCircle2, tone: 'emerald' },
-            { label: 'Best Score', value: scoredRows.length ? formatScore(bestScore) : 'Hidden', Icon: Trophy, tone: 'amber' },
-            { label: 'Reports Ready', value: filteredRows.length, Icon: FileText, tone: 'sky' },
-          ].map(({ label, value, Icon, tone }) => (
+        <div className={`grid gap-4 ${summaryCards.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+          {summaryCards.map(({ label, value, Icon, tone }) => (
             <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
               <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${
                 tone === 'emerald' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/25 dark:text-emerald-300' : tone === 'amber' ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/25 dark:text-amber-300' : 'bg-sky-50 text-sky-600 dark:bg-sky-900/25 dark:text-sky-300'
@@ -79,7 +82,7 @@ export default function AssessmentHistoryPage() {
                     <tr>
                       <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Assessment Name</th>
                       <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Completed On</th>
-                      <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Score</th>
+                      <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Result</th>
                       <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Time</th>
                       <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Attempt Status</th>
                     </tr>
@@ -102,7 +105,9 @@ export default function AssessmentHistoryPage() {
                           </span>
                         </td>
                         <td className="px-5 py-4 text-sm font-semibold text-slate-800 dark:text-gray-200">
-                          {row.score === null || row.score === undefined ? 'Hidden' : `${formatScore(row.score)}${row.totalMarks ? ` / ${formatScore(row.totalMarks)}` : ''}`}
+                          {isResultAnnounced(row)
+                            ? `${formatScore(row.score)}${row.totalMarks ? ` / ${formatScore(row.totalMarks)}` : ''}`
+                            : <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">{RESULT_NOT_ANNOUNCED}</span>}
                         </td>
                         <td className="px-5 py-4 text-sm text-slate-700 dark:text-gray-300">{formatSeconds(row.timeTakenSec)}</td>
                         <td className="px-5 py-4 text-sm">

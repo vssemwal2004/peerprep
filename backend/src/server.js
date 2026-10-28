@@ -22,6 +22,7 @@ import { runForTenant } from './platform/tenantContext.js';
 import { startSharedMaintenance } from './platform/sharedMaintenance.js';
 import { registerAnviSocketHandlers } from './modules/anviInterview/anviInterview.socket.js';
 import { flushAnviUsage } from './modules/anviInterview/anviInterview.usage.js';
+import { registerAssessmentReportSocketHandlers } from './services/assessmentReportRealtime.js';
 //fufgv
 const PORT = process.env.PORT || 4000;
 validateDeploymentConfig();
@@ -205,6 +206,8 @@ io.on('connection', (socket) => {
 });
 // Live ANVI interviews (audio relay to Gemini Live); registered after the limiter above.
 registerAnviSocketHandlers(io);
+// Live admin assessment report hints (authorised per room join, tenant-scoped rooms).
+registerAssessmentReportSocketHandlers(io);
 
 // Make io available globally
 app.set('io', io);

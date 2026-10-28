@@ -42,6 +42,8 @@ import {
 } from '../services/assessmentPersistenceService.js';
 import { getAssessmentAttemptDeadline, getAssessmentSubmitGraceMs, SECURITY_PAUSE_CREDIT_CAP_MS } from '../services/assessmentExpiryPolicy.js';
 import { concealHiddenSubmitResult } from './compilerHelpers.js';
+import { notifyAssessmentReportChanged } from '../services/assessmentReportRealtime.js';
+import { authorizeAssessmentReportAccess } from '../services/assessmentReportAccess.js';
 import crypto from 'crypto';
 import {
   AI_PROCTORING_VIOLATION_TYPES,
@@ -618,11 +620,33 @@ function sanitizeStudentSubmissionForResponse(submission) {
   // Stored coding results from before hidden-case concealment can still hold a
   // hidden input/expected output or stderr. Students never receive those.
   if (Array.isArray(source.answers)) {
-    source.answers = source.answers.map((answer) => (answer?.executionResult
-      ? { ...answer, executionResult: concealHiddenSubmitResult(answer.executionResult, { legacyRuntime: true }) }
-      : answer));
+    source.answers = source.answers.map((answer) => {
+      if (!answer || typeof answer !== 'object') return answer;
+      const { adminExecutionResult: _adminOnly, ...studentAnswer } = answer;
+      if (studentAnswer.executionResult) {
+        studentAnswer.executionResult = concealHiddenSubmitResult(studentAnswer.executionResult, { legacyRuntime: true });
+      }
+      return studentAnswer;
+    });
   }
   Object.assign(source, assessmentWriteAcknowledgement(submission));
+  return source;
+}
+
+// Until results are released a finished attempt carries no score and no
+// evaluation state (the student sees only resultReleased:false). Live coding
+// feedback during an attempt in progress is product behaviour and stays.
+function withheldUnreleasedResult(source, resultReleased) {
+  if (!source || resultReleased) return source;
+  ['score', 'maxMarks', 'accuracy', 'evaluationStatus', 'evaluationVersion', 'codingJobsPending', 'codingJobsCompleted']
+    .forEach((field) => { delete source[field]; });
+  if (isTerminalAssessmentSubmission(source) && Array.isArray(source.answers)) {
+    source.answers = source.answers.map((answer) => {
+      if (!answer || typeof answer !== 'object') return answer;
+      const { executionResult: _result, executionVerdict: _verdict, executionStatus: _status, lastEvaluatedAt: _evaluatedAt, ...rest } = answer;
+      return rest;
+    });
+  }
   return source;
 }
 
@@ -779,6 +803,12 @@ function normalizeAiProctoringSettings(settings = {}) {
   };
 }
 
+function normalizeReleaseDate(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export function normalizeAssessmentSettings(settings = {}) {
   const plainSettings = settings && typeof settings?.toObject === 'function'
     ? settings.toObject({ getters: false, virtuals: false })
@@ -842,7 +872,10 @@ export function normalizeAssessmentSettings(settings = {}) {
     showCorrectAnswers: Boolean(source.showCorrectAnswers),
     showSectionBreakdown: Boolean(source.showSectionBreakdown),
     showPercentile: Boolean(source.showPercentile),
-    resultDelayHours: clampSettingNumber(source.resultDelayHours, 24, { min: 0, max: 24 * 30 }),
+    // 0 = held until an admin releases results (stored non-zero delays still apply).
+    resultDelayHours: clampSettingNumber(source.resultDelayHours, 0, { min: 0, max: 24 * 30 }),
+    // Server-owned: set only by release-results/release-answers, preserved on edits.
+    resultsReleasedAt: normalizeReleaseDate(source.resultsReleasedAt),
     allowRetake: Boolean(source.allowRetake),
     retakeGapHours: clampSettingNumber(source.retakeGapHours, 0, { min: 0, max: 24 * 30 }),
     questionSelectionEnabled: Boolean(source.questionSelectionEnabled),
@@ -1207,7 +1240,12 @@ function buildStudentResultPermissions(assessment = {}, submission = {}, now = n
     : null;
   // An attempt still in progress must never be graded back to the student:
   // saving an option and reading its correctness would be an answer oracle.
-  const resultReleased = isTerminalAssessmentSubmission(submission) && (immediateRelease
+  // A finished attempt is released once graded and either shown immediately,
+  // released by an admin (settings.resultsReleasedAt), or past its delay.
+  // resultDelayHours 0 without either means "held until released".
+  const graded = (submission?.evaluationStatus ?? 'completed') === 'completed';
+  const resultReleased = isTerminalAssessmentSubmission(submission) && graded && (immediateRelease
+    || Boolean(settings.resultsReleasedAt)
     || Boolean(delayedReleaseAt && delayedReleaseAt.getTime() <= now.getTime()));
   // Classmates may still be writing until the window closes for everyone.
   const answersReleased = resultReleased && isAssessmentClosedForStudents(assessment, now)
@@ -1284,8 +1322,9 @@ function buildQuestionWiseReport(assessment = {}, submission = {}, permissions =
         row.selectedOptionIndex = Number.isFinite(selectedIndex) ? selectedIndex : null;
         if ((question?.type || section?.type) === 'coding') {
           // Admin reports pass revealHiddenTests; student permissions never do.
+          // adminExecutionResult keeps the hidden failing case and raw stderr.
           const executionResult = (permissions.revealHiddenTests
-            ? answer?.executionResult
+            ? (answer?.adminExecutionResult || answer?.executionResult)
             : concealHiddenSubmitResult(answer?.executionResult, { legacyRuntime: true })) || {};
           row.language = answer?.language || '';
           row.sourceCode = answer?.code || '';
@@ -1495,7 +1534,7 @@ function buildStudentPartialReportRow(assessment = {}, submission = {}, now = ne
     duration: assessment.duration || 0,
     dateAttempted: submission.submittedAt || submission.startedAt || submission.updatedAt || submission.createdAt,
     status: formatStudentSubmissionStatus(submission),
-    evaluationStatus: submission.evaluationStatus || 'completed',
+    evaluationStatus: null,
     score: null,
     totalMarks: null,
     rawScore: null,
@@ -1543,7 +1582,8 @@ function buildStudentReportRow(assessment = {}, submission = {}, { rankInfo = nu
     duration: assessment.duration || 0,
     dateAttempted: submission.submittedAt || submission.startedAt || submission.updatedAt || submission.createdAt,
     status: formatStudentSubmissionStatus(submission),
-    evaluationStatus: submission.evaluationStatus || 'completed',
+    // Unreleased results expose no evaluation state (permissions.resultReleased is false).
+    evaluationStatus: permissions.resultReleased ? (submission.evaluationStatus || 'completed') : null,
     score: permissions.canViewScore ? score : null,
     totalMarks: permissions.canViewScore ? totalMarks : null,
     rawScore: permissions.canViewScore ? score : null,
@@ -2352,7 +2392,8 @@ export async function createAssessment(req, res) {
       return res.status(403).json({ error: 'Adding new assessment students is not enabled for this coordinator.' });
     }
 
-    const normalizedSettings = normalizeAssessmentSettings(settings);
+    // Results release is server-owned; a new assessment always starts unreleased.
+    const normalizedSettings = { ...normalizeAssessmentSettings(settings), resultsReleasedAt: null };
     const normalizedSections = normalizeAssessmentSections(sections);
     const normalizedQuestionSets = normalizeAssessmentQuestionSets(questionSets, normalizedSections);
     if (lifecycleStatus !== 'draft' && normalizedSettings.questionSetEnabled && normalizedQuestionSets.length < normalizedSettings.questionSetCount) {
@@ -2819,7 +2860,9 @@ export async function updateAssessment(req, res) {
       assessment.customInstructions = Array.isArray(customInstructions) ? customInstructions : [];
     }
     if (settings !== undefined) {
-      assessment.settings = normalizeAssessmentSettings(settings);
+      // Editing never releases or withdraws results; only release-results does.
+      const releasedAt = normalizeAssessmentSettings(assessment.settings || {}).resultsReleasedAt;
+      assessment.settings = { ...normalizeAssessmentSettings(settings), resultsReleasedAt: releasedAt };
     }
     await applyAssessmentPassword(assessment, { passwordEnabled, password });
 
@@ -3573,16 +3616,19 @@ export async function releaseAssessmentAnswers(req, res) {
       return res.status(400).json({ error: 'Publish the assessment before releasing answers.' });
     }
 
+    const currentSettings = normalizeAssessmentSettings(assessment.settings);
     const nextSettings = normalizeAssessmentSettings({
-      ...normalizeAssessmentSettings(assessment.settings),
+      ...currentSettings,
       showResultsAfterSubmit: true,
       showCorrectAnswers: true,
       showSectionBreakdown: true,
       showPercentile: true,
       resultDelayHours: 0,
+      resultsReleasedAt: currentSettings.resultsReleasedAt || new Date(),
     });
     assessment.settings = nextSettings;
     await assessment.save();
+    notifyAssessmentReportChanged(assessment._id, 'evaluation');
 
     await logActivity({
       actorId: req.user?._id,
@@ -4015,10 +4061,12 @@ async function studentAttemptResponse(assessment, submission, student, now, mess
       ...sanitizeStudentAssessmentForResponse({ ...delivered, sections: [] }),
       sectionSummary: buildStudentSectionSummary(delivered.sections),
     };
+  const { resultReleased } = buildStudentResultPermissions(assessment, submission, now);
   return {
     ...(message ? { message } : {}),
     assessment: studentAssessment,
-    submission: sanitizeStudentSubmissionForResponse(submission),
+    submission: withheldUnreleasedResult(sanitizeStudentSubmissionForResponse(submission), resultReleased),
+    resultReleased,
     candidate: buildCandidateIdentity(student),
     serverTime: now,
     allowedEnd: computeAllowedEnd(delivered, submission.startedAt || now, submission.pausedDurationMs),
@@ -4038,19 +4086,20 @@ export async function getStudentAssessment(req, res) {
     const check = await ensureAssessmentPasswordUnlocked(assessment, existing);
     if (!check.ok) throw new AssessmentWriteError(check.status, 'ASSESSMENT_LOCKED', check.error);
     await ensureStudentAttempt(assessment, req.user._id);
-    const { submission } = await mutateAssessmentSubmission({
+    const { submission, result } = await mutateAssessmentSubmission({
       filter: { assessmentId: assessment._id, studentId: req.user._id },
       mutate: (doc) => {
-        if (isTerminalAssessmentSubmission(doc)) return;
+        if (isTerminalAssessmentSubmission(doc)) return null;
         prepareAttemptDelivery(doc, assessment, req.user._id, now);
         if (doc.pauseStartedAt && doc.securityPauseReason !== 'tab_switch') {
           finishSubmissionSecurityPause(doc, now);
           doc.securityCompletedAt = doc.securityCompletedAt || doc.startedAt || now;
         }
         if (doc.status === 'in_progress' && doc.startedAt && !doc.securityCompletedAt) doc.securityCompletedAt = doc.startedAt;
-        finalizeIfDeadlinePassed(doc, assessment, now);
+        return { expired: finalizeIfDeadlinePassed(doc, assessment, now) };
       },
     });
+    if (result?.expired) notifyAssessmentReportChanged(assessment._id, 'expired');
     return res.json(await studentAttemptResponse(assessment, submission, req.user, now));
   } catch (error) { return respondAssessmentWriteError(res, error); }
 }
@@ -4121,6 +4170,7 @@ export async function startStudentAssessment(req, res) {
         // Repeated start requests cannot clear completed setup or an active exam.
       },
     });
+    notifyAssessmentReportChanged(assessment._id, 'started');
     return res.json(await studentAttemptResponse(assessment, submission, req.user, now, 'Assessment unlocked'));
   } catch (error) { return respondAssessmentWriteError(res, error); }
 }
@@ -4173,6 +4223,7 @@ export async function beginStudentAssessment(req, res) {
       },
     });
     if (!submission) throw new AssessmentWriteError(404, 'ATTEMPT_NOT_FOUND', 'Unlock the assessment first.');
+    notifyAssessmentReportChanged(assessment._id, isTerminalAssessmentSubmission(submission) ? 'expired' : 'started');
     return res.json(await studentAttemptResponse(assessment, submission, req.user, now, isTerminalAssessmentSubmission(submission) ? 'Assessment already submitted' : 'Assessment started'));
   } catch (error) { return respondAssessmentWriteError(res, error); }
 }
@@ -4277,6 +4328,10 @@ async function persistStudentAnswers(req, res, { autosave = false } = {}) {
       },
     });
     if (!submission) return res.status(404).json({ error: 'Submission not found. Start the assessment first.' });
+    if (!result?.alreadySubmitted && !result?.duplicate) {
+      notifyAssessmentReportChanged(assessment._id, final ? 'submitted'
+        : (isTerminalAssessmentSubmission(submission) ? 'expired' : 'answers'));
+    }
     return res.json({
       message: result?.alreadySubmitted ? 'Assessment already submitted' : 'Saved',
       status: submission.status,
@@ -4389,11 +4444,12 @@ async function respondSharedAssessmentReports(req, res, assessment) {
     match.studentId = { $in: students.map((student) => student._id) };
   }
   if (options.hasViolations === 'true') match.$expr = { $gt: [{ $add: ['tabSwitches', 'fullscreenExits', 'cameraFlags', 'copyPasteCount'].map((field) => ({ $ifNull: [`$${field}`, 0] })) }, 0] };
-  const page = Math.max(1, Number(options.page) || 1);
-  const limit = Math.min(100, Math.max(1, Number(options.limit) || 25));
+  const page = Math.max(1, Math.floor(Number(options.page)) || 1);
+  const limit = Math.min(REPORT_PAGE_LIMIT_MAX, Math.max(1, Math.floor(Number(options.limit)) || 25));
   const [total, submissions, statistics] = await Promise.all([
     AssessmentSubmission.countDocuments(match),
-    AssessmentSubmission.find(match).sort({ startedAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+    AssessmentSubmission.find(match).sort({ startedAt: -1 }).skip((page - 1) * limit).limit(limit)
+      .select('studentId startedAt attemptCount score maxMarks accuracy evaluationStatus timeTakenSec status tabSwitches fullscreenExits cameraFlags copyPasteCount').lean(),
     AssessmentSubmission.aggregate([
       { $match: match },
       { $addFields: { __scorePercent: { $cond: [
@@ -4519,6 +4575,33 @@ async function respondSharedAssessmentExport(req, res, assessment) {
   return res.json(payload);
 }
 
+const REPORT_STATUSES = new Set(['not_started', 'in_progress', 'submitted', 'expired', 'violation', 'incomplete']);
+const REPORT_SORT_KEYS = new Set(['studentName', 'attemptDate', 'attempts', 'score', 'accuracy', 'timeTakenSec', 'violationCount', 'rank']);
+const REPORT_STRING_PARAMS = ['assessmentId', 'assessmentType', 'studentId', 'studentQuery', 'status', 'hasViolations', 'assessmentWindow',
+  'from', 'to', 'scoreMin', 'scoreMax', 'sortKey', 'sortDir', 'page', 'limit', 'passMark', 'view'];
+export const REPORT_PAGE_LIMIT_MAX = 200;
+
+function validateReportQuery(query = {}) {
+  for (const key of REPORT_STRING_PARAMS) {
+    const value = query[key];
+    if (value !== undefined && typeof value !== 'string' && typeof value !== 'number') return `Invalid ${key}`;
+    if (typeof value === 'string' && value.length > 200) return `Invalid ${key}`;
+  }
+  if (query.status && !REPORT_STATUSES.has(query.status)) return 'Invalid status';
+  if (query.assessmentType && !/^[a-z_]{1,32}$/.test(query.assessmentType)) return 'Invalid assessmentType';
+  if (query.sortKey && !REPORT_SORT_KEYS.has(query.sortKey)) return 'Invalid sortKey';
+  if (query.sortDir && !['asc', 'desc'].includes(String(query.sortDir).toLowerCase())) return 'Invalid sortDir';
+  return '';
+}
+
+// Percentage of the attempt's max marks; the same buckets as the stored
+// assessment summaries (assessmentReportSummaryService): <=25, <=50, <=75, <=90, >90.
+const reportScorePercentExpression = { $cond: [
+  { $gt: [{ $ifNull: ['$maxMarks', { $ifNull: ['$assessment.totalMarks', 0] }] }, 0] },
+  { $multiply: [{ $divide: ['$score', { $ifNull: ['$maxMarks', '$assessment.totalMarks'] }] }, 100] },
+  0,
+] };
+
 export async function getAssessmentReports(req, res) {
   let releaseReportSlot;
   try {
@@ -4543,6 +4626,10 @@ export async function getAssessmentReports(req, res) {
       passMark = 0.4,
     } = req.query || {};
 
+    // Query values reach $match: only plain whitelisted strings, never objects
+    // such as status[$ne]=x from the extended query parser.
+    const invalidQuery = validateReportQuery(req.query || {});
+    if (invalidQuery) return res.status(400).json({ error: invalidQuery });
     if (assessmentId && !mongoose.Types.ObjectId.isValid(assessmentId)) {
       return res.status(400).json({ error: 'Invalid assessmentId' });
     }
@@ -4715,8 +4802,8 @@ export async function getAssessmentReports(req, res) {
       { $count: 'count' },
     ]);
     const totalCount = totalStudents?.[0]?.count || 0;
-    const limitNum = Math.min(100, Math.max(1, Number(limit) || 25));
-    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.min(REPORT_PAGE_LIMIT_MAX, Math.max(1, Math.floor(Number(limit)) || 25));
+    const pageNum = Math.max(1, Math.floor(Number(page)) || 1);
     const skip = (pageNum - 1) * limitNum;
     const sortFieldMap = {
       studentName: 'studentName',
@@ -4814,21 +4901,12 @@ export async function getAssessmentReports(req, res) {
           fullscreenExits: { $sum: { $ifNull: ['$fullscreenExits', 0] } },
           cameraFlags: { $sum: { $ifNull: ['$cameraFlags', 0] } },
           copyPasteCount: { $sum: { $ifNull: ['$copyPasteCount', 0] } },
-          score0_25: {
-            $sum: { $cond: [{ $and: [{ $gte: ['$score', 0] }, { $lt: ['$score', 26] }] }, 1, 0] },
-          },
-          score26_50: {
-            $sum: { $cond: [{ $and: [{ $gte: ['$score', 26] }, { $lt: ['$score', 51] }] }, 1, 0] },
-          },
-          score51_75: {
-            $sum: { $cond: [{ $and: [{ $gte: ['$score', 51] }, { $lt: ['$score', 76] }] }, 1, 0] },
-          },
-          score76_90: {
-            $sum: { $cond: [{ $and: [{ $gte: ['$score', 76] }, { $lt: ['$score', 91] }] }, 1, 0] },
-          },
-          score91_100: {
-            $sum: { $cond: [{ $gte: ['$score', 91] }, 1, 0] },
-          },
+          // Graded attempts by percentage of max marks (was raw score).
+          score0_25: { $sum: { $cond: [{ $and: ['$isGraded', { $lte: [reportScorePercentExpression, 25] }] }, 1, 0] } },
+          score26_50: { $sum: { $cond: [{ $and: ['$isGraded', { $gt: [reportScorePercentExpression, 25] }, { $lte: [reportScorePercentExpression, 50] }] }, 1, 0] } },
+          score51_75: { $sum: { $cond: [{ $and: ['$isGraded', { $gt: [reportScorePercentExpression, 50] }, { $lte: [reportScorePercentExpression, 75] }] }, 1, 0] } },
+          score76_90: { $sum: { $cond: [{ $and: ['$isGraded', { $gt: [reportScorePercentExpression, 75] }, { $lte: [reportScorePercentExpression, 90] }] }, 1, 0] } },
+          score91_100: { $sum: { $cond: [{ $and: ['$isGraded', { $gt: [reportScorePercentExpression, 90] }] }, 1, 0] } },
         },
       },
     ]);
@@ -5878,7 +5956,7 @@ export async function logStudentViolation(req, res) {
         const duplicate = (doc.violationLog || []).find((entry) => entry.eventId === eventId);
         if (duplicate) return { action: duplicate.action || 'warn' };
         // Past the deadline and its grace, the attempt closes like on any other request.
-        if (finalizeIfDeadlinePassed(doc, assessment, now)) return { action: 'warn', ignored: true };
+        if (finalizeIfDeadlinePassed(doc, assessment, now)) return { action: 'warn', ignored: true, expired: true };
         const pastDeadline = doc.status === 'in_progress' && isAttemptPastDeadline(doc, assessment, now);
         if (type === 'tab_switch') doc.tabSwitches += 1;
         if (type === 'fullscreen_exit') doc.fullscreenExits += 1;
@@ -5912,6 +5990,8 @@ export async function logStudentViolation(req, res) {
       },
     });
     if (!submission) throw new AssessmentWriteError(404, 'ATTEMPT_NOT_FOUND', 'Submission not found.');
+    if (!result?.ignored) notifyAssessmentReportChanged(assessment._id, result?.action === 'autosubmit' ? 'submitted' : 'violation');
+    else if (result?.expired) notifyAssessmentReportChanged(assessment._id, 'expired');
     if (!result?.ignored) await AssessmentEvent.updateOne(
       { submissionId: submission._id, attemptGeneration: submission.attemptGeneration || 1, eventId },
       { $setOnInsert: { assessmentId: assessment._id, studentId: req.user._id, kind: 'violation', type, message: cleanMessage, at: now, meta: logMeta } },
@@ -6187,21 +6267,42 @@ export async function getAssessmentEvidence(req, res) {
   } catch (error) { return respondAssessmentWriteError(res, error); }
 }
 
+// The violation report needs the title and the proctoring settings it
+// displays, never questions, answers, candidates or password material.
+const VIOLATION_REPORT_SETTING_KEYS = ['enableFullscreen', 'tabSwitchDetection', 'tabSwitchLimit', 'tabSwitchAction', 'disableCopyPaste',
+  'blockRightClick', 'blockScreenshots', 'cameraMonitoring', 'cameraSnapshotInterval', 'cameraFaceAlert', 'audioMonitoring',
+  'preventMultipleTabs', 'idleDetection', 'idleThresholdMin', 'securityRecheckTimeoutSec', 'environmentCheck', 'locationTracking', 'aiProctoring'];
+
+async function violationReportAssessment(assessmentId) {
+  const source = await Assessment.findById(assessmentId).select('_id title settings').lean()
+    || (isUniversity() ? await sharedAssessment(assessmentId) : null);
+  if (!source) return null;
+  const settings = normalizeAssessmentSettings(source.settings || {});
+  return {
+    _id: source._id,
+    title: source.title || '',
+    settings: Object.fromEntries(VIOLATION_REPORT_SETTING_KEYS.filter((key) => settings[key] !== undefined).map((key) => [key, settings[key]])),
+  };
+}
+
 export async function getSubmissionViolations(req, res) {
   try {
     const { submissionId } = req.params;
+    if (!/^[a-f\d]{24}$/i.test(String(submissionId || ''))) return res.status(400).json({ error: 'Invalid submissionId.' });
+    if (req.query.before !== undefined && !/^[a-f\d]{24}$/i.test(String(req.query.before))) {
+      return res.status(400).json({ error: 'Invalid cursor.' });
+    }
     const submission = await AssessmentSubmission.findById(submissionId)
       .populate('studentId', 'name email studentId')
       .select('attemptGeneration violationLog violations monitoringEvents proctoringSnapshots.type proctoringSnapshots.capturedAt proctoringSnapshots.width proctoringSnapshots.height aiProctoringSummary tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount lastPauseAt inconsistentHeartbeatCount heartbeatGapCount status startedAt submittedAt studentId assessmentId securitySetup securityHeartbeat lastIp lastUserAgent')
       .lean();
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
-    if (req.user && req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
-      const assessment = await assessmentDefinitionById(submission.assessmentId);
-      if (!assessment || String(assessment.createdBy) !== String(req.user._id)) {
-        return res.status(403).json({ error: 'Access denied.' });
-      }
+    try {
+      await authorizeAssessmentReportAccess(req.user, submission.assessmentId);
+    } catch (error) {
+      return res.status(error.status === 404 ? 404 : 403).json({ error: error.status === 404 ? 'Assessment not found.' : 'Access denied.' });
     }
-    const assessment = await assessmentDefinitionById(submission.assessmentId);
+    const assessment = await violationReportAssessment(submission.assessmentId);
     const userAgentDetails = parseUserAgentDetails(submission.lastUserAgent || '');
     const eventFilter = { submissionId: submission._id, attemptGeneration: submission.attemptGeneration || 1 };
     if (req.query.before && mongoose.Types.ObjectId.isValid(req.query.before)) eventFilter._id = { $lt: new mongoose.Types.ObjectId(req.query.before) };

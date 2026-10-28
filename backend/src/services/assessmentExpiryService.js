@@ -7,6 +7,7 @@ import {
   getAssessmentAttemptTimeTakenSec,
   isAssessmentAttemptExpired,
 } from './assessmentExpiryPolicy.js';
+import { notifyAssessmentReportChanged } from './assessmentReportRealtime.js';
 
 let globalSweepCursor = null;
 
@@ -31,6 +32,7 @@ async function finalizeExpiredSubmission(submission, assessment, now) {
       return changed;
     },
   });
+  if (updated.result) notifyAssessmentReportChanged(assessment._id, 'expired');
   return Boolean(updated.result);
 }
 

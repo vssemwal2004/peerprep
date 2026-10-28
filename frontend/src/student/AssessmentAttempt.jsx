@@ -111,7 +111,7 @@ const AssessmentCountdown = memo(function AssessmentCountdown({ endAt, offset, r
 });
 
 /** Keeps short-answer typing local so each keystroke re-renders only the textarea. */
-const ShortAnswerInput = memo(function ShortAnswerInput({ value, commitKey, onCommit, disabled, registerFlush }) {
+const ShortAnswerInput = memo(function ShortAnswerInput({ value, commitKey, onCommit, disabled, registerFlush, maxLength }) {
   const [draft, setDraft] = useState(value || '');
   const pendingRef = useRef(null);
   const valueRef = useRef(value || '');
@@ -153,6 +153,7 @@ const ShortAnswerInput = memo(function ShortAnswerInput({ value, commitKey, onCo
         pendingRef.current = { text, timer: setTimeout(flush, 250) };
       }}
       onBlur={flush}
+      maxLength={maxLength}
       rows="7"
       className="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-[0.94rem] leading-relaxed text-slate-800 shadow-sm transition-all focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
       disabled={disabled}
@@ -1524,7 +1525,7 @@ export default function AssessmentAttempt() {
     if (type === 'copy_paste' || type === 'context_menu') setCopyPasteCount((prev) => prev + 1);
 
     try {
-      const result = await api.logStudentAssessmentViolation(assessment._id, {
+      const violationBody = {
         eventId: entry.eventId,
         submissionId: saveProtocolRef.current?.submissionId,
         sessionId: assessmentSessionIdRef.current,
@@ -1533,7 +1534,17 @@ export default function AssessmentAttempt() {
         message,
         timestamp: entry.at,
         meta: entry.meta,
-      });
+      };
+      let result;
+      try {
+        result = await api.logStudentAssessmentViolation(assessment._id, violationBody);
+      } catch (firstError) {
+        // Server busy (per-client cap): retry once with the same eventId, so the
+        // server records it at most once.
+        if (firstError?.response?.status !== 429) throw firstError;
+        await new Promise((resolve) => setTimeout(resolve, 1200 + Math.random() * 800));
+        result = await api.logStudentAssessmentViolation(assessment._id, violationBody);
+      }
       if (typeof result?.tabSwitches === 'number') setTabSwitches(result.tabSwitches);
       if (typeof result?.fullscreenExits === 'number') setFullscreenExits(result.fullscreenExits);
       if (typeof result?.cameraFlags === 'number') setCameraFlags(result.cameraFlags);
@@ -2994,6 +3005,8 @@ export default function AssessmentAttempt() {
           setSecurityNotice('This assessment is active in another tab, browser, or device.');
           return;
         }
+        // "Server busy" is load shedding, not a weak student connection.
+        if (err?.response?.status === 429) return;
         consecutiveNetworkFailuresRef.current += 1;
         if (navigator.onLine === false) {
           setNetworkStatus('offline');
@@ -4406,6 +4419,7 @@ export default function AssessmentAttempt() {
                     value={answersMap[activeAnswerKey]?.answer || ''}
                     onCommit={(text) => handleShortAnswerCommit(activeSection, activeQuestion, text)}
                     registerFlush={registerShortAnswerFlush}
+                    maxLength={section?.type === 'one_line' ? 500 : 10000}
                     disabled={isSubmitted}
                   />
                 </div>

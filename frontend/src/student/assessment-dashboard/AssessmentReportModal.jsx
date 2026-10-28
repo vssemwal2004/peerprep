@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { assessmentEvaluationLabel } from '../../utils/assessmentEvaluation';
-import { Clock3, Target, Trophy, X } from 'lucide-react';
+import { RESULT_NOT_ANNOUNCED, isResultAnnounced } from '../../utils/assessmentEvaluation';
+import { Clock3, Lock, Target, Trophy, X } from 'lucide-react';
 import { formatScore, formatSeconds } from './assessmentDashboardUtils';
 
 function ProgressRow({ label, value, total, tone }) {
@@ -82,7 +82,9 @@ export default function AssessmentReportModal({ report, open, onClose }) {
   if (!report) return null;
 
   const totalQuestions = report.totalQuestions || 0;
-  const evaluationLabel = assessmentEvaluationLabel(report);
+  const announced = isResultAnnounced(report);
+  const accuracyVisible = announced && report.permissions?.canViewPercentage !== false
+    && report.accuracy !== null && report.accuracy !== undefined;
 
   return (
     <AnimatePresence>
@@ -116,14 +118,32 @@ export default function AssessmentReportModal({ report, open, onClose }) {
                 {report.assessmentName}
               </h3>
               <p className="mt-1.5 text-sm leading-relaxed text-slate-500 dark:text-slate-300">
-                Review question performance, scoring accuracy, and time efficiency for this assessment attempt.
+                {announced
+                  ? 'Review question performance, scoring accuracy, and time efficiency for this assessment attempt.'
+                  : 'Your submission is saved. Your score and report will appear here once your instructor announces the result.'}
               </p>
             </div>
 
+            {!announced ? (
+              <div className="mt-4 flex flex-col items-center rounded-md border border-slate-200 bg-slate-50 px-6 py-10 text-center dark:border-gray-700 dark:bg-gray-800" data-testid="result-not-announced">
+                <Lock className="h-7 w-7 text-slate-300 dark:text-gray-500" />
+                <div className="mt-3 text-base font-semibold text-slate-900 dark:text-white">{RESULT_NOT_ANNOUNCED}</div>
+                <div className="mt-4 grid w-full max-w-md grid-cols-2 gap-2.5 text-left">
+                  <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">Status</div>
+                    <div className="mt-1 text-sm font-bold text-slate-950 dark:text-white">{report.status || 'Submitted'}</div>
+                  </div>
+                  <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">Questions</div>
+                    <div className="mt-1 text-sm font-bold text-slate-950 dark:text-white">{report.totalQuestions ?? '—'}</div>
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div className="mt-4 grid gap-3 xl:grid-cols-[1.08fr_0.92fr]">
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3.5 dark:border-gray-700 dark:bg-gray-800">
                 <div className="flex flex-col items-center justify-between gap-5 sm:flex-row">
-                  {!evaluationLabel && <ScoreRing score={report.accuracy} />}
+                  {accuracyVisible && <ScoreRing score={report.accuracy} />}
 
                   <div className="grid flex-1 gap-2.5 sm:grid-cols-2">
                     <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
@@ -131,8 +151,8 @@ export default function AssessmentReportModal({ report, open, onClose }) {
                         Final Score
                       </div>
                       <div className="mt-1.5 text-xl font-black tracking-tight text-slate-950 dark:text-white">
-                        {evaluationLabel || formatScore(report.score)}
-                        {!evaluationLabel && <span className="ml-1 text-base font-semibold text-slate-400 dark:text-gray-400">/ {formatScore(report.totalMarks)}</span>}
+                        {formatScore(report.score)}
+                        {report.totalMarks !== null && report.totalMarks !== undefined && <span className="ml-1 text-base font-semibold text-slate-400 dark:text-gray-400">/ {formatScore(report.totalMarks)}</span>}
                       </div>
                     </div>
                     <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
@@ -170,12 +190,6 @@ export default function AssessmentReportModal({ report, open, onClose }) {
                   <ProgressRow label="Wrong" value={report.wrongAnswers} total={totalQuestions} tone="bg-rose-500" />
                   <ProgressRow label="Skipped" value={report.skippedQuestions} total={totalQuestions} tone="bg-slate-400" />
                 </div>
-
-                {report.pendingEvaluationQuestions > 0 ? (
-                  <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-400/20 dark:bg-amber-900/20 dark:text-amber-200">
-                    {report.pendingEvaluationQuestions} question{report.pendingEvaluationQuestions !== 1 ? 's are' : ' is'} marked as pending evaluation. This usually applies to coding/manual review sections.
-                  </div>
-                ) : null}
               </div>
 
               <div className="rounded-md border border-slate-200 bg-white p-3.5 shadow-[0_24px_50px_-42px_rgba(15,23,42,0.35)] dark:border-gray-700 dark:bg-gray-900">
@@ -226,6 +240,7 @@ export default function AssessmentReportModal({ report, open, onClose }) {
                 </div>
               </div>
             </div>
+            )}
           </motion.div>
         </motion.div>
       ) : null}

@@ -49,6 +49,7 @@ import {
 import { getCodingQuestionScore } from './assessmentScoringService.js';
 import { mutateAssessmentSubmission } from './assessmentPersistenceService.js';
 import { isAssessmentAttemptExpired } from './assessmentExpiryPolicy.js';
+import { notifyAssessmentReportChanged } from './assessmentReportRealtime.js';
 import {
   getVisibleCodeTemplate,
   prepareFunctionSourceForExecution,
@@ -538,6 +539,33 @@ export function buildSubmitApiResponse(executionResult, { revealHidden = false }
     time: roundNumber(executionResult.executionTimeMs / 1000, 3),
     memory: executionResult.memoryUsedKb || 0,
   };
+}
+
+const ADMIN_RESULT_TEXT_LIMIT = 4000;
+const capAdminText = (value) => {
+  const text = String(value ?? '');
+  return text.length > ADMIN_RESULT_TEXT_LIMIT ? `${text.slice(0, ADMIN_RESULT_TEXT_LIMIT)}…` : text;
+};
+
+/**
+ * The full result for admin reports: the failing case (hidden or not) and raw
+ * stderr, each capped so many coding answers cannot bloat the attempt
+ * document. Stored as answers[].adminExecutionResult; never sent to students.
+ */
+export function buildAdminSubmitResult(executionResult) {
+  const response = buildSubmitApiResponse(executionResult, { revealHidden: true });
+  if (response.error) response.error = capAdminText(response.error);
+  const failed = executionResult?.failedCase;
+  if (failed) {
+    response.failedTestCase = {
+      index: failed.index,
+      hidden: isHiddenJudgeFailure(failed),
+      input: capAdminText(failed.input),
+      expected: capAdminText(failed.expectedOutput),
+      actual: capAdminText(failed.actualOutput),
+    };
+  }
+  return response;
 }
 
 async function resolveRunExpectedOutput({
@@ -1202,7 +1230,7 @@ async function persistAssessmentCodingDraft({ assessment, userId, trackedSubmiss
           language: trackedSubmission.language, code: trackedSubmission.sourceCode,
           jobId: String(trackedSubmission._id), submissionId: trackedSubmission._id,
           executionStatus: 'queued', executionVerdict: 'PENDING', executionResult: null,
-          lastEvaluatedAt: undefined,
+          adminExecutionResult: undefined, lastEvaluatedAt: undefined,
         };
         if (answerIndex >= 0) answers[answerIndex] = nextAnswer;
         else answers.push(nextAnswer);
@@ -1224,6 +1252,7 @@ async function syncAssessmentAnswerFromTrackedSubmission(trackedSubmission) {
   const assessment = await assessmentDefinitionById(trackedSubmission.assessmentId);
   if (!assessment) return null;
   const executionResult = buildSubmitApiResponse(trackedSubmission);
+  const adminExecutionResult = buildAdminSubmitResult(trackedSubmission);
   const updated = await mutateAssessmentSubmission({
     filter: { assessmentId: trackedSubmission.assessmentId, studentId: trackedSubmission.user, status: 'in_progress' },
     mutate(current) {
@@ -1238,6 +1267,7 @@ async function syncAssessmentAnswerFromTrackedSubmission(trackedSubmission) {
         answer.executionStatus = trackedSubmission.status === 'RE' ? 'failed' : 'completed';
         answer.executionVerdict = trackedSubmission.status;
         answer.executionResult = executionResult;
+        answer.adminExecutionResult = adminExecutionResult;
         answer.lastEvaluatedAt = trackedSubmission.completedAt || new Date();
         if (!firstScore) firstScore = getCodingQuestionScore(match.question, answer, match.section);
       }
@@ -1247,6 +1277,7 @@ async function syncAssessmentAnswerFromTrackedSubmission(trackedSubmission) {
   });
   const firstScore = updated.result;
   if (!firstScore) return null;
+  notifyAssessmentReportChanged(trackedSubmission.assessmentId, 'answers');
 
   return {
     earnedMarks: firstScore.earnedMarks,
@@ -1290,6 +1321,7 @@ export async function enqueueAssessmentCodingEvaluationJobs({
             answer.executionStatus = 'queued';
             answer.executionVerdict = 'PENDING';
             answer.executionResult = null;
+            answer.adminExecutionResult = undefined;
           }
           if (['completed', 'failed'].includes(answer.executionStatus)) return;
           queuedJobs.push({
@@ -1524,14 +1556,18 @@ async function updateAssessmentAnswerExecutionState({
   executionStatus,
   executionVerdict,
   executionResult,
+  adminExecutionResult,
   ...job
 }) {
   const updated = await mutateAssessmentSubmission({
     filter: { _id: assessmentSubmissionId },
     mutate: (submission) => applyAssessmentExecutionResult(submission, assessment, job, {
-      executionStatus, executionVerdict, executionResult,
+      executionStatus, executionVerdict, executionResult, adminExecutionResult,
     }),
   });
+  if (updated.result && ['completed', 'failed'].includes(executionStatus)) {
+    notifyAssessmentReportChanged(updated.submission?.assessmentId || job.assessmentId, 'evaluation');
+  }
   return updated.result ? updated.submission : null;
 }
 
@@ -1638,6 +1674,7 @@ async function processAssessmentFinalCodingJob(job) {
       executionStatus: 'completed',
       executionVerdict: submitResult.persisted.status,
       executionResult: buildSubmitApiResponse(submitResult.persisted),
+      adminExecutionResult: buildAdminSubmitResult(submitResult.persisted),
     });
 
     const resultPayload = {

@@ -35,6 +35,7 @@ import {
   getSubmissionViolations,
   getAssessmentEvidence,
 } from '../controllers/assessmentController.js';
+import { getAssessmentRoster, releaseAssessmentResults } from '../controllers/assessmentLiveReportController.js';
 import {
   getLibraryQuestion,
   listLibraryQuestions,
@@ -81,6 +82,9 @@ router.get('/assessment/reports/export-data', requireAuth, requireCoordinatorPer
 router.get('/assessment/reports/export', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), exportAssessmentReports);
 router.get('/assessment/submissions/:submissionId/violations', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getSubmissionViolations);
 router.get('/assessment/evidence/:eventId', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getAssessmentEvidence);
+// Live report: never response-cached (Cache-Control: no-store); scope checked by authorizeAssessmentReportAccess.
+router.get('/assessment/:id/report/roster', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getAssessmentRoster);
+router.post('/assessment/:id/release-results', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), releaseAssessmentResults);
 router.get('/library/questions', requireAuth, requireCoordinatorPermission('coordinator.library.view'), listLibraryQuestions);
 router.get('/library/coding-topics', requireAuth, requireCoordinatorPermission('coordinator.library.view'), listCodingTopics);
 router.post('/library/coding-topics', requireAuth, requireAdmin, createCodingTopic);

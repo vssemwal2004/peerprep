@@ -171,7 +171,8 @@ const DEFAULT_ASSESSMENT_SETTINGS = {
   showCorrectAnswers: false,
   showSectionBreakdown: false,
   showPercentile: false,
-  resultDelayHours: 24,
+  // 0 = results stay held until an admin releases them from the report page.
+  resultDelayHours: 0,
   allowRetake: false,
   retakeGapHours: 0,
   questionSelectionEnabled: false,
@@ -2335,30 +2336,38 @@ export default function CreateAssessment({ viewOnly = false }) {
             </h3>
             <div className="space-y-2">
               <Row {...rowProps} icon={<CheckSquare className="h-4 w-4" />} iconBg="bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400"
-                title="Show Score After Submission" desc="Candidates see their total score immediately after submitting." toggleKey="showResultsAfterSubmit">
-                {s.showResultsAfterSubmit && (
-                  <div className="space-y-3">
-                    <FieldRow label="Show correct answers">
-                      <Toggle value={Boolean(s.showCorrectAnswers)} onChange={(v) => upd('showCorrectAnswers', v)} />
-                    </FieldRow>
-                    <FieldRow label="Show section-wise breakdown">
-                      <Toggle value={Boolean(s.showSectionBreakdown)} onChange={(v) => upd('showSectionBreakdown', v)} />
-                    </FieldRow>
-                    <FieldRow label="Show percentile rank">
-                      <Toggle value={Boolean(s.showPercentile)} onChange={(v) => upd('showPercentile', v)} />
-                    </FieldRow>
-                  </div>
-                )}
-              </Row>
+                title="Show result after submission"
+                desc={s.showResultsAfterSubmit
+                  ? 'On: each student sees their result after submitting, as soon as evaluation completes.'
+                  : "Off: students see 'Result not announced yet' until you release results from the assessment report page."}
+                toggleKey="showResultsAfterSubmit" />
 
               {!s.showResultsAfterSubmit && (
                 <Row {...rowProps} icon={<Clock className="h-4 w-4" />} iconBg="bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"
-                  title="Delayed Result Release" desc="Hold results and release them manually or after a set delay.">
-                  <FieldRow label="Release results after (hours)">
-                    <NumInput value={s.resultDelayHours} onChange={(v) => upd('resultDelayHours', v)} min={0} placeholder="24" unit="hrs" />
-                  </FieldRow>
+                  title="Results are held" desc="Open Assessment Reports and use “Release results” when you are ready. You can withdraw a release there too.">
+                  {Number(s.resultDelayHours) > 0 && (
+                    <FieldRow label={`Auto-release ${s.resultDelayHours} h after each submission`}>
+                      <button type="button" onClick={() => upd('resultDelayHours', 0)} className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+                        Hold until released
+                      </button>
+                    </FieldRow>
+                  )}
                 </Row>
               )}
+
+              <Row {...rowProps} icon={<Eye className="h-4 w-4" />} title="What students see once results are out" desc="Applies whenever a result is visible to the student, after submission or after you release results.">
+                <div className="space-y-3">
+                  <FieldRow label="Show correct answers (after the assessment window closes)">
+                    <Toggle value={Boolean(s.showCorrectAnswers)} onChange={(v) => upd('showCorrectAnswers', v)} />
+                  </FieldRow>
+                  <FieldRow label="Show section-wise breakdown">
+                    <Toggle value={Boolean(s.showSectionBreakdown)} onChange={(v) => upd('showSectionBreakdown', v)} />
+                  </FieldRow>
+                  <FieldRow label="Show percentile rank">
+                    <Toggle value={Boolean(s.showPercentile)} onChange={(v) => upd('showPercentile', v)} />
+                  </FieldRow>
+                </div>
+              </Row>
 
               <Row {...rowProps} icon={<RotateCcw className="h-4 w-4" />} title="Allow Retake" desc="Permit candidates to take the assessment more than once." toggleKey="allowRetake">
                 <div className="space-y-3">

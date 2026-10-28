@@ -27,6 +27,7 @@ function preserveCodingEvaluation(previous, incoming) {
     executionStatus: previous.executionStatus,
     executionVerdict: previous.executionVerdict,
     executionResult: previous.executionResult,
+    adminExecutionResult: previous.adminExecutionResult,
     submissionId: previous.submissionId,
     lastEvaluatedAt: previous.lastEvaluatedAt,
   };

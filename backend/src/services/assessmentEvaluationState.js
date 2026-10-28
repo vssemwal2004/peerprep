@@ -52,6 +52,8 @@ export function applyAssessmentExecutionResult(submission, assessment, job, resu
   answer.executionStatus = result.executionStatus;
   answer.executionVerdict = result.executionVerdict;
   answer.executionResult = result.executionResult;
+  // Admin-only full result (hidden failing case, raw stderr); never sent to students.
+  answer.adminExecutionResult = result.adminExecutionResult ?? undefined;
   answer.lastEvaluatedAt = new Date();
   refreshAssessmentEvaluationSummary(submission, assessment);
   return true;

@@ -301,11 +301,19 @@ test('stored coding results reach the student without hidden test details', asyn
   const assessment = await fixture();
   const root = await begin(assessment);
   await AssessmentSubmission.updateOne({ assessmentId: assessment._id }, { $set: { answers: [{ sectionIndex: 0, questionIndex: 0, answer: 0,
-    executionResult: { status: 'Wrong Answer', failedTestCase: { index: 2, input: 'HIDDEN-IN', expected: 'HIDDEN-OUT', actual: 'mine' } } }] }, $inc: { __v: 1 } });
+    executionResult: { status: 'Wrong Answer', failedTestCase: { index: 2, input: 'HIDDEN-IN', expected: 'HIDDEN-OUT', actual: 'mine' } },
+    adminExecutionResult: { status: 'Wrong Answer', failedTestCase: { index: 2, hidden: true, input: 'HIDDEN-ADMIN', expected: 'HIDDEN-OUT' } } }] }, $inc: { __v: 1 } });
   const read = await request(root, null, 'GET');
   assert.equal(read.status, 200);
   assert.doesNotMatch(JSON.stringify(read.body), /HIDDEN-/);
   assert.deepEqual(read.body.submission.answers[0].executionResult.failedTestCase, { index: 2, hidden: true });
+  assert.equal(read.body.submission.answers[0].adminExecutionResult, undefined);
+  // The admin report shows the full admin-only result.
+  const { buildAdminSubmitResult } = workflow;
+  const full = buildAdminSubmitResult({ status: 'WA', failedCase: { index: 2, hidden: true, input: 'X'.repeat(9000), expectedOutput: 'Y' } });
+  assert.equal(full.failedTestCase.hidden, true);
+  assert.ok(full.failedTestCase.input.length <= 4001);
+  assert.equal(full.failedTestCase.expected, 'Y');
 });
 async function codingFixture({ supportedLanguages = ['python'] } = {}) {
   const problem = await Problem.create({ title: 'Echo', createdBy: new mongoose.Types.ObjectId(), status: 'published', visibility: 'assessment', supportedLanguages });
