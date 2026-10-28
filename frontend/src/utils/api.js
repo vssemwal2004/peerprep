@@ -800,10 +800,12 @@ export const api = {
       skipCache: Boolean(options.skipCache),
     });
   },
-  listMasterData: ({ category = "", activeOnly = false } = {}) => {
+  // Active-only lists feed dropdowns, which never show per-entry student counts.
+  listMasterData: ({ category = "", activeOnly = false, includeUsage = !activeOnly } = {}) => {
     const params = new URLSearchParams();
     if (category) params.set("category", category);
     if (activeOnly) params.set("active", "true");
+    if (!includeUsage) params.set("usage", "false");
     const query = params.toString();
     return request(`/master-data${query ? `?${query}` : ""}`, {
       skipCache: true,

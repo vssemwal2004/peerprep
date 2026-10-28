@@ -17,6 +17,7 @@ import {
 import { resolveNewStudentFeatureAccess } from './studentAccessController.js';
 import { normalizeStudentFeatureAccess } from '../services/studentFeatureAccess.js';
 import { exactEmailPattern, normalizeEmailAddress } from '../utils/emailIdentity.js';
+import { currentTenant } from '../platform/tenantContext.js';
 
 // Generate random password (7-8 characters)
 function generateRandomPassword() {
@@ -173,6 +174,41 @@ function mapFacet(entries = []) {
     .filter((entry) => entry.value);
 }
 
+// Filter options describe the whole visible roster, not the current filter, so they
+// change only when students are added or edited. Rebuilding them read every student
+// on each page change, search keystroke and filter change.
+const FACET_CACHE_TTL_MS = 60 * 1000;
+const facetCache = new Map();
+
+function loadStudentFacets(baseQuery) {
+  const key = `${currentTenant()?.universityId || 'platform'}:${JSON.stringify(baseQuery)}`;
+  const cached = facetCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+  if (facetCache.size > 200) {
+    for (const [entryKey, entry] of facetCache) if (entry.expiresAt <= Date.now()) facetCache.delete(entryKey);
+  }
+  const promise = User.aggregate([
+    { $match: baseQuery },
+    {
+      $facet: {
+        semesters: [
+          { $match: { semester: { $gte: 1, $lte: 8 } } },
+          { $group: { _id: '$semester', count: { $sum: 1 } } },
+          { $sort: { _id: 1 } },
+        ],
+        branches: stringFacet('branch'),
+        courses: stringFacet('course'),
+        colleges: stringFacet('college'),
+        groups: stringFacet('group'),
+        coordinators: stringFacet('teacherIds', true),
+      },
+    },
+  ]).then((rows) => rows[0] || {});
+  facetCache.set(key, { promise, expiresAt: Date.now() + FACET_CACHE_TTL_MS });
+  promise.catch(() => { if (facetCache.get(key)?.promise === promise) facetCache.delete(key); });
+  return promise;
+}
+
 export async function listAllStudents(req, res) {
   try {
     const { sortOrder, page, limit } = req.query;
@@ -192,26 +228,10 @@ export async function listAllStudents(req, res) {
       studentQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
     }
 
-    const [students, total, facetResults] = await Promise.all([
+    const [students, total, facets] = await Promise.all([
       studentQuery.lean(),
       User.countDocuments(query),
-      User.aggregate([
-        { $match: baseQuery },
-        {
-          $facet: {
-            semesters: [
-              { $match: { semester: { $gte: 1, $lte: 8 } } },
-              { $group: { _id: '$semester', count: { $sum: 1 } } },
-              { $sort: { _id: 1 } },
-            ],
-            branches: stringFacet('branch'),
-            courses: stringFacet('course'),
-            colleges: stringFacet('college'),
-            groups: stringFacet('group'),
-            coordinators: stringFacet('teacherIds', true),
-          },
-        },
-      ]),
+      loadStudentFacets(baseQuery),
     ]);
 
     const studentIds = students.map((student) => student._id);
@@ -252,7 +272,6 @@ export async function listAllStudents(req, res) {
     });
     
     const pages = paginated ? Math.max(1, Math.ceil(total / requestedLimit)) : 1;
-    const facets = facetResults[0] || {};
     res.json({
       count: studentsWithTeacherId.length,
       total,
@@ -1392,20 +1411,28 @@ export async function listStudentUploadBatches(req, res) {
     let scopedStudentIds = null;
     if (req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       const assigned = await User.find({ role: 'student', teacherIds: req.user.coordinatorId }).select('_id').lean();
-      scopedStudentIds = new Set(assigned.map((student) => String(student._id)));
-      query.studentIds = { $in: [...scopedStudentIds] };
+      scopedStudentIds = assigned.map((student) => student._id);
+      query.studentIds = { $in: scopedStudentIds };
     }
-    const batches = await StudentUploadBatch.find(query)
-      .sort({ createdAt: -1 })
-      .populate('uploadedBy', 'name email role coordinatorId')
-      .lean();
-    const visibleBatches = scopedStudentIds
-      ? batches.map((batch) => ({
-        ...batch,
-        studentIds: (batch.studentIds || []).filter((id) => scopedStudentIds.has(String(id))),
-      }))
-      : batches;
-    res.json({ count: visibleBatches.length, batches: visibleBatches });
+    // Every assessment saves a list of all its students, so the ID arrays grow with
+    // each assessment. Callers only show how many students a list has, so send the
+    // count and leave the arrays in the database.
+    const batches = await StudentUploadBatch.aggregate([
+      { $match: query },
+      { $sort: { createdAt: -1 } },
+      {
+        $addFields: {
+          studentCount: {
+            $size: scopedStudentIds
+              ? { $setIntersection: [{ $ifNull: ['$studentIds', []] }, scopedStudentIds] }
+              : { $ifNull: ['$studentIds', []] },
+          },
+        },
+      },
+      { $project: { studentIds: 0, recordIds: 0, createdRecordIds: 0, updatedRecordIds: 0, errorRows: 0, originalRows: 0 } },
+    ]);
+    await StudentUploadBatch.populate(batches, { path: 'uploadedBy', select: 'name email role coordinatorId' });
+    res.json({ count: batches.length, batches });
   } catch (error) {
     res.status(500).json({ error: 'Failed to load bulk student lists.' });
   }

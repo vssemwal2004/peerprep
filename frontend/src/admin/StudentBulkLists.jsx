@@ -40,7 +40,7 @@ export default function StudentBulkLists() {
     return batches.filter((batch) => [batch.name, batch.originalFileName, batch.uploadedByEmail]
       .some((value) => String(value || '').toLowerCase().includes(query)));
   }, [batches, search]);
-  const totalStudents = useMemo(() => batches.reduce((sum, batch) => sum + (batch.studentIds?.length || 0), 0), [batches]);
+  const totalStudents = useMemo(() => batches.reduce((sum, batch) => sum + (batch.studentCount ?? batch.studentIds?.length ?? 0), 0), [batches]);
   const latestUpload = batches[0]?.createdAt ? new Date(batches[0].createdAt).toLocaleDateString() : '—';
 
   const viewStudents = (batch) => navigate(`${rolePrefix}/students?uploadBatchId=${batch._id}&batchName=${encodeURIComponent(batch.name)}`);
@@ -129,7 +129,7 @@ export default function StudentBulkLists() {
                     <td className="px-5 py-4"><div className="flex items-center gap-3"><span className="rounded-lg bg-sky-50 p-2 text-sky-600 dark:bg-sky-950/40"><FileSpreadsheet className="h-4 w-4" /></span><span className="font-semibold text-slate-900 dark:text-white">{batch.name}{batch.sourceType === 'assessment' && <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">Assessment</span>}</span></div></td>
                     <td className="px-5 py-4 text-slate-600 dark:text-gray-300">{batch.originalFileName}</td>
                     <td className="px-5 py-4 text-slate-600 dark:text-gray-300"><span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4" />{new Date(batch.createdAt).toLocaleString()}</span></td>
-                    <td className="px-5 py-4 font-semibold text-slate-800 dark:text-gray-200"><span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" />{batch.studentIds?.length || 0}</span></td>
+                    <td className="px-5 py-4 font-semibold text-slate-800 dark:text-gray-200"><span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" />{batch.studentCount ?? batch.studentIds?.length ?? 0}</span></td>
                     <td className="px-5 py-4 text-xs">{isCoordinator ? <span className="text-sky-600">Assigned students only</span> : <><span className="text-emerald-600">{batch.createdCount} added</span><span className="mx-1.5 text-slate-300">•</span><span className="text-blue-600">{batch.updatedCount} updated</span>{batch.failedCount > 0 && <><span className="mx-1.5 text-slate-300">•</span><span className="text-red-600">{batch.failedCount} failed</span></>}</>}</td>
                     <td className="px-5 py-4 text-slate-600 dark:text-gray-300"><button type="button" onClick={(event) => { event.stopPropagation(); setUploaderModal(batch.uploadedBy || { name: batch.uploadedByEmail || 'Administrator', email: batch.uploadedByEmail, role: 'admin' }); }} className="text-left font-semibold text-sky-700 hover:underline dark:text-sky-300">{batch.uploadedBy?.name || batch.uploadedByEmail || 'Administrator'}<span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">{batch.uploadedBy?.role || 'admin'}</span></button></td>
                     <td className="relative px-5 py-4 text-right" onClick={(event) => event.stopPropagation()}>

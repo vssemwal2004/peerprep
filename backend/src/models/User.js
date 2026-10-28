@@ -111,6 +111,9 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ role: 1, semester: 1, createdAt: 1 });
 userSchema.index({ role: 1, teacherIds: 1, semester: 1, createdAt: 1 });
 userSchema.index({ role: 1, createdAt: -1 });
+// Student List pages sort by { createdAt, _id }; without the _id tie-breaker in the
+// index, every page fetched and sorted every student in memory.
+userSchema.index({ role: 1, createdAt: 1, _id: 1 });
 userSchema.index({ role: 1, updatedAt: 1 });
 
 attachAdminAnalyticsInvalidation(userSchema, {

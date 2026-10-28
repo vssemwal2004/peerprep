@@ -36,14 +36,21 @@ function normalizedKey(value) {
 }
 
 async function usageByCategory() {
-  const students = await User.find({ role: 'student' })
-    .select('college branch semester course')
-    .lean();
+  // Group in the database so only distinct values travel, not every student.
+  const [grouped = {}] = await User.aggregate([
+    { $match: { role: 'student' } },
+    {
+      $facet: Object.fromEntries(Object.entries(CATEGORY_FIELD).map(([category, field]) => [
+        category,
+        [{ $group: { _id: `$${field}`, count: { $sum: 1 } } }],
+      ])),
+    },
+  ]);
   const usage = Object.fromEntries(MASTER_DATA_CATEGORIES.map((category) => [category, new Map()]));
-  students.forEach((student) => {
-    Object.entries(CATEGORY_FIELD).forEach(([category, field]) => {
-      const key = normalizedKey(student[field]);
-      if (key) usage[category].set(key, (usage[category].get(key) || 0) + 1);
+  Object.keys(CATEGORY_FIELD).forEach((category) => {
+    (grouped[category] || []).forEach(({ _id, count }) => {
+      const key = normalizedKey(_id);
+      if (key) usage[category].set(key, (usage[category].get(key) || 0) + count);
     });
   });
   return usage;
@@ -67,9 +74,10 @@ export async function listMasterData(req, res) {
   const category = req.query.category ? validateCategory(String(req.query.category)) : null;
   const query = category ? { category } : {};
   if (req.query.active === 'true') query.isActive = true;
+  // Dropdowns only need the names; student counts are for the Master Data page.
   const [entries, usage] = await Promise.all([
     MasterData.find(query).sort({ category: 1, order: 1, name: 1 }).lean(),
-    usageByCategory(),
+    req.query.usage === 'false' ? null : usageByCategory(),
   ]);
   res.json({
     entries: entries.map((entry) => serialize(entry, usage)),

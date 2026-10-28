@@ -272,11 +272,19 @@ function LegacyQuickPrepRedirect() {
   return <Navigate to={`/student/quickprep/${slug}`} replace />;
 }
 
+// The shell stays mounted across admin/coordinator navigations, so only the page is
+// keyed: each page still starts fresh while the sidebar stays put as its code loads.
+function ShellPage({ children }) {
+  const { pathname, search } = useLocation();
+  return <Suspense key={`${pathname}${search}`} fallback={<PageSkeleton />}>{children}</Suspense>;
+}
+
 function AdminShell({ children, layout = true }) {
+  const page = <ShellPage>{children}</ShellPage>;
   return (
     <AdminProtectedRoute>
       <Suspense fallback={<DashboardSkeleton />}>
-        {layout ? <AdminLayout>{children}</AdminLayout> : children}
+        {layout ? <AdminLayout>{page}</AdminLayout> : page}
       </Suspense>
     </AdminProtectedRoute>
   );
@@ -299,9 +307,9 @@ function CoordinatorAccessDenied() {
 
 function CoordinatorShell({ children, layout = true, permission }) {
   const { user } = useAuth();
-  const content = permission && !hasPermission(user, permission)
+  const content = <ShellPage>{permission && !hasPermission(user, permission)
     ? <CoordinatorAccessDenied />
-    : children;
+    : children}</ShellPage>;
 
   return (
     <CoordinatorProtectedRoute>
@@ -355,6 +363,9 @@ function AppContent() {
     && !isProblemSolver;
   const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges)\/?$/.test(location.pathname);
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
+  // Admin and coordinator shells key their own page area (see ShellPage); keying this
+  // boundary per navigation remounted the whole shell and hid the sidebar on every click.
+  const routeBoundaryKey = isAdmin ? 'admin' : isCoordinator ? 'coordinator' : navigationKey;
   return (
     <div
       className={`${isStudentShell ? 'h-screen overflow-hidden' : 'min-h-screen'} w-full flex flex-col`}
@@ -394,7 +405,7 @@ function AppContent() {
             />
           </Suspense>
         )}
-        <Suspense key={navigationKey} fallback={
+        <Suspense key={routeBoundaryKey} fallback={
           isMain ? <LandingPageSkeleton /> :
           isAdmin ? <DashboardSkeleton /> :
           isCoordinator ? <DashboardSkeleton /> :
