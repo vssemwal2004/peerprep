@@ -59,12 +59,13 @@ const LABEL_TEXT = Object.freeze({
 function getTone(item, state) {
   if (!state || state === 'unknown') return 'unknown';
   if (state === 'ok' || state === 'ready') return 'ok';
-  if (state === 'fallback' || state === 'unavailable') return 'issue';
+  // Model health is not a student issue: keep it neutral.
+  if (state === 'fallback' || state === 'unavailable') return 'unknown';
   if (item === 'camera' && (state === 'blocked' || state === 'error')) return 'issue';
   if (item === 'face' && ['missing', 'out_of_frame', 'multiple'].includes(state)) return 'issue';
   if (item === 'eye' && state === 'looking_away') return 'issue';
   if (item === 'mobile' && state === 'detected') return 'issue';
-  if (item === 'person' && ['multiple', 'missing'].includes(state)) return 'issue';
+  if (item === 'person' && state === 'multiple') return 'issue';
   return 'unknown';
 }
 

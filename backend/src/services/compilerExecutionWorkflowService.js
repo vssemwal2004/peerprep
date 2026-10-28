@@ -6,6 +6,7 @@ import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import ExecutionJob from '../models/ExecutionJob.js';
 import Problem from '../models/Problem.js';
+import QuestionLibrary from '../models/QuestionLibrary.js';
 import Submission from '../models/Submission.js';
 import TestCase from '../models/TestCase.js';
 import { HttpError } from '../utils/errors.js';
@@ -15,7 +16,9 @@ import { readTestcaseTextObject } from '../utils/testcaseStorage.js';
 import { createNotification } from './notificationService.js';
 import { getIo } from '../utils/io.js';
 import { personalRoom, compilerMonitorRoom } from '../utils/realtime.js';
-import { serializeSubmissionForRealtime, refreshProblemStats } from '../controllers/compilerHelpers.js';
+import {
+  serializeSubmissionForRealtime, refreshProblemStats, problemUsedInAssessment, isHiddenJudgeFailure, HIDDEN_RUNTIME_ERROR_MESSAGE,
+} from '../controllers/compilerHelpers.js';
 import {
   assessmentQueue,
   compilerQueue,
@@ -45,6 +48,7 @@ import {
 } from './executionService.js';
 import { getCodingQuestionScore } from './assessmentScoringService.js';
 import { mutateAssessmentSubmission } from './assessmentPersistenceService.js';
+import { isAssessmentAttemptExpired } from './assessmentExpiryPolicy.js';
 import {
   getVisibleCodeTemplate,
   prepareFunctionSourceForExecution,
@@ -116,6 +120,13 @@ function codingQuestionProblemIds(question = {}) {
 
 function validateObjectIdQuietly(id) {
   return /^[a-f\d]{24}$/i.test(String(id || ''));
+}
+
+function libraryRowProblemIds(row = {}) {
+  return [...new Set([
+    row?.sourceProblemId,
+    ...codingQuestionProblemIds(row?.questionData || {}),
+  ].filter((id) => validateObjectIdQuietly(id)).map(String))];
 }
 
 export function assessmentProblemCandidates(assessment, problemId, {
@@ -193,15 +204,25 @@ export async function resolveActiveProblem(problemId, { userId, assessmentId, ac
   // compiler/source problem. Recover only from IDs on this student's delivered
   // question, preserving the authorization boundary.
   if (!problem || !isPublished) {
+    const libraryRows = await QuestionLibrary.find({
+      $or: [
+        { _id: { $in: candidateProblemIds } },
+        { sourceProblemId: { $in: candidateProblemIds } },
+      ],
+    }).select('_id sourceProblemId questionData').lean();
+    const resolvedCandidateIds = [...new Set([
+      ...candidateProblemIds,
+      ...libraryRows.flatMap(libraryRowProblemIds),
+    ])];
     const localCandidates = await Problem.find({
-      _id: { $in: candidateProblemIds },
+      _id: { $in: resolvedCandidateIds },
       status: { $in: ['published', 'active', 'Active', 'Published'] },
     }).select('+executionHarnesses');
     const localById = new Map(localCandidates.map((entry) => [String(entry._id), entry]));
-    localProblem = candidateProblemIds.map((id) => localById.get(String(id))).find(Boolean) || null;
+    localProblem = resolvedCandidateIds.map((id) => localById.get(String(id))).find(Boolean) || null;
     problem = localProblem;
     if (!problem) {
-      for (const candidateId of candidateProblemIds) {
+      for (const candidateId of resolvedCandidateIds) {
         problem = await sharedAssessmentProblem(assessmentId, candidateId);
         if (problem) break;
       }
@@ -209,6 +230,15 @@ export async function resolveActiveProblem(problemId, { userId, assessmentId, ac
     normalizedStatus = String(problem?.status || '').toLowerCase();
     isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
     visibility = localProblem ? (problem?.visibility || 'public') : 'assessment';
+    if (!problem || !isPublished) {
+      console.warn('[CompilerProblemAccess] Delivered coding problem is unavailable.', {
+        assessmentId: String(assessmentId),
+        requestedProblemId: String(problemId),
+        deliveredCandidateIds: candidateProblemIds,
+        libraryCandidateIds: resolvedCandidateIds.filter((id) => !candidateProblemIds.includes(id)),
+        requestedStatus: normalizedStatus || 'missing',
+      });
+    }
   }
 
   if (!problem || !isPublished) throw new HttpError(404, 'Problem not found.');
@@ -429,11 +459,16 @@ async function loadSubmissionTestCases(problem) {
   return allTestCases;
 }
 
-function buildSubmitApiResponse(executionResult) {
+// Job results and the stored assessment answer reach the student. A failure on a hidden case keeps only
+// its index; `revealHidden` is for practice problems that no assessment grades on (product behaviour).
+export function buildSubmitApiResponse(executionResult, { revealHidden = false } = {}) {
   const testCaseMarks = {
     passedTestCaseMarks: Number(executionResult.passedTestCaseMarks || 0),
     totalTestCaseMarks: Number(executionResult.totalTestCaseMarks || 0),
   };
+  const failed = executionResult.failedCase;
+  const concealFailure = isHiddenJudgeFailure(failed) && !revealHidden;
+  const failedCaseIndex = failed ? { index: failed.index, hidden: isHiddenJudgeFailure(failed) } : undefined;
 
   if (executionResult.status === 'AC') {
     return {
@@ -456,14 +491,14 @@ function buildSubmitApiResponse(executionResult) {
       ...testCaseMarks,
       time: roundNumber(executionResult.executionTimeMs / 1000, 3),
       memory: executionResult.memoryUsedKb || 0,
-      failedTestCase: executionResult.failedCase
+      failedTestCase: failed && !concealFailure
         ? {
-          index: executionResult.failedCase.index,
-          input: executionResult.failedCase.input || '',
-          expected: executionResult.failedCase.expectedOutput || '',
-          actual: executionResult.failedCase.actualOutput || '',
+          ...failedCaseIndex,
+          input: failed.input || '',
+          expected: failed.expectedOutput || '',
+          actual: failed.actualOutput || '',
         }
-        : undefined,
+        : failedCaseIndex,
     };
   }
 
@@ -487,13 +522,16 @@ function buildSubmitApiResponse(executionResult) {
       ...testCaseMarks,
       time: roundNumber(executionResult.executionTimeMs / 1000, 3),
       memory: executionResult.memoryUsedKb || 0,
+      failedTestCase: failedCaseIndex,
     };
   }
 
   return {
     mode: 'submit',
     status: 'Runtime Error',
-    error: executionResult.stderr || 'Execution failed.',
+    // Hidden-case stderr can echo the hidden input. Compile errors (above) never depend on it.
+    error: concealFailure ? HIDDEN_RUNTIME_ERROR_MESSAGE : (executionResult.stderr || 'Execution failed.'),
+    failedTestCase: failedCaseIndex,
     passed: executionResult.passedTestCases || 0,
     total: executionResult.totalTestCases || 0,
     ...testCaseMarks,
@@ -874,6 +912,8 @@ async function executeSubmitPayload({ sourceCode, sourceCodeFactory, languageId,
       if (!firstFailure) {
         firstFailure = {
           index: index + 1,
+          // Only a sample case may be shown to the student; external bulk cases have no kind.
+          hidden: testCase.kind !== 'sample',
           input: testCase.input || '',
           expectedOutput: testCase.output || '',
           actualOutput: evaluation.actualOutput || judgeResult.stdout || '',
@@ -907,6 +947,7 @@ async function executeSubmitPayload({ sourceCode, sourceCodeFactory, languageId,
       failedCase: firstFailure
         ? {
           index: firstFailure.index,
+          hidden: firstFailure.hidden,
           input: firstFailure.input,
           expectedOutput: firstFailure.expectedOutput,
           actualOutput: firstFailure.actualOutput,
@@ -1048,10 +1089,17 @@ export async function enqueueCompilerSubmitJob({ user, body }) {
   validateProblemLanguage(problem, languageKey);
   const sourceCode = validateProblemSourceCode(problem, languageKey, body.source_code, { action: 'submit' });
 
+  const assessment = assessmentId ? await assessmentDefinitionById(assessmentId) : null;
+  if (assessmentId && !assessment) throw new HttpError(404, 'Assessment not found.');
   const activeAttempt = assessmentId ? await AssessmentSubmission.findOne({
     assessmentId, studentId: user._id, status: 'in_progress',
-  }).select('attemptGeneration').lean() : null;
-  if (assessmentId && !activeAttempt) throw new HttpError(409, 'This assessment attempt is not active.');
+  }).select('attemptGeneration status startedAt pausedDurationMs pauseStartedAt').lean() : null;
+  // The expiry sweep runs once a minute; code sent after time-up (plus the
+  // submit grace) must not become the graded answer in the meantime.
+  if (assessmentId && (!activeAttempt || isAssessmentAttemptExpired(assessment, activeAttempt, new Date()))) {
+    throw new HttpError(409, 'This assessment attempt is not active.');
+  }
+  if (activeAttempt?.pauseStartedAt) throw new HttpError(409, 'Complete the security re-check before submitting code.');
 
   const submission = await createTrackedSubmission({
     user,
@@ -1065,15 +1113,12 @@ export async function enqueueCompilerSubmitJob({ user, body }) {
   submission.jobId = submission._id.toString();
   await submission.save();
 
-  if (assessmentId) {
-    const assessment = await assessmentDefinitionById(assessmentId);
-    if (assessment) {
-      await persistAssessmentCodingDraft({
-        assessment,
-        userId: user._id,
-        trackedSubmission: submission,
-      });
-    }
+  if (assessment) {
+    await persistAssessmentCodingDraft({
+      assessment,
+      userId: user._id,
+      trackedSubmission: submission,
+    });
   }
 
   const queue = assessmentId ? assessmentQueue : submissionQueue;
@@ -1135,6 +1180,8 @@ async function persistAssessmentCodingDraft({ assessment, userId, trackedSubmiss
     filter: { assessmentId: assessment._id, studentId: userId, status: 'in_progress' },
     async mutate(current) {
       if (Number(current.attemptGeneration || 1) !== Number(trackedSubmission.assessmentAttemptGeneration || 1)) return false;
+      // Re-checked inside the CAS: the deadline or a security pause may arrive while enqueuing.
+      if (isAssessmentAttemptExpired(assessment, current, new Date()) || current.pauseStartedAt) return false;
       const delivered = deliveredAssessmentForEvaluation(assessment, current);
       const matches = findAssessmentCodingQuestions(delivered, trackedSubmission.problem);
       const answers = (current.answers || []).map((answer) => answer.toObject?.() || { ...answer });
@@ -1233,7 +1280,8 @@ export async function enqueueAssessmentCodingEvaluationJobs({
           const problemId = question?.problemId || question?.coding?.problemId;
           const sourceCode = String(answer?.code || '');
           const languageKey = String(answer?.language || question?.coding?.supportedLanguages?.[0] || DEFAULT_LANGUAGE).trim().toLowerCase();
-          const languageId = KEY_TO_LANGUAGE_ID[languageKey];
+          // Own keys only: an answer language such as 'constructor' must not resolve.
+          const languageId = Object.hasOwn(KEY_TO_LANGUAGE_ID, languageKey) ? KEY_TO_LANGUAGE_ID[languageKey] : undefined;
           if (!answer || !problemId || !sourceCode.trim() || !languageId) return;
           const jobId = `${current._id}:${expectedVersion.attemptGeneration}:${expectedVersion.evaluationVersion}:${sectionIndex}:${questionIndex}`;
           if (answer.jobId !== jobId) {
@@ -1422,7 +1470,11 @@ export async function processCompilerExecutionJob(job) {
       }
     }
 
-    const responsePayload = buildSubmitApiResponse(submitResult.persisted);
+    // Practice submits keep showing the failing case unless an assessment grades on this problem.
+    const revealHidden = job.name === 'submit' && !assessmentId && Boolean(problem?._id)
+      && isHiddenJudgeFailure(submitResult.persisted.failedCase)
+      && !(await problemUsedInAssessment(problem._id).catch(() => true));
+    const responsePayload = buildSubmitApiResponse(submitResult.persisted, { revealHidden });
     if (job.name === 'assessment-code-submit' && finalizedSubmission) {
       const assessmentMarks = await syncAssessmentAnswerFromTrackedSubmission(finalizedSubmission);
       if (assessmentMarks) responsePayload.assessmentMarks = assessmentMarks;
@@ -1534,6 +1586,38 @@ async function processAssessmentFinalCodingJob(job) {
       // an exhausted evaluation is explicitly failed for operator review.
       isFinalAttempt = true;
       throw new HttpError(503, 'Assessment evaluation retry budget exhausted.');
+    }
+
+    // Autosave accepts any language string, so the question's language lock is enforced here.
+    if (!Array.isArray(problem?.supportedLanguages) || !problem.supportedLanguages.includes(languageKey)) {
+      const response = {
+        mode: 'submit',
+        status: 'Compilation Error',
+        error: 'Language not allowed for this question.',
+        passed: 0,
+        total: 0,
+        passedTestCaseMarks: 0,
+        totalTestCaseMarks: 0,
+        time: 0,
+        memory: 0,
+      };
+      await updateAssessmentAnswerExecutionState({
+        ...job.data,
+        assessment,
+        executionStatus: 'completed',
+        executionVerdict: 'CE',
+        executionResult: response,
+      });
+      const resultPayload = {
+        kind: 'assessment-submit',
+        assessmentSubmissionId,
+        sectionIndex,
+        questionIndex,
+        response,
+        persisted: { status: 'CE' },
+      };
+      await markExecutionJobCompleted(executionJobId, resultPayload);
+      return resultPayload;
     }
 
     const validatedSourceCode = validateProblemSourceCode(problem, languageKey, sourceCode, { action: 'submit' });

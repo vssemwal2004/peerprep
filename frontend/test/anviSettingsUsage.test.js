@@ -439,7 +439,7 @@ test("Assessment AI proctoring editor: numbers keep the typed text and clamp on 
   assert.equal(stored.faceOutOfFrameGraceSec, 60);
   await type(grace(), "");
   await blur(grace());
-  assert.equal(grace().value, "10", "an empty grace period falls back to the default");
+  assert.equal(grace().value, "8", "an empty grace period falls back to the default");
 
   await type(input("Detection interval"), "90000");
   assert.equal(input("Detection interval").value, "90000");

@@ -201,6 +201,7 @@ async function request(
     skipDedupe = false,
     skipQueue = false,
     queueTimeoutMs = REQUEST_QUEUE_TIMEOUT_MS,
+    signal,
   } = {},
 ) {
   method = method.toUpperCase();
@@ -271,6 +272,7 @@ async function request(
   const runNetworkRequest = async () => {
     let controller = null;
     let timeoutId = null;
+    let unlinkCallerSignal = null;
 
     try {
       if (timeoutMs && timeoutMs > 0) {
@@ -278,6 +280,17 @@ async function request(
         controller = new AbortController();
         timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         opts.signal = controller.signal;
+      }
+      if (signal) {
+        // A caller-supplied signal (e.g. a superseded live refresh) cancels the fetch too.
+        controller = controller || new AbortController();
+        opts.signal = controller.signal;
+        const abortFromCaller = () => controller.abort();
+        if (signal.aborted) abortFromCaller();
+        else {
+          signal.addEventListener("abort", abortFromCaller, { once: true });
+          unlinkCallerSignal = () => signal.removeEventListener("abort", abortFromCaller);
+        }
       }
 
       const res = await fetch(url, opts);
@@ -320,6 +333,12 @@ async function request(
 
       return result;
     } catch (err) {
+      if (err.name === "AbortError" && signal?.aborted) {
+        const abortErr = new Error("Request cancelled");
+        abortErr.name = "AbortError";
+        abortErr.response = { status: 0 };
+        throw abortErr;
+      }
       if (err.name === "AbortError") {
         const timeoutErr = new Error(
           "Request timed out. Please check your connection and try again.",
@@ -332,6 +351,7 @@ async function request(
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
+      unlinkCallerSignal?.();
     }
   };
 
@@ -1211,6 +1231,18 @@ export const api = {
     request(`/admin/assessment/reports/submissions/${submissionId}`, {
       skipCache: true,
     }),
+  // Live report roster: the full roster without `since`, or only the rows
+  // changed after the cursor with it. Never cached or deduplicated.
+  getAssessmentReportRoster: (assessmentId, { since, signal } = {}) =>
+    request(
+      `/admin/assessment/${encodeURIComponent(assessmentId)}/report/roster${since ? `?since=${encodeURIComponent(since)}` : ""}`,
+      { skipCache: true, skipDedupe: true, signal, timeoutMs: 30000 },
+    ),
+  releaseAssessmentResults: (assessmentId, release = true) =>
+    request(`/admin/assessment/${encodeURIComponent(assessmentId)}/release-results`, {
+      method: "POST",
+      body: { release: Boolean(release) },
+    }),
   exportAssessmentReports: async (params = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -1365,14 +1397,17 @@ export const api = {
       body,
       timeoutMs: 10000,
     }),
+  // Answer writes bypass the shared client queue: a burst of background GETs
+  // must never turn a save or the final submit into a synthetic 429.
   saveStudentAssessmentProgress: (id, body) =>
     request(`/student/assessment/${id}/answers`, {
       method: "PATCH",
       body,
       timeoutMs: 10000,
+      skipQueue: true,
     }),
   submitStudentAssessment: (body) =>
-    request("/student/assessment/submit", { method: "POST", body }),
+    request("/student/assessment/submit", { method: "POST", body, timeoutMs: 30000, skipQueue: true }),
   getAssessmentEvidence: (eventId) =>
     request(`/admin/assessment/evidence/${encodeURIComponent(eventId)}`, { skipCache: true }),
   getSubmissionViolations: (submissionId, { before } = {}) =>

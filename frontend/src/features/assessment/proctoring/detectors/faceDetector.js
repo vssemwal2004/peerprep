@@ -20,11 +20,13 @@ export class FaceDetector {
   constructor(options = {}) {
     this.adapter = options.adapter || createMediaPipeFaceAdapter(options.mediaPipe || {});
     this.loaded = false;
+    this.disposed = false;
   }
 
   async load() {
     if (this.loaded) return this;
     await this.adapter.load();
+    if (this.disposed) return this;
     this.loaded = true;
     return this;
   }
@@ -35,6 +37,7 @@ export class FaceDetector {
   }
 
   dispose() {
+    this.disposed = true;
     this.adapter?.dispose?.();
     this.loaded = false;
   }

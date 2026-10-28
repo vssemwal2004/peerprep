@@ -79,6 +79,36 @@ export function assertAssessmentWriteProtocol(input = {}) {
   }
 }
 
+// The student textarea has no maxLength, and one rejected answer would sink
+// every batch (and the final snapshot) that carries it. Over-long text is
+// therefore cut to these limits instead of rejected.
+export const TEXT_ANSWER_MAX_CHARS = Object.freeze({ one_line: 500, short: 10000 });
+
+const isOptionIndex = (value, optionCount) => (
+  (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value.trim())))
+  && Number.isInteger(Number(value)) && Number(value) >= 0 && Number(value) < optionCount
+);
+
+function normalizeAnswerValue(answer, question, type) {
+  if (answer === null || answer === undefined || answer === '') return answer;
+  if (type === 'mcq') {
+    const optionCount = Array.isArray(question.options) ? question.options.length : 0;
+    const values = Array.isArray(answer) ? answer : [answer];
+    if (values.length > optionCount || !values.every((value) => isOptionIndex(value, optionCount))) {
+      throw new AssessmentWriteError(400, 'INVALID_ANSWER', 'An answer selects an option that does not exist.');
+    }
+    return answer;
+  }
+  if (type === 'one_line' || type === 'short') {
+    if (typeof answer !== 'string') throw new AssessmentWriteError(400, 'INVALID_ANSWER', 'A written answer must be text.');
+    return answer.slice(0, TEXT_ANSWER_MAX_CHARS[type]);
+  }
+  if (type !== 'coding' && typeof answer === 'object') {
+    throw new AssessmentWriteError(400, 'INVALID_ANSWER', 'Invalid answer.');
+  }
+  return answer;
+}
+
 export function normalizeAssessmentAnswerChanges(value, sections) {
   if (!Array.isArray(value)) throw new AssessmentWriteError(400, 'INVALID_ANSWERS', 'Answers must be an array.');
   if (value.length > 1000 || Buffer.byteLength(JSON.stringify(value)) > 2 * 1024 * 1024) {
@@ -97,7 +127,9 @@ export function normalizeAssessmentAnswerChanges(value, sections) {
     // Execution results and scores are server owned. Never pass client-supplied
     // job IDs, verdicts or grading metadata through the answer merge helper.
     const clean = { sectionIndex, questionIndex };
-    if (Object.hasOwn(entry, 'answer')) clean.answer = entry.answer;
+    if (Object.hasOwn(entry, 'answer')) {
+      clean.answer = normalizeAnswerValue(entry.answer, question, question.type || sections[sectionIndex]?.type);
+    }
     if (Object.hasOwn(entry, 'code')) {
       if (typeof entry.code !== 'string' || Buffer.byteLength(entry.code) > 256 * 1024) {
         throw new AssessmentWriteError(413, 'CODE_TOO_LARGE', 'Code must be a string smaller than 256 KiB.');

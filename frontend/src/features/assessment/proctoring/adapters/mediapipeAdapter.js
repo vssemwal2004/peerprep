@@ -1,8 +1,11 @@
-// AI Proctoring placeholder - implementation will be added in later steps.
 import { createFaceLandmarker } from '../utils/modelLoader';
 
 const SOURCE = 'mediapipe_face_landmarker';
-const FRAME_EDGE_THRESHOLD = 0.015;
+// The primary face is out of frame when its centre leaves the safe zone or
+// less than this share of its box is inside the frame (a clipped chin is fine).
+const SAFE_CENTER_MIN = 0.08;
+const SAFE_CENTER_MAX = 0.92;
+const MIN_VISIBLE_FRACTION = 0.65;
 const LOOKING_AWAY_HORIZONTAL_THRESHOLD = 0.46;
 const LOOKING_AWAY_VERTICAL_THRESHOLD = 0.58;
 const IRIS_HORIZONTAL_THRESHOLD = 0.78;
@@ -33,15 +36,23 @@ export class MediaPipeFaceAdapter {
     this.options = options;
     this.faceLandmarker = null;
     this.loaded = false;
+    this.disposed = false;
   }
 
   async load() {
     if (this.loaded && this.faceLandmarker) return this;
 
-    this.faceLandmarker = await createFaceLandmarker({
+    const landmarker = await createFaceLandmarker({
       numFaces: 2,
       ...this.options,
+      outputFaceBlendshapes: this.options.outputFaceBlendshapes === true,
     });
+    // dispose() ran while the model was loading: never keep an orphan.
+    if (this.disposed) {
+      landmarker?.close?.();
+      return this;
+    }
+    this.faceLandmarker = landmarker;
     this.loaded = true;
     return this;
   }
@@ -52,10 +63,13 @@ export class MediaPipeFaceAdapter {
     }
 
     const result = this.faceLandmarker.detectForVideo(videoElement, timestamp);
-    return normalizeFaceLandmarkerResult(result);
+    return normalizeFaceLandmarkerResult(result, {
+      detectLookingAway: this.options.outputFaceBlendshapes === true,
+    });
   }
 
   dispose() {
+    this.disposed = true;
     if (this.faceLandmarker?.close) {
       this.faceLandmarker.close();
     }
@@ -73,18 +87,24 @@ export const mediapipeAdapter = {
   MediaPipeFaceAdapter,
 };
 
-function normalizeFaceLandmarkerResult(result = {}) {
-  const faceLandmarks = Array.isArray(result.faceLandmarks) ? result.faceLandmarks : [];
+export function normalizeFaceLandmarkerResult(result = {}, options = {}) {
+  const faceLandmarks = Array.isArray(result?.faceLandmarks) ? result.faceLandmarks : [];
   const faceCount = faceLandmarks.length;
 
   if (faceCount === 0) return { ...NO_FACE_RESULT, metadata: { ...NO_FACE_RESULT.metadata } };
 
-  const boxes = faceLandmarks.map(getLandmarkBox).filter(Boolean);
-  const primaryBox = boxes[0];
-  const faceOutOfFrame = boxes.some(isBoxOutOfFrame);
-  const primaryBlendshapes = getPrimaryBlendshapes(result);
-  const lookingAway = Boolean(primaryBox && isLookingAway(faceLandmarks[0], primaryBox, primaryBlendshapes));
-  const lookingAwayConfidence = lookingAway ? getLookingAwayConfidence(faceLandmarks[0], primaryBox, primaryBlendshapes) : 0;
+  // The primary face is the largest one; a second face is MULTIPLE_FACES.
+  const primaryIndex = getPrimaryFaceIndex(faceLandmarks.map(getLandmarkBox));
+  const primaryLandmarks = faceLandmarks[primaryIndex];
+  const primaryBox = getLandmarkBox(primaryLandmarks);
+  const faceOutOfFrame = isBoxOutOfFrame(primaryBox);
+  let lookingAway = false;
+  let lookingAwayConfidence = 0;
+  if (options.detectLookingAway === true && primaryBox) {
+    const primaryBlendshapes = getBlendshapesAt(result, primaryIndex);
+    lookingAway = isLookingAway(primaryLandmarks, primaryBox, primaryBlendshapes);
+    lookingAwayConfidence = lookingAway ? getLookingAwayConfidence(primaryLandmarks, primaryBox, primaryBlendshapes) : 0;
+  }
 
   return {
     facePresent: true,
@@ -152,12 +172,34 @@ function normalizePointValue(value) {
   return Math.max(-1, Math.min(2, next));
 }
 
-function isBoxOutOfFrame(box) {
+function getPrimaryFaceIndex(boxes = []) {
+  let bestIndex = 0;
+  let bestArea = -1;
+  boxes.forEach((box, index) => {
+    if (!box) return;
+    const area = Math.max(0, box.maxX - box.minX) * Math.max(0, box.maxY - box.minY);
+    if (area > bestArea) {
+      bestArea = area;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+export function isBoxOutOfFrame(box) {
   if (!box) return false;
-  return box.minX < FRAME_EDGE_THRESHOLD
-    || box.maxX > 1 - FRAME_EDGE_THRESHOLD
-    || box.minY < FRAME_EDGE_THRESHOLD
-    || box.maxY > 1 - FRAME_EDGE_THRESHOLD;
+  const width = Math.max(1e-6, box.maxX - box.minX);
+  const height = Math.max(1e-6, box.maxY - box.minY);
+  const centerX = box.minX + (width / 2);
+  const centerY = box.minY + (height / 2);
+  const visibleWidth = Math.max(0, Math.min(1, box.maxX) - Math.max(0, box.minX));
+  const visibleHeight = Math.max(0, Math.min(1, box.maxY) - Math.max(0, box.minY));
+  const visibleFraction = (visibleWidth * visibleHeight) / (width * height);
+  return centerX < SAFE_CENTER_MIN
+    || centerX > SAFE_CENTER_MAX
+    || centerY < SAFE_CENTER_MIN
+    || centerY > SAFE_CENTER_MAX
+    || visibleFraction < MIN_VISIBLE_FRACTION;
 }
 
 function isLookingAway(landmarks = [], box, blendshapes = null) {
@@ -279,9 +321,9 @@ function getIrisCenter(landmarks = [], indices = []) {
   });
 }
 
-function getPrimaryBlendshapes(result = {}) {
+function getBlendshapesAt(result = {}, index = 0) {
   const groups = Array.isArray(result.faceBlendshapes) ? result.faceBlendshapes : [];
-  const categories = groups[0]?.categories;
+  const categories = groups[index]?.categories;
   return Array.isArray(categories) ? categories : null;
 }
 

@@ -6,8 +6,8 @@ export const DEFAULT_AI_PROCTORING_SETTINGS = {
   detectMultiplePersons: true,
   detectNoFace: true,
   detectFaceOutOfFrame: true,
-  faceOutOfFrameGraceSec: 10,
-  detectLookingAway: true,
+  faceOutOfFrameGraceSec: 8,
+  detectLookingAway: false,
   detectionIntervalMs: 500,
   ignoreLimit: 5,
   violationCooldownSec: 20,
@@ -84,7 +84,9 @@ function FieldRow({ label, children, disabled = false }) {
   );
 }
 
-export default function AIProctoringSettings({ value, onChange, disabled = false }) {
+// Assessments never flag eye or head movement. `showLookingAwayToggle` lets
+// another host (the ANVI interview wizard) keep its own looking-away setting.
+export default function AIProctoringSettings({ value, onChange, disabled = false, showLookingAwayToggle = false }) {
   const settings = normalizeAiProctoringSettings(value);
   const update = (key, nextValue) => {
     onChange?.({
@@ -116,7 +118,7 @@ export default function AIProctoringSettings({ value, onChange, disabled = false
           <div>
             <p className="text-xs font-semibold text-slate-800 dark:text-gray-100">Face absence grace period</p>
             <p className="mt-1 max-w-xl text-[11px] leading-5 text-slate-500 dark:text-gray-400">
-              Gives students time to look down or write on paper. A footer warning and violation are created only when no face or an out-of-frame face continues for this duration. Phone and multiple-person detections stay immediate.
+              Out-of-frame warns only after this many continuous seconds. No face, phone and multiple people are confirmed within 2-3 seconds.
             </p>
           </div>
           <NumberInput
@@ -125,15 +127,21 @@ export default function AIProctoringSettings({ value, onChange, disabled = false
             min={3}
             max={60}
             fallback={DEFAULT_AI_PROCTORING_SETTINGS.faceOutOfFrameGraceSec}
-            placeholder="10"
+            placeholder="8"
             unit="sec"
-            disabled={disabled || (!settings.detectNoFace && !settings.detectFaceOutOfFrame)}
+            disabled={disabled || !settings.detectFaceOutOfFrame}
           />
         </div>
       </div>
-      <FieldRow label="Detect looking away" disabled={disabled}>
-        <Toggle value={Boolean(settings.detectLookingAway)} onChange={(next) => update('detectLookingAway', next)} disabled={disabled} />
-      </FieldRow>
+      {showLookingAwayToggle ? (
+        <FieldRow label="Detect looking away" disabled={disabled}>
+          <Toggle value={Boolean(settings.detectLookingAway)} onChange={(next) => update('detectLookingAway', next)} disabled={disabled} />
+        </FieldRow>
+      ) : (
+        <p className="text-[11px] leading-5 text-slate-500 dark:text-gray-400">
+          Eye and head movement are never flagged.
+        </p>
+      )}
       <FieldRow label="Detection interval" disabled={disabled}>
         <NumberInput
           value={settings.detectionIntervalMs}

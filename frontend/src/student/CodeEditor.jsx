@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CloudUpload, LoaderCircle, Play, RotateCcw, Send, TerminalSquare } from 'lucide-react';
 import { formatDuration, getLanguageLabel } from '../admin/compiler/compilerUtils';
 import {
@@ -199,6 +199,9 @@ function CodeEditor({
   const pendingCodeCommitRef = useRef(null);
   const liveCodeRef = useRef(code || '');
   const externalCodeRef = useRef(code || '');
+  // Texts reported by the editor since the parent last caught up; a parent
+  // render with one of them is an older debounced commit, not a replacement.
+  const localCodesRef = useRef(new Set());
   const editorContextRef = useRef({ editorKey, language, valueVersion });
   const clipboardNoticeTimerRef = useRef(null);
   const [consoleHeight, setConsoleHeight] = useState(116);
@@ -295,7 +298,8 @@ function CodeEditor({
     setEditorHeight((current) => (current === next ? current : next));
   };
 
-  useEffect(() => {
+  // Layout effect: the first paint already has the measured editor height.
+  useLayoutEffect(() => {
     recomputeEditorHeight();
     if (!rootRef.current) return;
 
@@ -328,7 +332,8 @@ function CodeEditor({
     const questionChanged = previousContext.editorKey !== editorKey;
     const languageChanged = previousContext.language !== language;
     const valueWasReset = previousContext.valueVersion !== valueVersion;
-    if (questionChanged || languageChanged || valueWasReset) {
+    const contextChanged = questionChanged || languageChanged || valueWasReset;
+    if (contextChanged) {
       if (codeCommitTimerRef.current) {
         clearTimeout(codeCommitTimerRef.current);
         codeCommitTimerRef.current = null;
@@ -338,10 +343,33 @@ function CodeEditor({
       // The pending callback belongs to the previous task/language render, so
       // committing here preserves the final keystroke in the correct draft.
       if (pending && !valueWasReset) pending.commit(pending.value);
+      localCodesRef.current.clear();
     }
-    externalCodeRef.current = code || '';
-    liveCodeRef.current = code || '';
+    const nextCode = code || '';
+    externalCodeRef.current = nextCode;
     editorContextRef.current = { editorKey, language, valueVersion };
+    if (contextChanged || nextCode === liveCodeRef.current) {
+      liveCodeRef.current = nextCode;
+      localCodesRef.current.clear();
+      return;
+    }
+    if (localCodesRef.current.has(nextCode)) {
+      // The parent is rendering an older debounced commit while newer typing
+      // exists. Keep the live text (Monaco ignores this echo too) and make
+      // sure a commit carrying it is on its way.
+      if (!pendingCodeCommitRef.current) scheduleCodeCommit(liveCodeRef.current);
+      return;
+    }
+    // A real replacement from the parent (e.g. another problem loaded): it
+    // wins, and a pending commit of the old text must not overwrite it.
+    if (codeCommitTimerRef.current) {
+      clearTimeout(codeCommitTimerRef.current);
+      codeCommitTimerRef.current = null;
+    }
+    pendingCodeCommitRef.current = null;
+    liveCodeRef.current = nextCode;
+    localCodesRef.current.clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, language, editorKey, valueVersion]);
 
   useEffect(() => () => {
@@ -373,11 +401,32 @@ function CodeEditor({
     }
     const pending = pendingCodeCommitRef.current;
     pendingCodeCommitRef.current = null;
-    if (pending) pending.commit(pending.value);
+    if (pending) {
+      externalCodeRef.current = pending.value;
+      pending.commit(pending.value);
+    }
   };
+
+  function scheduleCodeCommit(nextCode) {
+    if (codeCommitTimerRef.current) clearTimeout(codeCommitTimerRef.current);
+    pendingCodeCommitRef.current = { value: nextCode, commit: onCodeChange };
+    codeCommitTimerRef.current = setTimeout(() => {
+      codeCommitTimerRef.current = null;
+      const pending = pendingCodeCommitRef.current;
+      pendingCodeCommitRef.current = null;
+      if (!pending) return;
+      // The parent holds (or is about to hold) this text from now on.
+      externalCodeRef.current = pending.value;
+      pending.commit(pending.value);
+    }, 1200);
+  }
 
   const handleEditorCodeChange = (nextCode) => {
     liveCodeRef.current = nextCode;
+    const localCodes = localCodesRef.current;
+    localCodes.delete(nextCode);
+    localCodes.add(nextCode);
+    if (localCodes.size > 100) localCodes.delete(localCodes.values().next().value);
     onLiveCodeChange?.(nextCode);
 
     if (nextCode === externalCodeRef.current) {
@@ -389,14 +438,7 @@ function CodeEditor({
       return;
     }
 
-    if (codeCommitTimerRef.current) clearTimeout(codeCommitTimerRef.current);
-    pendingCodeCommitRef.current = { value: nextCode, commit: onCodeChange };
-    codeCommitTimerRef.current = setTimeout(() => {
-      codeCommitTimerRef.current = null;
-      const pending = pendingCodeCommitRef.current;
-      pendingCodeCommitRef.current = null;
-      pending?.commit(pending.value);
-    }, 1200);
+    scheduleCodeCommit(nextCode);
   };
 
   const handleLoadingEditorCodeChange = (nextCode) => {

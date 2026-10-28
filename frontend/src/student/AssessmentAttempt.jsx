@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
@@ -23,7 +23,6 @@ import {
   Video,
 } from 'lucide-react';
 import CodeEditor from './CodeEditor';
-import { preloadMonacoEditor } from '../admin/compiler/MonacoCodeEditor';
 import { COMPILER_LANGUAGES, getProblemSupportedLanguages } from '../admin/compiler/compilerUtils';
 import AssessmentCodingProblemPanel from './assessment/AssessmentCodingProblemPanel';
 import AssessmentLanguagePicker from './assessment/AssessmentLanguagePicker';
@@ -33,7 +32,7 @@ import { decodeLegacyCodeEntities, getCodeValidationMessage, getStarterCodeForLa
 import ProctoringFooter from '../features/assessment/student/components/ProctoringFooter';
 import { ProctoringManager } from '../features/assessment/proctoring';
 import { logAiProctoringViolation } from '../features/assessment/proctoring/services/proctoringApi';
-import { AssessmentSaveProtocol, answerPayloadKey, answerPayloadSignature, isDraftForAttempt, mergeLiveCodingDraft } from './assessment/assessmentSaveProtocol';
+import { AssessmentSaveProtocol, answerPayloadKey, answerPayloadSignature, isDraftForAttempt, isTransientSaveError, mergeLiveCodingDraft } from './assessment/assessmentSaveProtocol';
 import { readAssessmentDraft, writeAssessmentDraft, deleteAssessmentDraft } from './assessment/assessmentDraftStore';
 import { uploadAssessmentEvidence } from './assessment/assessmentEvidenceUpload';
 
@@ -46,6 +45,211 @@ const formatTime = (ms) => {
 };
 
 const FULLSCREEN_RECOVERY_SECONDS = 15;
+
+// A static import would pull the 3 MB Monaco chunk into every attempt page,
+// including MCQ-only tests; load it only when a coding section needs it.
+const preloadMonacoEditor = (language) => import('../admin/compiler/MonacoCodeEditor')
+  .then((module) => module.preloadMonacoEditor(language))
+  .catch(() => {});
+
+const CAMERA_CONSTRAINTS = Object.freeze({
+  video: {
+    width: { ideal: 640, max: 640 },
+    height: { ideal: 480, max: 480 },
+    frameRate: { ideal: 15, max: 15 },
+    facingMode: 'user',
+  },
+  audio: false,
+});
+
+// "Open" = the track has not ended. "Live" additionally requires frames: a
+// muted track (OS privacy toggle, another app, sleep) is open but black.
+// Brief mutes during warm-up are handled by the monitor's 8 s grace, so only
+// "open" decides whether a new stream must be requested.
+const hasOpenCameraTrack = (stream) => Boolean(
+  stream?.getVideoTracks?.().some((track) => track.readyState === 'live'),
+);
+
+const hasLiveCameraTrack = (stream) => Boolean(
+  stream?.getVideoTracks?.().some((track) => track.readyState === 'live' && !track.muted),
+);
+
+const lockEscapeKey = () => {
+  try {
+    void navigator.keyboard?.lock?.(['Escape'])?.catch?.(() => {});
+  } catch {
+    // Keyboard Lock is Chromium-only; other browsers keep default Esc behaviour.
+  }
+};
+
+/** Owns the 1 s countdown so the rest of the attempt page does not re-render every second. */
+const AssessmentCountdown = memo(function AssessmentCountdown({ endAt, offset, running, onExpire }) {
+  const [left, setLeft] = useState(() => (endAt ? endAt - (Date.now() + offset) : 0));
+  const onExpireRef = useRef(onExpire);
+  useEffect(() => {
+    onExpireRef.current = onExpire;
+  }, [onExpire]);
+  useEffect(() => {
+    if (!endAt) return undefined;
+    const tick = () => {
+      const remaining = endAt - (Date.now() + offset);
+      setLeft(remaining);
+      return remaining;
+    };
+    tick();
+    if (!running) return undefined;
+    let fired = false;
+    const timer = setInterval(() => {
+      if (tick() <= 0 && !fired) {
+        fired = true;
+        onExpireRef.current?.();
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [endAt, offset, running]);
+  return <span className="text-xs font-bold tabular-nums">{formatTime(left)}</span>;
+});
+
+/** Keeps short-answer typing local so each keystroke re-renders only the textarea. */
+const ShortAnswerInput = memo(function ShortAnswerInput({ value, commitKey, onCommit, disabled, registerFlush }) {
+  const [draft, setDraft] = useState(value || '');
+  const pendingRef = useRef(null);
+  const valueRef = useRef(value || '');
+  const onCommitRef = useRef(onCommit);
+  useEffect(() => {
+    onCommitRef.current = onCommit;
+  }, [onCommit]);
+  useEffect(() => {
+    valueRef.current = value || '';
+    if (pendingRef.current === null) setDraft(value || '');
+  }, [value]);
+  // Returns the committed text so a final submit can include it in the same
+  // call; a refused commit (attempt limit, finalizing) reverts the box.
+  const flush = useCallback(() => {
+    if (pendingRef.current === null) return null;
+    clearTimeout(pendingRef.current.timer);
+    const text = pendingRef.current.text;
+    pendingRef.current = null;
+    if (onCommitRef.current?.(text) === false) {
+      setDraft(valueRef.current);
+      return null;
+    }
+    return { key: commitKey, text };
+  }, [commitKey]);
+  useEffect(() => {
+    registerFlush?.(flush);
+    return () => {
+      flush();
+      registerFlush?.(null);
+    };
+  }, [flush, registerFlush]);
+  return (
+    <textarea
+      value={draft}
+      onChange={(event) => {
+        const text = event.target.value;
+        setDraft(text);
+        if (pendingRef.current) clearTimeout(pendingRef.current.timer);
+        pendingRef.current = { text, timer: setTimeout(flush, 250) };
+      }}
+      onBlur={flush}
+      rows="7"
+      className="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-[0.94rem] leading-relaxed text-slate-800 shadow-sm transition-all focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+      disabled={disabled}
+      placeholder="Type your response here..."
+    />
+  );
+});
+
+/**
+ * Shown on the rules screen only when AI proctoring is enabled. It states the
+ * exact policy the student will be held to, from the admin's own settings.
+ */
+function AnviProctoringCard({ settings = {}, snapshotsEnabled = false }) {
+  const graceSec = Math.max(3, Math.min(60, Number(settings.faceOutOfFrameGraceSec) || 8));
+  const quickChecks = [
+    settings.detectMobile !== false && 'a mobile phone',
+    settings.detectMultiplePersons !== false && 'another person in view',
+    settings.detectNoFace !== false && 'no face in the camera',
+  ].filter(Boolean);
+  const items = [
+    quickChecks.length > 0 && {
+      tone: 'alert',
+      text: `Flagged after about 2–3 seconds: ${quickChecks.join(', ')}.`,
+    },
+    settings.detectFaceOutOfFrame !== false && {
+      tone: 'alert',
+      text: `Moving out of the frame is flagged only after ${graceSec} seconds in a row.`,
+    },
+    {
+      tone: 'ok',
+      text: 'Eye and head movement are never flagged. Looking down to think or write is fine.',
+    },
+    {
+      tone: 'ok',
+      text: 'A small preview of your camera stays in the corner. Keep your face visible and the room lit.',
+    },
+    snapshotsEnabled && {
+      tone: 'info',
+      text: 'Periodic camera snapshots are saved for the examiner to review.',
+    },
+  ].filter(Boolean);
+
+  return (
+    <section
+      aria-labelledby="anvi-proctoring-title"
+      className="relative overflow-hidden rounded-lg border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-3 shadow-sm dark:border-violet-900/60 dark:from-violet-950/40 dark:via-slate-900 dark:to-sky-950/30"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white shadow-sm">
+          <Video className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 id="anvi-proctoring-title" className="text-[13px] font-bold text-violet-800 dark:text-violet-200">ANVI Proctoring</h3>
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Active for this assessment
+            </span>
+          </div>
+          <p className="mt-0.5 text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+            AI camera monitoring runs on your device during the test. Only confirmed events are recorded, never a single frame.
+          </p>
+        </div>
+      </div>
+      <ul className="mt-2.5 grid gap-1.5 sm:grid-cols-2">
+        {items.map((item) => (
+          <li
+            key={item.text}
+            className="flex items-start gap-2 rounded-md border border-white/80 bg-white/80 px-2.5 py-2 text-[11px] font-medium leading-4 text-slate-700 dark:border-slate-800 dark:bg-slate-950/60 dark:text-gray-300"
+          >
+            {item.tone === 'alert'
+              ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              : item.tone === 'ok'
+                ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                : <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400" />}
+            <span>{item.text}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Reserves the image box so options never jump when the picture loads. */
+function ReservedImage({ image, heightClass = 'h-72', className = '' }) {
+  if (!image?.url) return null;
+  const width = Number(image.width);
+  const height = Number(image.height);
+  const hasRatio = width > 0 && height > 0;
+  return (
+    <div
+      className={`flex items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800 ${hasRatio ? 'max-h-72' : heightClass} ${className}`}
+      style={hasRatio ? { aspectRatio: `${width} / ${height}` } : undefined}
+    >
+      <img src={image.url} alt={image.alt || ''} decoding="async" className="max-h-full max-w-full object-contain" />
+    </div>
+  );
+}
 
 function sanitizeExecutionMessage(value) {
   return String(value ?? '')
@@ -167,12 +371,25 @@ const NON_BLOCKING_DETECTION_TYPES = new Set([
 const SOFT_FOOTER_WARNING_TYPES = new Set([
   ...CAMERA_VIOLATION_TYPES,
   'fullscreen_exit',
+  'idle',
 ]);
+
+// A window blur without the tab becoming hidden (Windows key, OS/antivirus
+// popups, permission bubbles) only counts when focus stays away this long;
+// repeated short blips still escalate to one tab switch.
+const FOCUS_LOSS_CONFIRM_MS = 2000;
+const FOCUS_BLIP_ESCALATE_COUNT = 3;
+const FOCUS_BLIP_WINDOW_MS = 60000;
+const CAMERA_MUTED_REACQUIRE_MS = 8000;
+const CAMERA_RETRY_MIN_MS = 2000;
+const CAMERA_RETRY_MAX_MS = 30000;
+const LIVE_CODE_CHECKPOINT_MS = 750;
+const ANSWER_CHECKPOINT_MS = 300;
+const ANSWER_SYNC_DEBOUNCE_MS = 1200;
 
 const RESTRICTED_ACTION_WARNING_MS = 15000;
 const SCREENSHOT_WARNING_GRACE_MS = RESTRICTED_ACTION_WARNING_MS;
 const FOCUS_LOSS_SCREENSHOT_GRACE_MS = 1000;
-const CAMERA_WARNING_STREAK_LIMIT = 3;
 const FACE_CENTER_TOLERANCE_RATIO = 0.46;
 const FACE_MIN_WIDTH_RATIO = 0.08;
 const NETWORK_FAILURES_BEFORE_PAUSE = 2;
@@ -349,7 +566,6 @@ export default function AssessmentAttempt() {
   const [violationScore, setViolationScore] = useState(0);
   const [pauseCount, setPauseCount] = useState(0);
   const [lastPauseAt, setLastPauseAt] = useState(null);
-  const [violations, setViolations] = useState([]);
   const [testCaseMap, setTestCaseMap] = useState({});
   const [activeTestCaseMap, setActiveTestCaseMap] = useState({});
   const [phase, setPhase] = useState('validation');
@@ -407,10 +623,29 @@ export default function AssessmentAttempt() {
   const [, setNetworkStatus] = useState(() => (
     typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'online'
   ));
+  const [cameraPreviewExpanded, setCameraPreviewExpanded] = useState(false);
   const validationVideoRef = useRef(null);
   const monitorVideoRef = useRef(null);
-  const aiProctoringVideoRef = useRef(null);
   const monitorCanvasRef = useRef(null);
+  const questionScrollRef = useRef(null);
+  const cameraAcquireRef = useRef(null);
+  const cameraRetryRef = useRef({ nextAt: 0, delay: CAMERA_RETRY_MIN_MS });
+  const cameraMutedSinceRef = useRef(0);
+  const cameraNoticeRef = useRef('');
+  const cameraLossReportedRef = useRef(false);
+  const liveCheckpointTimerRef = useRef(null);
+  const answerCheckpointTimerRef = useRef(null);
+  const shortAnswerFlushRef = useRef(null);
+  const focusLossTimerRef = useRef(null);
+  const focusBlipsRef = useRef([]);
+  const tabSwitchesRef = useRef(0);
+  const totalWarningsRef = useRef(0);
+  const proctoringStatusRef = useRef(null);
+  const showSecurityPopupRef = useRef(null);
+  const timeUpSubmitRef = useRef(false);
+  const timeUpRetryTimerRef = useRef(null);
+  const submitRetryTimerRef = useRef(null);
+  const tabsSignatureRef = useRef('');
   const splitContainerRef = useRef(null);
   const problemPaneRef = useRef(null);
   const editorPaneRef = useRef(null);
@@ -495,9 +730,22 @@ export default function AssessmentAttempt() {
   }, [id]);
 
   useEffect(() => {
-    const hasCodingSection = assessment?.sections?.some((section) => section?.type === 'coding');
-    if (hasCodingSection && phase !== 'active') void preloadMonacoEditor();
-  }, [assessment?.sections, phase]);
+    const languages = new Set();
+    (assessment?.sections || []).forEach((sectionItem) => {
+      if (sectionItem?.type !== 'coding') return;
+      (sectionItem.questions || []).forEach((questionItem) => {
+        getCodingLanguagesFromData(getCodingDataFromQuestion(questionItem)).forEach((language) => languages.add(language));
+      });
+    });
+    if (!languages.size) return undefined;
+    const run = () => languages.forEach((language) => { void preloadMonacoEditor(language); });
+    if (typeof window.requestIdleCallback === 'function') {
+      const handle = window.requestIdleCallback(run, { timeout: 3000 });
+      return () => window.cancelIdleCallback?.(handle);
+    }
+    const handle = setTimeout(run, 500);
+    return () => clearTimeout(handle);
+  }, [assessment?.sections]);
 
   const answerKey = (sectionIndex, questionIndex) => `${sectionIndex}-${questionIndex}`;
   const isSubmitted = COMPLETED_ASSESSMENT_STATUSES.has(submission?.status);
@@ -531,6 +779,16 @@ export default function AssessmentAttempt() {
   }, [securitySettings, submission, candidate]);
   const fullscreenRequired = Boolean(securitySettings.enableFullscreen);
   const aiProctoringEnabled = Boolean(securitySettings.aiProctoring?.enabled);
+  // Assessment policy: eye/head movement is never flagged, and face detection
+  // runs at most every 700 ms so ML inference does not compete with typing.
+  const aiProctoringSettings = useMemo(() => {
+    const stored = securitySettings.aiProctoring || {};
+    return {
+      ...stored,
+      detectLookingAway: false,
+      detectionIntervalMs: Math.max(700, Number(stored.detectionIntervalMs) || 0),
+    };
+  }, [securitySettings.aiProctoring]);
   const cameraRequired = Boolean(securitySettings.cameraMonitoring || aiProctoringEnabled);
   const locationRequired = securitySettings.locationTracking !== false;
   const environmentRequired = securitySettings.environmentCheck !== false;
@@ -557,20 +815,10 @@ export default function AssessmentAttempt() {
   const sectionGraceSec = Number(securitySettings.sectionGraceSec || 10);
   const perMcqTimingEnabled = Boolean(securitySettings.perMcqTimingEnabled);
   const perMcqTimeSec = Math.min(3600, Math.max(10, Number(securitySettings.perMcqTimeSec || 60)));
-  const duplicateTabCount = detectedTabs.filter((tab) => !tab.current).length;
   const totalViolations = tabSwitches + fullscreenExits + cameraFlags + copyPasteCount;
   const totalWarnings = totalViolations + screenshotWarnings + aiWarnings;
   const forcePauseActive = isPaused && phase === 'violation' && !isSubmitted;
   const securityRecheckActive = isPaused && !isSubmitted && (phase === 'violation' || phase === 'validation');
-  const securityHeartbeat = useMemo(() => ({
-    fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
-    tabActive: !tabGuardEnabled || (document.hasFocus() && !document.hidden),
-    cameraActive: !cameraRequired || Boolean(
-      streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'),
-    ),
-    idle: Boolean(securityStatus.idle),
-    duplicateTab: preventMultipleTabs && duplicateTabCount > 0,
-  }), [fullscreenRequired, tabGuardEnabled, cameraRequired, securityStatus.idle, preventMultipleTabs, duplicateTabCount]);
   const finalRules = useMemo(() => {
     const rules = [];
     if (fullscreenRequired) rules.push({ type: 'bullet', text: 'Fullscreen mode must remain active during the test.' });
@@ -639,8 +887,6 @@ export default function AssessmentAttempt() {
     const nextStep = setupSteps.find((item) => !completed.has(item.key));
     setValidationStep(nextStep?.id || setupSteps.length);
   }, [setupSteps]);
-  const currentSectionForLayout = assessment?.sections?.[activeSection];
-  const isCodingForLayout = currentSectionForLayout?.type === 'coding';
   const cameraStatusLine = useMemo(() => {
     if (!cameraRequired) return null;
     if (cameraIndicator === 'warning' || securityStatus.cameraActive === false) {
@@ -661,8 +907,8 @@ export default function AssessmentAttempt() {
     };
   }, [cameraRequired, cameraIndicator, securityStatus.cameraActive, securityNotice]);
 
-  const buildAnswersPayload = useCallback(() => (
-    Object.entries(answersMap).map(([key, value]) => {
+  const buildAnswersPayload = useCallback((sourceMap = answersMap) => (
+    Object.entries(sourceMap).map(([key, value]) => {
       const [sectionIndex, questionIndex] = key.split('-').map(Number);
       const displayQuestion = assessment?.sections?.[sectionIndex]?.questions?.[questionIndex];
       const originSectionIndex = Number(displayQuestion?.__originSectionIndex ?? sectionIndex);
@@ -691,11 +937,13 @@ export default function AssessmentAttempt() {
       answerRevisionRef.current += 1;
       answersDirtyRef.current = true;
       if (answersArray.some((answer) => savedAnswerSignaturesRef.current.get(answerPayloadKey(answer)) !== answerPayloadSignature(answer))) {
-        setSaveStatus('local_pending');
+        setSaveStatus((previous) => (previous === 'local_pending' ? previous : 'local_pending'));
       }
     }
   }, [answersArray, phase]);
 
+  // The server ignores the client violation list and heartbeat snapshot on
+  // saves; sending them only grew every request and IndexedDB checkpoint.
   useEffect(() => {
     autoSavePayloadRef.current = {
       assessmentId: assessment?._id,
@@ -708,18 +956,58 @@ export default function AssessmentAttempt() {
       violationScore,
       pauseCount,
       lastPauseAt,
-      securityHeartbeat,
-      violations,
       sessionId: assessmentSessionIdRef.current,
     };
-  }, [assessment?._id, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations]);
+  }, [assessment?._id, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt]);
 
   // IndexedDB is independent of network autosave. Protocol checkpoints serialize
   // draft + pending request writes, including an ambiguous response after a reload.
+  // Debounced: every checkpoint deep-clones all answers.
+  const flushAnswerCheckpoint = useCallback(() => {
+    if (answerCheckpointTimerRef.current) {
+      clearTimeout(answerCheckpointTimerRef.current);
+      answerCheckpointTimerRef.current = null;
+    }
+    if (liveCheckpointTimerRef.current) {
+      clearTimeout(liveCheckpointTimerRef.current);
+      liveCheckpointTimerRef.current = null;
+    }
+    draftAnswersRef.current = mergeLiveCodingDraft(draftAnswersRef.current, liveCodingCodeRef.current, liveCodingLanguageRef.current);
+    return saveProtocolRef.current?.checkpoint();
+  }, []);
+
+  const scheduleLiveCodeCheckpoint = useCallback(() => {
+    if (liveCheckpointTimerRef.current) return;
+    liveCheckpointTimerRef.current = setTimeout(() => {
+      liveCheckpointTimerRef.current = null;
+      setSaveStatus((previous) => (previous === 'local_pending' ? previous : 'local_pending'));
+      void flushAnswerCheckpoint();
+    }, LIVE_CODE_CHECKPOINT_MS);
+  }, [flushAnswerCheckpoint]);
+
   useEffect(() => {
-    if (phase !== 'active' || !submission?._id || saveProtocolRef.current?.finalizing) return;
-    void saveProtocolRef.current?.checkpoint();
+    if (phase !== 'active' || !submission?._id || saveProtocolRef.current?.finalizing) return undefined;
+    clearTimeout(answerCheckpointTimerRef.current);
+    answerCheckpointTimerRef.current = setTimeout(() => {
+      answerCheckpointTimerRef.current = null;
+      void saveProtocolRef.current?.checkpoint();
+    }, ANSWER_CHECKPOINT_MS);
+    return undefined;
   }, [answersMap, phase, submission?._id]);
+
+  useEffect(() => {
+    const flushWhenHidden = () => {
+      if (document.visibilityState === 'hidden') void flushAnswerCheckpoint();
+    };
+    const flush = () => { void flushAnswerCheckpoint(); };
+    document.addEventListener('visibilitychange', flushWhenHidden);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', flushWhenHidden);
+      window.removeEventListener('pagehide', flush);
+      if (answerCheckpointTimerRef.current || liveCheckpointTimerRef.current) void flushAnswerCheckpoint();
+    };
+  }, [flushAnswerCheckpoint]);
   const flatQuestions = useMemo(() => {
     const list = [];
     let mcqCount = 0;
@@ -759,11 +1047,22 @@ export default function AssessmentAttempt() {
     });
   }, [assessment, sectionWiseLock, flatQuestions.length]);
 
+  // Section locks only need coarse time; a 5 s clock keeps the page from
+  // re-rendering every second (the visible countdown owns its own ticker).
+  const [lockClock, setLockClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (!sectionWiseLock || phase !== 'active' || isPaused) return undefined;
+    setLockClock(Date.now());
+    const timer = setInterval(() => setLockClock(Date.now()), 5000);
+    return () => clearInterval(timer);
+  }, [sectionWiseLock, phase, isPaused]);
+
   const elapsedAssessmentMs = useMemo(() => {
     if (!assessment?.duration) return 0;
     const totalDurationMs = Math.max(0, Number(assessment.duration || 0)) * 60 * 1000;
-    return Math.max(0, totalDurationMs - timeLeft);
-  }, [assessment?.duration, timeLeft]);
+    const remainingMs = allowedEndTime ? allowedEndTime - (lockClock + offset) : timeLeft;
+    return Math.max(0, totalDurationMs - remainingMs);
+  }, [assessment?.duration, allowedEndTime, lockClock, offset, timeLeft]);
 
   const isSectionLocked = useCallback((sectionIndex) => {
     if (!sectionWiseLock) return false;
@@ -821,23 +1120,25 @@ export default function AssessmentAttempt() {
   const questionStatus = useCallback((secIdx, qIdx) => {
     const key = `${secIdx}-${qIdx}`;
     const value = answersMap[key] || {};
-    if (markedMap[key]) return 'review';
     const section = assessment?.sections?.[secIdx];
-    if (!section) return 'unanswered';
-    if (section.type === 'mcq') {
-      return Array.isArray(value.answer)
-        ? (value.answer.length > 0 ? 'answered' : 'unanswered')
-        : (value.answer !== undefined && value.answer !== null ? 'answered' : 'unanswered');
-    }
-    if (section.type === 'coding') {
+    let answered = false;
+    if (section?.type === 'mcq') {
+      answered = Array.isArray(value.answer)
+        ? value.answer.length > 0
+        : value.answer !== undefined && value.answer !== null && value.answer !== '';
+    } else if (section?.type === 'coding') {
       const question = section.questions?.[qIdx];
       const codingData = getCodingDataFromQuestion(question);
       const language = value.language || codingData.supportedLanguages?.[0] || 'javascript';
       const starterCode = getStarterCodeForLanguage(codingData, language);
       const submittedCode = String(value.code || '').trim();
-      return submittedCode && submittedCode !== String(starterCode || '').trim() ? 'answered' : 'unanswered';
+      answered = Boolean(submittedCode) && submittedCode !== String(starterCode || '').trim();
+    } else if (section) {
+      answered = Boolean(value.answer) && String(value.answer).trim().length > 0;
     }
-    return value.answer && String(value.answer).trim().length > 0 ? 'answered' : 'unanswered';
+    // An answered question stays green even when marked; the mark is a flag on top.
+    if (markedMap[key]) return answered ? 'answered_review' : 'review';
+    return answered ? 'answered' : 'unanswered';
   }, [answersMap, markedMap, assessment]);
 
   const attemptedQuestionCounts = useMemo(() => Object.entries(answersMap).reduce((counts, [key, value]) => {
@@ -852,6 +1153,21 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     securityStatusRef.current = securityStatus;
   }, [securityStatus]);
+
+  useEffect(() => {
+    tabSwitchesRef.current = tabSwitches;
+    totalWarningsRef.current = totalWarnings;
+  }, [tabSwitches, totalWarnings]);
+
+  useEffect(() => {
+    proctoringStatusRef.current = proctoringStatus;
+  }, [proctoringStatus]);
+
+  // Returns the previous object when nothing changed so no-op status writes
+  // (heartbeats, camera samples) don't re-render the whole attempt page.
+  const patchSecurityStatus = useCallback((patch) => setSecurityStatus((previous) => (
+    Object.keys(patch).every((key) => previous[key] === patch[key]) ? previous : { ...previous, ...patch }
+  )), []);
 
   useEffect(() => {
     violationScoreRef.current = violationScore;
@@ -879,9 +1195,13 @@ export default function AssessmentAttempt() {
     setAiWarnings((prev) => prev + 1);
 
     try {
+      // Without sessionId the server rejects every AI violation (409) once the
+      // heartbeat has registered this session.
       await logAiProctoringViolation({
         assessmentId: assessment._id,
-        submissionId: submission?._id,
+        submissionId: saveProtocolRef.current?.submissionId || submission?._id,
+        sessionId: assessmentSessionIdRef.current,
+        attemptGeneration: saveProtocolRef.current?.generation || 1,
         violation: event,
       });
     } catch (err) {
@@ -895,16 +1215,14 @@ export default function AssessmentAttempt() {
     }
   }, [assessment?._id, submission?._id]);
 
+  // Model download/inference problems are system health, not student behaviour:
+  // log them, never show them as a security warning.
   const handleAiProctoringError = useCallback((error) => {
-    const message = error?.message || 'AI proctoring could not start. Check the camera and network connection.';
-    aiSecurityNoticeRef.current = message;
-    setSecurityNotice(message);
     console.warn('AI Proctoring error', error);
   }, []);
 
-  const clampLeftWidth = (value) => {
-    if (!splitContainerRef.current) return value;
-    const containerWidth = splitContainerRef.current.getBoundingClientRect().width;
+  const clampLeftWidth = (value, containerWidth = splitContainerRef.current?.getBoundingClientRect().width) => {
+    if (!containerWidth) return value;
     const min = 320;
     const max = Math.max(min, Math.min(680, containerWidth - 360));
     return Math.min(max, Math.max(min, value));
@@ -977,14 +1295,25 @@ export default function AssessmentAttempt() {
       }
     }
     submissionInFlightRef.current = true;
+    if (submitRetryTimerRef.current) {
+      clearTimeout(submitRetryTimerRef.current);
+      submitRetryTimerRef.current = null;
+    }
+    setShowSubmitConfirm(false);
     setFinalizing(true);
     setSaving(true);
     let submissionCompleted = false;
     let finalAnswersAccepted = true;
     try {
+      // Commit typing that is still debounced in the short-answer box or editor.
+      const pendingShortAnswer = shortAnswerFlushRef.current?.();
+      await flushAnswerCheckpoint();
+      const latestAnswers = buildAnswersPayload(pendingShortAnswer?.key
+        ? { ...answersMap, [pendingShortAnswer.key]: { ...(answersMap[pendingShortAnswer.key] || {}), answer: pendingShortAnswer.text } }
+        : answersMap);
       const result = await saveProtocolRef.current.submit({
         assessmentId: assessment._id,
-        answers: buildAnswersPayload(),
+        answers: latestAnswers,
         status: 'submitted',
         tabSwitches,
         fullscreenExits,
@@ -993,8 +1322,6 @@ export default function AssessmentAttempt() {
         violationScore,
         pauseCount,
         lastPauseAt,
-        securityHeartbeat,
-        violations,
         sessionId: assessmentSessionIdRef.current,
       });
       finalAnswersAccepted = result?.answersAccepted !== false;
@@ -1002,6 +1329,18 @@ export default function AssessmentAttempt() {
     } catch (err) {
       if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
         setActiveSessionConflict(true);
+        return false;
+      }
+      if (isTransientSaveError(err)) {
+        // End-of-exam rush: the protocol already retried with backoff. Try once
+        // more in the background, with jitter, before asking the student.
+        if (!submitRetryTimerRef.current) {
+          submitRetryTimerRef.current = setTimeout(() => {
+            submitRetryTimerRef.current = null;
+            void handleSubmitRef.current?.(true, 'Assessment submitted successfully');
+          }, 4000 + Math.random() * 4000);
+        }
+        toast.info('The server is busy. Your answers are locked and submission will be retried automatically.');
         return false;
       }
       toast.error(err.message || 'Failed to submit assessment');
@@ -1014,7 +1353,8 @@ export default function AssessmentAttempt() {
     if (!submissionCompleted) return false;
 
     answersDirtyRef.current = false;
-    if (finalAnswersAccepted) await deleteAssessmentDraft(activeDraftKeyRef.current || draftStorageKey);
+    // The server has the attempt; draft cleanup must not delay the redirect.
+    if (finalAnswersAccepted) void deleteAssessmentDraft(activeDraftKeyRef.current || draftStorageKey);
 
     // Cleanup/proctoring must never prevent the mandatory feedback redirect
     // after the server has already accepted the assessment submission.
@@ -1030,7 +1370,7 @@ export default function AssessmentAttempt() {
     }
     navigate(`/student/assessment/${assessment._id}/feedback`, { replace: true });
     return true;
-  }, [assessment, answersMap, buildAnswersPayload, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, stopAiProctoring, toast, navigate, draftStorageKey]);
+  }, [assessment, answersMap, buildAnswersPayload, flushAnswerCheckpoint, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, stopAiProctoring, toast, navigate, draftStorageKey]);
 
   const triggerForcePause = useCallback((type, message, serverState = {}) => {
     if (type !== 'tab_switch') {
@@ -1174,7 +1514,6 @@ export default function AssessmentAttempt() {
       at: new Date().toISOString(),
       meta: { ...meta, weight },
     };
-    setViolations((prev) => ([...prev, entry]));
     setViolationScore((prev) => prev + weight);
     setViolationMessage(message);
     setSecurityNotice(message);
@@ -1238,10 +1577,18 @@ export default function AssessmentAttempt() {
     }
   }, [isSubmitted, assessment?._id, securitySettings, handleSave, handleSubmit, toast, triggerForcePause, showSecurityPopup]);
 
+  // Long-lived listeners and timers call through these refs, so an answer
+  // change (which recreates both callbacks) no longer tears them down.
   useEffect(() => {
     handleSubmitRef.current = handleSubmit;
     recordViolationRef.current = recordViolation;
-  }, [handleSubmit, recordViolation]);
+    showSecurityPopupRef.current = showSecurityPopup;
+  }, [handleSubmit, recordViolation, showSecurityPopup]);
+
+  useEffect(() => () => {
+    if (submitRetryTimerRef.current) clearTimeout(submitRetryTimerRef.current);
+    if (timeUpRetryTimerRef.current) clearTimeout(timeUpRetryTimerRef.current);
+  }, []);
 
   const handleResizeStart = (event) => {
     if (!splitContainerRef.current) return;
@@ -1254,15 +1601,19 @@ export default function AssessmentAttempt() {
       // ignore
     }
     const startX = event.clientX;
-    const startWidth = clampLeftWidth(leftWidth);
+    // Measure once: reading layout on every pointermove forced a sync reflow.
+    const containerWidth = splitContainerRef.current.getBoundingClientRect().width;
+    const startWidth = clampLeftWidth(leftWidth, containerWidth);
     let nextWidth = startWidth;
 
+    // Write the CSS variable directly during the drag and commit React state
+    // once on release, instead of re-rendering the whole page every frame.
     const schedule = (value) => {
-      nextWidth = clampLeftWidth(value);
+      nextWidth = clampLeftWidth(value, containerWidth);
       if (dragFrameRef.current) return;
       dragFrameRef.current = requestAnimationFrame(() => {
         dragFrameRef.current = null;
-        setLeftWidth(nextWidth);
+        problemPaneRef.current?.style.setProperty('--assessment-problem-width', `${nextWidth}px`);
       });
     };
 
@@ -1279,6 +1630,8 @@ export default function AssessmentAttempt() {
         cancelAnimationFrame(dragFrameRef.current);
         dragFrameRef.current = null;
       }
+      problemPaneRef.current?.style.setProperty('--assessment-problem-width', `${nextWidth}px`);
+      setLeftWidth(nextWidth);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -1326,6 +1679,11 @@ export default function AssessmentAttempt() {
       let restoredLocalDraft = false;
       const scopedDraftKey = `${draftStorageKey}:${String(data.submission?._id || '')}`;
       activeDraftKeyRef.current = scopedDraftKey;
+      // A server-side auto-submit leaves the local draft behind; on shared lab
+      // machines the next student could read it from browser storage.
+      if (COMPLETED_ASSESSMENT_STATUSES.has(String(data.submission?.status || '').toLowerCase())) {
+        void deleteAssessmentDraft(scopedDraftKey);
+      }
       const localDraft = await readAssessmentDraft(scopedDraftKey) || await readAssessmentDraft(draftStorageKey);
       const canRecover = isDraftForAttempt(localDraft, data.submission, assessmentSessionIdRef.current);
       if (canRecover && localDraft.answersMap && typeof localDraft.answersMap === 'object') {
@@ -1421,7 +1779,6 @@ export default function AssessmentAttempt() {
       setViolationScore(data.submission?.violationScore || 0);
       setPauseCount(data.submission?.pauseCount || 0);
       setLastPauseAt(data.submission?.lastPauseAt || null);
-      setViolations(data.submission?.violations || []);
       setLocationData(data.submission?.securitySetup?.location || null);
       syncCompletedSecuritySteps(data.completedSecuritySteps || []);
       const loadedTimeoutSec = Math.min(
@@ -1533,15 +1890,24 @@ export default function AssessmentAttempt() {
             lastSeen: value.lastSeen,
             current: id === instanceId,
           }));
-        setDetectedTabs(activeEntries.sort((a, b) => Number(b.current) - Number(a.current)));
-        setSecurityStatus((prev) => ({ ...prev, duplicateTab: preventMultipleTabs && activeEntries.some((entry) => !entry.current) }));
+        const sortedTabs = activeEntries.sort((a, b) => Number(b.current) - Number(a.current));
+        // lastSeen changes on every beat; only tab identity matters for the UI.
+        const signature = sortedTabs.map((entry) => `${entry.id}:${entry.current ? 1 : 0}:${entry.title}`).join('|');
+        if (signature !== tabsSignatureRef.current) {
+          tabsSignatureRef.current = signature;
+          setDetectedTabs(sortedTabs);
+        }
+        patchSecurityStatus({ duplicateTab: preventMultipleTabs && activeEntries.some((entry) => !entry.current) });
         return Object.fromEntries(activeEntries.map((entry) => [entry.id, {
           title: entry.title,
           path: entry.path,
           lastSeen: entry.lastSeen,
         }]));
       } catch {
-        setDetectedTabs([{ id: instanceId, title: assessment.title || 'Assessment tab', path: window.location.pathname, lastSeen: Date.now(), current: true }]);
+        if (tabsSignatureRef.current !== 'fallback') {
+          tabsSignatureRef.current = 'fallback';
+          setDetectedTabs([{ id: instanceId, title: assessment.title || 'Assessment tab', path: window.location.pathname, lastSeen: Date.now(), current: true }]);
+        }
         return {};
       }
     };
@@ -1564,10 +1930,9 @@ export default function AssessmentAttempt() {
             lastSeen: Date.now(),
           }));
         } else {
-          setSecurityStatus((prev) => ({ ...prev, duplicateTab: true }));
+          patchSecurityStatus({ duplicateTab: true });
         }
       }
-      readTabs();
     };
 
     writeHeartbeat();
@@ -1590,30 +1955,44 @@ export default function AssessmentAttempt() {
         // Ignore localStorage cleanup errors.
       }
     };
-  }, [assessment?._id, assessment?.title, activeSessionStorageKey, phase, preventMultipleTabs]);
+  }, [assessment?._id, assessment?.title, activeSessionStorageKey, phase, preventMultipleTabs, patchSecurityStatus]);
 
+  // Start every question at the top, before paint. The coding problem panel's
+  // inner body is the element that actually scrolls.
+  useLayoutEffect(() => {
+    questionScrollRef.current?.scrollTo?.({ top: 0 });
+    problemPaneRef.current?.querySelector?.('[data-problem-scroll]')?.scrollTo?.({ top: 0 });
+  }, [activeSection, activeQuestion]);
+
+  // Starts once per attempt. Transient failures are retried by the save
+  // protocol (finalizing stays on); if a submit is refused outright and the
+  // exam becomes editable again at 00:00, try again every 10 s.
+  const handleTimeUp = useCallback(() => {
+    if (!autoSubmitOnEnd || timeUpSubmitRef.current) return;
+    timeUpSubmitRef.current = true;
+    const attempt = async () => {
+      timeUpRetryTimerRef.current = null;
+      const submitted = await handleSubmitRef.current?.(true);
+      if (submitted || saveProtocolRef.current?.finalizing) return;
+      timeUpRetryTimerRef.current = setTimeout(attempt, 10000);
+    };
+    void attempt();
+  }, [autoSubmitOnEnd]);
+
+  // Preload the next question's images so its options don't shift on arrival.
   useEffect(() => {
-    if (!isCodingForLayout) return;
-    // When jumping between questions, ensure the new question content is visible.
-    // (The problem pane is scrollable; without this it can appear like navigation failed.)
-    requestAnimationFrame(() => {
-      if (problemPaneRef.current) problemPaneRef.current.scrollTop = 0;
-      if (editorPaneRef.current) editorPaneRef.current.scrollTop = 0;
+    const nextQuestion = flatQuestions[currentNavigationEndIndex + 1]?.question;
+    if (!nextQuestion) return;
+    [
+      nextQuestion.questionImage?.url,
+      nextQuestion.passage?.image?.url,
+      ...(nextQuestion.optionImages || []).map((image) => image?.url),
+    ].filter(Boolean).forEach((url) => {
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = url;
     });
-  }, [isCodingForLayout, activeSection, activeQuestion]);
-
-  useEffect(() => {
-    if (!assessment || !allowedEndTime || isPaused || phase !== 'active') return undefined;
-    const timer = setInterval(() => {
-      const now = Date.now() + offset;
-      const remaining = allowedEndTime - now;
-      setTimeLeft(remaining);
-      if (remaining <= 0 && submission?.status !== 'submitted' && autoSubmitOnEnd) {
-        handleSubmit(true);
-      }
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [assessment, submission, offset, allowedEndTime, isPaused, phase, autoSubmitOnEnd, handleSubmit]);
+  }, [currentNavigationEndIndex, flatQuestions]);
 
   useEffect(() => {
     if (!securityRecheckActive || !securityRecheckStartedAt) return undefined;
@@ -1624,13 +2003,13 @@ export default function AssessmentAttempt() {
       if (remaining <= 0 && !securityRecheckAutoSubmitRef.current) {
         securityRecheckAutoSubmitRef.current = true;
         toast.error('Security recheck time expired. Assessment is being auto-submitted.');
-        void handleSubmit(true);
+        void handleSubmitRef.current?.(true);
       }
     };
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [securityRecheckActive, securityRecheckStartedAt, securityRecheckTimeoutSec, handleSubmit, toast]);
+  }, [securityRecheckActive, securityRecheckStartedAt, securityRecheckTimeoutSec, toast]);
 
   useEffect(() => {
     return () => {
@@ -1654,6 +2033,15 @@ export default function AssessmentAttempt() {
       clearTimeout(timer);
     };
   }, [secureActive, isSubmitted, handleSave]);
+
+  // Sync shortly after each answer change instead of only on the 25-35 s
+  // timer, so a time-up submit never loses the last answers. Batches carry
+  // only changed answers; the timer above stays as the fallback.
+  useEffect(() => {
+    if (!secureActive || isSubmitted || saveProtocolRef.current?.finalizing || !answersDirtyRef.current) return undefined;
+    const timer = setTimeout(() => { void handleSave(); }, ANSWER_SYNC_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [answersMap, secureActive, isSubmitted, handleSave]);
 
   useEffect(() => {
     const retry = () => {
@@ -1689,35 +2077,54 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     if (!secureActive || !tabGuardEnabled) return undefined;
     const reportTabViolation = (source, extraMeta = {}) => {
+      const now = Date.now();
+      if (now - lastFocusLossAtRef.current < 1000) return;
+      lastFocusLossAtRef.current = now;
       const message = 'Tab switch or focus loss detected. Return to the assessment window.';
       const meta = {
         limit: tabSwitchLimit || null,
         warnAt: tabSwitchWarnAt || null,
         action: tabSwitchAction,
-        nextCount: tabSwitches + 1,
+        nextCount: tabSwitchesRef.current + 1,
         source,
         localPopupShown: true,
         ...extraMeta,
       };
-      showSecurityPopup('tab_switch', message, meta);
-      void recordViolation('tab_switch', message, meta);
+      showSecurityPopupRef.current?.('tab_switch', message, meta);
+      void recordViolationRef.current?.('tab_switch', message, meta);
+    };
+    const clearFocusLossTimer = () => {
+      if (!focusLossTimerRef.current) return false;
+      clearTimeout(focusLossTimerRef.current);
+      focusLossTimerRef.current = null;
+      return true;
     };
     const reportFocusLoss = (source) => {
       const now = Date.now();
       const screenshotWarningActive = now < focusLossScreenshotGraceUntilRef.current
         || now - lastScreenshotWarningAtRef.current < FOCUS_LOSS_SCREENSHOT_GRACE_MS;
       if (screenshotWarningActive) {
-        setSecurityStatus((prev) => ({ ...prev, tabActive: true }));
+        patchSecurityStatus({ tabActive: true });
         setSecurityNotice(restrictedActionNoticeRef.current);
         return;
       }
       const active = document.hasFocus() && !document.hidden;
-      setSecurityStatus((prev) => ({ ...prev, tabActive: active }));
-      if (!active) {
-        if (now - lastFocusLossAtRef.current < 1000) return;
-        lastFocusLossAtRef.current = now;
+      patchSecurityStatus({ tabActive: active });
+      if (active) return;
+      // The tab really went to the background: count it immediately.
+      if (document.hidden) {
+        clearFocusLossTimer();
         reportTabViolation(source);
+        return;
       }
+      // Window blur only: count it if focus does not come back within 2 s.
+      if (focusLossTimerRef.current) return;
+      focusLossTimerRef.current = setTimeout(() => {
+        focusLossTimerRef.current = null;
+        // Already counted by the keyboard shortcut or hidden-tab path.
+        if (Date.now() - lastFocusLossAtRef.current < FOCUS_LOSS_CONFIRM_MS + 500) return;
+        if (!document.hasFocus() || document.hidden) reportTabViolation(source);
+      }, FOCUS_LOSS_CONFIRM_MS);
     };
     const handleTabShortcut = (event) => {
       const key = String(event.key || '').toLowerCase();
@@ -1731,7 +2138,6 @@ export default function AssessmentAttempt() {
       const now = Date.now();
       if (now - lastTabShortcutAtRef.current < 700) return;
       lastTabShortcutAtRef.current = now;
-      lastFocusLossAtRef.current = now;
       const shortcut = [
         event.ctrlKey ? 'Ctrl' : '',
         event.metaKey ? 'Meta' : '',
@@ -1745,7 +2151,30 @@ export default function AssessmentAttempt() {
     const handleBlur = () => reportFocusLoss('window_blur');
     const handlePageHide = () => reportFocusLoss('pagehide');
     const handleFocus = () => {
-      setSecurityStatus((prev) => ({ ...prev, tabActive: document.hasFocus() && !document.hidden }));
+      const now = Date.now();
+      if (clearFocusLossTimer() && now - lastFocusLossAtRef.current >= FOCUS_LOSS_CONFIRM_MS + 500) {
+        // Focus came back within the grace window: log the blip for audit and
+        // escalate only when blips repeat.
+        focusBlipsRef.current = [...focusBlipsRef.current.filter((at) => now - at < FOCUS_BLIP_WINDOW_MS), now];
+        if (focusBlipsRef.current.length >= FOCUS_BLIP_ESCALATE_COUNT) {
+          focusBlipsRef.current = [];
+          reportTabViolation('repeated_focus_loss', { blips: FOCUS_BLIP_ESCALATE_COUNT });
+        } else if (assessment?._id) {
+          void api.logStudentAssessmentMonitoring(assessment._id, {
+            submissionId: saveProtocolRef.current?.submissionId,
+            sessionId: assessmentSessionIdRef.current,
+            attemptGeneration: saveProtocolRef.current?.generation || 1,
+            event: {
+              eventId: globalThis.crypto?.randomUUID?.() || `focus-blip-${now}`,
+              type: 'focus_blip',
+              at: new Date(now).toISOString(),
+              message: `Brief focus loss (under ${FOCUS_LOSS_CONFIRM_MS / 1000}s).`,
+              meta: {},
+            },
+          }).catch(() => {});
+        }
+      }
+      patchSecurityStatus({ tabActive: document.hasFocus() && !document.hidden });
     };
     document.addEventListener('visibilitychange', handleVisibility);
     document.addEventListener('keydown', handleTabShortcut, true);
@@ -1753,25 +2182,26 @@ export default function AssessmentAttempt() {
     window.addEventListener('focus', handleFocus);
     window.addEventListener('pagehide', handlePageHide);
     return () => {
+      clearFocusLossTimer();
       document.removeEventListener('visibilitychange', handleVisibility);
       document.removeEventListener('keydown', handleTabShortcut, true);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [secureActive, tabGuardEnabled, tabSwitchLimit, tabSwitchWarnAt, tabSwitchAction, tabSwitches, recordViolation, showSecurityPopup]);
+  }, [secureActive, tabGuardEnabled, tabSwitchLimit, tabSwitchWarnAt, tabSwitchAction, assessment?._id, patchSecurityStatus]);
 
   useEffect(() => {
     if (!secureActive || !preventMultipleTabs) return;
     const duplicateCount = detectedTabs.filter((tab) => !tab.current).length;
     if (duplicateCount > 0 && Date.now() - lastDuplicateTabViolationRef.current > 8000) {
       lastDuplicateTabViolationRef.current = Date.now();
-      void recordViolation('duplicate_tab', 'Duplicate assessment tab detected. Close all other assessment tabs.', {
+      void recordViolationRef.current?.('duplicate_tab', 'Duplicate assessment tab detected. Close all other assessment tabs.', {
         duplicateCount,
         source: 'duplicate_tab_guard',
       });
     }
-  }, [secureActive, preventMultipleTabs, detectedTabs, recordViolation]);
+  }, [secureActive, preventMultipleTabs, detectedTabs]);
 
   useEffect(() => {
     if (!secureActive || (!copyBlockEnabled && !screenshotProtectionEnabled)) return undefined;
@@ -1784,8 +2214,8 @@ export default function AssessmentAttempt() {
         ...meta,
         localPopupShown: true,
       };
-      showSecurityPopup(type, message, violationMeta);
-      void recordViolation(type, message, {
+      showSecurityPopupRef.current?.(type, message, violationMeta);
+      void recordViolationRef.current?.(type, message, {
         ...violationMeta,
       });
     };
@@ -1809,14 +2239,14 @@ export default function AssessmentAttempt() {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation?.();
-      const warningCount = totalWarnings + 1;
+      const warningCount = totalWarningsRef.current + 1;
       showTimedSecurityWarning({
         title: 'Right-click blocked',
         message: `Right-click is disabled for this assessment. Warning count: ${warningCount}.`,
         tone: 'warning',
         notice: 'Right-click attempt recorded as a warning. Continue the assessment.',
       });
-      void recordViolation('context_menu', 'Right-click menu blocked by assessment rules.', {
+      void recordViolationRef.current?.('context_menu', 'Right-click menu blocked by assessment rules.', {
         source: event.type,
         warningOnly: true,
         localPopupShown: true,
@@ -1851,7 +2281,7 @@ export default function AssessmentAttempt() {
         event.stopPropagation();
         event.stopImmediatePropagation?.();
         showScreenshotBlockedPopup();
-        void recordViolation('other', 'Screenshot keyboard shortcut detected and blocked where supported by the browser.', {
+        void recordViolationRef.current?.('other', 'Screenshot keyboard shortcut detected and blocked where supported by the browser.', {
           source: 'screenshot_shortcut',
           shortcut: event.code || event.key,
           warningOnly: true,
@@ -1874,6 +2304,15 @@ export default function AssessmentAttempt() {
         && ctrlOrMeta
         && ['a', 'c', 'v', 'x'].includes(key);
       if (internalEditorShortcut) return;
+      // Ctrl+S is a programmer's reflex, not a cheating attempt: swallow it
+      // and reassure instead of raising a violation popup mid-typing.
+      if (isInternalCodeEditorEvent(event) && ctrlOrMeta && key === 's' && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        void flushAnswerCheckpoint();
+        toast.info('Your code is saved automatically.');
+        return;
+      }
       const blockedCtrlKey = ctrlOrMeta && ['c', 'v', 'x', 'a', 's', 'p', 'u', 'r'].includes(key);
       const blockedInsert = key === 'insert' && (event.shiftKey || ctrlOrMeta);
       if (blockedCtrlKey || blockedInsert) {
@@ -1906,7 +2345,7 @@ export default function AssessmentAttempt() {
       document.removeEventListener('beforeinput', handleBeforeInput, capture);
       document.removeEventListener('keydown', handleKeydown, capture);
     };
-  }, [secureActive, copyBlockEnabled, screenshotProtectionEnabled, blockRightClick, recordViolation, showScreenshotBlockedPopup, showTimedSecurityWarning, showSecurityPopup, totalWarnings]);
+  }, [secureActive, copyBlockEnabled, screenshotProtectionEnabled, blockRightClick, showScreenshotBlockedPopup, showTimedSecurityWarning, flushAnswerCheckpoint, toast]);
 
   useEffect(() => {
     if (!secureActive || !idleDetection) return undefined;
@@ -1915,28 +2354,41 @@ export default function AssessmentAttempt() {
       setSecurityStatus((prev) => (prev.idle ? { ...prev, idle: false } : prev));
     };
     const checkIdle = () => {
+      // A student the real face model sees in front of the camera is thinking,
+      // not idle. (The frame-variance fallback can't tell, so it doesn't count.)
+      const aiStatus = proctoringStatusRef.current;
+      if (aiProctoringEnabled && aiStatus?.faceModel === 'ready' && aiStatus?.face === 'ok') {
+        lastActivityRef.current = Date.now();
+        return;
+      }
       const idleFor = Date.now() - lastActivityRef.current;
       if (idleFor < idleThresholdMs) return;
       lastActivityRef.current = Date.now();
-      setSecurityStatus((prev) => ({ ...prev, idle: true }));
+      patchSecurityStatus({ idle: true });
       const message = 'No activity detected. Please stay active in the assessment window.';
-      void recordViolation('idle', message, {
+      void recordViolationRef.current?.('idle', message, {
         source: 'idle_detection',
         idleForMs: idleFor,
         action: idleAction,
+        // Shown in the footer either way; it only carries weight when the
+        // admin chose an action stronger than "warn".
+        ...(idleAction === 'warn' ? { warningOnly: true } : {}),
       });
     };
-    ['mousemove', 'keydown', 'click', 'scroll', 'pointerdown', 'touchstart'].forEach((eventName) => {
-      window.addEventListener(eventName, markActivity, { passive: true });
+    // Capture phase: scroll and wheel inside the question/problem panes do not
+    // bubble to window, so reading a long question used to count as idle.
+    const activityEvents = ['pointermove', 'keydown', 'pointerdown', 'wheel', 'scroll', 'touchstart', 'input', 'focusin'];
+    activityEvents.forEach((eventName) => {
+      document.addEventListener(eventName, markActivity, { passive: true, capture: true });
     });
     idleTimerRef.current = setInterval(checkIdle, 5000);
     return () => {
-      ['mousemove', 'keydown', 'click', 'scroll', 'pointerdown', 'touchstart'].forEach((eventName) => {
-        window.removeEventListener(eventName, markActivity);
+      activityEvents.forEach((eventName) => {
+        document.removeEventListener(eventName, markActivity, { capture: true });
       });
       if (idleTimerRef.current) clearInterval(idleTimerRef.current);
     };
-  }, [secureActive, idleDetection, idleThresholdMs, idleAction, recordViolation]);
+  }, [secureActive, idleDetection, idleThresholdMs, idleAction, aiProctoringEnabled, patchSecurityStatus]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -1945,13 +2397,13 @@ export default function AssessmentAttempt() {
         ...prev,
         fullscreen: active,
       }));
-      setSecurityStatus((prev) => ({ ...prev, fullscreen: !fullscreenRequired || active }));
+      patchSecurityStatus({ fullscreen: !fullscreenRequired || active });
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, [fullscreenRequired]);
+  }, [fullscreenRequired, patchSecurityStatus]);
 
   useEffect(() => {
     const clearFullscreenTimers = () => {
@@ -1969,6 +2421,7 @@ export default function AssessmentAttempt() {
 
     const handleFullscreenEnforcement = () => {
       if (document.fullscreenElement) {
+        lockEscapeKey();
         clearFullscreenTimers();
         fullscreenAutoSubmitRef.current = false;
         setFullscreenRecovery({ active: false, remaining: 0 });
@@ -2096,25 +2549,70 @@ export default function AssessmentAttempt() {
     };
   }, [stopAiProctoring]);
 
-  useEffect(() => {
-    const assessmentCameraReady = Boolean(
-      cameraStreamReady
-      && streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'),
-    );
-
-    if (!secureActive || !aiProctoringEnabled || !assessment?._id || !submission?._id || !assessmentCameraReady) {
-      stopAiProctoring();
-      return undefined;
+  const setMonitorVideoElement = useCallback((element) => {
+    monitorVideoRef.current = element;
+    if (element && streamRef.current && element.srcObject !== streamRef.current) {
+      element.srcObject = streamRef.current;
+      element.play().catch(() => {});
     }
+  }, []);
 
-    if (proctoringManagerRef.current) return undefined;
+  const attachStream = useCallback((stream) => {
+    [validationVideoRef.current, monitorVideoRef.current].forEach((video) => {
+      if (video && video.srcObject !== stream) {
+        video.srcObject = stream;
+        video.play().catch(() => {});
+      }
+    });
+  }, []);
 
-    let cancelled = false;
+  // Single shared camera stream for the whole attempt. Concurrent callers share
+  // one getUserMedia request; track end/mute events trigger a re-check.
+  const acquireCamera = useCallback(async () => {
+    if (hasOpenCameraTrack(streamRef.current)) return streamRef.current;
+    if (cameraAcquireRef.current) return cameraAcquireRef.current;
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera API is not available in this browser.');
+    cameraAcquireRef.current = (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
+        streamRef.current?.getTracks?.().forEach((track) => track.stop());
+        streamRef.current = stream;
+        const requestCheck = () => window.dispatchEvent(new Event('peerprep:camera-check'));
+        stream.getVideoTracks().forEach((track) => {
+          track.addEventListener('ended', requestCheck);
+          track.addEventListener('mute', requestCheck);
+          track.addEventListener('unmute', requestCheck);
+        });
+        cameraMutedSinceRef.current = 0;
+        cameraRetryRef.current = { nextAt: 0, delay: CAMERA_RETRY_MIN_MS };
+        attachStream(stream);
+        void proctoringManagerRef.current?.replaceStream?.(stream);
+        setCameraStreamReady(true);
+        return stream;
+      } finally {
+        cameraAcquireRef.current = null;
+      }
+    })();
+    return cameraAcquireRef.current;
+  }, [attachStream]);
+
+  // The manager is created once per attempt and survives camera blips and the
+  // pause/re-check flow: disposing it used to reload both AI models (up to 15 s
+  // of "Face AI loading") every time the camera hiccuped.
+  useEffect(() => {
+    if (isSubmitted || !aiProctoringEnabled) {
+      stopAiProctoring();
+      return;
+    }
+    if (proctoringManagerRef.current) return;
+    if (!secureActive || !assessment?._id || !submission?._id || !cameraStreamReady) return;
+    if (!hasOpenCameraTrack(streamRef.current) || !monitorVideoRef.current) return;
+
     const manager = new ProctoringManager({
       assessmentId: assessment._id,
       submissionId: submission._id,
-      settings: securitySettings.aiProctoring,
-      videoElement: aiProctoringVideoRef.current,
+      settings: aiProctoringSettings,
+      videoElement: monitorVideoRef.current,
       stream: streamRef.current,
       requireExistingStream: true,
       onStatusChange: setProctoringStatus,
@@ -2124,35 +2622,39 @@ export default function AssessmentAttempt() {
 
     proctoringManagerRef.current = manager;
     setProctoringStatus(manager.getStatus());
-
-    void manager.start().then(() => {
-      if (cancelled) manager.stop();
-    });
-
-    return () => {
-      cancelled = true;
-      stopAiProctoring();
-    };
+    void manager.start();
   }, [
     secureActive,
+    isSubmitted,
     aiProctoringEnabled,
+    aiProctoringSettings,
     assessment?._id,
     submission?._id,
-    securitySettings.aiProctoring,
     cameraStreamReady,
     stopAiProctoring,
     handleAiViolationConfirmed,
     handleAiProctoringError,
   ]);
 
+  // Outside the active phase (pause / re-verification) detection must not
+  // produce violations, but the models stay loaded.
+  useEffect(() => {
+    proctoringManagerRef.current?.setPaused?.(!secureActive);
+  }, [secureActive]);
+
+  useEffect(() => {
+    const manager = proctoringManagerRef.current;
+    if (!cameraStreamReady || !manager || !streamRef.current) return;
+    if (manager.stream === streamRef.current) return;
+    void manager.replaceStream?.(streamRef.current);
+  }, [cameraStreamReady]);
+
   useEffect(() => {
     if (!aiSecurityNoticeRef.current || !proctoringStatus) return;
     const aiIssueActive = Boolean(
-      proctoringStatus.error
-      || ['missing', 'out_of_frame', 'multiple'].includes(proctoringStatus.face)
-      || proctoringStatus.eye === 'looking_away'
+      ['missing', 'out_of_frame', 'multiple'].includes(proctoringStatus.face)
       || proctoringStatus.mobile === 'detected'
-      || ['multiple', 'missing'].includes(proctoringStatus.person)
+      || proctoringStatus.person === 'multiple'
       || ['blocked', 'error'].includes(proctoringStatus.camera),
     );
     if (aiIssueActive) return;
@@ -2164,48 +2666,68 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     if (!secureActive || !cameraRequired) {
       setCameraIndicator('idle');
-      setSecurityStatus((prev) => ({ ...prev, cameraActive: !cameraRequired }));
+      patchSecurityStatus({ cameraActive: !cameraRequired });
       return undefined;
     }
     let intervalId;
     let cancelled = false;
     const video = monitorVideoRef.current;
     const canvas = monitorCanvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!faceDetectorRef.current && typeof window !== 'undefined' && 'FaceDetector' in window) {
+    const ctx = canvas?.getContext('2d', { willReadFrequently: true });
+    if (!aiProctoringEnabled && !faceDetectorRef.current && typeof window !== 'undefined' && 'FaceDetector' in window) {
       try {
         faceDetectorRef.current = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 3 });
       } catch {
         faceDetectorRef.current = null;
       }
     }
+    // Samples are 2.5 s apart. Nothing reaches the UI until a streak is
+    // confirmed: no face / multiple faces ~2.5 s, out of frame ~8-10 s.
+    const confirmationsNeeded = (type) => {
+      if (type === 'camera_loss') return 1;
+      if (type === 'face_out_of_frame') return 4;
+      return 2;
+    };
+    const showCameraNotice = (message) => {
+      cameraNoticeRef.current = message;
+      setSecurityNotice(message);
+    };
     const emitCameraViolation = (type, message, meta = {}) => {
       const streak = cameraViolationStreakRef.current;
       const sameType = streak.type === type && Date.now() - streak.at < 10000;
       const nextCount = sameType ? streak.count + 1 : 1;
       cameraViolationStreakRef.current = { type, count: nextCount, at: Date.now() };
+      if (nextCount < confirmationsNeeded(type)) return;
       setCameraIndicator('warning');
-      setSecurityStatus((prev) => ({ ...prev, cameraActive: type !== 'camera_loss' }));
-      setSecurityNotice(message);
-      if (type === 'camera_no_face') {
-        setFaceStatus('idle');
+      patchSecurityStatus({ cameraActive: type !== 'camera_loss' });
+      showCameraNotice(message);
+      if (type === 'camera_no_face') setFaceStatus('idle');
+      // One camera_loss per outage, not one per reconnect attempt.
+      if (type === 'camera_loss') {
+        if (cameraLossReportedRef.current) return;
+        cameraLossReportedRef.current = true;
+      } else if (nextCount !== confirmationsNeeded(type)) {
+        return;
       }
-      const confirmationCount = type === 'camera_loss' ? 1 : CAMERA_WARNING_STREAK_LIMIT;
-      if (nextCount >= confirmationCount) {
-        void recordViolation(type, message, {
-          ...meta,
-          source: 'camera_monitor',
-          persistent: true,
-          warningOnly: true,
-        });
-      }
+      void recordViolationRef.current?.(type, message, {
+        ...meta,
+        source: 'camera_monitor',
+        persistent: true,
+        warningOnly: true,
+      });
     };
     const markCameraNormal = () => {
       cameraViolationStreakRef.current = { type: '', count: 0, at: Date.now() };
-      setCameraIndicator('normal');
-      setSecurityStatus((prev) => ({ ...prev, cameraActive: true }));
-      setSecurityNotice('');
-      setFaceStatus('detected');
+      cameraLossReportedRef.current = false;
+      setCameraIndicator((previous) => (previous === 'normal' ? previous : 'normal'));
+      patchSecurityStatus({ cameraActive: true });
+      setFaceStatus((previous) => (previous === 'detected' ? previous : 'detected'));
+      // Only clear the notice this monitor set, never a tab/AI/fullscreen one.
+      if (cameraNoticeRef.current) {
+        const ownNotice = cameraNoticeRef.current;
+        cameraNoticeRef.current = '';
+        setSecurityNotice((current) => (current === ownNotice ? '' : current));
+      }
     };
     const fallbackPresenceCheck = () => {
       if (!streamRef.current || !video || !canvas || !ctx) {
@@ -2235,10 +2757,11 @@ export default function AssessmentAttempt() {
     };
     const sampleFrame = async () => {
       if (cancelled) return;
-      const hasLiveVideo = Boolean(streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'));
-      if (!hasLiveVideo || !video || !canvas || !ctx) {
-        setCameraStreamReady(false);
-        emitCameraViolation('camera_loss', 'Camera feed is not available.');
+      if (!video || !canvas || !ctx) return;
+      // With AI proctoring on, the AI manager owns face/person/phone policy;
+      // a second detector here only produced conflicting, un-debounced warnings.
+      if (aiProctoringEnabled) {
+        markCameraNormal();
         return;
       }
       if (video.readyState < 2) return;
@@ -2282,43 +2805,62 @@ export default function AssessmentAttempt() {
         });
       }
     };
-    const initializeCameraMonitoring = async () => {
-      let stream = streamRef.current;
-      const hasLiveVideo = Boolean(stream?.getVideoTracks?.().some((track) => track.readyState === 'live'));
-      if (!hasLiveVideo) {
+    // Always-alive loop: a failed reconnect used to stop polling for good,
+    // leaving the camera dead until some unrelated state change.
+    const tick = async () => {
+      if (cancelled || document.hidden) return;
+      const tracks = streamRef.current?.getVideoTracks?.() || [];
+      const liveTrack = tracks.find((track) => track.readyState === 'live');
+      // Windows privacy toggles, another app or sleep can mute a track without
+      // ending it: frames go black. That is a camera interruption, not "no face".
+      if (liveTrack?.muted) {
+        if (!cameraMutedSinceRef.current) cameraMutedSinceRef.current = Date.now();
+        if (Date.now() - cameraMutedSinceRef.current < CAMERA_MUTED_REACQUIRE_MS) return;
+        streamRef.current?.getTracks?.().forEach((track) => track.stop());
+      } else {
+        cameraMutedSinceRef.current = 0;
+      }
+      if (!hasOpenCameraTrack(streamRef.current)) {
+        setCameraStreamReady(false);
+        const retry = cameraRetryRef.current;
+        if (Date.now() < retry.nextAt) return;
         try {
-          stream = await navigator.mediaDevices?.getUserMedia?.({ video: true, audio: false });
-        } catch {
-          if (!cancelled) emitCameraViolation('camera_loss', 'Camera permission is required for this assessment.');
+          await acquireCamera();
+        } catch (error) {
+          cameraRetryRef.current = {
+            nextAt: Date.now() + retry.delay,
+            delay: Math.min(CAMERA_RETRY_MAX_MS, retry.delay * 2),
+          };
+          if (!cancelled) {
+            emitCameraViolation('camera_loss', 'Camera stopped. Reconnecting... If another app is using the camera, close it.', {
+              error: error?.name || 'camera_unavailable',
+            });
+          }
           return;
         }
-        if (!stream) {
-          if (!cancelled) emitCameraViolation('camera_loss', 'Camera API is not available in this browser.');
-          return;
-        }
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        streamRef.current = stream;
+        if (cancelled) return;
       }
-
-      attachStream(stream);
       setCameraStreamReady(true);
-      setSecurityStatus((prev) => ({ ...prev, cameraActive: true }));
+      attachStream(streamRef.current);
       await sampleFrame();
-      if (!cancelled) {
-        intervalId = setInterval(() => {
-          if (!document.hidden) void sampleFrame();
-        }, 2500);
-      }
     };
-    void initializeCameraMonitoring();
+    const kick = () => {
+      cameraRetryRef.current = { ...cameraRetryRef.current, nextAt: 0 };
+      void tick();
+    };
+    intervalId = setInterval(() => { void tick(); }, 2500);
+    window.addEventListener('peerprep:camera-check', kick);
+    document.addEventListener('visibilitychange', kick);
+    navigator.mediaDevices?.addEventListener?.('devicechange', kick);
+    void tick();
     return () => {
       cancelled = true;
       if (intervalId) clearInterval(intervalId);
+      window.removeEventListener('peerprep:camera-check', kick);
+      document.removeEventListener('visibilitychange', kick);
+      navigator.mediaDevices?.removeEventListener?.('devicechange', kick);
     };
-  }, [secureActive, cameraRequired, recordViolation]);
+  }, [secureActive, cameraRequired, aiProctoringEnabled, acquireCamera, attachStream, patchSecurityStatus]);
 
   useEffect(() => {
     if (!secureActive || !cameraRequired || !assessment?._id) return undefined;
@@ -2408,13 +2950,11 @@ export default function AssessmentAttempt() {
       const status = {
         fullscreen: warningGraceActive || fullscreenRecoveryActive || !fullscreenRequired || Boolean(document.fullscreenElement),
         tabActive: warningGraceActive || !tabGuardEnabled || (document.hasFocus() && !document.hidden),
-        cameraActive: !cameraRequired || Boolean(
-          streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'),
-        ),
+        cameraActive: !cameraRequired || hasLiveCameraTrack(streamRef.current),
         idle: Boolean(securityStatusRef.current.idle),
         duplicateTab: Boolean(securityStatusRef.current.duplicateTab),
       };
-      setSecurityStatus((prev) => ({ ...prev, ...status }));
+      patchSecurityStatus(status);
       try {
         const result = await api.sendStudentAssessmentHeartbeat(assessment._id, {
           submissionId: saveProtocolRef.current?.submissionId,
@@ -2433,20 +2973,19 @@ export default function AssessmentAttempt() {
           const serverTime = new Date(result.serverTime).getTime();
           const allowedEnd = new Date(result.allowedEnd).getTime();
           if (Number.isFinite(serverTime) && Number.isFinite(allowedEnd)) {
-            setOffset(serverTime - Date.now());
+            // Sub-second clock jitter must not restart the countdown.
+            const nextOffset = serverTime - Date.now();
+            setOffset((previous) => (Math.abs(previous - nextOffset) < 1000 ? previous : nextOffset));
             setAllowedEndTime(allowedEnd);
-            setTimeLeft(Math.max(0, allowedEnd - serverTime));
           }
         }
         if (typeof result?.violationScore === 'number') setViolationScore(result.violationScore);
         if (typeof result?.pauseCount === 'number') setPauseCount(result.pauseCount);
         if (result?.lastPauseAt) setLastPauseAt(result.lastPauseAt);
+        // Inconsistent heartbeats are retained server-side for audit; they are
+        // not shown to the student as another warning.
         if (result?.inconsistent && warningGraceActive) {
           setSecurityNotice(restrictedActionNoticeRef.current);
-          return;
-        }
-        if (result?.inconsistent && !warningGraceActive) {
-          setSecurityNotice('Security status changed. Monitoring continues and the event was retained for audit.');
           return;
         }
       } catch (err) {
@@ -2498,7 +3037,7 @@ export default function AssessmentAttempt() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [secureActive, isSubmitted, assessment?._id, fullscreenRequired, fullscreenRecovery.active, tabGuardEnabled, cameraRequired, cameraFlags]);
+  }, [secureActive, isSubmitted, assessment?._id, fullscreenRequired, fullscreenRecovery.active, tabGuardEnabled, cameraRequired, cameraFlags, patchSecurityStatus]);
 
   const wouldExceedQuestionAttemptLimit = (sectionIndex, questionIndex, nextValue) => {
     const sectionItem = assessment?.sections?.[sectionIndex];
@@ -2520,20 +3059,23 @@ export default function AssessmentAttempt() {
     return attempted >= limit;
   };
 
+  // Returns false when the change was refused, so uncontrolled inputs can
+  // revert instead of showing text that was never saved.
   const updateAnswer = (sectionIndex, questionIndex, value) => {
-    if (saveProtocolRef.current?.finalizing || isSubmitted) return;
+    if (saveProtocolRef.current?.finalizing || isSubmitted) return false;
     const key = answerKey(sectionIndex, questionIndex);
     const nextValue = { ...(answersMap[key] || {}), ...value };
     if (wouldExceedQuestionAttemptLimit(sectionIndex, questionIndex, nextValue)) {
       const type = assessment?.sections?.[sectionIndex]?.type || 'question';
       const limit = Number(assessment?.settings?.questionAttemptRequirements?.[type] || 0);
       toast.error(`You can attempt only ${limit} ${type.replace('_', ' ')} question${limit === 1 ? '' : 's'}. Clear another response to change your choice.`);
-      return;
+      return false;
     }
     setAnswersMap((prev) => ({
       ...prev,
       [key]: { ...prev[key], ...value },
     }));
+    return true;
   };
 
   const updateCodingLanguage = (sectionIndex, questionIndex, nextLanguage) => {
@@ -2587,9 +3129,11 @@ export default function AssessmentAttempt() {
     });
   };
 
+  // Esc closes Monaco's suggestion/find widgets; without Keyboard Lock the same
+  // key also exits fullscreen and starts the auto-submit countdown.
   const requestFullscreen = () => {
     if (document.documentElement.requestFullscreen) {
-      return document.documentElement.requestFullscreen().catch(() => {
+      return document.documentElement.requestFullscreen().then(lockEscapeKey).catch(() => {
         toast.info('Fullscreen is not available on this device.');
       });
     }
@@ -2602,27 +3146,9 @@ export default function AssessmentAttempt() {
     attemptGeneration: saveProtocolRef.current?.generation || 1,
   });
 
-  const attachStream = (stream) => {
-    const videos = [validationVideoRef.current, monitorVideoRef.current, aiProctoringVideoRef.current];
-    videos.forEach((video) => {
-      if (video && video.srcObject !== stream) {
-        video.srcObject = stream;
-        video.play().catch(() => {});
-      }
-    });
-  };
-
   const ensureCamera = async () => {
-    if (!navigator.mediaDevices?.getUserMedia) return false;
-    const hasLiveVideo = Boolean(streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'));
-    if (hasLiveVideo) {
-      attachStream(streamRef.current);
-      setCameraStreamReady(true);
-      return true;
-    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      streamRef.current = stream;
+      const stream = await acquireCamera();
       attachStream(stream);
       setCameraStreamReady(true);
       return true;
@@ -2904,9 +3430,7 @@ export default function AssessmentAttempt() {
       securityRecheckAutoSubmitRef.current = false;
       setSecurityStatus({
         fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
-        cameraActive: !cameraRequired || Boolean(
-          streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'),
-        ),
+        cameraActive: !cameraRequired || hasLiveCameraTrack(streamRef.current),
         tabActive: document.hasFocus() && !document.hidden,
         idle: false,
         duplicateTab: false,
@@ -2914,6 +3438,12 @@ export default function AssessmentAttempt() {
       setSecurityAction('warn');
       localStorage.setItem(rulesSeenStorageKey, '1');
       setHasSeenRules(true);
+      if (fullscreenRequired && document.fullscreenElement) lockEscapeKey();
+      // The server sends the question paper only once the timer has started.
+      if (!assessment?.sections?.some((sectionItem) => sectionItem?.questions?.length)) {
+        await loadAssessment();
+        return;
+      }
       setPhase('active');
     } catch (err) {
       if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
@@ -3274,9 +3804,34 @@ export default function AssessmentAttempt() {
     goToNextQuestion();
   };
 
+  // The tile is already green from local state; this clears the review flag,
+  // pushes the answer to the server now, and confirms on the last question.
   const saveAndNext = () => {
-    goToNextQuestion();
+    const key = answerKey(activeSection, activeQuestion);
+    setMarkedMap((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    shortAnswerFlushRef.current?.();
+    setTimeout(() => { void handleSave(); }, 0);
+    if (hasNextQuestion) goToNextQuestion();
+    else toast.success('Answer saved');
   };
+
+  const updateAnswerRef = useRef(updateAnswer);
+  updateAnswerRef.current = updateAnswer;
+  // Stable identity so memoized option lists skip unrelated re-renders.
+  const handleOptionChange = useCallback((sectionIndex, questionIndex, answer) => {
+    updateAnswerRef.current(sectionIndex, questionIndex, { answer });
+  }, []);
+  const handleShortAnswerCommit = useCallback((sectionIndex, questionIndex, text) => (
+    updateAnswerRef.current(sectionIndex, questionIndex, { answer: text })
+  ), []);
+  const registerShortAnswerFlush = useCallback((flush) => {
+    shortAnswerFlushRef.current = flush;
+  }, []);
 
   useEffect(() => {
     if (!sectionWiseLock || !assessment?.sections?.length) return;
@@ -3414,6 +3969,7 @@ export default function AssessmentAttempt() {
       canNavigate={canNavigateToQuestion}
       onNavigate={navigateToQuestion}
       onSubmit={() => setShowSubmitConfirm(true)}
+      showSubmit={false}
       isSubmitted={isSubmitted}
       saving={saving}
       dockable={isCoding}
@@ -3447,20 +4003,49 @@ export default function AssessmentAttempt() {
       enabled: idleDetection,
     },
   ];
+  // Only confirmed student-behaviour issues turn the footer red; AI model
+  // loading/fallback and eye movement are never shown as a warning.
   const aiFooterIssueStates = {
-    faceModel: ['fallback', 'unavailable'],
-    objectModel: ['unavailable'],
     camera: ['blocked', 'error'],
     face: ['missing', 'out_of_frame', 'multiple'],
-    eye: ['looking_away', 'unavailable'],
     mobile: ['detected'],
-    person: ['multiple', 'missing'],
+    person: ['multiple'],
   };
   const hasAiFooterIssue = Boolean(
     aiProctoringEnabled
       && proctoringStatus
-      && (proctoringStatus.error || Object.entries(aiFooterIssueStates).some(([key, states]) => states.includes(proctoringStatus[key]))),
+      && Object.entries(aiFooterIssueStates).some(([key, states]) => states.includes(proctoringStatus[key])),
   );
+  const saveIndicator = !draftStorageAvailable && saveStatus !== 'saved'
+    ? { tone: 'warn', text: 'Keep this page open until saved' }
+    : saveStatus === 'saved'
+      ? { tone: 'ok', text: 'All answers saved' }
+      : ['unsaved', 'retrying', 'validation_failed'].includes(saveStatus)
+        ? { tone: 'warn', text: 'Sync pending' }
+        : saveStatus.startsWith('submit')
+          ? { tone: 'muted', text: 'Submitting…' }
+          : { tone: 'muted', text: 'Saving…' };
+  const rulesSections = assessment.sections?.length
+    ? assessment.sections.map((sec) => ({
+      sectionName: sec?.sectionName,
+      type: sec?.type,
+      questionCount: sec?.questions?.length || 0,
+      marksEach: Number(sec?.marksPerQuestion || sec?.questions?.[0]?.points || sec?.questions?.[0]?.marks || 0) || 0,
+      totalMarks: Number(sec?.totalMarks || 0),
+    }))
+    : (assessment.sectionSummary || []).map((sec) => ({
+      sectionName: sec?.sectionName,
+      type: sec?.type,
+      questionCount: Number(sec?.questionCount || 0),
+      marksEach: Number(sec?.marksPerQuestion || 0),
+      totalMarks: Number(sec?.totalMarks || 0),
+    }));
+  const rulesTypeTotals = assessment.sections?.length
+    ? questionTypeTotals
+    : rulesSections.reduce((totals, sec) => {
+      totals[sec.type === 'coding' ? 'coding' : 'mcq'] += sec.questionCount;
+      return totals;
+    }, { mcq: 0, coding: 0 });
   const footerIssueItems = securityStatusItems.filter((item) => item.enabled && !item.ok);
   const footerHasIssue = Boolean(securityNotice || hasAiFooterIssue || footerIssueItems.length || (cameraStatusLine && !cameraStatusLine.ok));
   const footerNoticeText = securityNotice
@@ -3468,20 +4053,7 @@ export default function AssessmentAttempt() {
     || (hasAiFooterIssue ? 'AI proctoring needs attention. Please adjust and continue.' : '');
 
   return (
-    <div className="relative min-h-screen bg-[#f2f2f2] font-sans text-slate-900 dark:bg-[#1a1a1a] dark:text-gray-100 lg:h-screen lg:overflow-hidden">
-      {showAssessmentWorkspace && !isSubmitted && (
-        <div role="status" aria-live="polite" className="fixed bottom-2 left-3 z-40 max-w-[min(90vw,480px)] rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-          {!draftStorageAvailable ? 'Device storage unavailable. Keep this page open until answers are saved to the server.'
-            : saveStatus === 'saved' ? 'Answers saved to server'
-              : saveStatus === 'local' ? 'Saved on this device · waiting to sync'
-                : saveStatus === 'local_pending' ? 'Saving on this device…'
-                : saveStatus === 'saving' ? 'Saving answers…'
-                  : ['unsaved', 'retrying', 'validation_failed'].includes(saveStatus) ? 'Answers are waiting to sync'
-                    : 'Confirming submission…'}
-          {saveStatus === 'unsaved' && <button type="button" className="ml-2 font-semibold text-sky-700 underline" onClick={() => void handleSave()}>Retry save</button>}
-          {['unsaved', 'validation_failed'].includes(saveStatus) && saveError && <span className="mt-1 block">{saveError}</span>}
-        </div>
-      )}
+    <div className="relative min-h-screen bg-[#f2f2f2] font-sans text-slate-900 dark:bg-[#1a1a1a] dark:text-gray-100 lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden">
       {finalizing && !isSubmitted && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/65 p-5" role="dialog" aria-modal="true" aria-labelledby="submission-progress-title">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 text-slate-900 shadow-xl dark:bg-gray-900 dark:text-white">
@@ -3530,7 +4102,7 @@ export default function AssessmentAttempt() {
 
       {showAssessmentWorkspace && (
       <>
-      <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-white/[0.07] dark:bg-[#202022]/95">
+      <header className="sticky top-0 z-40 shrink-0 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-white/[0.07] dark:bg-[#202022]/95">
         <div className="flex min-h-[56px] w-full flex-wrap items-center gap-3 px-3 py-2">
           <div className="flex items-center gap-2">
             <button
@@ -3572,10 +4144,35 @@ export default function AssessmentAttempt() {
               Next
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
-            <div className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-slate-950 px-3 text-white shadow-sm dark:border-gray-700">
+            {!isSubmitted && (
+              <span
+                role="status"
+                aria-live="polite"
+                title={saveError || undefined}
+                className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-semibold ${
+                  saveIndicator.tone === 'ok'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300'
+                    : saveIndicator.tone === 'warn'
+                      ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300'
+                      : 'border-slate-200 bg-white text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400'
+                }`}
+              >
+                {saveIndicator.tone === 'ok' ? <CheckCircle2 className="h-3.5 w-3.5" /> : saveIndicator.tone === 'muted' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                {saveIndicator.text}
+                {saveStatus === 'unsaved' && (
+                  <button type="button" className="font-bold underline" onClick={() => void handleSave()}>Retry</button>
+                )}
+              </span>
+            )}
+            <div className="flex h-9 shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-950 px-3 text-white shadow-sm dark:border-gray-700">
               <Clock className="h-3.5 w-3.5 text-sky-300" />
               <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Time left</span>
-              <span className="text-xs font-bold tabular-nums">{formatTime(timeLeft)}</span>
+              <AssessmentCountdown
+                endAt={allowedEndTime}
+                offset={offset}
+                running={secureActive && !isPaused}
+                onExpire={handleTimeUp}
+              />
             </div>
             {isCoding && (
               <AssessmentLanguagePicker
@@ -3597,11 +4194,20 @@ export default function AssessmentAttempt() {
                 <RotateCcw className="h-3.5 w-3.5" />
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setShowSubmitConfirm(true)}
+              disabled={isSubmitted || finalizing}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {isSubmitted ? 'Submitted' : 'Submit assessment'}
+            </button>
           </div>
         </div>
       </header>
       {isCoding ? (
-        <div className={`w-full p-2 pb-16 dark:!bg-[#1a1a1a] lg:h-[calc(100vh-56px)] lg:overflow-hidden ${
+        <div className={`w-full p-2 pb-16 dark:!bg-[#1a1a1a] lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:pb-2 ${
           cameraStatusLine && !cameraStatusLine.ok
             ? 'bg-rose-50'
             : 'bg-[#f2f2f2]'
@@ -3672,19 +4278,26 @@ export default function AssessmentAttempt() {
                         onLanguageChange={(lang) => updateCodingLanguage(activeSection, activeQuestion, lang)}
                         onCodeChange={(code) => {
                           if (saveProtocolRef.current?.finalizing) return;
-                          const currentLanguage = answerValue.language || codingLanguages[0];
-                          setAnswersMap((prev) => ({
-                            ...prev,
-                            [key]: {
-                              ...(prev[key] || {}),
-                              language: currentLanguage,
-                              code,
-                              codeByLanguage: {
-                                ...(prev[key]?.codeByLanguage || {}),
-                                [currentLanguage]: code,
+                          // CodeEditor flushes a pending commit through the
+                          // handler of the language it was typed in. After a
+                          // language switch that text must only update its own
+                          // draft, never switch the answer back.
+                          const committedLanguage = answerValue.language || codingLanguages[0];
+                          setAnswersMap((prev) => {
+                            const existing = prev[key] || {};
+                            const stillActive = (existing.language || committedLanguage) === committedLanguage;
+                            return {
+                              ...prev,
+                              [key]: {
+                                ...existing,
+                                ...(stillActive ? { language: committedLanguage, code } : {}),
+                                codeByLanguage: {
+                                  ...(existing.codeByLanguage || {}),
+                                  [committedLanguage]: code,
+                                },
                               },
-                            },
-                          }));
+                            };
+                          });
                         }}
                         customInput=""
                         testCases={testCases}
@@ -3710,12 +4323,13 @@ export default function AssessmentAttempt() {
                         valueVersion={codeValueVersion}
                         onLiveCodeChange={(code) => {
                           if (saveProtocolRef.current?.finalizing) return;
+                          // The ref is the source of truth for payloads; the
+                          // IndexedDB checkpoint is throttled so a keystroke
+                          // never re-renders this page.
                           liveCodingCodeRef.current[key] = code;
-                          draftAnswersRef.current = mergeLiveCodingDraft(draftAnswersRef.current, liveCodingCodeRef.current, liveCodingLanguageRef.current);
                           answersDirtyRef.current = true;
                           answerRevisionRef.current += 1;
-                          setSaveStatus('local_pending');
-                          void saveProtocolRef.current?.checkpoint();
+                          scheduleLiveCodeCheckpoint();
                         }}
                         executionMode={codingData?.category === 'SQL' ? 'sql' : 'code'}
                       />
@@ -3728,16 +4342,16 @@ export default function AssessmentAttempt() {
           </div>
         </div>
       ) : (
-        <div className={`w-full px-3 py-3 pb-16 dark:!bg-gray-950 md:px-4 lg:h-[calc(100vh-68px)] lg:overflow-hidden ${
+        <div className={`w-full px-3 py-3 pb-16 dark:!bg-gray-950 md:px-4 lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:pb-3 ${
           cameraStatusLine && !cameraStatusLine.ok
             ? 'bg-[linear-gradient(180deg,#fff5f5_0%,#ffffff_40%,#fff7f7_100%)]'
             : 'bg-[linear-gradient(180deg,rgba(248,250,252,0.95)_0%,rgba(255,255,255,0.98)_40%,rgba(248,250,252,1)_100%)]'
         }`}>
           <div className="flex h-full flex-col gap-3 lg:flex-row lg:min-h-0 lg:overflow-hidden">
-            <section className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] bg-white shadow-[0_18px_48px_-36px_rgba(8,145,178,0.22)] dark:bg-gray-900 lg:min-h-0 lg:overflow-y-auto ${
+            <section className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] bg-white shadow-[0_18px_48px_-36px_rgba(8,145,178,0.22)] dark:bg-gray-900 lg:min-h-0 ${
               cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300 shadow-[0_0_0_1px_rgba(244,63,94,0.08),0_18px_48px_-36px_rgba(225,29,72,0.34)]' : 'border border-cyan-100 dark:border-gray-700'
             }`}>
-              <div className="border-b border-cyan-100 bg-[linear-gradient(180deg,#f2fbff_0%,#ffffff_100%)] px-6 py-4 dark:border-gray-700 dark:bg-none dark:bg-gray-900">
+              <div className="shrink-0 border-b border-cyan-100 bg-[linear-gradient(180deg,#f2fbff_0%,#ffffff_100%)] px-6 py-4 dark:border-gray-700 dark:bg-none dark:bg-gray-900">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
@@ -3747,11 +4361,13 @@ export default function AssessmentAttempt() {
                 </div>
               </div>
 
+              {/* Only this body scrolls; the badge strip and action bar stay put. */}
+              <div ref={questionScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
               {question?.passage?.text && (
                 <div className="mx-5 mt-4 rounded-xl border border-cyan-100 bg-cyan-50/50 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20 md:mx-6">
                   <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-cyan-700 dark:text-cyan-300">{question.passage.title || 'Reading passage'}</p>
-                  {question.passage.image?.url && <img src={question.passage.image.url} alt={question.passage.image.alt || ''} className="mt-3 max-h-64 w-full rounded-lg bg-white object-contain p-2 dark:bg-gray-800" />}
-                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-200">{question.passage.text}</p>
+                  <ReservedImage image={question.passage.image} heightClass="h-64" className="mt-3" />
+                  <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 dark:text-gray-200">{question.passage.text}</p>
                 </div>
               )}
 
@@ -3763,11 +4379,11 @@ export default function AssessmentAttempt() {
                     return (
                       <section key={passageQuestion.questionId || questionIndex} className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-gray-700 dark:bg-gray-800/40">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0"><p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-cyan-700 dark:text-cyan-300">Question {setIndex + 1} of {passageQuestionEntries.length}</p><h2 className="mt-2 text-base font-bold leading-snug text-slate-900 dark:text-white">{passageQuestion.questionText || 'Question'}</h2></div>
-                          <div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${status === 'answered' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-white text-slate-500 dark:bg-gray-900 dark:text-gray-400'}`}>{status === 'answered' ? 'Answered' : 'Not answered'}</span><span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600 dark:bg-gray-900 dark:text-gray-300">{passageQuestion.marks ?? passageQuestion.points ?? section?.marksPerQuestion ?? 0} marks</span></div>
+                          <div className="min-w-0"><p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-cyan-700 dark:text-cyan-300">Question {setIndex + 1} of {passageQuestionEntries.length}</p><h2 className="mt-2 whitespace-pre-wrap break-words text-base font-bold leading-snug text-slate-900 [overflow-wrap:anywhere] dark:text-white">{passageQuestion.questionText || 'Question'}</h2></div>
+                          <div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${status === 'answered' || status === 'answered_review' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-white text-slate-500 dark:bg-gray-900 dark:text-gray-400'}`}>{status === 'answered' || status === 'answered_review' ? 'Answered' : 'Not answered'}</span><span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600 dark:bg-gray-900 dark:text-gray-300">{passageQuestion.marks ?? passageQuestion.points ?? section?.marksPerQuestion ?? 0} marks</span></div>
                         </div>
-                        {passageQuestion.questionImage?.url && <img src={passageQuestion.questionImage.url} alt={passageQuestion.questionImage.alt || ''} className="mt-4 max-h-72 w-full rounded-xl border border-slate-200 bg-white object-contain p-2 dark:border-gray-700 dark:bg-gray-800" />}
-                        <AssessmentMcqOptions question={passageQuestion} answer={response} onChange={(answer) => updateAnswer(activeSection, questionIndex, { answer })} disabled={isSubmitted || (perMcqTimingEnabled && mcqTimeLeft <= 0)} />
+                        <ReservedImage image={passageQuestion.questionImage} className="mt-4" />
+                        <AssessmentMcqOptions question={passageQuestion} answer={response} sectionIndex={activeSection} questionIndex={questionIndex} onChange={handleOptionChange} disabled={isSubmitted || (perMcqTimingEnabled && mcqTimeLeft <= 0)} />
                       </section>
                     );
                   })}
@@ -3775,27 +4391,28 @@ export default function AssessmentAttempt() {
               ) : (
                 <>
                   <div className="px-5 pt-4 md:px-6">
-                    <div className="text-lg font-bold leading-snug text-slate-900 dark:text-white md:text-[1.15rem]">{question?.questionText || 'Question'}</div>
-                    {question?.questionImage?.url && <img src={question.questionImage.url} alt={question.questionImage.alt || ''} className="mt-4 max-h-72 w-full rounded-xl border border-slate-200 bg-white object-contain p-2 dark:border-gray-700 dark:bg-gray-800" />}
+                    <div className="whitespace-pre-wrap break-words text-lg font-bold leading-snug text-slate-900 [overflow-wrap:anywhere] dark:text-white md:text-[1.15rem]">{question?.questionText || 'Question'}</div>
+                    <ReservedImage image={question?.questionImage} className="mt-4" />
                   </div>
-                  {section?.type === 'mcq' && <div className="px-5 pb-5 md:px-6"><AssessmentMcqOptions question={question} answer={answersMap[answerKey(activeSection, activeQuestion)]?.answer} onChange={(answer) => updateAnswer(activeSection, activeQuestion, { answer })} disabled={isSubmitted || (perMcqTimingEnabled && mcqTimeLeft <= 0)} /></div>}
+                  {section?.type === 'mcq' && <div className="px-5 pb-5 md:px-6"><AssessmentMcqOptions question={question} answer={answersMap[answerKey(activeSection, activeQuestion)]?.answer} sectionIndex={activeSection} questionIndex={activeQuestion} onChange={handleOptionChange} disabled={isSubmitted || (perMcqTimingEnabled && mcqTimeLeft <= 0)} /></div>}
                 </>
               )}
 
               {(section?.type === 'short' || section?.type === 'one_line') && (
-                <div className="px-6 pb-2">
-                  <textarea
-                    value={answersMap[answerKey(activeSection, activeQuestion)]?.answer || ''}
-                    onChange={(e) => updateAnswer(activeSection, activeQuestion, { answer: e.target.value })}
-                    rows="7"
-                    className="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-[0.94rem] leading-relaxed text-slate-800 shadow-sm transition-all focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                <div className="px-6 pb-4 pt-2">
+                  <ShortAnswerInput
+                    key={activeAnswerKey}
+                    commitKey={activeAnswerKey}
+                    value={answersMap[activeAnswerKey]?.answer || ''}
+                    onCommit={(text) => handleShortAnswerCommit(activeSection, activeQuestion, text)}
+                    registerFlush={registerShortAnswerFlush}
                     disabled={isSubmitted}
-                    placeholder="Type your response here..."
                   />
                 </div>
               )}
+              </div>
 
-              <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-cyan-100 bg-[linear-gradient(180deg,#ffffff_0%,#f6fbfd_100%)] px-5 py-4 md:px-6 dark:border-gray-700 dark:bg-none dark:bg-gray-900">
+              <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-cyan-100 bg-[linear-gradient(180deg,#ffffff_0%,#f6fbfd_100%)] px-5 py-4 md:px-6 dark:border-gray-700 dark:bg-none dark:bg-gray-900">
                 <button
                   type="button"
                   onClick={goToPrevQuestion}
@@ -3824,10 +4441,10 @@ export default function AssessmentAttempt() {
                 <button
                   type="button"
                   onClick={saveAndNext}
-                  title="Save and advance"
+                  title={hasNextQuestion ? 'Save and go to the next question' : 'Save this answer'}
                   className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-5 py-2 text-xs font-bold text-white transition-all hover:bg-emerald-500 shadow-md shadow-emerald-200 dark:shadow-none"
                 >
-                  Save & Next <ChevronRight className="h-3.5 w-3.5" />
+                  {hasNextQuestion ? <>Save & Next <ChevronRight className="h-3.5 w-3.5" /></> : <>Save <CheckCircle2 className="h-3.5 w-3.5" /></>}
                 </button>
               </div>
             </section>
@@ -4163,7 +4780,7 @@ export default function AssessmentAttempt() {
               <button
                 type="button"
                 onClick={() => setShowSubmitConfirm(false)}
-                disabled={saving}
+                disabled={finalizing}
                 className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
               >
                 Cancel
@@ -4173,11 +4790,11 @@ export default function AssessmentAttempt() {
                 onClick={() => {
                   void handleSubmit(false);
                 }}
-                disabled={saving}
+                disabled={finalizing}
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-400"
               >
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                {saving ? 'Submitting...' : 'Yes, Submit'}
+                {finalizing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                {finalizing ? 'Submitting...' : 'Yes, Submit'}
               </button>
             </div>
           </div>
@@ -4293,8 +4910,8 @@ export default function AssessmentAttempt() {
                   </div>
                   <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
                     {[
-                      ['MCQ / Short Questions', questionTypeTotals.mcq],
-                      ['Coding Questions', questionTypeTotals.coding],
+                      ['MCQ / Short Questions', rulesTypeTotals.mcq],
+                      ['Coding Questions', rulesTypeTotals.coding],
                       ['Total Marks', assessment.totalMarks || 0],
                       ['Duration', `${assessment.duration} minutes`],
                     ].map(([label, value]) => (
@@ -4313,16 +4930,16 @@ export default function AssessmentAttempt() {
                       Section Breakdown
                     </div>
                     <div className="rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                      {(assessment.sections || []).length} section{(assessment.sections || []).length !== 1 ? 's' : ''}
+                      {rulesSections.length} section{rulesSections.length !== 1 ? 's' : ''}
                     </div>
                   </div>
 
                   <div className="mt-2 space-y-2">
-                    {(assessment.sections || []).map((sec, idx) => {
+                    {rulesSections.map((sec, idx) => {
                       const summary = sectionSummaries[idx];
-                      const questionCount = sec?.questions?.length || 0;
-                      const marksEach = Number(sec?.marksPerQuestion || sec?.questions?.[0]?.points || sec?.questions?.[0]?.marks || 0) || 0;
-                      const totalSectionMarks = Number(sec?.totalMarks || 0) || (questionCount * marksEach);
+                      const questionCount = sec.questionCount;
+                      const marksEach = sec.marksEach;
+                      const totalSectionMarks = sec.totalMarks || (questionCount * marksEach);
                       const sectionType = summary?.typeLabel || formatSectionTypeLabel(sec?.type);
                       const sectionLabel = sec?.sectionName || `Section ${idx + 1}`;
 
@@ -4372,6 +4989,13 @@ export default function AssessmentAttempt() {
                     ))}
                   </div>
                 </div>
+
+                {aiProctoringEnabled && (
+                  <AnviProctoringCard
+                    settings={aiProctoringSettings}
+                    snapshotsEnabled={cameraRequired}
+                  />
+                )}
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -4521,12 +5145,12 @@ export default function AssessmentAttempt() {
 
       {secureActive && (
         <>
-          <div className={`fixed bottom-0 left-0 right-0 z-40 border-t shadow-2xl transition-colors ${
+          <div className={`fixed bottom-0 left-0 right-0 z-40 border-t shadow-2xl transition-colors lg:static lg:shrink-0 ${
             footerHasIssue
               ? 'border-rose-300 bg-rose-700'
               : 'border-emerald-300 bg-emerald-700'
           }`}>
-            <div className="px-4 py-1.5">
+            <div className={`py-1.5 pl-4 ${cameraRequired ? 'pr-14' : 'pr-4'}`}>
               <div className="mx-auto flex max-w-full flex-wrap items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                   <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${
@@ -4569,16 +5193,37 @@ export default function AssessmentAttempt() {
               </div>
             </div>
           </div>
-          {cameraRequired && (
-            <>
-              <video ref={monitorVideoRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" muted playsInline autoPlay />
-              <canvas ref={monitorCanvasRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" />
-            </>
-          )}
         </>
       )}
-      {aiProctoringEnabled && (
-        <video ref={aiProctoringVideoRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" muted playsInline autoPlay aria-hidden="true" />
+      {/* One visible self-view for the whole attempt (incl. pause/re-check).
+          Hidden 1x1 off-screen videos could be paused by the browser, and
+          students read any red camera chip as "my camera died". Minimising
+          only shrinks it; it is never unmounted while the attempt runs. */}
+      {cameraRequired && !isSubmitted && ['active', 'violation', 'validation'].includes(phase) && (
+        <div className={`fixed z-[45] overflow-hidden rounded-md border border-white/50 bg-black shadow-lg transition-[width,height] duration-200 ${
+          cameraPreviewExpanded ? 'bottom-12 right-3 h-[90px] w-[120px]' : 'bottom-1 right-2 h-[30px] w-[40px]'
+        }`}>
+          <video
+            ref={setMonitorVideoElement}
+            onPause={(event) => { event.currentTarget.play().catch(() => {}); }}
+            className="h-full w-full -scale-x-100 object-cover"
+            muted
+            playsInline
+            autoPlay
+          />
+          <button
+            type="button"
+            onClick={() => setCameraPreviewExpanded((value) => !value)}
+            className={cameraPreviewExpanded
+              ? 'absolute right-0.5 top-0.5 rounded bg-black/55 px-1 text-[10px] font-bold leading-4 text-white'
+              : 'absolute inset-0 text-transparent'}
+            aria-label={cameraPreviewExpanded ? 'Shrink camera preview' : 'Enlarge camera preview'}
+            title={cameraPreviewExpanded ? 'Shrink camera preview' : 'Enlarge camera preview'}
+          >
+            {cameraPreviewExpanded ? '–' : '+'}
+          </button>
+          <canvas ref={monitorCanvasRef} className="hidden" />
+        </div>
       )}
     </div>
   );

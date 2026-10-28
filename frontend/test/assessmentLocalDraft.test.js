@@ -72,6 +72,43 @@ test('IndexedDB draft acknowledgement waits for transaction commit, not request 
   }
 });
 
+test('logout cleanup removes every assessment draft from IndexedDB and local storage only', async () => {
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const previousDb = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
+  const values = new Map([
+    ['peerprep_assessment_answer_draft:a1:s1', '{}'],
+    ['peerprep_assessment_answer_draft:a2:s2', '{}'],
+    ['theme', 'dark'],
+  ]);
+  const deleted = [];
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    get length() { return values.size; },
+    key: (index) => [...values.keys()][index] ?? null,
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
+  } });
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: {
+    deleteDatabase: (name) => {
+      deleted.push(name);
+      const request = {};
+      queueMicrotask(() => request.onsuccess());
+      return request;
+    },
+  } });
+  try {
+    const isolatedStore = await import('../src/student/assessment/assessmentDraftStore.js?logout-test');
+    await isolatedStore.clearAllAssessmentDrafts();
+    assert.deepEqual([...values.keys()], ['theme']);
+    assert.deepEqual(deleted, ['peerprep-assessment-drafts']);
+  } finally {
+    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
+    else delete globalThis.localStorage;
+    if (previousDb) Object.defineProperty(globalThis, 'indexedDB', previousDb);
+    else delete globalThis.indexedDB;
+  }
+});
+
 test('local storage quota failure is reported and never overwrites the earlier recoverable draft', async () => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   const earlier = { updatedAt: 1, answersMap: { '0-0': { answer: 1 } } };

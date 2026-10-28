@@ -258,11 +258,7 @@ export function provideIdentifierCompletions(monaco, model, position, context) {
   // only their own previously declared variables, parameters, and functions.
   if (accessor) return NO_SUGGESTIONS;
 
-  const sourceBeforeCurrentWord = textBeforePosition(model, {
-    lineNumber: position.lineNumber,
-    column: startColumn,
-  });
-  const identifiers = extractDeclaredIdentifiers(sourceBeforeCurrentWord, languageId)
+  const identifiers = declaredIdentifiersBefore(model, position.lineNumber, startColumn, languageId)
     .filter((identifier) => (
       (identifier.kind === 'variable' || identifier.kind === 'function')
       && (!currentWord || identifier.name.toLowerCase().startsWith(currentWord.toLowerCase()))
@@ -271,7 +267,30 @@ export function provideIdentifierCompletions(monaco, model, position, context) {
   return { suggestions: list.suggestions, incomplete: false };
 }
 
+// Monaco asks again for the same position right after the automatic trigger,
+// so one remembered result makes that second request free.
+let lastDeclaredLookup = null;
+
+function declaredIdentifiersBefore(model, lineNumber, column, languageId) {
+  const version = typeof model.getVersionId === 'function' ? model.getVersionId() : null;
+  const key = `${version}:${languageId}:${lineNumber}:${column}`;
+  if (version !== null && lastDeclaredLookup?.model === model && lastDeclaredLookup.key === key) {
+    return lastDeclaredLookup.identifiers;
+  }
+  const identifiers = extractDeclaredIdentifiers(textBeforePosition(model, { lineNumber, column }), languageId);
+  lastDeclaredLookup = { model, key, identifiers };
+  return identifiers;
+}
+
 function textBeforePosition(model, position) {
+  if (typeof model.getValueInRange === 'function') {
+    return model.getValueInRange({
+      startLineNumber: 1,
+      startColumn: 1,
+      endLineNumber: position.lineNumber,
+      endColumn: position.column,
+    });
+  }
   if (typeof model.getOffsetAt === 'function') return model.getValue().slice(0, model.getOffsetAt(position));
   return model.getValue().split('\n').slice(0, position.lineNumber - 1).concat(
     model.getLineContent(position.lineNumber).slice(0, position.column - 1),
@@ -350,6 +369,7 @@ function disposeProviders() {
   registry.signatureDisposables = [];
   registry.monaco = null;
   registry.cache = new WeakMap();
+  lastDeclaredLookup = null;
 }
 
 /**

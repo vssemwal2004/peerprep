@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AssessmentSaveProtocol, isDraftForAttempt, mergeLiveCodingDraft } from '../src/student/assessment/assessmentSaveProtocol.js';
+import { AssessmentSaveProtocol, isDraftForAttempt, isTransientSaveError, mergeLiveCodingDraft } from '../src/student/assessment/assessmentSaveProtocol.js';
 
 const answer = (value, questionIndex = 0) => ({ sectionIndex: 0, questionIndex, answer: value });
 const ack = (payload) => ({ acceptedSequence: payload.saveSequence, answerRevision: payload.saveSequence,
@@ -101,14 +101,117 @@ test('reload resumes sequence from server and acknowledges accepted pending batc
   assert.equal(protocol.sequence, 9);
 });
 
-test('sequence/session conflict never silently advances, retries or discards pending answers', async () => {
+test('session conflict never silently advances, retries or discards pending answers', async () => {
   let requests = 0;
-  const conflict = Object.assign(new Error('Refresh to synchronize'), { response: { status: 409, data: { code: 'SAVE_SEQUENCE_CONFLICT', acceptedSequence: 8 } } });
+  const conflict = Object.assign(new Error('Active elsewhere'), { response: { status: 409, data: { code: 'ACTIVE_ASSESSMENT_SESSION' } } });
   const protocol = createProtocol({ retries: 3, sendSave: async () => { requests += 1; throw conflict; } });
   await assert.rejects(protocol.save({ answers: [answer('A')] }), conflict);
   assert.equal(requests, 1);
   assert.equal(protocol.sequence, 0);
   assert.deepEqual(protocol.pendingBatch.answers, [answer('A')]);
+});
+
+test('sequence conflict resyncs to the server sequence and resends unacknowledged answers under a new ID', async () => {
+  const requests = [];
+  const acknowledged = [];
+  const conflict = Object.assign(new Error('Refresh to synchronize'), { response: { status: 409,
+    data: { code: 'SAVE_SEQUENCE_CONFLICT', acceptedSequence: 8, answerRevision: 5 } } });
+  const protocol = createProtocol({ retries: 3, onAcknowledged: (answers) => acknowledged.push(answers),
+    sendSave: async (payload) => { requests.push(payload); if (requests.length === 1) throw conflict; return ack(payload); } });
+  await assert.rejects(protocol.save({ answers: [answer('A')] }), conflict);
+  assert.equal(requests.length, 1);
+  assert.equal(protocol.sequence, 8);
+  assert.equal(protocol.answerRevision, 5);
+  assert.equal(protocol.pendingBatch, null);
+  assert.deepEqual(acknowledged, []);
+  await protocol.save({ answers: [answer('A')] });
+  assert.notEqual(requests[1].mutationId, requests[0].mutationId);
+  assert.equal(requests[1].saveSequence, 9);
+  assert.deepEqual(acknowledged, [[answer('A')]]);
+});
+
+test('a stuck non-transient 409 batch does not block the final snapshot', async () => {
+  const sent = [];
+  const stuck = Object.assign(new Error('Save acknowledgement missing'), { response: { status: 409, data: { code: 'SAVE_ACK_MISSING' } } });
+  const states = [];
+  const protocol = createProtocol({ onState: (state) => states.push(state),
+    sendSave: async (payload) => { sent.push(['save', payload]); throw stuck; },
+    sendSubmit: async (payload) => { sent.push(['submit', payload]); return receipt(payload); } });
+  await assert.rejects(protocol.save({ answers: [answer('A')] }), stuck);
+  await assert.rejects(protocol.save({ answers: [answer('B')] }), stuck);
+  assert.notEqual(protocol.pendingBatch, null);
+  const result = await protocol.submit({ answers: [answer('B'), answer('C', 1)], status: 'submitted' });
+  assert.ok(result.submissionReceipt);
+  assert.deepEqual(sent.map(([kind]) => kind), ['save', 'save', 'save', 'submit']);
+  assert.deepEqual(sent.at(-1)[1].answers, [answer('B'), answer('C', 1)]);
+  assert.equal(sent.at(-1)[1].saveSequence, 1);
+  assert.equal(protocol.terminal, true);
+  assert.equal(protocol.pendingBatch, null);
+  assert.equal(states.at(-1), 'submitted');
+  assert.ok(!states.slice(states.lastIndexOf('submitting')).includes('submit_failed'));
+});
+
+test('a final rejected for its sequence is re-sequenced once with the same answers', async () => {
+  const sent = [];
+  const conflict = Object.assign(new Error('Refresh to synchronize'), { response: { status: 409, data: { code: 'SAVE_SEQUENCE_CONFLICT', acceptedSequence: 4 } } });
+  const protocol = createProtocol({ sendSubmit: async (payload) => {
+    sent.push(payload);
+    if (sent.length === 1) throw conflict;
+    return receipt(payload);
+  } });
+  await protocol.submit({ answers: [answer('A')], status: 'submitted' });
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0].saveSequence, 1);
+  assert.equal(sent[1].saveSequence, 5);
+  assert.notEqual(sent[1].mutationId, sent[0].mutationId);
+  assert.deepEqual(sent[1].answers, sent[0].answers);
+  assert.equal(protocol.sequence, 5);
+});
+
+test('final submit retries a busy server up to submitRetries with capped, jittered backoff', async () => {
+  const busy = () => Object.assign(new Error('busy'), { response: { status: 503, data: { code: 'ASSESSMENT_BUSY' } } });
+  const waits = [];
+  const states = [];
+  let calls = 0;
+  const protocol = createProtocol({ retries: 0, submitRetries: 6, random: () => 0.5, wait: async (ms) => { waits.push(ms); },
+    onState: (state) => states.push(state),
+    sendSubmit: async (payload) => { calls += 1; if (calls <= 6) throw busy(); return receipt(payload); } });
+  await protocol.submit({ answers: [answer('A')] });
+  assert.equal(calls, 7);
+  assert.deepEqual(waits, [1750, 2750, 4750, 8750, 8750, 8750]);
+  assert.equal(states.filter((state) => state === 'submitting_retry').length, 6);
+
+  calls = 0;
+  const exhausted = createProtocol({ submitRetries: 6, sendSubmit: async () => { calls += 1; throw busy(); } });
+  await assert.rejects(exhausted.submit({ answers: [answer('A')] }), /busy/);
+  assert.equal(calls, 7);
+  assert.notEqual(exhausted.pendingFinal, null);
+});
+
+test('ASSESSMENT_WRITE_CONFLICT is retried as the same request', async () => {
+  const requests = [];
+  const contention = Object.assign(new Error('Retry the same request.'), { response: { status: 409, data: { code: 'ASSESSMENT_WRITE_CONFLICT' } } });
+  assert.equal(isTransientSaveError(contention), true);
+  assert.equal(isTransientSaveError({ response: { status: 409, data: { code: 'SAVE_SEQUENCE_CONFLICT' } } }), false);
+  const protocol = createProtocol({ retries: 2, sendSave: async (payload) => {
+    requests.push(payload);
+    if (requests.length === 1) throw contention;
+    return ack(payload);
+  } });
+  await protocol.save({ answers: [answer('A')] });
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[1], requests[0]);
+  assert.equal(protocol.sequence, 1);
+});
+
+test('a successful submit does not wait for the post-receipt local checkpoint', async () => {
+  const gate = deferred();
+  let writes = 0;
+  const protocol = createProtocol({ persist: async (state) => { writes += 1; if (!state.pendingFinal) await gate.promise; } });
+  const result = await protocol.submit({ answers: [answer('A')] });
+  assert.ok(result.submissionReceipt);
+  assert.ok(writes >= 2);
+  gate.resolve();
 });
 
 test('missing server acknowledgement is not treated as a successful save', async () => {

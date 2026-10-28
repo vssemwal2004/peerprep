@@ -222,6 +222,44 @@ export function serializeSubmission(submission, { includeJudgeDetails = true } =
 
 const ACCEPTED_STATUS_PATTERN = /^(ac|accepted|accept)$/i;
 
+export const HIDDEN_RUNTIME_ERROR_MESSAGE = 'Runtime error on a hidden test case.';
+
+/**
+ * Whether a submit failed on a case the student may not see. Judging tags sample cases hidden:false;
+ * hidden, external bulk and legacy untagged cases all count as hidden.
+ */
+export function isHiddenJudgeFailure(failedCase) {
+  return Boolean(failedCase) && failedCase.hidden !== false;
+}
+
+const isRuntimeErrorStatus = (status) => ['RE', 'RUNTIME ERROR'].includes(String(status || '').trim().toUpperCase());
+
+/**
+ * A student-facing submit result: a hidden failing case keeps only its index, and runtime stderr from it
+ * (which can echo the hidden input) becomes a generic message. Compile errors stay. With `legacyRuntime`,
+ * an untagged stored runtime error is treated as hidden too.
+ */
+export function concealHiddenSubmitResult(result, { legacyRuntime = false } = {}) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
+  const failed = result.failedTestCase || result.failedCase;
+  const runtime = isRuntimeErrorStatus(result.status);
+  if (failed ? !isHiddenJudgeFailure(failed) : !(legacyRuntime && runtime)) return result;
+  const concealed = { ...result };
+  delete concealed.failedCase;
+  if (failed) concealed.failedTestCase = { index: failed.index, hidden: true };
+  if (runtime) {
+    concealed.error = HIDDEN_RUNTIME_ERROR_MESSAGE;
+    if (concealed.stderr) concealed.stderr = '';
+  }
+  return concealed;
+}
+
+/** Runtime stderr of a submit that failed on a hidden case, which students must not receive. */
+function isConcealedSubmitStderr(submission) {
+  return submission?.mode === 'submit' && isRuntimeErrorStatus(submission.status)
+    && isHiddenJudgeFailure(submission.failedCase);
+}
+
 /**
  * Realtime payload for 'compiler-submission-updated'. On top of the normal serialization it
  * carries `firstAccepted`: true when this is the user's first accepted *submit* for the problem.
@@ -230,6 +268,12 @@ const ACCEPTED_STATUS_PATTERN = /^(ac|accepted|accept)$/i;
 export async function serializeSubmissionForRealtime(submission) {
   const payload = serializeSubmission(submission, { includeJudgeDetails: false });
   if (!payload) return payload;
+
+  // This reaches the student's own room. Practice problems no assessment grades keep their stderr.
+  if (isConcealedSubmitStderr(submission)) {
+    const conceal = submission.assessmentId || await problemUsedInAssessment(submission.problem).catch(() => true);
+    if (conceal) payload.stderr = '';
+  }
 
   payload.firstAccepted = false;
   if (submission.mode === 'submit' && ACCEPTED_STATUS_PATTERN.test(String(submission.status || ''))) {
@@ -262,7 +306,7 @@ export async function problemUsedInAssessment(problemId) {
   ]) }).maxTimeMS(5000));
 }
 
-export function serializeStudentSubmission(submission, { revealFailedCase = false } = {}) {
+export function serializeStudentSubmission(submission, { revealFailedCase = false, concealHidden = false } = {}) {
   const serialized = serializeSubmission(submission, {
     includeJudgeDetails: submission?.mode === 'run',
   });
@@ -275,6 +319,10 @@ export function serializeStudentSubmission(submission, { revealFailedCase = fals
     serialized.output = '';
     if (!['CE', 'RE'].includes(serialized.status)) {
       serialized.stderr = '';
+    }
+    // Hidden-case stderr can echo the hidden input (print stdin to stderr, then crash).
+    if ((submission.assessmentId || concealHidden) && isConcealedSubmitStderr(submission)) {
+      serialized.stderr = HIDDEN_RUNTIME_ERROR_MESSAGE;
     }
   }
 

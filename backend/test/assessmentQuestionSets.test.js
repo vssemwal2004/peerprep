@@ -32,6 +32,18 @@ test('settings normalization preserves toggles from a mongoose assessment subdoc
   assert.equal(normalized.aiProctoring.detectMobile, false);
 });
 
+test('assessment AI proctoring never flags looking away and defaults out-of-frame grace to 8 s', () => {
+  const fresh = new Assessment({ createdBy: '507f1f77bcf86cd799439011', settings: { aiProctoring: { enabled: true } } });
+  assert.equal(fresh.settings.aiProctoring.detectLookingAway, false);
+  assert.equal(fresh.settings.aiProctoring.faceOutOfFrameGraceSec, 8);
+  const legacy = normalizeAssessmentSettings({ aiProctoring: { enabled: true, detectLookingAway: true } });
+  assert.equal(legacy.aiProctoring.detectLookingAway, false);
+  assert.equal(legacy.aiProctoring.faceOutOfFrameGraceSec, 8);
+  assert.equal(normalizeAssessmentSettings({ aiProctoring: { faceOutOfFrameGraceSec: 20 } }).aiProctoring.faceOutOfFrameGraceSec, 20);
+  assert.equal(normalizeAssessmentSettings({ aiProctoring: { faceOutOfFrameGraceSec: 1 } }).aiProctoring.faceOutOfFrameGraceSec, 3);
+  assert.equal(normalizeAssessmentSettings({ aiProctoring: { faceOutOfFrameGraceSec: 99 } }).aiProctoring.faceOutOfFrameGraceSec, 60);
+});
+
 test('candidate sets follow natural roll-number order and preserve overrides', () => {
   const users = [
     { _id: 'u10', studentId: 'ROLL-10' },

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api, clearApiCache } from '../utils/api';
+import { clearAllAssessmentDrafts } from '../student/assessment/assessmentDraftStore';
 
 export const AuthContext = createContext(null);
 
@@ -78,6 +79,9 @@ export function AuthProvider({ children }) {
     setAuthChecked(false);
     cacheTimestampRef.current = 0;
     clearApiCache();
+    // Answer and code drafts live in IndexedDB too; the next user of a shared
+    // lab machine must not find them.
+    await clearAllAssessmentDrafts().catch(() => {});
     localStorage.clear();
   }, []);
 

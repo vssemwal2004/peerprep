@@ -20,6 +20,9 @@ const logCoinFailure = (error) => console.error(`[SharedMaintenance] Prep Coin c
 const logAnviFailure = (error) => console.error(`[SharedMaintenance] ANVI stale attempt sweep failed (${error?.name || 'Error'}).`);
 const logAnviEvalFailure = (error) => console.error(`[SharedMaintenance] ANVI evaluation dispatch failed (${error?.name || 'Error'}).`);
 const logAnviScheduleFailure = (error) => console.error(`[SharedMaintenance] ANVI schedule sweep failed (${error?.name || 'Error'}).`);
+const logAssessmentEvalFailure = (error) => console.error(`[SharedMaintenance] Assessment evaluation dispatch failed (${error?.name || 'Error'}).`);
+const logAssessmentReportFailure = (error) => console.error(`[SharedMaintenance] Assessment report refresh failed (${error?.name || 'Error'}).`);
+const logAssessmentExpiryFailure = (error) => console.error(`[SharedMaintenance] Assessment expiry sweep failed (${error?.name || 'Error'}).`);
 
 export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
   let stopped = false;
@@ -51,6 +54,19 @@ export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
       if (scheduled && due('platform', 'anviEval', 10_000)) await runForPlatform(() => dispatchAnviEvaluations()).catch(logAnviEvalFailure);
       // Opens and closes ANVI assignments, sends slot reminders and marks no-shows.
       if (scheduled && due('platform', 'anviSchedule', 60_000)) await runForPlatform(() => sweepAnviScheduling(new Date())).catch(logAnviScheduleFailure);
+      // Assessments taken in the main database need the same grading, report
+      // and expiry passes as university tenants. Without them every platform
+      // submission stayed "Evaluation pending" with no score.
+      if (scheduled) {
+        await runForPlatform(() => dispatchPendingAssessmentEvaluations({ limit: 10 })).catch(logAssessmentEvalFailure);
+        if (due('platform', 'reports', 3000)) {
+          await runForPlatform(async () => {
+            await discoverAssessmentReportRefreshes({ limit: 10 });
+            await refreshPendingAssessmentReports({ limit: 5 });
+          }).catch(logAssessmentReportFailure);
+        }
+        if (due('platform', 'expiry', 60_000)) await runForPlatform(() => sweepAssessmentExpiry()).catch(logAssessmentExpiryFailure);
+      }
       // The shared PeerPrep deployment also owns users and queued mail in the
       // platform database. Drain it before tenant discovery so mail still runs
       // when no university tenants are registered.

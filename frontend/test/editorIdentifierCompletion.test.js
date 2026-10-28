@@ -322,6 +322,42 @@ test('providers are registered once, scoped to student editors and disposed with
   assert.equal(registered.length, providerCount * 2, 'A later mount registers again');
 });
 
+test('completion reads only the text before the word and reuses the result for the same model version', () => {
+  const { monaco, registered } = createFakeMonaco();
+  const text = 'int total = 0;\nint later = 1;\nto';
+  let version = 1;
+  const reads = { getValue: 0, ranges: [] };
+  const base = createModel(text, 'cpp');
+  const lines = text.split('\n');
+  const model = {
+    ...base,
+    getVersionId: () => version,
+    getValue: () => { reads.getValue += 1; return text; },
+    getValueInRange(range) {
+      reads.ranges.push(range);
+      const selected = lines.slice(range.startLineNumber - 1, range.endLineNumber);
+      selected[selected.length - 1] = selected[selected.length - 1].slice(0, range.endColumn - 1);
+      return selected.join('\n');
+    },
+  };
+  const release = acquireIdentifierCompletions(monaco, { contains: () => false }, (candidate) => candidate === model);
+  const cpp = registered.find((entry) => entry.languageId === 'cpp').provider;
+  const labelsAt = (position) => cpp.provideCompletionItems(model, position).suggestions
+    .map((item) => (typeof item.label === 'string' ? item.label : item.label.label));
+
+  assert.deepEqual(labelsAt({ lineNumber: 3, column: 3 }), ['total']);
+  assert.equal(reads.getValue, 0, 'The whole document is not copied per keystroke');
+  assert.deepEqual(reads.ranges, [{ startLineNumber: 1, startColumn: 1, endLineNumber: 3, endColumn: 1 }]);
+
+  assert.deepEqual(labelsAt({ lineNumber: 3, column: 3 }), ['total']);
+  assert.equal(reads.ranges.length, 1, "Monaco's repeat request for the same position is served from memory");
+
+  version += 1;
+  labelsAt({ lineNumber: 3, column: 3 });
+  assert.equal(reads.ranges.length, 2, 'An edit invalidates the remembered result');
+  release();
+});
+
 test('automatic suggestions use explicit model ownership without Monaco editor enumeration', () => {
   const { monaco, registered } = createFakeMonaco();
   delete monaco.editor.getEditors;

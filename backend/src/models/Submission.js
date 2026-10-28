@@ -24,6 +24,8 @@ const failedCaseSchema = new mongoose.Schema({
   input: String,
   expectedOutput: String,
   actualOutput: String,
+  // false only for a sample case; students never get hidden-case details.
+  hidden: Boolean,
 }, { _id: false });
 
 const submissionSchema = new mongoose.Schema({

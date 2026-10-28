@@ -126,7 +126,7 @@ export default function ProctoringCard({ data, onChange, readOnly }) {
                 // On phones the embedded Assessment editor's grace-period row stacks (its text column
                 // would otherwise shrink to one word per line next to the number field).
                 <div className="rounded-xl border border-slate-200 p-3 dark:border-gray-700 sm:p-4 max-sm:[&_.items-start.justify-between]:flex-col max-sm:[&_.items-start.justify-between]:gap-2" onBlur={() => setTypedAi(null)}>
-                  <AIProctoringSettings value={shownAi} disabled={readOnly} onChange={editAi} />
+                  <AIProctoringSettings value={shownAi} disabled={readOnly} onChange={editAi} showLookingAwayToggle />
                   {rangeIssues.length > 0 && (
                     <p role="alert" className="mt-3 text-xs text-amber-800 dark:text-amber-300">
                       Out of range, so the nearest allowed value is saved: {rangeIssues.join(" · ")}.

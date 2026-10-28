@@ -73,6 +73,10 @@ const assessmentSubmissionSchema = new mongoose.Schema({
   pausedDurationMs: { type: Number, default: 0 },
   lastNetworkPauseAt: { type: Date },
   securityHeartbeat: { type: mongoose.Schema.Types.Mixed, default: {} },
+  // Review flags from heartbeats (never penalties): self-reported inconsistent
+  // status, and silences over 60 s between stored heartbeats.
+  inconsistentHeartbeatCount: { type: Number, default: 0 },
+  heartbeatGapCount: { type: Number, default: 0 },
   violations: { type: [mongoose.Schema.Types.Mixed], default: [] },
   violationLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
   proctoringSnapshots: { type: [mongoose.Schema.Types.Mixed], default: [] },

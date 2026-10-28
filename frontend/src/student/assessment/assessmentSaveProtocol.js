@@ -33,7 +33,19 @@ export function acceptedSequence(state = {}) {
 
 export function isTransientSaveError(error) {
   const status = Number(error?.response?.status || 0);
-  return !status || status === 408 || status === 429 || status >= 500;
+  // ASSESSMENT_WRITE_CONFLICT is a 409 whose contract is "retry the same request":
+  // the server's compare-and-set lost to a concurrent heartbeat and nothing was written.
+  return !status || status === 408 || status === 429 || status >= 500
+    || error?.response?.data?.code === 'ASSESSMENT_WRITE_CONFLICT';
+}
+
+// A SAVE_SEQUENCE_CONFLICT carries the server's acknowledged sequence. The
+// rejected request can never be accepted under its ID, so the client resyncs.
+function conflictAcceptedSequence(error) {
+  const data = error?.response?.data;
+  if (Number(error?.response?.status) !== 409 || data?.code !== 'SAVE_SEQUENCE_CONFLICT') return null;
+  const sequence = data.acceptedSequence;
+  return Number.isSafeInteger(sequence) && sequence >= 0 ? sequence : null;
 }
 
 export function isDraftForAttempt(draft, submission, sessionId) {
@@ -46,7 +58,7 @@ export function isDraftForAttempt(draft, submission, sessionId) {
 
 export class AssessmentSaveProtocol {
   constructor({ server = {}, recovered, sendSave, sendSubmit, persist = async () => {}, onState = () => {},
-    onAcknowledged = () => {}, createId = newId, wait = sleep, retries = 2 }) {
+    onAcknowledged = () => {}, createId = newId, wait = sleep, random = Math.random, retries = 2, submitRetries = 6 }) {
     this.sendSave = sendSave;
     this.sendSubmit = sendSubmit;
     this.persist = persist;
@@ -54,7 +66,11 @@ export class AssessmentSaveProtocol {
     this.onAcknowledged = onAcknowledged;
     this.createId = createId;
     this.wait = wait;
+    this.random = random;
     this.retries = retries;
+    // Every timed-out client submits in the same second; the final gets a longer,
+    // jittered budget so retries spread out instead of re-hitting a full gate.
+    this.submitRetries = submitRetries;
     this.generation = Number(server.attemptGeneration || 1);
     this.submissionId = String(server._id || '');
     this.sequence = acceptedSequence(server);
@@ -87,16 +103,20 @@ export class AssessmentSaveProtocol {
     return this.persistence;
   }
 
-  async request(send, payload) {
+  async request(send, payload, { retries = this.retries, jitterMs = 250 } = {}) {
     for (let attempt = 0; ; attempt += 1) {
       try {
         return await send(clone(payload));
       } catch (error) {
-        if (!isTransientSaveError(error) || attempt >= this.retries) throw error;
+        if (!isTransientSaveError(error) || attempt >= retries) throw error;
         this.onState(this.finalizing ? 'submitting_retry' : 'retrying');
-        await this.wait(Math.min(8000, 1000 * (2 ** attempt)) + Math.random() * 250);
+        await this.wait(Math.min(8000, 1000 * (2 ** attempt)) + this.random() * jitterMs);
       }
     }
+  }
+
+  sendFinal() {
+    return this.request(this.sendSubmit, this.pendingFinal, { retries: this.submitRetries, jitterMs: 1500 });
   }
 
   acknowledge(payload, result = {}) {
@@ -117,7 +137,7 @@ export class AssessmentSaveProtocol {
     return this.flushBatch(payload);
   }
 
-  flushBatch(payload) {
+  flushBatch(payload, { reportFailure = true, ...retryPolicy } = {}) {
     if (this.inFlight) return this.inFlight;
     if (!this.pendingBatch && !payload?.answers?.length) return Promise.resolve(null);
     if (!this.pendingBatch) {
@@ -130,7 +150,7 @@ export class AssessmentSaveProtocol {
     this.inFlight = (async () => {
       try {
         await this.checkpoint();
-        const result = await this.request(this.sendSave, batch);
+        const result = await this.request(this.sendSave, batch, retryPolicy);
         if (result.answersAccepted === false && (result.submissionReceipt || result.receipt)) {
           this.sequence = Math.max(this.sequence, acceptedSequence(result));
         } else {
@@ -141,11 +161,20 @@ export class AssessmentSaveProtocol {
         this.onState(this.finalizing ? 'submitting' : 'saved');
         return result;
       } catch (error) {
-        if (wasRejectedBeforeSave(error)) {
+        const serverSequence = conflictAcceptedSequence(error);
+        if (serverSequence !== null) {
+          // The batch is dead under its mutation ID. Its answers stay
+          // unacknowledged, so the next save resends them in a new batch.
+          this.sequence = serverSequence;
+          const revision = Number(error.response.data.answerRevision);
+          if (Number.isFinite(revision)) this.answerRevision = revision;
+          this.pendingBatch = null;
+          await this.checkpoint();
+        } else if (wasRejectedBeforeSave(error)) {
           this.pendingBatch = null;
           await this.checkpoint();
         }
-        this.onState(this.finalizing ? 'submit_failed' : 'unsaved', error);
+        if (reportFailure) this.onState(this.finalizing ? 'submit_failed' : 'unsaved', error);
         throw error;
       } finally {
         this.inFlight = null;
@@ -167,13 +196,39 @@ export class AssessmentSaveProtocol {
     this.finalInFlight = (async () => {
       try {
         await this.checkpoint();
-        if (this.inFlight) await this.inFlight;
-        if (this.pendingBatch) await this.flushBatch();
+        // An autosave that fails here is handled below; it must not abort the final.
+        if (this.inFlight) await this.inFlight.catch(() => {});
+        if (this.pendingBatch) {
+          try {
+            await this.flushBatch(undefined, { reportFailure: false, retries: this.submitRetries, jitterMs: 1500 });
+          } catch (error) {
+            // A transient failure leaves the batch's fate unknown, so its sequence
+            // must be settled first. A definitive rejection can never succeed, and
+            // the frozen final is a full answer snapshot that supersedes the batch.
+            if (isTransientSaveError(error)) throw error;
+            this.pendingBatch = null;
+            await this.checkpoint();
+            this.onState('submitting');
+          }
+        }
         if (this.pendingFinal.saveSequence === undefined) {
           this.pendingFinal.saveSequence = this.sequence + 1;
           await this.checkpoint();
         }
-        const result = await this.request(this.sendSubmit, this.pendingFinal);
+        let result;
+        try {
+          result = await this.sendFinal();
+        } catch (error) {
+          // A non-terminal attempt rejected this final's sequence, so it was not
+          // saved. Re-sequence the same frozen snapshot once under a new ID.
+          const serverSequence = conflictAcceptedSequence(error);
+          if (serverSequence === null) throw error;
+          this.sequence = serverSequence;
+          this.pendingFinal = { ...this.pendingFinal, mutationId: this.createId(), saveSequence: serverSequence + 1 };
+          await this.checkpoint();
+          this.onState('submitting');
+          result = await this.sendFinal();
+        }
         if (!result?.submissionReceipt && !result?.receipt && !result?.submission?.submissionReceipt) {
           const error = new Error('Submission confirmation was not received. Retry to confirm your saved submission.');
           error.response = { status: 409, data: { code: 'SUBMISSION_RECEIPT_MISSING' } };
@@ -186,7 +241,9 @@ export class AssessmentSaveProtocol {
         this.completedResult = result;
         this.pendingFinal = null;
         this.pendingBatch = null;
-        await this.checkpoint();
+        // Not awaited: the server receipt is durable, the draft is deleted next,
+        // and isDraftForAttempt ignores drafts of submitted attempts.
+        this.checkpoint().catch(() => {});
         this.onState('submitted');
         return result;
       } catch (error) {
