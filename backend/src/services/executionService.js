@@ -381,6 +381,48 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
     DEFAULT_MEMORY_LIMIT_KB,
   ));
 
+  return executeJudge0Submission({
+    source_code: encodeBase64(sourceCode),
+    language_id: numericLanguageId,
+    ...(numericLanguageId === KEY_TO_LANGUAGE_ID.typescript
+      ? { compiler_options: '--target ES2019 --lib ESNext,DOM' } : {}),
+    ...(numericLanguageId === KEY_TO_LANGUAGE_ID.c
+      ? { compiler_options: '-std=gnu11 -Wl,--no-as-needed -lm' } : {}),
+    ...(numericLanguageId === KEY_TO_LANGUAGE_ID.cpp
+      ? { compiler_options: '-std=c++17' } : {}),
+    stdin: encodeBase64(standardInput),
+    cpu_time_limit: roundNumber(cpuTimeLimit, 2),
+    wall_time_limit: roundNumber(wallTimeLimit, 2),
+    memory_limit: memoryLimitKb,
+    number_of_runs: 1,
+    max_file_size: normalizeJudge0FileSizeKb(options.maxFileSizeKb),
+  }, { wallTimeLimit, beforeSubmission: options.beforeSubmission });
+}
+
+/**
+ * One multi-file Judge0 submission (language 89): `files` is a base64 zip with
+ * `compile` and `run` scripts. Limits apply to the whole run script.
+ */
+export async function runJudge0MultiFile(zipBase64, {
+  cpuTimeLimitSeconds = JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS,
+  wallTimeLimitSeconds = JUDGE0_MAX_WALL_TIME_LIMIT_SECONDS,
+  memoryLimitKb = DEFAULT_MEMORY_LIMIT_KB,
+  maxFileSizeKb,
+} = {}) {
+  const cpuTimeLimit = clampNumber(cpuTimeLimitSeconds, 1, JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS, JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS);
+  const wallTimeLimit = clampNumber(wallTimeLimitSeconds, 2, JUDGE0_MAX_WALL_TIME_LIMIT_SECONDS, JUDGE0_MAX_WALL_TIME_LIMIT_SECONDS);
+  return executeJudge0Submission({
+    language_id: 89,
+    additional_files: zipBase64,
+    cpu_time_limit: roundNumber(cpuTimeLimit, 2),
+    wall_time_limit: roundNumber(wallTimeLimit, 2),
+    memory_limit: Math.trunc(clampNumber(memoryLimitKb, 32 * 1024, JUDGE0_MAX_MEMORY_LIMIT_KB, DEFAULT_MEMORY_LIMIT_KB)),
+    number_of_runs: 1,
+    max_file_size: normalizeJudge0FileSizeKb(maxFileSizeKb),
+  }, { wallTimeLimit });
+}
+
+async function executeJudge0Submission(body, { wallTimeLimit, beforeSubmission } = {}) {
   // Lease outlives the client deadline slightly, so a timed-out submission still
   // occupies its slot while Judge0 finishes it.
   const requestTimeoutMs = Math.max(JUDGE0_REQUEST_TIMEOUT_MS, JUDGE0_COMPILE_ALLOWANCE_MS + Math.ceil(wallTimeLimit * 1000) + 5000);
@@ -391,26 +433,11 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
   const outageDeadline = Date.now() + (inExecutionJob() ? JUDGE0_NODE_OUTAGE_WAIT_MS : 0);
   const submit = () => judge0Request('/submissions?base64_encoded=true&wait=true', {
     method: 'POST',
-    beforeSubmission: options.beforeSubmission,
+    beforeSubmission,
     acquireSlot: (target) => acquireJudge0Slot(target, { ttlMs: leaseTtlMs }),
     timeoutMs: requestTimeoutMs,
     onResponseTarget: (target, grantedLease) => { submissionTarget = target; lease = grantedLease; },
-    body: {
-      source_code: encodeBase64(sourceCode),
-      language_id: numericLanguageId,
-      ...(numericLanguageId === KEY_TO_LANGUAGE_ID.typescript
-        ? { compiler_options: '--target ES2019 --lib ESNext,DOM' } : {}),
-      ...(numericLanguageId === KEY_TO_LANGUAGE_ID.c
-        ? { compiler_options: '-std=gnu11 -Wl,--no-as-needed -lm' } : {}),
-      ...(numericLanguageId === KEY_TO_LANGUAGE_ID.cpp
-        ? { compiler_options: '-std=c++17' } : {}),
-      stdin: encodeBase64(standardInput),
-      cpu_time_limit: roundNumber(cpuTimeLimit, 2),
-      wall_time_limit: roundNumber(wallTimeLimit, 2),
-      memory_limit: memoryLimitKb,
-      number_of_runs: 1,
-      max_file_size: normalizeJudge0FileSizeKb(options.maxFileSizeKb),
-    },
+    body,
   });
 
   try {
