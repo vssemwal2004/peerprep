@@ -136,6 +136,8 @@ submissionSchema.index({ createdAt: -1 });
 // Prep Score sync reads students whose submissions changed since its last pass.
 submissionSchema.index({ updatedAt: 1 });
 submissionSchema.index({ problem: 1, createdAt: -1 });
+// Problem stats count by mode and verdict.
+submissionSchema.index({ problem: 1, mode: 1, status: 1 });
 submissionSchema.index({ mode: 1, status: 1, createdAt: -1 });
 submissionSchema.index({ user: 1, mode: 1, createdAt: -1 });
 submissionSchema.index({ user: 1, mode: 1, assessmentId: 1, status: 1, completedAt: -1 });

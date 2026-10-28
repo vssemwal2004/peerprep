@@ -2,6 +2,7 @@ import { HttpError } from '../utils/errors.js';
 import { judge0OutputFileSizeKb, normalizeJudge0FileSizeKb } from './outputFileBudgetService.js';
 import { validateSqlMutationContract } from './sqlMutationContractService.js';
 import { currentTenant } from '../platform/tenantContext.js';
+import { acquireJudge0Slot, inExecutionJob, recordJudge0Outcome } from './judge0Gateway.js';
 
 const JUDGE0_URL_CONFIG = process.env.JUDGE0_URL
   || process.env.JUDGE0_BASE_URLS
@@ -30,6 +31,14 @@ const DEFAULT_MEMORY_LIMIT_KB = 256 * 1024;
 const JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS = Number(process.env.JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS || 15);
 const JUDGE0_MAX_WALL_TIME_LIMIT_SECONDS = Number(process.env.JUDGE0_MAX_WALL_TIME_LIMIT_SECONDS || 20);
 const JUDGE0_MAX_MEMORY_LIMIT_KB = Number(process.env.JUDGE0_MAX_MEMORY_LIMIT_KB || 512000);
+// wait=true holds the request for compile + run, so the client deadline follows the
+// submission's own limits instead of a fixed value.
+const JUDGE0_COMPILE_ALLOWANCE_MS = Number(process.env.JUDGE0_COMPILE_ALLOWANCE_MS || 10000);
+const NEVER_CONNECTED_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
+// A queued job rides out a Judge0 outage inside one attempt instead of spending its
+// retries while the node is down; HTTP callers fail fast.
+const JUDGE0_NODE_OUTAGE_WAIT_MS = Number(process.env.JUDGE0_NODE_OUTAGE_WAIT_MS || 300000);
+const JUDGE0_OUTAGE_RETRY_MS = Number(process.env.JUDGE0_OUTAGE_RETRY_MS || 1000);
 
 let judge0RoundRobinIndex = 0;
 
@@ -241,7 +250,9 @@ export function resolveLanguageRequest(body) {
   return { languageId, languageKey };
 }
 
-async function judge0Request(path, { method = 'GET', body, targetUrl, beforeSubmission, onResponseTarget } = {}) {
+async function judge0Request(path, {
+  method = 'GET', body, targetUrl, beforeSubmission, acquireSlot, onResponseTarget, timeoutMs = JUDGE0_REQUEST_TIMEOUT_MS,
+} = {}) {
   const headers = buildJudge0Headers();
 
   const targets = targetUrl ? [targetUrl] : getNextJudge0Targets();
@@ -251,8 +262,10 @@ async function judge0Request(path, { method = 'GET', body, targetUrl, beforeSubm
     // Limit actual submissions, including retries against another node. Waiting
     // for a slot must not consume the HTTP request's timeout budget.
     if (method === 'POST' && beforeSubmission) await beforeSubmission();
+    const lease = method === 'POST' && acquireSlot ? await acquireSlot(target) : null;
+    let leaseHandedOff = false;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), JUDGE0_REQUEST_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(`${target}${path}`, {
@@ -274,18 +287,27 @@ async function judge0Request(path, { method = 'GET', body, targetUrl, beforeSubm
         const upstreamMessage = extractJudge0ErrorMessage(parsedBody, response.status);
         console.warn(`[Judge0] Request failed: ${method} ${path} status=${response.status} node=${target}`);
         if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+          if (method === 'POST') void recordJudge0Outcome(target, true);
           throw buildJudge0Error(upstreamMessage, response.status);
         }
 
+        if (method === 'POST') void recordJudge0Outcome(target, false);
         lastError = buildJudge0Error(upstreamMessage, response.status === 429 ? 503 : 502);
+        // Judge0 refused the submission, so nothing is executing for it.
+        lastError.nodeUnavailable = true;
         continue;
       }
 
-      if (onResponseTarget) onResponseTarget(target);
+      if (method === 'POST') void recordJudge0Outcome(target, true);
+      leaseHandedOff = true;
+      if (onResponseTarget) onResponseTarget(target, lease);
       return parsedBody;
     } catch (error) {
       if (error.name === 'AbortError') {
         console.warn(`[Judge0] Request timed out: ${method} ${path} node=${target}`);
+        if (method === 'POST') void recordJudge0Outcome(target, false);
+        // Judge0 is still executing this submission: keep its slot until the lease expires.
+        lease?.abandon();
         lastError = buildJudge0Error('Judge0 request timed out.', 504);
         continue;
       }
@@ -298,10 +320,16 @@ async function judge0Request(path, { method = 'GET', body, targetUrl, beforeSubm
         continue;
       }
 
+      if (method === 'POST') void recordJudge0Outcome(target, false);
+      // Only a connection that was never established proves Judge0 is not running the code.
+      const neverConnected = NEVER_CONNECTED_CODES.has(error?.cause?.code || error?.code);
+      if (!neverConnected) lease?.abandon();
       lastError = buildJudge0Error(error.message || 'Unable to reach Judge0.');
+      lastError.nodeUnavailable = neverConnected;
       console.warn(`[Judge0] Network failure: ${method} ${path} node=${target} error=${error.message || 'unknown'}`);
     } finally {
       clearTimeout(timeoutId);
+      if (lease && !leaseHandedOff) await lease.release();
     }
   }
 
@@ -353,11 +381,20 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
     DEFAULT_MEMORY_LIMIT_KB,
   ));
 
+  // Lease outlives the client deadline slightly, so a timed-out submission still
+  // occupies its slot while Judge0 finishes it.
+  const requestTimeoutMs = Math.max(JUDGE0_REQUEST_TIMEOUT_MS, JUDGE0_COMPILE_ALLOWANCE_MS + Math.ceil(wallTimeLimit * 1000) + 5000);
+  const leaseTtlMs = requestTimeoutMs + (JUDGE0_POLL_INTERVAL_MS * JUDGE0_MAX_POLL_ATTEMPTS) + 5000;
   let submissionTarget;
-  let result = await judge0Request('/submissions?base64_encoded=true&wait=true', {
+  let lease = null;
+  let finished = false;
+  const outageDeadline = Date.now() + (inExecutionJob() ? JUDGE0_NODE_OUTAGE_WAIT_MS : 0);
+  const submit = () => judge0Request('/submissions?base64_encoded=true&wait=true', {
     method: 'POST',
     beforeSubmission: options.beforeSubmission,
-    onResponseTarget: (target) => { submissionTarget = target; },
+    acquireSlot: (target) => acquireJudge0Slot(target, { ttlMs: leaseTtlMs }),
+    timeoutMs: requestTimeoutMs,
+    onResponseTarget: (target, grantedLease) => { submissionTarget = target; lease = grantedLease; },
     body: {
       source_code: encodeBase64(sourceCode),
       language_id: numericLanguageId,
@@ -376,20 +413,39 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
     },
   });
 
-  let attempts = 0;
-  while (result?.token && (!result?.status || Number(result.status.id || 0) <= 2) && attempts < JUDGE0_MAX_POLL_ATTEMPTS) {
-    attempts += 1;
-    await sleep(JUDGE0_POLL_INTERVAL_MS);
-    result = await judge0Request(`/submissions/${encodeURIComponent(result.token)}?base64_encoded=true`, {
-      targetUrl: submissionTarget,
-    });
-  }
+  try {
+    let result;
+    for (;;) {
+      try {
+        result = await submit();
+        break;
+      } catch (error) {
+        if (!error?.nodeUnavailable || Date.now() >= outageDeadline) throw error;
+        // The next try waits in the gateway while the node's circuit is open.
+        await sleep(JUDGE0_OUTAGE_RETRY_MS);
+      }
+    }
 
-  if (!result?.status || Number(result.status.id || 0) <= 2) {
-    const state = result?.status?.description || 'processing';
-    throw buildJudge0Error(`Compiler service did not finish execution in time. Current state: ${state}.`, 504);
+    let attempts = 0;
+    while (result?.token && (!result?.status || Number(result.status.id || 0) <= 2) && attempts < JUDGE0_MAX_POLL_ATTEMPTS) {
+      attempts += 1;
+      await sleep(JUDGE0_POLL_INTERVAL_MS);
+      result = await judge0Request(`/submissions/${encodeURIComponent(result.token)}?base64_encoded=true`, {
+        targetUrl: submissionTarget,
+      });
+    }
+
+    if (!result?.status || Number(result.status.id || 0) <= 2) {
+      const state = result?.status?.description || 'processing';
+      throw buildJudge0Error(`Compiler service did not finish execution in time. Current state: ${state}.`, 504);
+    }
+    finished = true;
+    return decodeJudge0Submission(result);
+  } finally {
+    // Unfinished means Judge0 may still be running it; the lease then expires on its own.
+    if (finished) await lease?.release();
+    else lease?.abandon();
   }
-  return decodeJudge0Submission(result);
 }
 
 export function mapRunStatusCode(result) {
@@ -493,6 +549,10 @@ export function buildJudge0Options(problem) {
         .join('\n\n')
       : '',
   };
+}
+
+export function listJudge0Targets() {
+  return judge0Targets();
 }
 
 export async function checkJudge0Health() {

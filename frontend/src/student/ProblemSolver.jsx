@@ -1479,7 +1479,7 @@ export default function ProblemSolver() {
         toast.info('Run received. Waiting for execution result.');
         completedRun = await api.waitForExecutionResult(queuedJob.jobId, {
           intervalMs: 1000,
-          timeoutMs: 2 * 60 * 1000,
+          onStillQueued: () => toast.info('Many students are running code right now. Your run is in the queue and will finish shortly.'),
         });
       }
 
@@ -1572,7 +1572,7 @@ export default function ProblemSolver() {
         toast.info('Submission received. Waiting for final verdict.');
         await api.waitForExecutionResult(queuedJob.jobId, {
           intervalMs: 1000,
-          timeoutMs: 10 * 60 * 1000,
+          onStillQueued: () => toast.info('Your submission is saved and queued. The verdict will appear when it is judged.'),
         });
       }
 

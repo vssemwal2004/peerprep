@@ -31,7 +31,8 @@ module.exports = {
       max_memory_restart: '900M',
       env: {
         NODE_ENV: 'production',
-        COMPILER_WORKER_CONCURRENCY: '2',
+        // Workers mostly wait on Judge0; the Judge0 gateway (JUDGE0_MAX_INFLIGHT) caps execution.
+        COMPILER_WORKER_CONCURRENCY: '16',
       },
     },
     {
@@ -45,7 +46,7 @@ module.exports = {
       max_memory_restart: '900M',
       env: {
         NODE_ENV: 'production',
-        ASSESSMENT_WORKER_CONCURRENCY: '2',
+        ASSESSMENT_WORKER_CONCURRENCY: '32',
       },
     },
     {

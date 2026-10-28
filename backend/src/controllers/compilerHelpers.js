@@ -6,6 +6,7 @@ import {
   cleanImportedProblemDescription,
   getVisibleCodeTemplates,
 } from '../services/functionProblemAdapterService.js';
+import { currentTenant } from '../platform/tenantContext.js';
 
 export function mapCodeTemplates(codeTemplates) {
   if (!codeTemplates) return {};
@@ -380,6 +381,26 @@ export async function refreshProblemStats(problemId) {
       'stats.averageExecutionTimeMs': averageExecutionTimeMs,
     },
   });
+}
+
+const pendingStatsRefresh = new Map();
+
+// Execution workers finish thousands of jobs on one problem during an assessment;
+// recounting its submissions after every job grows quadratically. Stats are
+// display-only, so each process refreshes a problem at most once per window.
+export function scheduleProblemStatsRefresh(problemId, delayMs = Number(process.env.PROBLEM_STATS_REFRESH_DELAY_MS || 30000)) {
+  if (!problemId) return;
+  const key = `${currentTenant()?.universityId || 'platform'}:${problemId}`;
+  if (pendingStatsRefresh.has(key)) return;
+  // The timer keeps the caller's tenant context (AsyncLocalStorage follows timers).
+  const timer = setTimeout(() => {
+    pendingStatsRefresh.delete(key);
+    refreshProblemStats(problemId).catch((error) => {
+      console.warn('[ProblemStats] refresh failed:', error?.message || error);
+    });
+  }, Math.max(0, delayMs));
+  timer.unref?.();
+  pendingStatsRefresh.set(key, timer);
 }
 
 

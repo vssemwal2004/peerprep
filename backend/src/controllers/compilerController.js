@@ -3,6 +3,7 @@ import {
   buildRunResponse,
   checkJudge0Health,
   KEY_TO_LANGUAGE_ID,
+  listJudge0Targets,
   mapRunStatusCode,
   MAX_STDIN_SIZE_BYTES,
   resolveLanguageRequest,
@@ -16,6 +17,8 @@ import {
   resolveActiveProblem,
 } from '../services/compilerExecutionWorkflowService.js';
 import { buildJudge0Options } from '../services/executionService.js';
+import { getJudge0GatewaySnapshot } from '../services/judge0Gateway.js';
+import { getQueueDepths } from '../queues/queueManager.js';
 
 export async function runCode(req, res) {
   const queuedJob = await enqueueCompilerRunJob({
@@ -103,6 +106,11 @@ export async function getExpectedOutput(req, res) {
 }
 
 export async function getJudge0Health(req, res) {
-  const payload = await checkJudge0Health();
-  res.json(payload);
+  const targets = listJudge0Targets();
+  const [payload, gateway, queues] = await Promise.all([
+    checkJudge0Health(),
+    getJudge0GatewaySnapshot(targets),
+    getQueueDepths(),
+  ]);
+  res.json({ ...payload, gateway, queues });
 }

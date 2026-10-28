@@ -17,8 +17,9 @@ import { createNotification } from './notificationService.js';
 import { getIo } from '../utils/io.js';
 import { personalRoom, compilerMonitorRoom } from '../utils/realtime.js';
 import {
-  serializeSubmissionForRealtime, refreshProblemStats, problemUsedInAssessment, isHiddenJudgeFailure, HIDDEN_RUNTIME_ERROR_MESSAGE,
+  serializeSubmissionForRealtime, scheduleProblemStatsRefresh, problemUsedInAssessment, isHiddenJudgeFailure, HIDDEN_RUNTIME_ERROR_MESSAGE,
 } from '../controllers/compilerHelpers.js';
+import { executionClassForJob, queuePriorityForJob, runWithExecutionClass } from './judge0Gateway.js';
 import {
   assessmentQueue,
   compilerQueue,
@@ -1032,11 +1033,41 @@ async function buildCompilerQueueJob({
   }, {
     jobId: jobRecord.jobId,
     attempts: DEFAULT_ATTEMPTS,
+    priority: queuePriorityForJob(jobName),
   });
 
   return buildQueuedJobResponse(jobRecord, {
     submissionId: submission?._id || undefined,
   });
+}
+
+// A student's older run that no worker has picked up yet is replaced by the new
+// one: only the latest code's output is useful, and it frees judge capacity.
+async function supersedeWaitingRuns({ queue, userId, problemId, assessmentId, keepJobId }) {
+  if (!userId || !problemId) return;
+  try {
+    const stale = await ExecutionJob.find({
+      userId,
+      problemId,
+      assessmentId: assessmentId || null,
+      jobName: { $in: ['run', 'assessment-code-run'] },
+      status: 'queued',
+      jobId: { $ne: keepJobId },
+    }).select('jobId submissionId').sort({ createdAt: -1 }).limit(5).lean();
+    for (const entry of stale) {
+      if (!await queue.removeIfWaiting(entry.jobId)) continue;
+      await ExecutionJob.updateOne({ jobId: entry.jobId, status: 'queued' }, {
+        $set: {
+          status: 'superseded',
+          completedAt: new Date(),
+          error: { message: 'Replaced by a newer run.', code: 'SUPERSEDED', details: null },
+        },
+      });
+      if (entry.submissionId) await Submission.deleteOne({ _id: entry.submissionId, status: 'PENDING' });
+    }
+  } catch (error) {
+    console.warn('[RunCoalescing] skipped:', error?.message || error);
+  }
 }
 
 export async function enqueueCompilerRunJob({ user, body }) {
@@ -1092,7 +1123,7 @@ export async function enqueueCompilerRunJob({ user, body }) {
     }
   }
 
-  return buildCompilerQueueJob({
+  const queued = await buildCompilerQueueJob({
     queue,
     jobName,
     user,
@@ -1107,6 +1138,14 @@ export async function enqueueCompilerRunJob({ user, body }) {
     expectedOutput,
     runTestCases,
   });
+  await supersedeWaitingRuns({
+    queue,
+    userId: user?._id,
+    problemId: problem?._id,
+    assessmentId,
+    keepJobId: queued.jobId,
+  });
+  return queued;
 }
 
 export async function enqueueCompilerSubmitJob({ user, body }) {
@@ -1378,6 +1417,7 @@ export async function enqueueAssessmentCodingEvaluationJobs({
     }, {
       jobId: jobRecord.jobId,
       attempts: DEFAULT_ATTEMPTS,
+      priority: queuePriorityForJob('assessment-final-code-submit'),
       retryFailed: true,
       recoveryLimit: 3,
     });
@@ -1405,7 +1445,11 @@ function buildJobResultPayload({ kind, submissionId = null, response, persisted 
   };
 }
 
-export async function processCompilerExecutionJob(job) {
+export function processCompilerExecutionJob(job) {
+  return runWithExecutionClass(executionClassForJob(job.name), () => runCompilerExecutionJob(job));
+}
+
+async function runCompilerExecutionJob(job) {
   const attemptNumber = job.attemptsMade + 1;
   const isFinalAttempt = attemptNumber >= job.maxAttempts;
   await markExecutionJobProcessing(job.id, attemptNumber);
@@ -1461,7 +1505,7 @@ export async function processCompilerExecutionJob(job) {
 
       if (submissionId) {
         await finalizeTrackedSubmission(submissionId, runResult.persisted);
-        if (problem?._id) await refreshProblemStats(problem._id);
+        if (problem?._id) scheduleProblemStatsRefresh(problem._id);
       }
 
       const resultPayload = buildJobResultPayload({
@@ -1484,7 +1528,7 @@ export async function processCompilerExecutionJob(job) {
     let finalizedSubmission = null;
     if (submissionId) {
       finalizedSubmission = await finalizeTrackedSubmission(submissionId, submitResult.persisted);
-      if (problem?._id) await refreshProblemStats(problem._id);
+      if (problem?._id) scheduleProblemStatsRefresh(problem._id);
     }
 
     if (submitResult.persisted.status === 'AC' && userId && problem?._id) {
@@ -1538,7 +1582,7 @@ export async function processCompilerExecutionJob(job) {
       }
 
       if (problemId) {
-        await refreshProblemStats(problemId);
+        scheduleProblemStatsRefresh(problemId);
       }
     }
 
@@ -1745,9 +1789,9 @@ async function processAssessmentFinalCodingJob(job) {
   }
 }
 
-export async function processAssessmentExecutionJob(job) {
+export function processAssessmentExecutionJob(job) {
   if (job.name === 'assessment-final-code-submit') {
-    return processAssessmentFinalCodingJob(job);
+    return runWithExecutionClass('critical', () => processAssessmentFinalCodingJob(job));
   }
 
   return processCompilerExecutionJob(job);

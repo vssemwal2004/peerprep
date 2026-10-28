@@ -106,6 +106,7 @@ function createQueue(name) {
       const { queue } = await getQueue(name);
       const result = await withDeadline(queue.add(jobName, { externalId, payload, universityId }, {
         jobId: internalJobId(scopedExternalId),
+        ...(positiveInteger(options.priority, 0) ? { priority: positiveInteger(options.priority, 0) } : {}),
         attempts: positiveInteger(options.attempts, DEFAULT_ATTEMPTS),
         backoff: { type: 'exponential', delay: positiveInteger(options.backoffMs, DEFAULT_BACKOFF_MS) },
         removeOnComplete: { age: positiveInteger(process.env.QUEUE_COMPLETED_RETENTION_SECONDS, 604800), count: 100000 },
@@ -128,7 +129,38 @@ function createQueue(name) {
       }
       return { id: externalId, name: jobName, data: payload, queueName: name };
     },
+    // Removes a job only while no worker holds it; a running job is left alone.
+    async removeIfWaiting(externalId) {
+      const universityId = deploymentRole() === 'shared' ? currentTenant()?.universityId || 'platform' : null;
+      const scopedExternalId = universityId ? `${universityId}:${externalId}` : String(externalId);
+      const { queue } = await getQueue(name);
+      const job = await queue.getJob(internalJobId(scopedExternalId));
+      if (!job || !['waiting', 'prioritized', 'delayed'].includes(await job.getState())) return false;
+      try {
+        await job.remove();
+        return true;
+      } catch {
+        return false;
+      }
+    },
   };
+}
+
+export async function getQueueDepths() {
+  const depths = {};
+  for (const name of Object.values(QUEUE_NAMES)) {
+    try {
+      const { queue } = await getQueue(name);
+      depths[name] = await withDeadline(
+        queue.getJobCounts('waiting', 'prioritized', 'active', 'delayed', 'failed'),
+        positiveInteger(process.env.QUEUE_COMMAND_TIMEOUT_MS, 2000),
+        'Queue counts',
+      );
+    } catch {
+      depths[name] = null;
+    }
+  }
+  return depths;
 }
 
 export async function getQueueHealth() {

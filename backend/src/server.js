@@ -16,6 +16,7 @@ import { closeValkeyClient } from './utils/valkey.js';
 import { configureSocketAdapter, closeRealtime, personalRoom, compilerMonitorRoom } from './utils/realtime.js';
 import { closeQueueWorkers } from './queues/workerRuntime.js';
 import { closeQueues } from './queues/queueManager.js';
+import { closeJudge0Gateway } from './services/judge0Gateway.js';
 import { validateDeploymentConfig } from './platform/deployment.js';
 import { getTenant } from './platform/tenantConnections.js';
 import { runForTenant } from './platform/tenantContext.js';
@@ -232,6 +233,7 @@ const shutdown = async (signal) => {
     await stopSharedMaintenance().catch(() => {});
     await closeQueueWorkers().catch(() => {});
     await closeQueues().catch(() => {});
+    await closeJudge0Gateway().catch(() => {});
     await closeRealtime().catch(() => {});
     // ANVI usage rows still buffered (released sessions, hybrid calls) are written before the DB closes.
     await flushAnviUsage().catch(() => {});

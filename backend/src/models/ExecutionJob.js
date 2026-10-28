@@ -40,7 +40,7 @@ const executionJobSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['queued', 'processing', 'completed', 'failed'],
+    enum: ['queued', 'processing', 'completed', 'failed', 'superseded'],
     default: 'queued',
     index: true,
   },

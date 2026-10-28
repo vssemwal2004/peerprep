@@ -1,6 +1,7 @@
 import { closeQueueWorkers } from '../queues/workerRuntime.js';
 import { closeQueues } from '../queues/queueManager.js';
 import { closeValkeyClient } from '../utils/valkey.js';
+import { closeJudge0Gateway } from '../services/judge0Gateway.js';
 import { closeDb } from '../utils/db.js';
 
 export function installWorkerShutdown() {
@@ -12,6 +13,7 @@ export function installWorkerShutdown() {
     try {
       await closeQueueWorkers();
       await closeQueues();
+      await closeJudge0Gateway();
       await closeValkeyClient();
       await closeDb();
       clearTimeout(deadline);
