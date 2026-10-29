@@ -1,0 +1,369 @@
+/* ==========================================================================
+   Tracks — "Pick a target. See your path."
+   A segmented target selector (proper tablist, sliding thumb) above a drawn
+   route: four real PeerPrep screens in browser frames, grounded on a shared
+   baseline with a soft floor shadow, and one 1.5px brand curve that rises
+   through a node above each frame (Learn → Practice → Prove → Improve).
+   Below: three compact facts, the footnote and the CTAs.
+   js/sections/tracks.js adds .tracks--ready (sliding thumb, curve, switching)
+   and .tracks--anim (hollow nodes until the line reaches them). Without JS
+   the Product-company SDE path is shown complete and static.
+   ========================================================================== */
+
+.tracks {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  /* --ink-3 is ~4.4:1 on the light --bg-2 band; deepen a step in light mode. */
+  --tr-dim: color-mix(in srgb, var(--ink-3) 82%, var(--ink));
+  --tr-seg: color-mix(in srgb, var(--bg-sunken) 70%, var(--bg-2));
+  --tr-frame: rgba(14, 15, 18, 0.14);
+  --tr-shadow: 0 1px 1px rgba(14, 15, 18, 0.04), 0 18px 32px -20px rgba(14, 15, 18, 0.34);
+  --tr-shadow-up: 0 1px 1px rgba(14, 15, 18, 0.04), 0 26px 40px -22px rgba(14, 15, 18, 0.4);
+  --tr-floor: rgba(14, 15, 18, 0.2);
+  --tr-gap: clamp(18px, 2.2vw, 32px);
+  --tr-rail: 132px;              /* curve band above the frames (desktop) */
+}
+:root[data-theme="dark"] .tracks,
+[data-force-theme="dark"] .tracks,
+.tracks[data-force-theme="dark"] {
+  --tr-dim: var(--ink-3);
+  --tr-seg: var(--bg-sunken);
+  --tr-frame: rgba(255, 255, 255, 0.12);
+  --tr-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 22px 36px -18px rgba(0, 0, 0, 0.9);
+  --tr-shadow-up: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 30px 44px -20px rgba(0, 0, 0, 0.95);
+  --tr-floor: rgba(0, 0, 0, 0.75);
+}
+
+/* ---------- Head ---------- */
+.tracks__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  align-items: end;
+  gap: 24px 64px;
+  margin-bottom: clamp(40px, 4.5vw, 64px);
+}
+.tracks__head-main { display: grid; gap: 24px; justify-items: start; }
+.tracks__title { max-width: 14ch; text-wrap: balance; }
+.tracks__title .tracks-line { padding-bottom: 0.06em; }
+.tracks__accent { color: var(--brand-ink); }
+.tracks__lead { max-width: 34ch; font-size: clamp(16px, 1.25vw, 18px); padding-bottom: 0.5em; }
+
+/* ---------- Segmented target selector ---------- */
+.tracks__seg {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 5px;
+  border-radius: 999px;
+  background: var(--tr-seg);
+  border: 1px solid var(--line);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.tracks__seg-thumb {
+  position: absolute; left: 0; top: 0;
+  width: 0; height: 0;
+  border-radius: 999px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgba(14, 15, 18, 0.08), 0 6px 14px -8px rgba(14, 15, 18, 0.28);
+  pointer-events: none;
+  opacity: 0;
+  will-change: transform, width;
+}
+:root[data-theme="dark"] .tracks__seg-thumb,
+[data-force-theme="dark"] .tracks__seg-thumb {
+  background: color-mix(in srgb, var(--bg-elev) 80%, #fff 6%);
+  border-color: var(--line-strong);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 8px 18px -8px rgba(0, 0, 0, 0.9);
+}
+.tracks--ready .tracks__seg-thumb { opacity: 1; }
+
+.tracks__tab {
+  position: relative; z-index: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 15px; font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-align: center;
+  color: var(--tr-dim);
+  transition: color 0.45s var(--ease-out), background-color 0.3s;
+}
+.tracks__tab:hover { color: var(--ink-2); }
+.tracks__tab[aria-selected="true"] { color: var(--ink); }
+.tracks__tab:focus-visible { outline-offset: -3px; border-radius: 999px; }
+/* No-JS fallback: the selected segment carries its own surface. */
+.tracks:not(.tracks--ready) .tracks__tab[aria-selected="true"] { background: var(--bg-elev); box-shadow: 0 1px 2px rgba(14, 15, 18, 0.08); }
+
+/* ---------- The route ---------- */
+.tracks__panel { margin-top: clamp(20px, 2.5vw, 36px); }
+.tracks__panel:focus-visible { outline-offset: 10px; border-radius: 12px; }
+.tracks__route { position: relative; }
+
+.tracks__curve {
+  position: absolute; left: 0; top: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 0;
+}
+.tracks__curve path { fill: none; }
+.tracks__curve-track { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 2 5; }
+.tracks__curve-line {
+  stroke: var(--brand); stroke-width: 1.5;
+  stroke-linecap: butt; stroke-linejoin: round;
+  stroke-dasharray: 1 1;
+}
+
+.tracks__stages {
+  position: relative; z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: var(--tr-gap);
+}
+.tracks__stage {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  padding-top: var(--tr-rail);
+  --ny: 60px;                    /* node height in the rail: the route rises */
+}
+.tracks__stage:nth-child(1) { --ny: 104px; }
+.tracks__stage:nth-child(2) { --ny: 94px; }
+.tracks__stage:nth-child(3) { --ny: 66px; }
+.tracks__stage:nth-child(4) { --ny: 18px; }
+
+/* Node on the curve + a hairline drop into the frame below it */
+.tracks__node {
+  position: absolute; z-index: 2;
+  left: 50%; top: var(--ny);
+  width: 11px; height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--brand);
+  background: var(--brand);
+  transition: background-color 0.35s var(--ease-out), transform 0.5s var(--ease-out);
+}
+.tracks--anim .tracks__node:not(.is-reached) { background: var(--bg-2); }
+.tracks__node::after {
+  content: "";
+  position: absolute; inset: -1.5px;
+  border-radius: 50%;
+  border: 1px solid var(--brand);
+  opacity: 0;
+  pointer-events: none;
+}
+.tracks__node.is-pulse::after { animation: tracks-pulse 1.1s var(--ease-out) 1 both; }
+@keyframes tracks-pulse {
+  0% { opacity: 0.7; transform: scale(1); }
+  100% { opacity: 0; transform: scale(2.8); }
+}
+.tracks__stage::before {
+  content: "";
+  position: absolute; z-index: 1;
+  left: 50%; top: calc(var(--ny) + 6px);
+  height: calc(var(--tr-rail) - var(--ny) - 6px);
+  width: 1px;
+  background: var(--line-strong);
+  transition: background-color 0.4s var(--ease-out);
+}
+
+/* Browser-framed product screen, grounded */
+.tracks__shot {
+  position: relative;
+  border-radius: 10px;
+  box-shadow: var(--tr-shadow);
+  transition: transform 0.6s var(--ease-out), box-shadow 0.6s var(--ease-out);
+}
+.tracks__shot::after {            /* floor shadow on the shared baseline */
+  content: "";
+  position: absolute; z-index: -1;
+  left: 5%; right: 5%; bottom: -18px;
+  height: 34px;
+  border-radius: 50%;
+  /* soft from the gradient stops, not filter: blur() (a GPU pass per frame) */
+  background: radial-gradient(50% 50% at 50% 50%, var(--tr-floor), color-mix(in srgb, var(--tr-floor) 45%, transparent) 42%, color-mix(in srgb, var(--tr-floor) 12%, transparent) 66%, transparent 82%);
+  transition: transform 0.6s var(--ease-out), opacity 0.6s var(--ease-out);
+}
+.tracks__shot > .tracks__bar,
+.tracks__shot > .tracks__screen { position: relative; }
+.tracks__shot > .tracks__bar {
+  display: flex; align-items: center; gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--tr-frame);
+  border-bottom-color: var(--line);
+  border-radius: 10px 10px 0 0;
+  background: var(--bg-elev);
+}
+.tracks__bar i {
+  width: 6px; height: 6px; flex: none;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+.tracks__url {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 auto;
+  padding: 1px 10px;
+  transform: translateX(-12px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-2) 70%, var(--bg-elev));
+  font-family: var(--font-mono);
+  font-size: 9.5px; line-height: 14px;
+  letter-spacing: 0.02em;
+  color: var(--tr-dim);
+}
+.tracks__shot > .tracks__screen {
+  aspect-ratio: 1692 / 1020;
+  overflow: hidden;
+  border: 1px solid var(--tr-frame);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  background: var(--app-bg);
+}
+.tracks__layer { position: absolute; inset: 0; }
+/* A slight zoom into each screen's most telling region, like a browser at
+   125% — keeps the real UI legible at thumbnail size. */
+.tracks__img {
+  width: 100%; height: 100%;
+  object-fit: cover; object-position: 0 0;
+  transform: scale(var(--tr-zoom, 1.3));
+  transform-origin: var(--tr-focus, 0 0);
+}
+.tracks__layer[data-screen="learning"] { --tr-focus: 0 0; }
+.tracks__layer[data-screen="coding"] { --tr-focus: 0 0; }
+.tracks__layer[data-screen="assessment"] { --tr-zoom: 1; }  /* any crop cuts the question mid-line */
+.tracks__layer[data-screen="interview"] { --tr-focus: 0 0; }
+.tracks__layer[data-screen="analytics"] { --tr-focus: 0 0; }
+.tracks__layer[data-screen="resume"] { --tr-focus: 58% 0; }
+.tracks__img--dark { display: none; }
+:root[data-theme="dark"] .tracks__img--light,
+[data-force-theme="dark"] .tracks__img--light { display: none; }
+:root[data-theme="dark"] .tracks__img--dark,
+[data-force-theme="dark"] .tracks__img--dark { display: block; }
+
+/* Stage caption */
+.tracks__step {
+  display: flex; align-items: baseline; gap: 10px;
+  margin-top: 34px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--tr-dim);
+}
+.tracks__num { color: var(--brand-ink); font-variant-numeric: tabular-nums; }
+.tracks__tool {
+  margin-top: 8px;
+  font-size: clamp(16px, 1.3vw, 18px);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+/* Roll mask: values slide vertically inside it on change */
+.tracks__mask { display: block; overflow: hidden; padding-bottom: 0.1em; margin-bottom: -0.1em; }
+.tracks__roll { display: block; }
+
+/* Hover: the frame lifts a few px off its shadow; its drop line takes the accent */
+@media (hover: hover) and (min-width: 900px) {
+  .tracks__stage:hover .tracks__shot { transform: translateY(-4px); box-shadow: var(--tr-shadow-up); }
+  .tracks__stage:hover .tracks__shot::after { transform: translateY(4px) scale(0.92); opacity: 0.7; }
+  .tracks__stage:hover::before { background: var(--brand); }
+}
+
+/* ---------- Facts ---------- */
+.tracks__facts {
+  margin: clamp(56px, 6vw, 88px) 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--line-strong);
+}
+.tracks__fact {
+  min-width: 0;
+  padding: 22px 24px 2px;
+  display: grid; gap: 8px; align-content: start;
+}
+.tracks__fact:first-child { padding-left: 0; }
+.tracks__fact + .tracks__fact { border-left: 1px solid var(--line); }
+.tracks__fact dt {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--tr-dim);
+}
+.tracks__fact dd {
+  margin: 0;
+  font-size: clamp(17px, 1.45vw, 20px);
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+/* ---------- Footnote + actions ---------- */
+.tracks__foot {
+  margin-top: clamp(40px, 4.5vw, 64px);
+  padding-top: 28px;
+  border-top: 1px solid var(--line);
+  display: flex; flex-wrap: wrap;
+  align-items: center; justify-content: space-between;
+  gap: 24px 48px;
+}
+.tracks__note { max-width: 62ch; font-size: 13.5px; line-height: 1.6; color: var(--tr-dim); }
+.tracks__ctas { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; }
+.tracks__ctas .link-arrow { font-size: 15px; }
+
+/* ---------- Tablet ---------- */
+@media (min-width: 900px) and (max-width: 1140px) {
+  .tracks { --tr-rail: 112px; }
+  .tracks__stage:nth-child(1) { --ny: 88px; }
+  .tracks__stage:nth-child(2) { --ny: 79px; }
+  .tracks__stage:nth-child(3) { --ny: 56px; }
+  .tracks__stage:nth-child(4) { --ny: 16px; }
+  .tracks__tab { font-size: 14px; padding: 8px 10px; }
+  .tracks__url { font-size: 8.5px; padding: 1px 6px; transform: none; }
+  .tracks__step { margin-top: 28px; }
+}
+
+/* ---------- Mobile: 2x2 selector, vertical route with the line on the left ---------- */
+@media (max-width: 899.98px) {
+  .tracks__head { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .tracks__lead { padding-bottom: 0; }
+
+  .tracks__seg { grid-template-columns: repeat(2, minmax(0, 1fr)); border-radius: 20px; }
+  .tracks__seg-thumb, .tracks__tab { border-radius: 15px; }
+  .tracks__tab { min-height: 54px; padding: 8px 10px; font-size: 14px; }
+  .tracks__tab:focus-visible { border-radius: 15px; }
+
+  .tracks__panel { margin-top: 40px; }
+  .tracks__stages { grid-template-columns: minmax(0, 1fr); row-gap: 44px; }
+  .tracks__stage {
+    --ny: 9px;
+    display: flex; flex-direction: column;
+    padding: 0 0 0 34px;
+  }
+  .tracks__stage:nth-child(n) { --ny: 9px; }
+  .tracks__stage::before { display: none; }
+  .tracks__node { left: 6px; top: var(--ny); }
+  .tracks__step { order: -2; margin-top: 0; line-height: 18px; }
+  .tracks__tool { order: -1; margin: 6px 0 18px; }
+
+  .tracks__facts { grid-template-columns: minmax(0, 1fr); margin-top: 48px; }
+  .tracks__fact { padding: 16px 0; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 4px 16px; align-items: baseline; }
+  .tracks__fact + .tracks__fact { border-left: 0; border-top: 1px solid var(--line); }
+  .tracks__fact dd { font-size: 16px; }
+}
+
+@media (max-width: 520px) {
+  .tracks__tab { font-size: 13.5px; padding: 6px 8px; }
+  .tracks__fact { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .tracks__fact dt { font-size: 11px; }
+  .tracks__foot { flex-direction: column; align-items: stretch; }
+  .tracks__ctas { flex-direction: column; align-items: stretch; gap: 18px; }
+  .tracks__ctas .btn { width: 100%; }
+  .tracks__ctas .link-arrow { align-self: flex-start; }
+}

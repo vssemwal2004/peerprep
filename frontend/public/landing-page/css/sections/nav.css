@@ -1,0 +1,117 @@
+/* ---------- Floating glass navigation ---------- */
+.nav {
+  position: fixed; inset: 14px 0 auto; z-index: 100;
+  padding-inline: var(--gutter);
+  pointer-events: none;
+  transition: transform 0.5s var(--ease-out);
+}
+.nav.is-hidden { transform: translateY(-130%); }
+.nav__inner {
+  pointer-events: auto;
+  max-width: var(--container);
+  margin-inline: auto;
+  height: 64px;
+  padding: 0 10px 0 22px;
+  display: flex; align-items: center; gap: 24px;
+  border-radius: 999px;
+  transition: background-color 0.4s, box-shadow 0.4s, height 0.4s var(--ease-out);
+}
+.nav:not(.is-scrolled) .nav__inner { box-shadow: inset 0 1px 0 var(--glass-border); }
+.nav.is-scrolled .nav__inner { background: var(--glass-bg-strong); }
+
+.nav__brand { display: flex; align-items: center; flex: none; }
+.logo { height: 34px; width: auto; }
+.logo--dark { display: none; }
+:root[data-theme="dark"] .logo--light { display: none; }
+:root[data-theme="dark"] .logo--dark { display: block; }
+
+.nav__links { display: flex; gap: 4px; margin-inline: auto; }
+.nav__links a {
+  position: relative;
+  padding: 8px 14px; border-radius: 999px;
+  font-size: 14px; font-weight: 600; color: var(--ink-2);
+  transition: color 0.25s, background-color 0.25s;
+}
+.nav__links a:hover { color: var(--ink); background: var(--line); }
+.nav__links a.is-active { color: var(--ink); }
+.nav__links a.is-active::after {
+  content: ""; position: absolute; left: 50%; bottom: 2px; width: 4px; height: 4px;
+  border-radius: 50%; background: var(--brand); transform: translateX(-50%);
+}
+
+.nav__actions { display: flex; align-items: center; gap: 10px; flex: none; }
+.nav__contact { font-size: 14px; font-weight: 700; color: var(--ink-2); padding: 8px 10px; }
+.nav__contact:hover { color: var(--ink); }
+
+/* Neumorphic sun ⇄ moon toggle */
+.theme-toggle {
+  width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+  color: var(--gold);
+  transition: transform 0.3s var(--ease-out);
+}
+.theme-toggle:hover { transform: rotate(-12deg); }
+.theme-toggle:active { box-shadow: inset 4px 4px 10px var(--neu-lo), inset -4px -4px 10px var(--neu-hi); }
+.theme-toggle__icon { width: 22px; height: 22px; overflow: visible; }
+.theme-toggle__core { transition: r 0.5s var(--ease-spring); transform-origin: center; }
+.theme-toggle__cut { transition: cx 0.5s var(--ease-out), cy 0.5s var(--ease-out); }
+.theme-toggle__rays { transform-origin: 12px 12px; transition: transform 0.5s var(--ease-out), opacity 0.3s; }
+/* light → sun */
+:root[data-theme="light"] .theme-toggle__cut { cx: 30; cy: -6; }
+:root[data-theme="light"] .theme-toggle__core { r: 4.5; }
+/* dark → moon */
+:root[data-theme="dark"] .theme-toggle__core { r: 8; }
+:root[data-theme="dark"] .theme-toggle__rays { opacity: 0; transform: rotate(-60deg) scale(0.4); }
+:root[data-theme="dark"] .theme-toggle { color: var(--gold-2); }
+
+.nav__burger {
+  display: none;
+  width: 44px; height: 44px; border-radius: 50%;
+  position: relative;
+}
+.nav__burger span {
+  position: absolute; left: 13px; right: 13px; height: 2px; border-radius: 2px;
+  background: var(--ink); transition: transform 0.35s var(--ease-out), top 0.35s var(--ease-out);
+}
+.nav__burger span:first-child { top: 17px; }
+.nav__burger span:last-child { top: 25px; }
+.nav__burger[aria-expanded="true"] span:first-child { top: 21px; transform: rotate(45deg); }
+.nav__burger[aria-expanded="true"] span:last-child { top: 21px; transform: rotate(-45deg); }
+
+.nav__sheet {
+  pointer-events: auto;
+  margin: 10px auto 0; max-width: var(--container);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: grid; gap: 16px;
+}
+.nav__sheet[hidden] { display: none; }
+.nav__sheet nav { display: grid; }
+.nav__sheet nav a {
+  padding: 14px 8px; font-size: 20px; font-weight: 700; letter-spacing: -0.02em;
+  border-bottom: 1px solid var(--line);
+}
+/* 721-1080px: Contact and Student login stay in the bar, so the sheet only
+   repeats the section links. */
+@media (min-width: 721px) {
+  .nav__sheet nav a[href^="http"],
+  .nav__sheet > .btn { display: none; }
+}
+
+/* The burger takes over exactly when the inline links disappear, so every
+   width has a way to reach the sections. */
+@media (max-width: 1080px) {
+  .nav__links { display: none; }
+  .nav__inner { justify-content: space-between; }
+  .nav__burger { display: block; }
+}
+@media (max-width: 720px) {
+  .nav { inset-block-start: 10px; }
+  .nav__inner { height: 58px; padding-left: 16px; gap: 8px; }
+  .logo { height: 28px; }
+  .nav__brand { min-height: 44px; }
+  .nav__contact, .nav__login { display: none; }
+}
+/* Without JS the toggle and burger cannot work: hide them. */
+.no-js .theme-toggle,
+.no-js .nav__burger { display: none; }

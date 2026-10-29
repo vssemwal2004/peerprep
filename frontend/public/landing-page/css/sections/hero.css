@@ -1,0 +1,382 @@
+/* ---------- Hero: editorial headline + grounded laptop ---------- */
+.hero {
+  padding-top: calc(var(--nav-h) + clamp(72px, 10vw, 128px));
+  padding-bottom: clamp(52px, 5vw, 76px);
+  overflow: hidden;
+}
+
+.hero__intro {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 28px;
+}
+.hero__title { max-width: 14ch; }
+.hero__accent { color: var(--brand-ink); padding-right: 0.04em; }
+.hero__lead { margin-inline: auto; max-width: 56ch; }
+.hero__ctas { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 8px; }
+.hero__note { font-size: 15px; color: var(--ink-3); display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 8px; }
+.hero__note .link-arrow { font-size: 15px; }
+
+/* Flowing line field behind the headline; fades out toward the laptop. */
+.hero__field {
+  position: absolute; inset: 0 0 auto; z-index: -1;
+  width: 100%; height: min(980px, 100vh);
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 62%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 62%, transparent 100%);
+}
+
+/* The hero is ~3,500px tall on desktop (pin spacer), so the shared studio
+   light's bottom pool would sit on the hero/#about seam and end in a hard
+   edge. Here it is only the top pool, bounded to the first screen. */
+.hero .studio-light {
+  inset: 0 0 auto;
+  height: min(1100px, 130vh);
+  background: radial-gradient(60% 50% at 50% 0%, var(--aurora-1), transparent 70%);
+}
+
+.hero__pin { position: relative; margin-top: clamp(48px, 6vw, 80px); }
+.hero__stage {
+  position: relative;
+  /* 1064 = 5% smaller than before; on desktop it is also capped by the
+     viewport height so laptop + notes fit while the section is pinned. */
+  max-width: calc(min(1064px, (100svh - 260px) * 1.447) + var(--gutter) * 2);
+}
+.hero__device { position: relative; width: 100%; }
+
+/* "Scroll to open" cue between the CTAs and the closed laptop (desktop pin
+   only): it sits in the empty top of the device box, so it is on the first
+   screen at load and fades during the first part of the pinned scroll. */
+.hero__cue {
+  position: absolute; left: 50%; top: clamp(24px, 4.4svh, 44px); z-index: 2;
+  transform: translateX(-50%);
+  display: none; align-items: center; gap: 14px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.hero__cue-line { position: relative; width: 56px; height: 1px; background: var(--line-strong); overflow: hidden; }
+.hero__cue-line i {
+  position: absolute; inset: 0; background: var(--ink);
+  transform: translateX(-100%);
+  animation: hero-cue 2.4s var(--ease-in-out) infinite;
+}
+@keyframes hero-cue { 50% { transform: translateX(0); } 100% { transform: translateX(100%); } }
+
+/* Spotlight rings over the laptop screen. The box matches the screen:
+   lid x 60 + bezel 20, top bezel 22, screen 1200 x 776 inside 1360 x 940. */
+.hero__marks {
+  position: absolute; z-index: 3; pointer-events: none;
+  left: calc(var(--gutter) + (100% - var(--gutter) * 2) * 80 / 1360);
+  width: calc((100% - var(--gutter) * 2) * 1200 / 1360);
+  top: 0;
+  aspect-ratio: 1200 / 776;
+  margin-top: calc((100% - var(--gutter) * 2) * 22 / 1360);
+  border-radius: 6px;
+  overflow: hidden;
+  display: none;
+}
+.hero__mark {
+  position: absolute;
+  border-radius: 12px;
+  border: 1.5px solid var(--brand);
+  box-shadow: 0 0 0 100vmax rgba(5, 8, 14, 0.38);
+  opacity: 0;
+  transform: scale(0.975);
+  transition: opacity 0.45s var(--ease-out), transform 0.55s var(--ease-out);
+}
+.hero__mark.is-active { opacity: 1; transform: scale(1); }
+.hero__cursor {
+  --cursor-x: 25%; --cursor-y: 45%;
+  position: absolute; left: var(--cursor-x); top: var(--cursor-y); z-index: 4;
+  width: 24px; height: 31px;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .28));
+  transform: translate(-3px, -2px);
+  transition: left .85s var(--ease-out), top .85s var(--ease-out), transform .16s ease;
+}
+.hero__cursor.is-clicking { animation: hero-cursor-click .42s .82s ease both; }
+@keyframes hero-cursor-click {
+  45% { transform: translate(-3px, -2px) scale(.78); }
+}
+/* Regions of the dashboard scene (stage offset 72,96 inside the screen). */
+.hero__mark--1 { left: 7.4%; top: 24.2%; width: 35.6%; height: 38%; }
+.hero__mark--2 { left: 43.6%; top: 24.2%; width: 26.8%; height: 47.6%; }
+.hero__mark--3 { left: 71.1%; top: 24.2%; width: 27.2%; height: 20.6%; }
+
+/* Ruled captions under the laptop; the active one fills its top rule. */
+.hero__notes {
+  margin-top: clamp(20px, 2.4vw, 32px);
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  max-width: calc(1064px + var(--gutter) * 2);
+}
+.hero__note-item {
+  position: relative;
+  display: grid; gap: 4px; align-content: start;
+  padding: 16px 20px 0 0;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  transition: color 0.4s var(--ease-out);
+  cursor: pointer;
+}
+.hero__note-item + .hero__note-item { padding-left: 20px; }
+.hero__note-item::before {
+  content: ""; position: absolute; left: 0; right: 0; top: -1px; height: 1px;
+  background: var(--brand);
+  transform: scaleX(0); transform-origin: 0 50%;
+  transition: transform 0.6s var(--ease-out);
+}
+.hero__note-item.is-active { color: var(--ink-2); }
+.hero__note-item.is-active::before { transform: scaleX(1); }
+.hero__note-item strong { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+.hero__note-item > span:last-child { font-size: 14px; line-height: 1.45; }
+.hero__note-n { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.14em; color: var(--ink-3); }
+.hero__note-item.is-active .hero__note-n { color: var(--brand-ink); }
+
+/* Desktop pinned sequence (class set by hero.js). The intro is tightened
+   and the pin follows it directly, so the top edge of the closed lid shows
+   above the fold on the first screen (1440x900 and 1024x768). */
+.hero.is-sequenced { padding-top: calc(var(--nav-h) + clamp(36px, 7svh - 8px, 80px)); }
+.hero.is-sequenced .hero__pin { margin-top: 0; }
+.hero.is-sequenced .hero__cue { display: flex; }
+.hero.is-sequenced .hero__marks { display: block; }
+.hero.is-auto-tour .hero__marks { display: block; }
+
+/* Fast, dependency-free entrance. The final state remains readable when
+   animation is disabled or unsupported. */
+@media (prefers-reduced-motion: no-preference) {
+  .hero__intro > *, .hero__stage, .hero__notes { opacity: 0; transform: translateY(18px); }
+  .no-js .hero__intro > *, .no-js .hero__stage, .no-js .hero__notes { opacity: 1; transform: none; }
+  .hero.is-ready .hero__intro > * { animation: hero-enter .75s var(--ease-out) forwards; }
+  .hero.is-ready .hero__intro > *:nth-child(2) { animation-delay: .06s; }
+  .hero.is-ready .hero__intro > *:nth-child(3) { animation-delay: .12s; }
+  .hero.is-ready .hero__intro > *:nth-child(4) { animation-delay: .18s; }
+  .hero.is-ready .hero__intro > *:nth-child(5) { animation-delay: .24s; }
+  .hero.is-ready .hero__stage { animation: hero-enter .9s .2s var(--ease-out) forwards; }
+  .hero.is-ready .hero__notes { animation: hero-enter .8s .32s var(--ease-out) forwards; }
+}
+@keyframes hero-enter { to { opacity: 1; transform: none; } }
+
+/* Perspective floor the laptop stands on — hairline grid receding to a horizon. */
+.hero__floor {
+  position: absolute; left: 50%; bottom: 2%;
+  width: 170%; height: 60%;
+  transform: translateX(-50%) perspective(900px) rotateX(74deg);
+  transform-origin: 50% 100%;
+  background-image:
+    linear-gradient(var(--line-strong) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-strong) 1px, transparent 1px);
+  background-size: 72px 72px;
+  background-position: center bottom;
+  -webkit-mask-image: radial-gradient(60% 90% at 50% 100%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(60% 90% at 50% 100%, #000 20%, transparent 75%);
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+/* Product proof: two measurable signals and a wider AI capability card. */
+.hero__facts {
+  margin: clamp(40px, 6vw, 72px) 0 0;
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, .9fr) minmax(0, 1.35fr);
+  gap: clamp(12px, 1.4vw, 20px);
+}
+.hero__fact-kicker {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--brand-ink);
+  line-height: 1.2;
+}
+.hero__fact-caps { margin: 5px 0 0; display: grid; gap: 12px; }
+.hero__fact-caps span {
+  position: relative;
+  padding-left: 19px;
+  font-size: 14.5px;
+  line-height: 1.42;
+  color: var(--ink-3);
+}
+.hero__fact-caps span::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .58em;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--fact-accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--fact-accent) 9%, transparent);
+}
+.hero__fact-caps b { display: block; font-size: 17px; font-weight: 650; letter-spacing: -0.015em; color: var(--ink); }
+.hero__fact {
+  --fact-accent: var(--brand);
+  position: relative;
+  isolation: isolate;
+  min-height: 190px;
+  padding: clamp(24px, 2.2vw, 32px);
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--fact-accent) 14%, var(--line));
+  border-radius: clamp(18px, 1.6vw, 24px);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--bg-elev) 96%, var(--fact-accent)), var(--bg-elev) 56%),
+    var(--bg-elev);
+  box-shadow: 0 18px 42px -36px color-mix(in srgb, var(--fact-accent) 46%, transparent);
+  transition:
+    opacity .5s var(--ease-out),
+    transform .45s var(--ease-out),
+    border-color .35s ease,
+    box-shadow .45s var(--ease-out);
+}
+.hero__fact:nth-child(2) { --fact-accent: color-mix(in srgb, var(--brand) 58%, #5b64e8); }
+.hero__fact:nth-child(3) { --fact-accent: var(--brand-ink); }
+.hero__fact::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, var(--fact-accent), color-mix(in srgb, var(--fact-accent) 22%, transparent));
+  transform: scaleX(.28);
+  transform-origin: 0 50%;
+  transition: transform .55s var(--ease-out);
+}
+.hero__fact::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 170px;
+  height: 170px;
+  right: -76px;
+  top: -96px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--fact-accent) 16%, transparent), transparent 70%);
+  transition: transform .6s var(--ease-out), opacity .4s ease;
+}
+.hero__fact-index {
+  margin-bottom: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.hero__fact-value {
+  margin-top: clamp(14px, 2vw, 24px);
+  display: flex;
+  align-items: flex-start;
+  font-size: clamp(42px, 4.4vw, 66px);
+  font-weight: 750;
+  letter-spacing: -0.055em;
+  line-height: .86;
+  font-variant-numeric: tabular-nums;
+  transition: transform .4s var(--ease-out);
+}
+.hero__fact-value sup {
+  margin: -.05em 0 0 .09em;
+  font-family: var(--font-mono);
+  font-size: .42em;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--fact-accent);
+}
+.hero__fact-label { margin: 3px 0 0; font-size: 15px; line-height: 1.45; color: var(--ink-2); max-width: 22ch; }
+.hero__fact--caps { align-content: start; }
+.hero__fact--caps .hero__fact-kicker { margin-top: clamp(12px, 1.5vw, 20px); }
+.hero__trust {
+  width: max-content;
+  max-width: 100%;
+  margin: clamp(24px, 3vw, 38px) auto 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  text-align: center;
+  transition: opacity .55s var(--ease-out), transform .55s var(--ease-out);
+}
+.hero__trust::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 5px var(--brand-soft);
+}
+
+/* Added only by hero.js, so content stays visible without JavaScript. */
+.hero--facts-ready .hero__fact:not(.is-visible) {
+  opacity: 0;
+  transform: translateY(28px) scale(.985);
+}
+.hero--facts-ready .hero__fact:not(.is-visible)::before { transform: scaleX(0); }
+.hero--facts-ready .hero__trust:not(.is-visible) {
+  opacity: 0;
+  transform: translateY(12px);
+}
+@media (hover: hover) and (pointer: fine) {
+  .hero__fact:hover {
+    transform: translateY(-7px);
+    border-color: color-mix(in srgb, var(--fact-accent) 40%, var(--line));
+    box-shadow:
+      0 28px 60px -34px color-mix(in srgb, var(--fact-accent) 36%, transparent),
+      0 12px 26px -24px rgba(14, 15, 18, .28);
+  }
+  .hero__fact:hover::before { transform: scaleX(1); }
+  .hero__fact:hover::after { transform: scale(1.18) translate(-8px, 8px); }
+  .hero__fact:hover .hero__fact-value { transform: translateY(-3px); }
+}
+
+/* Split-text line masks */
+.hero__title .hero-line { display: block; overflow: hidden; padding-bottom: 0.06em; }
+
+@media (max-width: 900px) {
+  .hero__notes { grid-template-columns: 1fr; gap: 0; }
+  .hero__note-item, .hero__note-item + .hero__note-item { padding: 14px 0; }
+  .hero__note-item { color: var(--ink-2); }
+  .hero__facts { grid-template-columns: repeat(2, 1fr); }
+  .hero__fact:nth-child(3) { grid-column: 1 / -1; min-height: 172px; }
+  .hero__fact-caps { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
+}
+@media (max-width: 700px) {
+  .hero__marks { display: none !important; }
+  .hero__note-item { cursor: default; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero__cursor { display: none; }
+  .hero__mark { transition: none; }
+  .hero__fact,
+  .hero__fact::before,
+  .hero__fact::after,
+  .hero__fact-value,
+  .hero__trust { transition: none !important; }
+  .hero--facts-ready .hero__fact,
+  .hero--facts-ready .hero__trust { opacity: 1; transform: none; }
+}
+/* Phones: the laptop bleeds past the gutters so the screen spans the full
+   width (bezel and deck ends are cropped by the section edge) — the product
+   UI stays readable instead of shrinking into the column. */
+@media (max-width: 600px) {
+  .hero__stage { padding-inline: 0; }
+  .hero__device { width: 114vw; margin-left: calc(50% - 57vw); }
+}
+@media (max-width: 520px) {
+  .hero__eyebrow { font-size: 11.5px; letter-spacing: 0.07em; gap: 8px; }
+  .hero__facts { grid-template-columns: minmax(0, 1fr); }
+  .hero__fact:nth-child(3) { grid-column: auto; }
+  .hero__fact { min-height: 168px; padding: 23px; }
+  .hero__fact-caps { grid-template-columns: minmax(0, 1fr); }
+  .hero__title br { display: none; }
+  .hero__ctas { flex-direction: column; align-self: stretch; }
+  .hero__ctas .btn { width: 100%; }
+  .hero__fact-label { font-size: 13.5px; }
+  .hero__trust { width: auto; align-items: flex-start; text-align: left; }
+  .hero__trust::before { margin-top: .48em; }
+}

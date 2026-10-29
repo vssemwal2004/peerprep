@@ -1,0 +1,302 @@
+/* ---------- Showcase: "the theatre" ----------
+   Follows the site theme: a paper band (--bg-2) with hairline edges in light,
+   a sunken near-black band in dark. One grounded laptop, the story beside it,
+   and a chapter bar underneath whose lines track progress.
+   >= 900px: laptop left, heading + caption in a narrow column on the right.
+   With motion allowed, js pins [data-showcase-pin] (.showcase--pinned) and
+   scroll moves through the chapters. < 900px: a stacked column. */
+.showcase {
+  --sc-aside: clamp(290px, 25vw, 360px);
+  --sc-pool: rgba(255, 255, 255, 0.55);
+  --sc-floor: rgba(14, 15, 18, 0.05);
+  background: var(--bg-2);
+  border-block: 1px solid var(--line);
+  overflow: hidden;
+}
+:root[data-theme="dark"] .showcase {
+  --sc-pool: rgba(255, 255, 255, 0.045);
+  --sc-floor: rgba(255, 255, 255, 0.02);
+  background: var(--bg-sunken);
+}
+
+.showcase__pin { position: relative; }
+
+/* Static studio light: a soft pool behind the laptop and a faint floor. */
+.showcase__light {
+  position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(40% 38% at 34% 44%, var(--sc-pool), transparent 72%),
+    radial-gradient(34% 9% at 34% 76%, var(--sc-floor), transparent 70%);
+}
+
+/* ---------- Layout ---------- */
+.showcase__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "head"
+    "stage"
+    "chap"
+    "cap"
+    "meta";
+}
+.showcase__head { grid-area: head; }
+.showcase__stage { grid-area: stage; }
+.showcase__chapters { grid-area: chap; }
+.showcase__captions { grid-area: cap; }
+.showcase__meta { grid-area: meta; }
+
+/* ---------- Head ---------- */
+.showcase__head { display: grid; gap: 18px; justify-items: start; }
+.showcase__title { max-width: 13ch; }
+.showcase__accent { color: var(--brand-ink); padding-right: 0.04em; }
+.showcase__lead {
+  max-width: 38ch;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.showcase__title .showcase-line { display: block; overflow: hidden; padding-bottom: 0.06em; }
+
+/* ---------- Stage ---------- */
+.showcase__panel { position: relative; }
+.showcase__panel:focus-visible { outline-offset: 12px; border-radius: 16px; }
+.showcase__device { width: 100%; }
+/* This laptop never tilts, so drop the 3D context: Chromium rasterises
+   preserve-3d layers at their logical size and resamples them, which made
+   the scaled-down product UI read soft. Flat 2D scaling keeps text crisp. */
+.showcase .device__scaler { perspective: none; }
+.showcase .device__body,
+.showcase .device__lid { transform: none; transform-style: flat; }
+.showcase .demo-root { will-change: opacity, transform; transform-origin: 50% 40%; }
+
+/* ---------- Chapter bar ---------- */
+.showcase__chapters {
+  display: grid;
+  grid-template-columns: repeat(var(--chapters, 7), minmax(0, 1fr));
+  gap: 20px;
+}
+.showcase__chapter {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 10px;
+  padding: 16px 0 6px;
+  text-align: left;
+  color: var(--ink-3);
+  transition: color 0.4s var(--ease-out);
+}
+.showcase__chapter:hover { color: var(--ink-2); }
+.showcase__chapter[aria-selected="true"] { color: var(--ink); }
+.showcase__chapter:focus-visible { outline-offset: 4px; }
+
+.showcase__line {
+  position: absolute; left: 0; right: 0; top: 0;
+  height: 2px;
+  background: var(--line-strong);
+  overflow: hidden;
+}
+.showcase__line i {
+  position: absolute; inset: 0;
+  background: var(--ink-3);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+.showcase__chapter[aria-selected="true"] .showcase__line i { background: var(--brand); }
+
+.showcase__num {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+.showcase__chapter[aria-selected="true"] .showcase__num { color: var(--brand-ink); }
+.showcase__name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Caption (crossfading stack: the cell is as tall as the tallest) ---------- */
+.showcase__captions { display: grid; }
+.showcase__cap {
+  grid-area: 1 / 1;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s var(--ease-out), visibility 0s linear 0.3s;
+}
+.showcase__cap.is-active {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.4s var(--ease-out), visibility 0s;
+}
+/* Without JS only the first caption is shown. */
+.showcase__cap[hidden] { display: none; }
+
+.showcase__kicker {
+  display: flex; align-items: baseline; gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.showcase__kicker span { color: var(--brand-ink); font-variant-numeric: tabular-nums; }
+.showcase__cap-text {
+  max-width: 26ch;
+  font-size: clamp(22px, 1.75vw, 27px);
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.showcase__feats { border-top: 1px solid var(--line); margin-top: 6px; }
+.showcase__feats li {
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+/* ---------- Pause + note ---------- */
+.showcase__meta { display: grid; justify-items: start; gap: 10px; }
+.showcase__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 44px;
+  min-height: 32px;
+  padding: 6px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  border-bottom: 1px solid var(--line-strong);
+  border-radius: 0;
+  transition: border-color 0.3s;
+}
+.showcase__toggle:hover { border-color: var(--ink); }
+/* A small transport glyph so the control reads as a button, not a label:
+   two bars while playing, a triangle while paused. */
+.showcase__toggle::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 9px;
+  background: linear-gradient(90deg, currentColor 0 32%, transparent 32% 68%, currentColor 68%);
+}
+.showcase__toggle[data-state="paused"]::before {
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.showcase__note { font-size: 13px; line-height: 1.5; color: var(--ink-3); max-width: 46ch; text-wrap: pretty; }
+
+/* ---------- Desktop theatre: laptop left, story right, chapters under ---------- */
+@media (min-width: 900px) {
+  .showcase__grid {
+    /* The laptop column is capped by the viewport height so laptop + chapter
+       bar always fit one screen (1.545 = the device's 1360:880 ratio). */
+    --sc-dev: calc((100svh - 230px) * 1.545);
+    max-width: calc(1360px + var(--gutter) * 2);
+    grid-template-columns: minmax(0, min(var(--sc-dev), 1000px)) var(--sc-aside);
+    grid-template-rows: auto 1fr auto auto;
+    grid-template-areas:
+      "stage head"
+      "stage cap"
+      "stage meta"
+      "chap  chap";
+    justify-content: center;
+    column-gap: clamp(40px, 4.4vw, 72px);
+  }
+  .showcase__stage { align-self: center; }
+  .showcase__head { gap: 14px; padding-bottom: 28px; }
+  .showcase__title { font-size: clamp(32px, 3vw, 46px); max-width: 12ch; }
+  .showcase__lead { font-size: 15px; max-width: 34ch; }
+  .showcase__captions { align-self: center; }
+  .showcase__meta { padding-top: 24px; align-self: end; }
+  .showcase__chapters { margin-top: clamp(26px, 3.4vh, 40px); }
+}
+
+/* Pinned: the stage is exactly one viewport, clear of the fixed nav. */
+.showcase--pinned { padding-block: 0; }
+.showcase--pinned .showcase__pin {
+  height: 100vh;
+  height: 100svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-top: calc(var(--nav-h) + 4px);
+  padding-bottom: clamp(20px, 3.5vh, 36px);
+}
+
+/* Shorter / narrower desktops: trim the column so it never outgrows the laptop. */
+@media (min-width: 900px) and (max-width: 1180px), (min-width: 900px) and (max-height: 820px) {
+  .showcase__lead { display: none; }
+  .showcase__head { padding-bottom: 20px; }
+  .showcase__cap { gap: 12px; }
+  .showcase__cap-text { font-size: 21px; }
+  .showcase__feats li { padding: 9px 0; font-size: 13.5px; }
+  .showcase__meta { padding-top: 16px; }
+}
+@media (min-width: 900px) and (max-width: 1100px) {
+  .showcase__chapters { gap: 14px; }
+  .showcase__chapter { grid-template-columns: 1fr; row-gap: 4px; }
+  .showcase__name { font-size: 14px; }
+}
+
+/* ---------- Tablet + mobile: stacked column, scrollable chapter row ---------- */
+@media (max-width: 899.98px) {
+  .showcase__head { margin-bottom: 40px; }
+  .showcase__lead { font-size: 17px; }
+  /* The deck is wider than the screen; let it run nearly to the edges so
+     the product UI gets every pixel on a phone. */
+  .showcase__stage { padding-inline: 6px; max-width: 760px; width: 100%; justify-self: center; }
+  .showcase__chapters { margin-top: 28px; }
+  .showcase__captions { margin-top: 32px; }
+  .showcase__meta { margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--line); }
+
+  .showcase__chapters {
+    display: flex;
+    gap: 14px;
+    margin-inline: calc(var(--gutter) * -1);
+    padding-inline: var(--gutter);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: var(--gutter);
+    scrollbar-width: none;
+  }
+  .showcase__chapters::-webkit-scrollbar { display: none; }
+  /* Edge fades say "more chapters this way"; JS drops each at its end. */
+  .showcase__chapters {
+    --sc-fl: 0px; --sc-fr: 48px;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--sc-fl), #000 calc(100% - var(--sc-fr)), transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 var(--sc-fl), #000 calc(100% - var(--sc-fr)), transparent 100%);
+  }
+  .showcase__chapters.is-scrolled { --sc-fl: 32px; }
+  .showcase__chapters.is-end { --sc-fr: 0px; }
+  .showcase__chapter {
+    flex: none;
+    width: 136px;
+    scroll-snap-align: start;
+  }
+  .showcase__cap-text { font-size: 24px; }
+  .showcase__light {
+    background: radial-gradient(60% 30% at 50% 36%, var(--sc-pool), transparent 72%);
+  }
+}

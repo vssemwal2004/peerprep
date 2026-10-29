@@ -1,0 +1,193 @@
+/* ---------- FAQ: sticky heading + hairline accordion ----------
+   Ruled, numbered rows. Answers open with a grid-rows height transition
+   (js/sections/faq-cta.js toggles aria-expanded / .is-open). Without JS
+   every answer stays visible. */
+
+.faq { border-top: 1px solid var(--line); }
+
+.faq__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 48px clamp(48px, 7vw, 120px);
+  align-items: start;
+}
+
+.faq__aside { align-self: stretch; }
+.faq__aside-inner {
+  position: sticky;
+  top: calc(var(--nav-h) + 48px);
+  display: grid;
+  gap: 24px;
+  justify-items: start;
+}
+.faq__title { max-width: 9ch; }
+.faq__title .faq-line { display: block; overflow: hidden; padding-bottom: 0.06em; }
+.faq__accent { color: var(--brand-ink); padding-right: 0.04em; }
+.faq__lead { font-size: 16px; line-height: 1.6; color: var(--ink-2); max-width: 34ch; }
+
+.faq__help {
+  margin-top: 16px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  display: grid; gap: 10px; justify-items: start;
+  width: 100%; max-width: 34ch;
+}
+.faq__help-q { font-size: 15px; color: var(--ink-3); }
+
+/* List ------------------------------------------------------------------ */
+.faq__list { border-top: 1px solid var(--line-strong); }
+.faq__item { border-bottom: 1px solid var(--line); }
+
+.faq__q { margin: 0; font: inherit; }
+.faq__btn {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 20px;
+  align-items: baseline;
+  gap: 16px;
+  padding: 28px 0;
+  text-align: left;
+  color: var(--ink);
+  border-radius: 0;
+}
+.faq__btn:focus-visible { outline-offset: -2px; border-radius: 4px; }
+
+.faq__num {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  transition: color 0.4s var(--ease-out);
+}
+.faq__text {
+  font-size: clamp(18px, 1.5vw, 21px);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.015em;
+  color: var(--ink-2);
+  transition: color 0.4s var(--ease-out);
+}
+.faq__btn:hover .faq__text,
+.faq__item.is-open .faq__text { color: var(--ink); }
+.faq__item.is-open .faq__num { color: var(--brand-ink); }
+
+/* Thin plus → minus */
+/* Baseline-aligned (an empty box sits its bottom edge on the first line's
+   baseline), so the bar lines up with the cap-height middle of the first line
+   even when the question wraps. */
+.faq__icon {
+  position: relative;
+  align-self: baseline;
+  width: 16px; height: 16px;
+  justify-self: end;
+  color: var(--ink-3);
+  transition: color 0.4s var(--ease-out), transform 0.6s var(--ease-out);
+}
+.faq__icon::before,
+.faq__icon::after {
+  content: "";
+  position: absolute; left: 0; top: 50%;
+  width: 100%; height: 1.5px;
+  margin-top: -0.75px;
+  border-radius: 1px;
+  background: currentColor;
+  transition: transform 0.6s var(--ease-out);
+}
+.faq__icon::after { transform: rotate(90deg); }
+.faq__btn:hover .faq__icon { color: var(--ink); }
+.faq__item.is-open .faq__icon { color: var(--ink); transform: rotate(180deg); }
+.faq__item.is-open .faq__icon::after { transform: rotate(180deg); }
+
+/* Answer: height animates via grid rows */
+.faq__a {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+.faq__a-inner { min-height: 0; overflow: hidden; }
+.faq__a p {
+  padding: 0 36px 32px 60px;
+  max-width: calc(60ch + 60px);
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+
+/* Closed panels are visibility:hidden on the region itself, so they leave the
+   tab order and the accessibility tree (no empty landmarks), after the
+   collapse has finished. */
+.faq.is-enhanced .faq__a {
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows 0.7s var(--ease-out), visibility 0s linear 0.7s;
+}
+.faq.is-enhanced .faq__item.is-open .faq__a {
+  visibility: visible;
+  transition: grid-template-rows 0.7s var(--ease-out), visibility 0s;
+}
+.faq.is-enhanced .faq__a-inner {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.4s var(--ease-out), transform 0.7s var(--ease-out);
+}
+.faq.is-enhanced .faq__item.is-open .faq__a { grid-template-rows: 1fr; }
+.faq.is-enhanced .faq__item.is-open .faq__a-inner {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.6s var(--ease-out) 0.12s, transform 0.7s var(--ease-out);
+}
+.faq.is-settling .faq__a,
+.faq.is-settling .faq__a-inner { transition: none !important; }
+
+/* ---------- Final CTA: a calm typographic close ---------- */
+.cta {
+  padding-block: clamp(120px, 15vw, 220px) clamp(96px, 11vw, 160px);
+  border-top: 1px solid var(--line);
+  overflow: hidden;
+}
+.cta__inner {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+
+.cta__eyebrow { margin-bottom: 32px; }
+
+.cta__title {
+  font-weight: 700;
+  font-size: clamp(42px, 6.4vw, 96px);
+  line-height: 1;
+  letter-spacing: -0.048em;
+  max-width: 15ch;
+  text-wrap: balance;
+}
+.cta__title .cta-line { display: block; overflow: hidden; padding-bottom: 0.07em; }
+.cta__accent { color: var(--brand-ink); padding-right: 0.04em; letter-spacing: -0.025em; }
+
+.cta__lead { margin: 32px auto 0; max-width: 52ch; text-wrap: pretty; }
+
+.cta__actions {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 12px;
+  margin-top: 44px;
+}
+.cta__more { margin-top: 28px; font-size: 15px; }
+
+/* Responsive ------------------------------------------------------------ */
+@media (max-width: 960px) {
+  .faq__grid { grid-template-columns: minmax(0, 1fr); gap: 56px; }
+  .faq__aside-inner { position: static; }
+  .faq__title { max-width: none; }
+  .faq__help { margin-top: 4px; }
+}
+@media (max-width: 600px) {
+  .faq__btn { grid-template-columns: 30px minmax(0, 1fr) 16px; gap: 12px; padding: 22px 0; }
+  .faq__num { font-size: 11px; }
+  .faq__text { font-size: 17px; }
+  .faq__icon { width: 14px; height: 14px; }
+  .faq__a p { padding: 0 8px 26px 42px; font-size: 15.5px; }
+
+  .cta__eyebrow { margin-bottom: 24px; }
+  .cta__actions { flex-direction: column; justify-self: stretch; }
+  .cta__actions .btn { width: 100%; }
+}
