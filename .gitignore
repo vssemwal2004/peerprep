@@ -56,10 +56,31 @@ mongo-backup.bat
 
 # Local scratch files and generated reports
 /tmp/
+/.tmp-*
+/.tmp-cdp-profile*/
 /backend/tmp/
+/backend/tmp-*
+/backend/reports/
+/backend/serial-rollback-*.json
 /frontend/tmp/
 /storage-audit/
-/demo-reel/out/
+/demo-reel/
+
+# Local git worktrees, agent/tool state and screenshots at the repo root
+/.worktrees/
+/.claude/
+/*.png
+/*.jpg
+
+# Presentation exports belong outside the repository
+*.pptx
+/*.pdf
+
+# Root-level files: only docs and config are tracked here; app code lives in frontend/ backend/ services/
+/package.json
+/package-lock.json
+/*.js
+/*.mjs
 
 # Local agent reports, solution dumps and standalone testcase scratch templates
 /.agents/
@@ -124,6 +145,7 @@ mongo-backup.bat
 # Local frontend debugging scripts and generated package archives
 /frontend/scripts/*
 !/frontend/scripts/compress-images.mjs
+!/frontend/scripts/build-production.mjs
 *.tgz
 
 # Python caches and local virtual environments

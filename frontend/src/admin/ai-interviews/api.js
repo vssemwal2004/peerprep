@@ -14,6 +14,14 @@ export const interviewApi = {
   create: (data, key) => send("", "POST", { data }, { "Idempotency-Key": key }),
   save: (id, revision, data) => send(`/${id}`, "PUT", { revision, data }),
   validate: (id, revision) => send(`/${id}/validate`, "POST", { revision }),
+  // Drafts questions for review only; the server never saves them.
+  generateQuestions: (id, body) =>
+    api.aiInterviewRequest(`/${id}/generate-questions`, {
+      method: "POST",
+      body,
+      timeoutMs: 60000,
+      skipQueue: true,
+    }),
   action: (id, action, revision, extra = {}, key) =>
     send(
       `/${id}${action === "delete" ? "" : `/${action}`}`,
@@ -31,4 +39,12 @@ export const interviewApi = {
     ),
   library: (values) => api.aiInterviewRequest(`/library?${query(values)}`),
   capabilities: () => api.aiInterviewRequest("/capabilities"),
+};
+// ANVI attempt reports (admin only, scoped to the admin's own interviews).
+export const reportApi = {
+  list: (values = {}) => api.aiInterviewRequest(`/reports/attempts?${query(values)}`),
+  get: (attemptId) =>
+    api.aiInterviewRequest(`/reports/attempts/${encodeURIComponent(attemptId)}`),
+  reEvaluate: (attemptId) =>
+    send(`/reports/attempts/${encodeURIComponent(attemptId)}/re-evaluate`, "POST", {}),
 };

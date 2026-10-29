@@ -1,4 +1,3 @@
-// AI Proctoring placeholder - implementation will be added in later steps.
 import { createCocoSsdModel } from '../utils/modelLoader';
 
 const SOURCE = 'coco_ssd';
@@ -7,6 +6,11 @@ const PERSON_LABEL = 'person';
 const MOBILE_LABELS = Object.freeze(['cell phone', 'mobile phone', 'phone']);
 const MOBILE_CONFIDENCE_THRESHOLD = 0.62;
 const PERSON_CONFIDENCE_THRESHOLD = 0.55;
+const MIN_PERSON_SCORE = 0.6;
+const MIN_PERSON_AREA_RATIO = 0.04;
+const PERSON_DUPLICATE_IOU = 0.3;
+// A full-frame phone candidate this strong makes the scan check every crop.
+const CROP_CANDIDATE_MIN_SCORE = 0.3;
 const MAX_DETECTED_BOXES = 20;
 const MIN_DETECTION_SCORE = 0.2;
 const MOBILE_CROP_CONFIDENCE_THRESHOLD = 0.72;
@@ -31,17 +35,31 @@ export class CocoSsdAdapter {
     this.loaded = false;
     this.mobileScanCanvas = null;
     this.fullFrameCanvas = null;
+    this.disposed = false;
+    this.backend = 'unknown';
+    this.lastInferenceMs = 0;
+    this.cropCursor = 0;
   }
 
   async load() {
     if (this.loaded && this.model) return this;
 
-    this.model = await createCocoSsdModel(this.options);
+    const model = await createCocoSsdModel(this.options);
+    // dispose() ran while the model was loading: never keep an orphan.
+    if (this.disposed) {
+      model?.dispose?.();
+      return this;
+    }
+    this.model = model;
+    this.backend = model?.peerprepBackend || 'unknown';
     this.loaded = true;
     return this;
   }
 
-  async detect(videoElement) {
+  // Steady state: one full-frame pass plus one rotating crop. All crops run only
+  // when the full frame shows a weak phone candidate or `scanAllCrops` is set
+  // (a phone is being confirmed). On the CPU backend only the full frame runs.
+  async detect(videoElement, scanOptions = {}) {
     if (!this.model || !isVideoReady(videoElement)) {
       return createDefaultObjectResult('video_not_ready');
     }
@@ -53,11 +71,13 @@ export class CocoSsdAdapter {
       personThreshold: Number(this.options.personThreshold || PERSON_CONFIDENCE_THRESHOLD),
     };
     const source = this.getFullFrameSource(videoElement);
+    const startedAt = now();
     const predictions = await this.model.detect(
       source || videoElement,
       detectOptions.maxNumBoxes,
       detectOptions.minScore,
     );
+    this.lastInferenceMs = Math.max(0, now() - startedAt);
     const fullFrameResult = normalizeCocoSsdPredictions(predictions, {
       mobileThreshold: detectOptions.mobileThreshold,
       personThreshold: detectOptions.personThreshold,
@@ -65,13 +85,26 @@ export class CocoSsdAdapter {
       frameHeight: Number(source?.height || videoElement.videoHeight || 0),
       scanRegion: 'full',
     });
-    if (fullFrameResult.mobileDetected) return fullFrameResult;
+    fullFrameResult.metadata.backend = this.backend;
+    fullFrameResult.metadata.inferenceMs = Math.round(this.lastInferenceMs);
+    if (fullFrameResult.mobileDetected || this.backend === 'cpu' || !this.model) return fullFrameResult;
 
-    const cropResult = await this.detectMobileInCrops(videoElement, detectOptions);
-    return mergeObjectResults(fullFrameResult, cropResult);
+    const weakPhoneCandidate = (Array.isArray(predictions) ? predictions : []).some((item) => (
+      isMobileLabel(item?.class) && clampScore(item?.score) >= CROP_CANDIDATE_MIN_SCORE
+    ));
+    const regions = weakPhoneCandidate || scanOptions.scanAllCrops === true
+      ? MOBILE_SCAN_REGIONS
+      : [MOBILE_SCAN_REGIONS[this.cropCursor++ % MOBILE_SCAN_REGIONS.length]];
+    const cropResult = await this.detectMobileInCrops(videoElement, detectOptions, regions);
+    const merged = mergeObjectResults(fullFrameResult, cropResult);
+    merged.metadata.backend = this.backend;
+    merged.metadata.inferenceMs = fullFrameResult.metadata.inferenceMs;
+    merged.metadata.cropScans = regions.length;
+    return merged;
   }
 
   dispose() {
+    this.disposed = true;
     this.model?.dispose?.();
     this.model = null;
     this.loaded = false;
@@ -79,7 +112,7 @@ export class CocoSsdAdapter {
     this.fullFrameCanvas = null;
   }
 
-  async detectMobileInCrops(videoElement, options = {}) {
+  async detectMobileInCrops(videoElement, options = {}, regions = MOBILE_SCAN_REGIONS) {
     const canvas = this.getMobileScanCanvas();
     const context = canvas?.getContext?.('2d', { willReadFrequently: true });
     if (!canvas || !context) return createDefaultObjectResult('crop_canvas_unavailable');
@@ -89,7 +122,10 @@ export class CocoSsdAdapter {
     if (!videoWidth || !videoHeight) return createDefaultObjectResult('video_not_ready');
 
     const cropResults = [];
-    for (const region of MOBILE_SCAN_REGIONS) {
+    for (const region of regions) {
+      // Let input and rendering run between inference passes.
+      await yieldToMain();
+      if (!this.model) break;
       const sourceX = Math.max(0, Math.floor(region.x * videoWidth));
       const sourceY = Math.max(0, Math.floor(region.y * videoHeight));
       const sourceWidth = Math.min(videoWidth - sourceX, Math.floor(region.width * videoWidth));
@@ -166,7 +202,7 @@ export const cocoSsdAdapter = {
   CocoSsdAdapter,
 };
 
-function normalizeCocoSsdPredictions(predictions = [], options = {}) {
+export function normalizeCocoSsdPredictions(predictions = [], options = {}) {
   const objects = Array.isArray(predictions)
     ? predictions
       .filter((item) => item && typeof item.class === 'string')
@@ -185,7 +221,9 @@ function normalizeCocoSsdPredictions(predictions = [], options = {}) {
     frameWidth: options.frameWidth,
     frameHeight: options.frameHeight,
   }));
-  const personObjects = objects.filter((item) => item.class === PERSON_LABEL && item.score >= personThreshold);
+  const personObjects = dedupePersonBoxes(objects.filter((item) => item.class === PERSON_LABEL
+    && item.score >= Math.max(personThreshold, MIN_PERSON_SCORE)
+    && getBoxAreaRatio(item.bbox, options.frameWidth, options.frameHeight) >= MIN_PERSON_AREA_RATIO));
   const bestMobileScore = getBestScore(mobileObjects);
   const bestPersonScore = getBestScore(personObjects);
 
@@ -253,6 +291,58 @@ function mergeObjectResults(...results) {
       scans: validResults.map((result) => result.metadata?.scanRegion).filter(Boolean),
     },
   };
+}
+
+function getBoxAreaRatio(bbox, frameWidth, frameHeight) {
+  if (!Array.isArray(bbox) || bbox.length < 4) return 0;
+  const width = Math.max(0, Number(bbox[2]) || 0);
+  const height = Math.max(0, Number(bbox[3]) || 0);
+  const frameArea = Math.max(1, Number(frameWidth || 0)) * Math.max(1, Number(frameHeight || 0));
+  return (width * height) / frameArea;
+}
+
+function getBoxOverlap(a, b) {
+  const [ax, ay, aw, ah] = a.map((value) => Number(value) || 0);
+  const [bx, by, bw, bh] = b.map((value) => Number(value) || 0);
+  const overlapWidth = Math.max(0, Math.min(ax + aw, bx + bw) - Math.max(ax, bx));
+  const overlapHeight = Math.max(0, Math.min(ay + ah, by + bh) - Math.max(ay, by));
+  const intersection = overlapWidth * overlapHeight;
+  const union = (aw * ah) + (bw * bh) - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+function containsCenter(outer, inner) {
+  const [ox, oy, ow, oh] = outer.map((value) => Number(value) || 0);
+  const [ix, iy, iw, ih] = inner.map((value) => Number(value) || 0);
+  const centerX = ix + (iw / 2);
+  const centerY = iy + (ih / 2);
+  return centerX >= ox && centerX <= ox + ow && centerY >= oy && centerY <= oy + oh;
+}
+
+// One body split into two boxes (or a box inside another) is one person.
+export function dedupePersonBoxes(persons = []) {
+  const kept = [];
+  [...persons]
+    .sort((a, b) => clampScore(b.score) - clampScore(a.score))
+    .forEach((person) => {
+      if (!Array.isArray(person.bbox) || person.bbox.length < 4) return;
+      const duplicate = kept.some((other) => getBoxOverlap(other.bbox, person.bbox) > PERSON_DUPLICATE_IOU
+        || containsCenter(other.bbox, person.bbox)
+        || containsCenter(person.bbox, other.bbox));
+      if (!duplicate) kept.push(person);
+    });
+  return kept;
+}
+
+function yieldToMain() {
+  if (typeof globalThis.scheduler?.yield === 'function') return globalThis.scheduler.yield();
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function now() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
 }
 
 function isVideoReady(videoElement) {

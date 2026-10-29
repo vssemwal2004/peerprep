@@ -92,6 +92,20 @@ export function getPlatformRateLimitKey(req) {
   return identifier ? `${baseKey}:identity:${identifier}` : baseKey;
 }
 
+// Paths below the /api mount (optionally under /u/<university>) where an
+// anonymous request legitimately carries the identity it is for.
+const IDENTITY_KEYED_API_PATH = /^\/(?:u\/[a-z0-9][a-z0-9-]{1,62}\/)?auth\/(?:login|password\/request-reset|password\/reset)\/?$/;
+
+/**
+ * Key for the global API limiter. Elsewhere a client-chosen body field such as
+ * `email` must not mint a fresh bucket per request, so only the anonymous
+ * login/password-reset requests (a whole lab can share one NAT IP) keep the
+ * identity suffix. Those routes also have their own stricter limiters.
+ */
+export function getApiRateLimitKey(req) {
+  return IDENTITY_KEYED_API_PATH.test(req.path || '') ? getPlatformRateLimitKey(req) : getRateLimitKey(req);
+}
+
 /**
  * Clean up expired entries periodically to prevent memory leaks
  * Runs every 15 minutes - very lightweight operation
@@ -294,7 +308,7 @@ export const apiLimiter = rateLimit({
   message: 'Too many requests',
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: getPlatformRateLimitKey,
+  keyGenerator: getApiRateLimitKey,
   // Skip static health checks. Execution-result polling (GET /results/:jobId) has its own,
   // dedicated limiter (resultsPollLimiter); otherwise a few slow Run/Submit jobs polling once a
   // second would exhaust this shared budget and lock the student out of the whole API.

@@ -4,10 +4,11 @@ import { announcePrepCoinChange } from './prepCoinEvents';
 import CostDialog from './CoinCostDialog';
 
 /**
- * Wraps a paid student action. `checkout(run, { alreadyStarted, onSuccess, onError })` runs it at
- * once when the feature is free or already paid for; otherwise the student first confirms the cost.
+ * Wraps a paid student action. `checkout(run, { alreadyStarted, onSuccess, onError, onCancel })` runs it
+ * at once when the feature is free or already paid for; otherwise the student first confirms the cost.
  * `run(expectedCost)` passes the cost to the API so a changed price is refused, never charged.
- * A shortfall or price change keeps the dialog open; any other failure goes to `onError`.
+ * A shortfall or price change keeps the dialog open; any other failure goes to `onError`, and a
+ * dismissed dialog (nothing run, nothing charged) goes to `onCancel`.
  */
 export function usePrepCoinCheckout(featureKey) {
   const [state, setState] = useState(null);
@@ -28,8 +29,8 @@ export function usePrepCoinCheckout(featureKey) {
     }
   }, []);
 
-  const checkout = useCallback(async (run, { alreadyStarted = false, onSuccess, onError } = {}) => {
-    const action = { run, onSuccess, onError };
+  const checkout = useCallback(async (run, { alreadyStarted = false, onSuccess, onError, onCancel } = {}) => {
+    const action = { run, onSuccess, onError, onCancel };
     if (alreadyStarted) return attempt(action, null);
     let quote = null;
     try {
@@ -44,8 +45,14 @@ export function usePrepCoinCheckout(featureKey) {
     return undefined;
   }, [attempt, featureKey]);
 
+  // Dismissing the dialog (Cancel, Close or the backdrop) runs nothing and tells the caller.
+  const cancel = () => {
+    if (!state || state.busy) return;
+    setState(null);
+    state.action.onCancel?.();
+  };
   const dialog = state && !(state.busy && !state.quote) && state.quote
-    ? <CostDialog state={state} onCancel={() => !state.busy && setState(null)} onConfirm={() => attempt(state.action, state.quote)} />
+    ? <CostDialog state={state} onCancel={cancel} onConfirm={() => attempt(state.action, state.quote)} />
     : null;
   return { checkout, dialog, pending: Boolean(state?.busy) };
 }

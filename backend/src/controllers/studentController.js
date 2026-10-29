@@ -14,6 +14,10 @@ import {
   loadStudentMasterMaps,
   resolveStudentMasterFields,
 } from '../services/masterDataService.js';
+import { resolveNewStudentFeatureAccess } from './studentAccessController.js';
+import { normalizeStudentFeatureAccess } from '../services/studentFeatureAccess.js';
+import { exactEmailPattern, normalizeEmailAddress } from '../utils/emailIdentity.js';
+import { currentTenant } from '../platform/tenantContext.js';
 
 // Generate random password (7-8 characters)
 function generateRandomPassword() {
@@ -170,6 +174,41 @@ function mapFacet(entries = []) {
     .filter((entry) => entry.value);
 }
 
+// Filter options describe the whole visible roster, not the current filter, so they
+// change only when students are added or edited. Rebuilding them read every student
+// on each page change, search keystroke and filter change.
+const FACET_CACHE_TTL_MS = 60 * 1000;
+const facetCache = new Map();
+
+function loadStudentFacets(baseQuery) {
+  const key = `${currentTenant()?.universityId || 'platform'}:${JSON.stringify(baseQuery)}`;
+  const cached = facetCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+  if (facetCache.size > 200) {
+    for (const [entryKey, entry] of facetCache) if (entry.expiresAt <= Date.now()) facetCache.delete(entryKey);
+  }
+  const promise = User.aggregate([
+    { $match: baseQuery },
+    {
+      $facet: {
+        semesters: [
+          { $match: { semester: { $gte: 1, $lte: 8 } } },
+          { $group: { _id: '$semester', count: { $sum: 1 } } },
+          { $sort: { _id: 1 } },
+        ],
+        branches: stringFacet('branch'),
+        courses: stringFacet('course'),
+        colleges: stringFacet('college'),
+        groups: stringFacet('group'),
+        coordinators: stringFacet('teacherIds', true),
+      },
+    },
+  ]).then((rows) => rows[0] || {});
+  facetCache.set(key, { promise, expiresAt: Date.now() + FACET_CACHE_TTL_MS });
+  promise.catch(() => { if (facetCache.get(key)?.promise === promise) facetCache.delete(key); });
+  return promise;
+}
+
 export async function listAllStudents(req, res) {
   try {
     const { sortOrder, page, limit } = req.query;
@@ -183,32 +222,16 @@ export async function listAllStudents(req, res) {
     const requestedLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 25));
     const paginated = page !== undefined || limit !== undefined;
     const studentQuery = User.find(query)
-      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl mustChangePassword activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt credentialEmailLastAttemptAt')
+      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl mustChangePassword activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt credentialEmailLastAttemptAt accessScope featureAccess')
       .sort({ createdAt: sort, _id: sort });
     if (paginated) {
       studentQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
     }
 
-    const [students, total, facetResults] = await Promise.all([
+    const [students, total, facets] = await Promise.all([
       studentQuery.lean(),
       User.countDocuments(query),
-      User.aggregate([
-        { $match: baseQuery },
-        {
-          $facet: {
-            semesters: [
-              { $match: { semester: { $gte: 1, $lte: 8 } } },
-              { $group: { _id: '$semester', count: { $sum: 1 } } },
-              { $sort: { _id: 1 } },
-            ],
-            branches: stringFacet('branch'),
-            courses: stringFacet('course'),
-            colleges: stringFacet('college'),
-            groups: stringFacet('group'),
-            coordinators: stringFacet('teacherIds', true),
-          },
-        },
-      ]),
+      loadStudentFacets(baseQuery),
     ]);
 
     const studentIds = students.map((student) => student._id);
@@ -228,6 +251,7 @@ export async function listAllStudents(req, res) {
       const lastActive = latestActivity || s.activeSessionCreatedAt || null;
       return {
         ...s,
+        featureAccess: normalizeStudentFeatureAccess(s.featureAccess, { legacyAccessScope: s.accessScope }),
         teacherId: Array.isArray(s.teacherIds) ? s.teacherIds.join(', ') : (s.teacherIds || ''),
         // Legacy/imported students may not have mustChangePassword populated.
         // A missing login marker is the authoritative signal that resetting to a
@@ -248,7 +272,6 @@ export async function listAllStudents(req, res) {
     });
     
     const pages = paginated ? Math.max(1, Math.ceil(total / requestedLimit)) : 1;
-    const facets = facetResults[0] || {};
     res.json({
       count: studentsWithTeacherId.length,
       total,
@@ -294,7 +317,7 @@ export async function resendStudentCredentials(req, res) {
     ...studentScope(req.user),
     _id: { $in: studentIds },
     activeSessionCreatedAt: { $exists: false },
-  }).select('_id name email studentId passwordHash mustChangePassword activeSessionCreatedAt');
+  }).select('_id name email passwordHash mustChangePassword activeSessionCreatedAt');
   const batchId = crypto.randomUUID();
   const students = [];
 
@@ -321,23 +344,23 @@ export async function resendStudentCredentials(req, res) {
         $unset: { credentialEmailLastError: 1 },
       },
       { new: false },
-    ).select('_id name email studentId passwordHash');
+    ).select('_id name email passwordHash');
     if (claimed) students.push(claimed);
   }
 
   const skipped = studentIds.length - students.length;
   const jobs = students.map((student) => {
     const password = generateRandomPassword();
+    const email = normalizeEmailAddress(student.email);
     return {
       type: 'student_credentials',
-      to: student.email,
+      to: email,
       recipientId: student._id,
       targetType: 'STUDENT',
       targetId: student._id,
       idempotencyKey: `student-credentials:${student._id}:${batchId}`,
       payload: {
-        to: student.email,
-        studentId: student.studentId,
+        to: email,
         password,
         previousPasswordHash: student.passwordHash,
       },
@@ -594,7 +617,9 @@ export async function checkStudentsCsv(req, res) {
   const studentIds = normalizedRows.map((r) => r.studentid).filter(Boolean);
 
   // Bulk query existing users in DB to avoid per-row queries
-  const existing = await User.find({ $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }] }).select('email studentId name branch course college teacherIds semester group').lean();
+  const existing = await User.find({ $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }] })
+    .collation({ locale: 'en', strength: 2 })
+    .select('email studentId name branch course college teacherIds semester group').lean();
   const existingByEmail = new Map();
   const existingByStudentId = new Map();
   
@@ -777,6 +802,11 @@ export async function uploadStudentsCsv(req, res) {
   }
   
   const results = [];
+  const hasRequestedFeatureAccess = req.body?.featureAccess !== undefined && req.body?.featureAccess !== '';
+  const requestedFeatureAccess = hasRequestedFeatureAccess
+    ? await resolveNewStudentFeatureAccess(req.body.featureAccess, req.user)
+    : null;
+  const defaultFeatureAccess = await resolveNewStudentFeatureAccess(undefined, req.user);
 
   // Required fields for onboarding - password is auto-generated
   const requiredFields = ['name', 'email', 'studentid', 'branch', 'teacherid', 'semester', 'course', 'college'];
@@ -796,7 +826,9 @@ export async function uploadStudentsCsv(req, res) {
   const studentIds = normalizedRows.map((r) => r.studentid).filter(Boolean);
 
   // Bulk query existing users in DB to avoid per-row queries
-  const existing = await User.find({ $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }] }).lean();
+  const existing = await User.find({ $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }] })
+    .collation({ locale: 'en', strength: 2 })
+    .lean();
   const existingByEmail = new Map();
   const existingByStudentId = new Map();
   
@@ -944,6 +976,7 @@ export async function uploadStudentsCsv(req, res) {
           semester: semesterNum,
           group: row.group,
         };
+        if (requestedFeatureAccess) updateData.featureAccess = requestedFeatureAccess;
         
         await User.findByIdAndUpdate(existingUser._id, updateData);
         
@@ -983,6 +1016,7 @@ export async function uploadStudentsCsv(req, res) {
         group: row.group,
         mustChangePassword: true,
         credentialEmailStatus: 'not_sent',
+        featureAccess: requestedFeatureAccess || defaultFeatureAccess,
       });
       createdUserIds.push(user._id);
       results.push({ row: row.__row, id: user._id, email, studentid, status: 'created' });
@@ -1068,7 +1102,8 @@ export async function uploadStudentsCsv(req, res) {
 
 export async function createStudent(req, res) {
   try {
-    const { name, email, studentid, branch, course, college, teacherid, semester, group } = req.body || {};
+    const { name, email, studentid, branch, course, college, teacherid, semester, group, featureAccess } = req.body || {};
+    const normalizedEmail = normalizeEmailAddress(email);
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     
     // Check all required fields (password is auto-generated)
@@ -1081,7 +1116,7 @@ export async function createStudent(req, res) {
       return res.status(400).json({ error: 'Semester must be a number between 1 and 8' });
     }
     
-    if (!emailRegex.test(email)) return res.status(400).json({ error: 'Invalid email format' });
+    if (!emailRegex.test(normalizedEmail || '')) return res.status(400).json({ error: 'Invalid email format' });
     const canonicalMasterFields = await resolveStudentMasterFields({ branch, course, college, semester: semesterNum });
 
     // Parse and validate multiple coordinator IDs
@@ -1101,19 +1136,22 @@ export async function createStudent(req, res) {
       return res.status(400).json({ error: `Teacher ID / Coordinator code(s) "${invalidIds.join(', ')}" do not match any existing coordinator. Please create the coordinator first or correct the Teacher ID.` });
     }
 
-    const exists = await User.findOne({ $or: [{ email }, { studentId: studentid }] });
+    const exists = await User.findOne({
+      $or: [{ email: exactEmailPattern(normalizedEmail) }, { studentId: studentid }],
+    });
     if (exists) return res.status(409).json({ error: 'Student with email or studentId already exists' });
 
     // Generate random password (7-8 characters)
     const generatedPassword = generateRandomPassword();
     const passwordHash = await User.hashPassword(generatedPassword);
     const userData = {
-      role: 'student', name, email, studentId: studentid, passwordHash,
+      role: 'student', name, email: normalizedEmail, studentId: studentid, passwordHash,
       branch: canonicalMasterFields.branch,
       course: canonicalMasterFields.course,
       college: canonicalMasterFields.college,
       teacherIds: teacherIdList, semester: canonicalMasterFields.semester, mustChangePassword: true,
       credentialEmailStatus: 'not_sent',
+      featureAccess: await resolveNewStudentFeatureAccess(featureAccess, req.user),
     };
     
     // Add group if provided
@@ -1162,7 +1200,7 @@ function normalizeRow(r) {
   for (const [k, v] of Object.entries(r)) map[k.trim().toLowerCase()] = (v ?? '').toString().trim();
   return {
     name: map.name,
-    email: map.email,
+    email: normalizeEmailAddress(map.email),
     studentid: map.studentid || map.student_id || map.sid,
     branch: map.branch,
     teacherid: map.teacherid || map.teacher_id || map.teacherId,
@@ -1373,20 +1411,28 @@ export async function listStudentUploadBatches(req, res) {
     let scopedStudentIds = null;
     if (req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       const assigned = await User.find({ role: 'student', teacherIds: req.user.coordinatorId }).select('_id').lean();
-      scopedStudentIds = new Set(assigned.map((student) => String(student._id)));
-      query.studentIds = { $in: [...scopedStudentIds] };
+      scopedStudentIds = assigned.map((student) => student._id);
+      query.studentIds = { $in: scopedStudentIds };
     }
-    const batches = await StudentUploadBatch.find(query)
-      .sort({ createdAt: -1 })
-      .populate('uploadedBy', 'name email role coordinatorId')
-      .lean();
-    const visibleBatches = scopedStudentIds
-      ? batches.map((batch) => ({
-        ...batch,
-        studentIds: (batch.studentIds || []).filter((id) => scopedStudentIds.has(String(id))),
-      }))
-      : batches;
-    res.json({ count: visibleBatches.length, batches: visibleBatches });
+    // Every assessment saves a list of all its students, so the ID arrays grow with
+    // each assessment. Callers only show how many students a list has, so send the
+    // count and leave the arrays in the database.
+    const batches = await StudentUploadBatch.aggregate([
+      { $match: query },
+      { $sort: { createdAt: -1 } },
+      {
+        $addFields: {
+          studentCount: {
+            $size: scopedStudentIds
+              ? { $setIntersection: [{ $ifNull: ['$studentIds', []] }, scopedStudentIds] }
+              : { $ifNull: ['$studentIds', []] },
+          },
+        },
+      },
+      { $project: { studentIds: 0, recordIds: 0, createdRecordIds: 0, updatedRecordIds: 0, errorRows: 0, originalRows: 0 } },
+    ]);
+    await StudentUploadBatch.populate(batches, { path: 'uploadedBy', select: 'name email role coordinatorId' });
+    res.json({ count: batches.length, batches });
   } catch (error) {
     res.status(500).json({ error: 'Failed to load bulk student lists.' });
   }
@@ -1577,7 +1623,18 @@ export async function updateStudent(req, res) {
     
     // Update fields
     if (name) student.name = name;
-    if (email) student.email = email;
+    if (email) {
+      const normalizedEmail = normalizeEmailAddress(email);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        return res.status(400).json({ error: 'Invalid email format' });
+      }
+      const emailOwner = await User.findOne({
+        _id: { $ne: student._id },
+        email: exactEmailPattern(normalizedEmail),
+      }).select('_id').lean();
+      if (emailOwner) return res.status(409).json({ error: 'Another user with this email already exists' });
+      student.email = normalizedEmail;
+    }
     if (sid) student.studentId = sid;
     if (canonicalMasterFields.course) student.course = canonicalMasterFields.course;
     if (canonicalMasterFields.branch) student.branch = canonicalMasterFields.branch;

@@ -90,6 +90,30 @@ test('errors are forwarded and release only after any started continuation finis
   await gate(() => {} )({}, response(), next);
 });
 
+test('one client cannot hold more than its own share of slots; other clients and its final submit still pass', async () => {
+  const gate = createAssessmentAdmission({ workLimit: 48, finalLimit: 32, perClientLimit: 2, clientKey: (req) => req.client });
+  const work = deferred();
+  const handler = gate(() => work.promise);
+  const finalHandler = gate(() => {}, { group: 'final' });
+  const held = [handler({ client: 'a' }, response(), next), handler({ client: 'a' }, response(), next)];
+  const busy = response();
+  await handler({ client: 'a' }, busy, next);
+  assert.equal(busy.statusCode, 429);
+  assert.equal(busy.body.code, 'ASSESSMENT_CLIENT_BUSY');
+  assert.equal(busy.headers['Retry-After'], '1');
+  const other = response();
+  const otherPending = handler({ client: 'b' }, other, next);
+  const finalResponse = response();
+  await finalHandler({ client: 'a' }, finalResponse, next);
+  assert.equal(finalResponse.statusCode, undefined);
+  work.resolve();
+  await Promise.all([...held, otherPending]);
+  assert.equal(other.statusCode, undefined);
+  const again = response();
+  await handler({ client: 'a' }, again, next);
+  assert.equal(again.statusCode, undefined);
+});
+
 test('already-aborted requests do not start authentication or controller work', async () => {
   const gate = createAssessmentAdmission({ workLimit: 1 });
   let called = 0;

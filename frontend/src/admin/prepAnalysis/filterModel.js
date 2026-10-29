@@ -41,8 +41,6 @@ let sequence = 0;
 export const nodeId = () => `n${Date.now().toString(36)}${(sequence += 1).toString(36)}`;
 export const groupName = (index) => `Group ${String.fromCharCode(65 + index)}`;
 
-export const operatorLabel = (field, operator) => (OPERATORS[field?.kind] || []).find((entry) => entry.value === operator)?.label || operator;
-
 export function defaultValue(operator) {
   if (LIST_OPERATORS.includes(operator)) return [];
   if (operator === "between") return ["", ""];

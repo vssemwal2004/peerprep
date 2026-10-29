@@ -106,7 +106,7 @@ export async function listProblemSubmissions(req, res) {
 
   res.json({
     // The problem is public here (checked above); its failing practice case is shown unless an assessment grades on it.
-    submissions: submissions.map((submission) => serializeStudentSubmission(submission, { revealFailedCase: !gradedByAssessment })),
+    submissions: submissions.map((submission) => serializeStudentSubmission(submission, { revealFailedCase: !gradedByAssessment, concealHidden: gradedByAssessment })),
     pagination: {
       page,
       limit,

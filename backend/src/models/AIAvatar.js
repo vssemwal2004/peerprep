@@ -7,6 +7,9 @@ const schema = new mongoose.Schema({
   active: { type: Boolean, default: true },
   data: { type: mongoose.Schema.Types.Mixed, required: true },
   assets: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+  // Reusable, silent interview loops. Speech remains on the Gemini Live audio
+  // channel; these clips only follow the conversation state.
+  gestures: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
   languagePreviews: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
   render: { type: mongoose.Schema.Types.Mixed, default: () => ({ status: "idle", stage: "", error: "" }) },
   // A partial unique index serializes render requests across an owner's avatars.

@@ -100,20 +100,6 @@ function SubjectCard({ subject, index }) {
   </article>;
 }
 
-export function LearningSubjects({ subjects, section, onRetry }) {
-  if (!section.loading && !section.error && !subjects.length) return null;
-  return <section aria-labelledby="learning-paths-title">
-    <SectionHeader id="learning-paths-title" title="Explore your learning" action={<Link className={textLink} to="/student/learning">All subjects<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>} />
-    {section.loading
-      ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((value) => <Skeleton key={value} className="h-[268px] rounded-2xl" />)}</div>
-      : section.error
-        ? <Unavailable message="Your learning subjects could not be loaded." onRetry={onRetry} />
-        : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {subjects.slice(0, 3).map((subject, index) => <SubjectCard key={subject.id} subject={subject} index={index} />)}
-        </div>}
-  </section>;
-}
-
 const DIFFICULTY_RAIL = Object.fromEntries(Object.entries(DIFFICULTY_THEME).map(([key, theme]) => [key.toLowerCase(), theme.rail]));
 
 export function PracticeSuggestions({ problems, section, onRetry }) {

@@ -58,10 +58,6 @@ function isLegacyFullProgramDraft(language, sourceCode) {
   return entrypointPatterns[normalizedLanguage]?.test(source) || false;
 }
 
-export function resolveProblemSort(value) {
-  return PROBLEM_SORT_OPTIONS.find((option) => option.value === value) || PROBLEM_SORT_OPTIONS[0];
-}
-
 export function getProblemDraftStorageKey(problemId) {
   return `${DRAFT_KEY_PREFIX}${problemId}`;
 }
@@ -192,21 +188,6 @@ export function isRunExecutionResult(result) {
     || result?.terminal
     || (result?.status && typeof result.status === 'object' && 'id' in result.status),
   );
-}
-
-export function verdictBadgeClass(status) {
-  switch (status) {
-    case 'Accepted':
-      return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800';
-    case 'Wrong Answer':
-      return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800';
-    case 'Compilation Error':
-    case 'Runtime Error':
-    case 'Time Limit Exceeded':
-      return 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-800';
-    default:
-      return 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800';
-  }
 }
 
 export function summarizeExecutionResult(result) {

@@ -8,10 +8,6 @@ export const supabase = SUPABASE_URL && SUPABASE_SERVICE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
   : null;
 
-export function assertSupabase() {
-  if (!supabase) throw new Error('Supabase not configured');
-}
-
 // Soft warning if key is not a service role key (uploads may fail with anon keys)
 try {
   if (SUPABASE_SERVICE_KEY) {

@@ -221,14 +221,3 @@ export function applyRankCuts(rows, rank) {
   return [...firstOrder.filter(keep), ...rest];
 }
 
-/** Modules a normalized tree or cut list touches (used to enforce licensing). */
-export function modulesUsed(tree, rank) {
-  const used = new Set();
-  const visit = (node) => {
-    if (node.type === 'rule') used.add(FIELDS.get(node.field).module);
-    else node.children.forEach(visit);
-  };
-  if (tree) visit(tree);
-  (rank?.cuts || []).forEach((cut) => used.add(FIELDS.get(cut.metric).module));
-  return used;
-}

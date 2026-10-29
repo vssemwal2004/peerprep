@@ -13,6 +13,7 @@ import { HttpError } from '../utils/errors.js';
 import { isControlPlane, isUniversity } from '../platform/deployment.js';
 import { sharedQuestions, sharedQuests } from '../platform/sharedContent.js';
 import { CENTRAL_QUESTION_FILTER } from '../platform/centralQuestions.js';
+import { studentFeatureQuery } from './studentFeatureAccess.js';
 
 const ACCEPTED = ['AC', 'ACCEPTED', 'ACCEPT'];
 const CATEGORIES = ['company', 'topic', 'study-plan', 'difficulty'];
@@ -199,7 +200,7 @@ async function audienceCounts() {
   // Students live in each university's own database, never on the central platform.
   if (isControlPlane()) return null;
   const rows = await User.aggregate([
-    { $match: { role: 'student', isActive: { $ne: false }, accessScope: { $ne: 'assessment_only' } } },
+    { $match: { role: 'student', isActive: { $ne: false }, accessScope: { $ne: 'assessment_only' }, ...studentFeatureQuery('quickprep') } },
     { $group: { _id: '$semester', count: { $sum: 1 } } },
   ]).option({ maxTimeMS: 8000 });
   return { total: rows.reduce((sum, row) => sum + row.count, 0), bySemester: new Map(rows.map((row) => [Number(row._id) || 0, row.count])) };

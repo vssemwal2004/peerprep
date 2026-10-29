@@ -171,7 +171,8 @@ const DEFAULT_ASSESSMENT_SETTINGS = {
   showCorrectAnswers: false,
   showSectionBreakdown: false,
   showPercentile: false,
-  resultDelayHours: 24,
+  // 0 = results stay held until an admin releases them from the report page.
+  resultDelayHours: 0,
   allowRetake: false,
   retakeGapHours: 0,
   questionSelectionEnabled: false,
@@ -616,11 +617,58 @@ export default function CreateAssessment({ viewOnly = false }) {
 
   const handleOpenCodingEditor = async (sectionIndex, questionIndex) => {
     const section = sections[sectionIndex];
-    const question = section?.questions?.[questionIndex];
+    let question = section?.questions?.[questionIndex];
     if (!question) return;
 
-    if (dirty) {
-      saveAssessmentDraft(assessmentKey, { form, sections, questionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
+    let workingQuestionSets = questionSets;
+    const sourceProblemId = question.problemId
+      || question.problemDataSnapshot?._id
+      || question.coding?.problemId
+      || question.coding?.problemData?._id;
+    const existingProblem = question.problemDataSnapshot || question.coding?.problemData || question.coding || {};
+    if (sourceProblemId && !existingProblem.assessmentOwnerId && !existingProblem.assessmentSourceProblemId) {
+      try {
+        const clonedProblem = await api.cloneCompilerProblemForAssessment(sourceProblemId, {
+          assessmentId: currentId,
+          draftKey: assessmentKey,
+        });
+        const snapshot = toAssessmentProblemSnapshot(clonedProblem);
+        question = {
+          ...question,
+          codingEditorId: String(clonedProblem._id),
+          problemId: clonedProblem._id,
+          problemDataSnapshot: snapshot,
+          questionText: snapshot.title || question.questionText,
+          coding: {
+            ...(question.coding || {}),
+            problemId: clonedProblem._id,
+            problemData: snapshot,
+          },
+        };
+        workingQuestionSets = questionSets.map((questionSet, setIndex) => (
+          setIndex !== activeQuestionSet ? questionSet : {
+            ...questionSet,
+            sections: (questionSet.sections || []).map((sectionItem, sIdx) => (
+              sIdx !== sectionIndex ? sectionItem : {
+                ...sectionItem,
+                questions: (sectionItem.questions || []).map((item, qIdx) => (
+                  qIdx === questionIndex ? question : item
+                )),
+              }
+            )),
+          }
+        ));
+        setQuestionSets(workingQuestionSets);
+        setDirty(true);
+      } catch (error) {
+        toast.error(error.message || 'Could not create an assessment copy of this coding question.');
+        return;
+      }
+    }
+
+    if (dirty || workingQuestionSets !== questionSets) {
+      const workingSections = workingQuestionSets[activeQuestionSet]?.sections || sections;
+      saveAssessmentDraft(assessmentKey, { form, sections: workingSections, questionSets: workingQuestionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
     }
 
     let editorId = question.codingEditorId
@@ -1850,11 +1898,11 @@ export default function CreateAssessment({ viewOnly = false }) {
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-4 py-4 dark:border-gray-800">
               <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Question choice</h3>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">Control how many questions each student sees and needs to answer.</p>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Question pool shuffle</h3>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">Upload a larger pool and let the backend select only the configured number for each student.</p>
               </div>
               <label className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-800">
-                <span className="text-right"><span className="block text-xs font-bold text-slate-700 dark:text-gray-200">Enable choice</span><span className="block text-[10px] text-slate-500">Optional questions</span></span>
+                <span className="text-right"><span className="block text-xs font-bold text-slate-700 dark:text-gray-200">Enable pool shuffle</span><span className="block text-[10px] text-slate-500">Random backend subset</span></span>
                 <Toggle value={Boolean(form.settings?.questionSelectionEnabled)} onChange={toggleQuestionSelection} />
               </label>
             </div>
@@ -1862,8 +1910,8 @@ export default function CreateAssessment({ viewOnly = false }) {
               <div className="space-y-4 p-4">
                 <div className="grid gap-2 sm:grid-cols-3">
                   {[
-                    { label: 'Total questions', value: questionChoiceSummary.created, helper: `Created by ${managerLabel}` },
-                    { label: 'Each student sees', value: questionChoiceSummary.shown, helper: 'Selected from total' },
+                    { label: 'Question pool', value: questionChoiceSummary.created, helper: `Uploaded by ${managerLabel}` },
+                    { label: 'Delivered per student', value: questionChoiceSummary.shown, helper: 'Selected securely on backend' },
                     { label: 'Student answers', value: questionChoiceSummary.required, helper: 'Required to attempt' },
                   ].map((item) => <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 dark:border-gray-700 dark:bg-gray-800/70"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{item.label}</p><p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{item.value}</p><p className="text-[10px] text-slate-500">{item.helper}</p></div>)}
                 </div>
@@ -1903,7 +1951,7 @@ export default function CreateAssessment({ viewOnly = false }) {
                       <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600 dark:bg-gray-800 dark:text-gray-300">From <strong>{activeDeliveryCount}</strong> {activeDeliveryDefinition.label.toLowerCase()} question{activeDeliveryCount === 1 ? '' : 's'}, each student sees <strong>{activeDeliveryShown}</strong> and must answer <strong>{activeDeliveryRequired}</strong>.</p>
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-slate-800 dark:text-white">Who receives which questions?</p>
+                      <p className="text-xs font-bold text-slate-800 dark:text-white">How should the backend select the subset?</p>
                       <div className="mt-2 grid gap-2">
                         {QUESTION_DISTRIBUTION_MODES.map((mode) => {
                           const active = activeDistributionMode === mode.id;
@@ -1915,11 +1963,11 @@ export default function CreateAssessment({ viewOnly = false }) {
                 </div>
 
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2.5 text-xs leading-5 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200">
-                  <strong>Current rule:</strong> {activeDistributionMode === 'random_per_student' ? 'students can receive different fixed sets' : 'every student receives the same fixed set'} of {activeDeliveryShown} {activeDeliveryDefinition.label.toLowerCase()} question{activeDeliveryShown === 1 ? '' : 's'}, and they must answer {activeDeliveryRequired}.
+                  <strong>Current rule:</strong> the backend shuffles the pool and {activeDistributionMode === 'random_per_student' ? 'gives each student a fixed random subset' : 'gives every student the same fixed subset'} of {activeDeliveryShown} {activeDeliveryDefinition.label.toLowerCase()} question{activeDeliveryShown === 1 ? '' : 's'}. Students must answer {activeDeliveryRequired}. The subset stays unchanged after refresh or resume.
                 </div>
               </div>
             )}
-            {!form.settings?.questionSelectionEnabled && <div className="px-4 py-3 text-xs text-slate-500 dark:text-gray-400">Choice is off: every student will see all {questionChoiceSummary.created} questions, with no optional-question rule applied.</div>}
+            {!form.settings?.questionSelectionEnabled && <div className="px-4 py-3 text-xs text-slate-500 dark:text-gray-400">Pool shuffle is off: every student will receive all {questionChoiceSummary.created} questions. Example: upload 100 questions, enable this feature, and set Show to 25 to deliver only 25.</div>}
           </section>
         )}
       </div>
@@ -1994,7 +2042,7 @@ export default function CreateAssessment({ viewOnly = false }) {
               </div>
               <Row {...rowProps} icon={<Hash className="h-4 w-4" />} title="New candidate credentials" desc="Choose the initial password only for new assessment-only accounts created by this assessment.">
                 <div className="grid gap-2 sm:grid-cols-2">
-                  {[{ id: 'secure_generated', title: 'Secure generated password', help: 'Recommended. A unique credential is generated.' }, { id: 'student_id', title: 'Student ID as password', help: 'Convenient for managed exam PCs, but easier to guess.' }].map((option) => <button key={option.id} type="button" onClick={() => upd('candidateCredentialMode', option.id)} className={`rounded-lg border px-3 py-2 text-left ${s.candidateCredentialMode === option.id ? 'border-sky-400 bg-sky-50 dark:bg-sky-950/30' : 'border-slate-200 dark:border-gray-700'}`}><span className="block text-xs font-bold text-slate-800 dark:text-white">{option.title}</span><span className="mt-1 block text-[10px] leading-4 text-slate-500">{option.help}</span></button>)}
+                  {[{ id: 'secure_generated', title: 'Secure generated password', help: 'Recommended. A unique credential is generated.' }, { id: 'student_id', title: 'Student ID sign-in', help: 'Candidates sign in with Student ID and use it as their initial password.' }].map((option) => <button key={option.id} type="button" onClick={() => upd('candidateCredentialMode', option.id)} className={`rounded-lg border px-3 py-2 text-left ${s.candidateCredentialMode === option.id ? 'border-sky-400 bg-sky-50 dark:bg-sky-950/30' : 'border-slate-200 dark:border-gray-700'}`}><span className="block text-xs font-bold text-slate-800 dark:text-white">{option.title}</span><span className="mt-1 block text-[10px] leading-4 text-slate-500">{option.help}</span></button>)}
                 </div>
                 {s.candidateCredentialMode === 'student_id' && <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">Existing accounts are never overwritten. Use this only in a controlled lab and keep one-active-session protection enabled.</p>}
               </Row>
@@ -2288,30 +2336,38 @@ export default function CreateAssessment({ viewOnly = false }) {
             </h3>
             <div className="space-y-2">
               <Row {...rowProps} icon={<CheckSquare className="h-4 w-4" />} iconBg="bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400"
-                title="Show Score After Submission" desc="Candidates see their total score immediately after submitting." toggleKey="showResultsAfterSubmit">
-                {s.showResultsAfterSubmit && (
-                  <div className="space-y-3">
-                    <FieldRow label="Show correct answers">
-                      <Toggle value={Boolean(s.showCorrectAnswers)} onChange={(v) => upd('showCorrectAnswers', v)} />
-                    </FieldRow>
-                    <FieldRow label="Show section-wise breakdown">
-                      <Toggle value={Boolean(s.showSectionBreakdown)} onChange={(v) => upd('showSectionBreakdown', v)} />
-                    </FieldRow>
-                    <FieldRow label="Show percentile rank">
-                      <Toggle value={Boolean(s.showPercentile)} onChange={(v) => upd('showPercentile', v)} />
-                    </FieldRow>
-                  </div>
-                )}
-              </Row>
+                title="Show result after submission"
+                desc={s.showResultsAfterSubmit
+                  ? 'On: each student sees their result after submitting, as soon as evaluation completes.'
+                  : "Off: students see 'Result not announced yet' until you release results from the assessment report page."}
+                toggleKey="showResultsAfterSubmit" />
 
               {!s.showResultsAfterSubmit && (
                 <Row {...rowProps} icon={<Clock className="h-4 w-4" />} iconBg="bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"
-                  title="Delayed Result Release" desc="Hold results and release them manually or after a set delay.">
-                  <FieldRow label="Release results after (hours)">
-                    <NumInput value={s.resultDelayHours} onChange={(v) => upd('resultDelayHours', v)} min={0} placeholder="24" unit="hrs" />
-                  </FieldRow>
+                  title="Results are held" desc="Open Assessment Reports and use “Release results” when you are ready. You can withdraw a release there too.">
+                  {Number(s.resultDelayHours) > 0 && (
+                    <FieldRow label={`Auto-release ${s.resultDelayHours} h after each submission`}>
+                      <button type="button" onClick={() => upd('resultDelayHours', 0)} className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+                        Hold until released
+                      </button>
+                    </FieldRow>
+                  )}
                 </Row>
               )}
+
+              <Row {...rowProps} icon={<Eye className="h-4 w-4" />} title="What students see once results are out" desc="Applies whenever a result is visible to the student, after submission or after you release results.">
+                <div className="space-y-3">
+                  <FieldRow label="Show correct answers (after the assessment window closes)">
+                    <Toggle value={Boolean(s.showCorrectAnswers)} onChange={(v) => upd('showCorrectAnswers', v)} />
+                  </FieldRow>
+                  <FieldRow label="Show section-wise breakdown">
+                    <Toggle value={Boolean(s.showSectionBreakdown)} onChange={(v) => upd('showSectionBreakdown', v)} />
+                  </FieldRow>
+                  <FieldRow label="Show percentile rank">
+                    <Toggle value={Boolean(s.showPercentile)} onChange={(v) => upd('showPercentile', v)} />
+                  </FieldRow>
+                </div>
+              </Row>
 
               <Row {...rowProps} icon={<RotateCcw className="h-4 w-4" />} title="Allow Retake" desc="Permit candidates to take the assessment more than once." toggleKey="allowRetake">
                 <div className="space-y-3">

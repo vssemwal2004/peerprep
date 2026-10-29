@@ -3,6 +3,8 @@ import multer from 'multer';
 import { uploadStudentsCsv, createStudent, checkStudentsCsv, listAllStudents, listAllSpecialStudents, listSpecialStudentsByEvent, deleteStudent, updateStudent, bulkDeleteStudents, resendStudentCredentials, exportStudentsCsv, getStudentById, listPromotionSemesters, listPromotionStudents, promoteStudents, listStudentUploadBatches, createStudentUploadBatch, renameStudentUploadBatch, deleteStudentUploadBatch } from '../controllers/studentController.js';
 import { getStudentActivityByAdmin, getStudentStats, getStudentVideosWatched, getStudentCoursesEnrolled } from '../controllers/activityController.js';
 import { requireAuth, requireCoordinatorPermission } from '../middleware/auth.js';
+import { requireAdmin } from '../middleware/auth.js';
+import { getStudentAccess, getStudentAccessPolicy, updateStudentAccess, updateStudentAccessPolicy } from '../controllers/studentAccessController.js';
 import { authorizeStudent } from '../middleware/authorization.js';
 import { uploadLimiter, bulkOperationLimiter } from '../middleware/rateLimiter.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
@@ -11,6 +13,8 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 router.get('/list', requireAuth, requireCoordinatorPermission('coordinator.students.view'), cacheJsonResponse({ namespace: 'students', ttlSeconds: Number(process.env.RESPONSE_CACHE_STUDENTS_TTL_SECONDS || 30) }), listAllStudents);
+router.get('/access-policy', requireAuth, requireCoordinatorPermission('coordinator.students.create'), getStudentAccessPolicy);
+router.put('/access-policy', requireAuth, requireAdmin, updateStudentAccessPolicy);
 router.get('/export', requireAuth, requireCoordinatorPermission('coordinator.students.view'), exportStudentsCsv);
 router.get('/upload-batches', requireAuth, requireCoordinatorPermission('coordinator.students.bulk-lists'), listStudentUploadBatches);
 router.post('/upload-batches', requireAuth, requireCoordinatorPermission('coordinator.students.manage'), createStudentUploadBatch);
@@ -35,6 +39,8 @@ router.post('/create', requireAuth, requireCoordinatorPermission('coordinator.st
 });
 router.post('/bulk-delete', requireAuth, requireCoordinatorPermission('coordinator.students.manage'), bulkOperationLimiter, invalidateResponseCache('students'), bulkDeleteStudents);
 router.post('/resend-credentials', requireAuth, requireCoordinatorPermission('coordinator.students.manage'), bulkOperationLimiter, resendStudentCredentials);
+router.get('/:studentId/access', requireAuth, requireAdmin, getStudentAccess);
+router.patch('/:studentId/access', requireAuth, requireAdmin, invalidateResponseCache('students'), updateStudentAccess);
 router.put('/:studentId', requireAuth, requireCoordinatorPermission('coordinator.students.manage'), invalidateResponseCache('students'), updateStudent);
 router.delete('/:studentId', requireAuth, requireCoordinatorPermission('coordinator.students.manage'), invalidateResponseCache('students'), deleteStudent);
 

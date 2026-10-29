@@ -17,8 +17,6 @@ import {
   Waypoints,
 } from "lucide-react";
 
-export const GRAPH_GROUPS = ["Overview", "Students", "Topics", "Assessments", "Learning", "Coding"];
-
 export const GRAPH_REGISTRY = [
   { id: "activity-trend", title: "Activity trend", question: "How is student activity changing over time?", description: "Compares coding, learning and assessment activity in each time period.", group: "Overview", chartType: "Line chart", xAxis: "Time period", yAxis: "Activity events", unit: "events", layout: "wide", read: "Rising lines indicate growing activity; compare line direction and gaps between sources.", icon: TrendingUp, renderer: "trend" },
   { id: "student-ranking", title: "Student ranking", question: "Who is performing strongest, and who may need support?", description: "Ranks eligible students using the selected normalized performance metric.", group: "Students", chartType: "Ranked bars", xAxis: "Performance score", yAxis: "Students", unit: "score", read: "Longer bars indicate stronger performance. Ranking direction follows the selected Top or Bottom filter.", icon: Trophy, renderer: "ranking" },
@@ -37,8 +35,6 @@ export const GRAPH_REGISTRY = [
   { id: "score-effort-scatter", title: "Score vs effort", question: "Does higher effort translate into stronger performance?", description: "Plots each eligible student by evidence volume and normalized score.", group: "Students", chartType: "Scatter plot", xAxis: "Evidence events", yAxis: "Performance score", unit: "%", read: "Top-right is high effort/high score; bottom-right highlights high effort with low outcomes and possible support needs.", icon: ScatterChart, renderer: "scatter" },
   { id: "source-mix", title: "Evidence source mix", question: "What proportion of analyzed activity comes from each source?", description: "Shows the relative contribution of coding, assessment and learning evidence.", group: "Overview", chartType: "Donut chart", xAxis: "Evidence source", yAxis: "Share of activity", unit: "events", read: "Larger segments contribute more evidence. A highly dominant segment means the overall analysis is being driven mainly by that source.", icon: PieChart, renderer: "donut" },
 ];
-
-export const GRAPH_BY_ID = Object.fromEntries(GRAPH_REGISTRY.map((graph) => [graph.id, graph]));
 
 export function getGraphState(definition, serverGraph) {
   if (!serverGraph) return { status: "not_requested", reason: "Apply filters to evaluate this graph." };

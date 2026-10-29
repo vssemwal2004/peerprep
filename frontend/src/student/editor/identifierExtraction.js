@@ -562,10 +562,6 @@ const EXTRACTORS = {
   ruby: extractRuby,
 };
 
-export function supportsIdentifierCompletion(languageId) {
-  return Object.hasOwn(LANGUAGE_FAMILIES, String(languageId || ''));
-}
-
 /**
  * Lists the functions, variables, parameters and classes declared in `source`.
  * Returns `[{ name, kind }]` in order of first appearance, where kind is one of

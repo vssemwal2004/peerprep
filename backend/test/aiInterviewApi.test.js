@@ -7,11 +7,22 @@ import { createAuthoringRouter } from "../src/routes/aiInterviews.js";
 import AIInterview from "../src/models/AIInterview.js";
 import Resource from "../src/models/AIInterviewResource.js";
 import QuestionLibrary from "../src/models/QuestionLibrary.js";
+import { AnviAttempt, AnviResumeContext } from "../src/modules/anviInterview/anviInterview.models.js";
+import { AnviAssignment, AnviAssignmentTarget, AnviBooking, AnviSlot } from "../src/modules/anviInterview/anviInterview.scheduling.models.js";
 
 // Dedicated ephemeral MongoDB only. Never loads application setup or .env.
 let mongo, server, base;
 const adminA = new mongoose.Types.ObjectId().toString(),
   adminB = new mongoose.Types.ObjectId().toString();
+// Fake Gemini for generate-questions: never calls the real API.
+const geminiCalls = [];
+let geminiReply = async () => ({ questions: [] });
+const fakeGemini = {
+  generateJson: async (request) => {
+    geminiCalls.push(request);
+    return geminiReply(request);
+  },
+};
 before(async () => {
   mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri(), { dbName: "ai_authoring_test" });
@@ -24,16 +35,19 @@ before(async () => {
   app.use(express.json({ limit: "2mb" }));
   app.use(
     "/api/ai-interviews",
-    createAuthoringRouter((req, _res, next) => {
-      req.user = {
-        _id: req.get("X-Test-Owner") || adminA,
-        role: req.get("X-Test-Role") || "admin",
-      };
-      next();
-    }),
+    createAuthoringRouter(
+      (req, _res, next) => {
+        req.user = {
+          _id: req.get("X-Test-Owner") || adminA,
+          role: req.get("X-Test-Role") || "admin",
+        };
+        next();
+      },
+      { gemini: fakeGemini },
+    ),
   );
   app.use((err, _req, res, _next) =>
-    res.status(500).json({ error: err.message }),
+    res.status(err.status || 500).json({ code: err.code, error: err.message }),
   );
   server = app.listen(0, "127.0.0.1");
   await new Promise((resolve) => server.once("listening", resolve));
@@ -52,6 +66,18 @@ const call = async (path = "", method = "GET", body, headers = {}) => {
   });
   return { status: result.status, body: await result.json() };
 };
+// ANVI readiness is GEMINI_API_KEY; tests set or clear it explicitly and restore it afterwards.
+const withGeminiKey = async (value, work) => {
+  const old = process.env.GEMINI_API_KEY;
+  if (value === undefined) delete process.env.GEMINI_API_KEY;
+  else process.env.GEMINI_API_KEY = value;
+  try {
+    return await work();
+  } finally {
+    if (old === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = old;
+  }
+};
 const create = (title = "Interview") =>
   call(
     "",
@@ -66,10 +92,12 @@ test("only administrators can use authoring endpoints", async () => {
         .status,
       403,
     );
-  const cap = await call("/capabilities");
+  const cap = await withGeminiKey(undefined, () => call("/capabilities"));
   assert.equal(cap.status, 200);
   assert.equal(cap.body.questionGeneration, true);
   assert.equal(cap.body.aiConfigured, false);
+  const ready = await withGeminiKey("test-gemini-key", () => call("/capabilities"));
+  assert.equal(ready.body.aiConfigured, true);
 });
 test("companies persist, normalize duplicates and are owner scoped", async () => {
   const [a, b] = await Promise.all([
@@ -240,11 +268,11 @@ test("release requires a validated revision and keeps the student snapshot stabl
   let doc = (await call("", "POST", { data }, { "Idempotency-Key": crypto.randomUUID() })).body;
   assert.equal((await call(`/${doc._id}/publish`, "POST", { revision: doc.revision })).status, 422);
   doc = (await call(`/${doc._id}/validate`, "POST", { revision: doc.revision })).body;
-  const oldUrl = process.env.INTERVIEW_SERVICE_URL;
-  const oldSecret = process.env.INTERVIEW_SERVICE_SECRET;
-  process.env.INTERVIEW_SERVICE_URL = "http://127.0.0.1:4100";
-  process.env.INTERVIEW_SERVICE_SECRET = "test-secret-longer-than-thirty-two-characters";
-  try {
+  const blocked = await withGeminiKey(undefined, () => call(`/${doc._id}/publish`, "POST", { revision: doc.revision }));
+  assert.equal(blocked.status, 503);
+  assert.equal(blocked.body.code, "AI_NOT_CONFIGURED");
+  assert.match(blocked.body.error, /GEMINI_API_KEY/);
+  await withGeminiKey("test-gemini-key", async () => {
     doc = (await call(`/${doc._id}/publish`, "POST", { revision: doc.revision })).body;
     assert.equal(doc.publishedRevision, doc.revision);
     doc = (await call(`/${doc._id}`, "PUT", { revision: doc.revision, data: { ...doc.data, description: "New draft" } })).body;
@@ -256,12 +284,50 @@ test("release requires a validated revision and keeps the student snapshot stabl
     doc = (await call(`/${doc._id}/archive`, "POST", { revision: doc.revision })).body;
     assert.equal(doc.publishedAt, undefined);
     assert.equal((await AIInterview.findById(doc._id).lean()).publishedSnapshot, undefined);
-  } finally {
-    if (oldUrl === undefined) delete process.env.INTERVIEW_SERVICE_URL;
-    else process.env.INTERVIEW_SERVICE_URL = oldUrl;
-    if (oldSecret === undefined) delete process.env.INTERVIEW_SERVICE_SECRET;
-    else process.env.INTERVIEW_SERVICE_SECRET = oldSecret;
-  }
+  });
+});
+test("deleting a draft also deletes its schedules and finished student data", async () => {
+  const doc = (await create("Attempted")).body;
+  const studentId = new mongoose.Types.ObjectId();
+  const assignment = await AnviAssignment.create({
+    ownerId: adminA, interviewId: doc._id, snapshotRevision: 1, snapshotData: { title: doc.title }, title: doc.title,
+    audience: { source: "selected", studentCount: 1 },
+    window: { opensAt: new Date(Date.now() - 60_000), closesAt: new Date(Date.now() + 60_000) },
+    status: "open",
+  });
+  const attempt = await AnviAttempt.create({
+    studentId, interviewId: doc._id, assignmentId: assignment._id, snapshotRevision: 1,
+    hardDeadline: new Date(Date.now() + 60_000), status: "ready",
+  });
+  await Promise.all([
+    AnviAssignmentTarget.create({ assignmentId: assignment._id, studentId, outcome: "completed", attemptsUsed: 1, lastAttemptId: attempt._id }),
+    AnviSlot.create({ assignmentId: assignment._id, startsAt: new Date(Date.now() + 10_000), endsAt: new Date(Date.now() + 50_000), capacity: 1 }),
+    AnviBooking.create({ assignmentId: assignment._id, studentId, startsAt: new Date(Date.now() - 60_000), endsAt: new Date(), status: "completed", active: false, attemptId: attempt._id }),
+    AnviResumeContext.create({ studentId, interviewId: doc._id, assignmentId: assignment._id, source: "upload", text: "Redacted resume", expiresAt: new Date(Date.now() + 60_000) }),
+    mongoose.connection.collection("aiinterviewsessions").insertOne({ interviewId: new mongoose.Types.ObjectId(doc._id), studentId }),
+  ]);
+  const result = await call(`/${doc._id}`, "DELETE", { revision: doc.revision, title: doc.title });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.deleted, true);
+  assert.equal(await AIInterview.exists({ _id: doc._id }), null);
+  assert.equal(await AnviAssignment.countDocuments({ interviewId: doc._id }), 0);
+  assert.equal(await AnviAssignmentTarget.countDocuments({ assignmentId: assignment._id }), 0);
+  assert.equal(await AnviSlot.countDocuments({ assignmentId: assignment._id }), 0);
+  assert.equal(await AnviBooking.countDocuments({ assignmentId: assignment._id }), 0);
+  assert.equal(await AnviAttempt.countDocuments({ interviewId: doc._id }), 0);
+  assert.equal(await AnviResumeContext.countDocuments({ interviewId: doc._id }), 0);
+  assert.equal(await mongoose.connection.collection("aiinterviewsessions").countDocuments({ interviewId: new mongoose.Types.ObjectId(doc._id) }), 0);
+});
+test("a genuinely live attempt must end before its interview can be deleted", async () => {
+  const doc = (await create("Live attempt")).body;
+  await AnviAttempt.create({
+    studentId: new mongoose.Types.ObjectId(), interviewId: doc._id, snapshotRevision: 1,
+    hardDeadline: new Date(Date.now() + 60_000), status: "in_progress",
+  });
+  const result = await call(`/${doc._id}`, "DELETE", { revision: doc.revision, title: doc.title });
+  assert.equal(result.status, 409);
+  assert.equal(result.body.code, "INTERVIEW_IN_PROGRESS");
+  assert.ok(await AIInterview.exists({ _id: doc._id }));
 });
 test("directory is paginated and excludes prompts and internal snapshots", async () => {
   const seed = Array.from({ length: 30 }, (_, i) => ({
@@ -364,4 +430,196 @@ test("foreign companies and profiles cannot be attached to an owned interview", 
     { "Idempotency-Key": crypto.randomUUID() },
   );
   assert.equal(result.status, 422);
+});
+
+test("new question fields and anvi settings round-trip through save with defaults", async () => {
+  const data = {
+    title: "ANVI settings",
+    sections: [{ id: "s1", name: "Technical", weight: 100, groups: [{
+      id: "g1", name: "APIs", weight: 100, source: "manual",
+      questions: [{ id: "q1", prompt: "Explain REST.", marks: 30, competency: "API design", skippable: false, maxFollowUps: 5 }],
+    }] }],
+    anvi: { persona: { tone: "friendly", introduction: "Hi {name}" }, turns: { silenceSeconds: 3, maxNudges: 9 } },
+  };
+  const doc = (await call("", "POST", { data }, { "Idempotency-Key": crypto.randomUUID() })).body;
+  assert.equal(doc.data.sections[0].groups[0].questions[0].marks, 30);
+  assert.equal(doc.data.sections[0].groups[0].questions[0].skippable, false);
+  assert.equal(doc.data.sections[0].groups[0].questions[0].maxFollowUps, 5);
+  assert.deepEqual(doc.data.anvi, {
+    liveQuestionCount: null,
+    persona: { tone: "friendly", pace: "normal", acknowledgements: true, introduction: "Hi {name}", closing: "" },
+    turns: { silenceSeconds: 3, nudgeSeconds: 45, maxNudges: 3, voiceCommands: true },
+    conduct: { endByVoice: false, finishAllQuestions: true, noPersonalQuestions: true, termsText: "", requireTermsAcceptance: false },
+    warmup: { enabled: true, icebreakers: 2, tellMeAboutYourself: true, scored: false },
+    resume: { mode: "none", sources: ["builder", "upload"], questionCount: 2 },
+    language: { primary: "English", studentChoice: [], strict: true, onOtherLanguage: "remind_and_flag" },
+    voice: { name: "", languageCode: "" },
+    avatar: { enabled: false, avatarId: "" },
+    proctoring: {
+      enabled: false, fullscreen: "off", pauseOutsideFullscreen: true, tabSwitch: "off", refresh: "off",
+      blockRightClick: true, blockCopyPaste: true, blockShortcuts: true, warnings: 3, maxViolations: 0, onLimit: "end",
+      ai: {
+        enabled: false, detectMobile: true, detectMultiplePersons: true, detectNoFace: true, detectFaceOutOfFrame: true,
+        faceOutOfFrameGraceSec: 10, detectLookingAway: true, detectionIntervalMs: 500, ignoreLimit: 5, violationCooldownSec: 20,
+        criticalAutoFlag: true,
+      },
+    },
+  });
+  assert.equal(doc.summary.totalMarks, 30);
+  assert.equal(doc.summary.proctoring.enabled, false);
+  // Invalid proctoring settings are refused with 422; valid ones round-trip.
+  const invalid = await call("", "POST", { data: { ...data, anvi: { proctoring: { maxViolations: 99 } } } }, { "Idempotency-Key": crypto.randomUUID() });
+  assert.equal(invalid.status, 422);
+  const proctored = (await call("", "POST", { data: { ...data, anvi: { proctoring: { enabled: true, fullscreen: "required", maxViolations: 2 } } } }, { "Idempotency-Key": crypto.randomUUID() })).body;
+  assert.equal(proctored.data.anvi.proctoring.maxViolations, 2);
+  assert.equal(proctored.summary.proctoring.fullscreen, "required");
+  assert.deepEqual(doc.summary.language, { primary: "English", choices: ["English"], strict: true, onOtherLanguage: "remind_and_flag" });
+  const old = (await create("No anvi yet")).body;
+  assert.equal(old.data.anvi.turns.silenceSeconds, 2);
+
+  // Every interview is English only (DECISIONS #0): another language or a student choice is saved as English.
+  const path = `/${doc._id}`;
+  let saved = (await call(path, "PUT", { revision: doc.revision, data: {
+    ...doc.data, anvi: { ...doc.data.anvi, language: { primary: "Hindi", studentChoice: ["English", "Hindi"], strict: false, onOtherLanguage: "remind" } },
+  } })).body;
+  assert.deepEqual(saved.data.anvi.language, { primary: "English", studentChoice: [], strict: true, onOtherLanguage: "remind_and_flag" });
+  assert.equal(saved.data.rules.language, "English");
+  assert.deepEqual(saved.summary.language.choices, ["English"]);
+  saved = (await call(path, "PUT", { revision: saved.revision, data: { ...saved.data, rules: { ...saved.data.rules, language: "Hinglish" } } })).body;
+  assert.equal(saved.data.anvi.language.primary, "English");
+  assert.equal(saved.data.rules.language, "English");
+  assert.deepEqual(saved.data.anvi.language.studentChoice, []);
+  saved = (await call(path, "PUT", { revision: saved.revision, data: {
+    ...saved.data, rules: { ...saved.data.rules, language: "Hindi" }, anvi: { ...saved.data.anvi, language: { ...saved.data.anvi.language, primary: "English" } },
+  } })).body;
+  assert.equal(saved.data.anvi.language.primary, "English");
+  assert.equal(saved.data.rules.language, "English");
+  const bad = await call(path, "PUT", { revision: saved.revision, data: { ...saved.data, anvi: { ...saved.data.anvi, language: { primary: "Tamil" } } } });
+  assert.equal(bad.status, 422);
+  const cap = await call("/capabilities");
+  assert.equal(cap.body.limits.followUps, 5);
+  assert.equal(cap.body.limits.generateQuestions, 20);
+});
+
+const generationDraft = (owner) =>
+  call(
+    "",
+    "POST",
+    {
+      data: {
+        title: "Generate", role: "Backend developer", experience: "fresher", difficulty: "easy",
+        rules: { language: "Hinglish" },
+        sections: [{ id: "s1", name: "Technical", instructions: "Keep it practical.", weight: 100, groups: [
+          { id: "g1", name: "APIs", weight: 100, source: "annu", annu: { requirements: "Ask about REST APIs.", skills: ["HTTP"], exclusions: "GraphQL", targetCount: 2 } },
+        ] }],
+      },
+    },
+    { "X-Test-Owner": owner, "Idempotency-Key": crypto.randomUUID() },
+  );
+
+test("generate-questions drafts reviewable questions with a fake Gemini and saves nothing", async () => {
+  const owner = new mongoose.Types.ObjectId().toString();
+  const headers = { "X-Test-Owner": owner };
+  const doc = (await generationDraft(owner)).body;
+  const generate = (body, extra = headers) =>
+    withGeminiKey("test-gemini-key", () => call(`/${doc._id}/generate-questions`, "POST", body, extra));
+  geminiCalls.length = 0;
+  geminiReply = async () => ({
+    questions: [
+      { text: "Question 1: What is the difference between PUT and PATCH?", keyPoints: ["PUT replaces the resource", "PATCH updates part of it", " "] },
+      { text: "What is the difference between PUT and PATCH?", keyPoints: [] },
+      { text: "<b>How</b> would you version a REST API?", keyPoints: ["URL or header versioning"] },
+      { text: "A third question beyond the requested count?", keyPoints: [] },
+    ],
+  });
+  const result = await generate({ groupId: "g1", count: 2 });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.questions, [
+    {
+      prompt: "What is the difference between PUT and PATCH?",
+      expectedAnswer: "PUT replaces the resource\nPATCH updates part of it",
+      keyPoints: ["PUT replaces the resource", "PATCH updates part of it"],
+    },
+    { prompt: "How would you version a REST API?", expectedAnswer: "URL or header versioning", keyPoints: ["URL or header versioning"] },
+  ]);
+  assert.equal(geminiCalls.length, 1);
+  const sent = geminiCalls[0];
+  // The draft asked for Hinglish; the interview language is always English (DECISIONS #0).
+  for (const content of ["Ask about REST APIs.", "Backend developer", "English", "GraphQL", "Keep it practical."])
+    assert.ok(sent.parts[0].text.includes(content), `Prompt includes ${content}`);
+  assert.match(sent.systemText, /exactly 2 questions/);
+  assert.ok(sent.schema);
+  const stored = await AIInterview.findById(doc._id).lean();
+  assert.equal(stored.revision, doc.revision, "Generation never saves the draft");
+  assert.equal(stored.data.sections[0].groups[0].source, "annu");
+
+  // A topic staged in the drawer but not saved yet is described by the request body.
+  const unsaved = await generate({ groupId: "stagedTopic", count: 1, requirements: "Ask about caching.", skills: ["Redis"], difficulty: "hard" });
+  assert.equal(unsaved.status, 200);
+  const staged = JSON.parse(geminiCalls.at(-1).parts[0].text.match(/<context>(.*)<\/context>/)[1]);
+  assert.equal(staged.difficulty, "hard");
+  assert.deepEqual(staged.skills, ["Redis"]);
+  assert.match(geminiCalls.at(-1).parts[0].text, /Ask about caching\./);
+
+  for (const body of [
+    { count: 2 },
+    { groupId: "g1", count: 0 },
+    { groupId: "g1", count: 21 },
+    { groupId: "bad id!", count: 1 },
+    { groupId: "missing", count: 1 },
+    { groupId: "g1", count: 1, difficulty: "extreme" },
+  ]) {
+    const invalid = await generate(body);
+    assert.equal(invalid.status, 422, JSON.stringify(body));
+    assert.equal(invalid.body.code, "VALIDATION_FAILED");
+  }
+  assert.equal(geminiCalls.length, 2, "Invalid requests never reach Gemini");
+
+  geminiReply = async () => {
+    throw new Error("upstream unavailable");
+  };
+  const failed = await generate({ groupId: "g1", count: 1 });
+  assert.equal(failed.status, 502);
+  assert.equal(failed.body.code, "GENERATION_FAILED");
+
+  const foreign = await generate({ groupId: "g1", count: 1 }, { "X-Test-Owner": adminB });
+  assert.equal(foreign.status, 404);
+  const student = await generate({ groupId: "g1", count: 1 }, { ...headers, "X-Test-Role": "student" });
+  assert.equal(student.status, 403);
+});
+
+test("generate-questions returns 503 without GEMINI_API_KEY and never calls Gemini", async () => {
+  const owner = new mongoose.Types.ObjectId().toString();
+  const doc = (await generationDraft(owner)).body;
+  geminiCalls.length = 0;
+  const blocked = await withGeminiKey(undefined, () =>
+    call(`/${doc._id}/generate-questions`, "POST", { groupId: "g1", count: 2 }, { "X-Test-Owner": owner }),
+  );
+  assert.equal(blocked.status, 503);
+  assert.equal(blocked.body.code, "AI_NOT_CONFIGURED");
+  assert.match(blocked.body.error, /GEMINI_API_KEY/);
+  assert.equal(geminiCalls.length, 0);
+});
+
+test("generate-questions is limited to 10 requests per minute per admin", async () => {
+  const owner = new mongoose.Types.ObjectId().toString(),
+    other = new mongoose.Types.ObjectId().toString();
+  const [doc, otherDoc] = [(await generationDraft(owner)).body, (await generationDraft(other)).body];
+  geminiReply = async () => ({ questions: [{ text: "Explain idempotent HTTP methods.", keyPoints: ["GET", "PUT"] }] });
+  await withGeminiKey("test-gemini-key", async () => {
+    const send = (id, as) =>
+      fetch(`${base}/${id}/generate-questions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Test-Owner": as },
+        body: JSON.stringify({ groupId: "g1", count: 1 }),
+      });
+    for (let i = 0; i < 10; i += 1) assert.equal((await send(doc._id, owner)).status, 200);
+    const limited = await send(doc._id, owner);
+    assert.equal(limited.status, 429);
+    assert.ok(Number(limited.headers.get("retry-after")) >= 1);
+    const body = await limited.json();
+    assert.equal(body.code, "RATE_LIMITED");
+    assert.ok(body.retryAfterSeconds >= 1);
+    assert.equal((await send(otherDoc._id, other)).status, 200, "Limits are per admin");
+  });
 });

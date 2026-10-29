@@ -108,11 +108,11 @@ export function PreviewDialog({ doc, onClose, allowEdit = false, draftChanged = 
     >
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.8fr)_minmax(240px,1fr)]">
       <div className="min-w-0">
-      {activeJob && <p role="status" className="mb-3 rounded-lg bg-sky-50 p-3 text-xs text-sky-700">Generating the {languageName(current.data.language)} introduction. This panel updates when the video is ready.</p>}
-      {pollError && <p role="status" className="mb-3 text-xs text-amber-700">{pollError}</p>}
-      {current.render?.status === "failed" && language === current.data.language && <p role="alert" className="mb-3 rounded-lg bg-rose-50 p-3 text-xs text-rose-700">{current.render.error || "This introduction could not be generated. Edit the avatar to review its inputs and try again."}</p>}
+      {activeJob && <p role="status" className="mb-3 rounded-lg bg-sky-50 p-3 text-xs text-sky-700 dark:bg-sky-400/10 dark:text-sky-300">Generating the {languageName(current.data.language)} introduction. This panel updates when the video is ready.</p>}
+      {pollError && <p role="status" className="mb-3 text-xs text-amber-700 dark:text-amber-300">{pollError}</p>}
+      {current.render?.status === "failed" && language === current.data.language && <p role="alert" className="mb-3 rounded-lg bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-400/10 dark:text-rose-300">{current.render.error || "This introduction could not be generated. Edit the avatar to review its inputs and try again."}</p>}
       {previous && (
-        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">
           Previous version. Generate a new preview to reflect the latest saved
           settings.
         </p>
@@ -120,7 +120,7 @@ export function PreviewDialog({ doc, onClose, allowEdit = false, draftChanged = 
       {(remote.error || mediaError) && (
         <p
           role="alert"
-          className="mb-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700"
+          className="mb-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-400/10 dark:text-rose-300"
         >
           {remote.error ||
             "The preview could not load. Its media link may have expired or the connection was interrupted."}{" "}

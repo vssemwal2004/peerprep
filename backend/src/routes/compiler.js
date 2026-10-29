@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { requireAdmin, requireAuth, requireStudent, requireFullStudent, requireAssessmentCompilerStudent, requireAdminCoordinatorOrStudent, requireCoordinatorPermission } from '../middleware/auth.js';
+import { requireAdmin, requireAuth, requireStudent, requireFullStudent, requireStudentFeature, requireStudentCompilerAccess, requireAssessmentCompilerStudent, requireAdminCoordinatorOrStudent, requireCoordinatorPermission } from '../middleware/auth.js';
 import {
   compilerExecutionLimiter,
   compilerRunCooldown,
@@ -12,6 +12,7 @@ import {
 import {
   approveProblemPreview,
   createProblem,
+  cloneProblemIntoAssessment,
   deleteProblem,
   getCompilerOverview,
   getProblemDetail,
@@ -58,7 +59,7 @@ const compilerCache = cacheJsonResponse({
 });
 const invalidateCompilerCache = invalidateResponseCache('compiler');
 
-router.get('/daily-challenge', requireStudent, requireFullStudent, getDailyChallenge);
+router.get('/daily-challenge', requireStudent, requireFullStudent, requireStudentFeature('prep_coding'), getDailyChallenge);
 router.get('/daily-challenge/settings', requireAdmin, getDailyChallengeSettings);
 router.patch('/daily-challenge/settings', requireAdmin, saveDailyChallengeSettings);
 
@@ -69,21 +70,22 @@ router.get('/problems/overview', requireCoordinatorPermission('coordinator.compi
 router.post('/problem-assets', requireCoordinatorPermission('coordinator.compiler.create'), problemAssetUploadLimiter, acceptProblemAsset, uploadCodingProblemAsset);
 router.post('/problems/preview/run', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), previewRunProblem);
 router.post('/problems/:id/preview/approve', requireCoordinatorPermission('coordinator.compiler.manage'), invalidateCompilerCache, upload.none(), approveProblemPreview);
-router.get('/problems', requireAdminCoordinatorOrStudent, requireFullStudent, listProblems);
-router.get('/problem-companies', requireStudent, requireFullStudent, compilerCache, listStudentProblemCompanies);
+router.get('/problems', requireAdminCoordinatorOrStudent, requireFullStudent, requireStudentFeature('prep_coding'), listProblems);
+router.get('/problem-companies', requireStudent, requireFullStudent, requireStudentFeature('prep_coding'), compilerCache, listStudentProblemCompanies);
 router.post('/problems', requireCoordinatorPermission('coordinator.compiler.create'), invalidateCompilerCache, upload.any(), createProblem);
-router.get('/problems/:id/submissions', requireStudent, requireFullStudent, listProblemSubmissions);
-router.get('/problems/:id', requireAdminCoordinatorOrStudent, requireFullStudent, getProblemDetail);
+router.post('/problems/:id/assessment-clone', requireCoordinatorPermission('coordinator.compiler.manage'), invalidateCompilerCache, upload.none(), cloneProblemIntoAssessment);
+router.get('/problems/:id/submissions', requireStudent, requireFullStudent, requireStudentFeature('prep_coding'), listProblemSubmissions);
+router.get('/problems/:id', requireAdminCoordinatorOrStudent, requireFullStudent, requireStudentFeature('prep_coding'), getProblemDetail);
 router.put('/problems/:id', requireCoordinatorPermission('coordinator.compiler.manage'), invalidateCompilerCache, upload.any(), updateProblem);
 router.patch('/problems/:id/status', requireCoordinatorPermission('coordinator.compiler.manage'), invalidateCompilerCache, upload.none(), updateProblemStatus);
 router.patch('/problems/:id/visibility', requireCoordinatorPermission('coordinator.compiler.manage'), invalidateCompilerCache, upload.none(), updateProblemVisibility);
 router.delete('/problems/:id', requireCoordinatorPermission('coordinator.compiler.manage'), invalidateCompilerCache, deleteProblem);
 router.post('/problems/:id/run', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), runProblemCode);
 router.post('/problems/:id/submit', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), submitProblemCode);
-router.post('/problems/:id/expected', requireAssessmentCompilerStudent, compilerExecutionLimiter, getExpectedOutput);
+router.post('/problems/:id/expected', requireStudentCompilerAccess, requireAssessmentCompilerStudent, compilerExecutionLimiter, getExpectedOutput);
 
-router.post('/run', requireAssessmentCompilerStudent, compilerRunLimiter, compilerRunCooldown, runCode);
-router.post('/submit', requireAssessmentCompilerStudent, compilerSubmitLimiter, compilerSubmitCooldown, submitCode);
+router.post('/run', requireStudentCompilerAccess, requireAssessmentCompilerStudent, compilerRunLimiter, compilerRunCooldown, runCode);
+router.post('/submit', requireStudentCompilerAccess, requireAssessmentCompilerStudent, compilerSubmitLimiter, compilerSubmitCooldown, submitCode);
 router.get('/health/judge0', requireAdmin, getJudge0Health);
 
 router.get('/submissions', requireCoordinatorPermission('coordinator.compiler.analytics'), listSubmissions);

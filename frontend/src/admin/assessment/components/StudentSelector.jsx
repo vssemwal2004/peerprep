@@ -243,7 +243,7 @@ export default function StudentSelector({ selected = [], onChange, onBusyChange 
               <option value="">Browse all students</option>
               {uploadBatches.map((batch) => (
                 <option key={batch._id} value={batch._id}>
-                  {batch.name}{Array.isArray(batch.studentIds) ? ` (${batch.studentIds.length} students)` : ''}
+                  {batch.name}{Number.isFinite(batch.studentCount ?? batch.studentIds?.length) ? ` (${batch.studentCount ?? batch.studentIds.length} students)` : ''}
                 </option>
               ))}
             </select>

@@ -6,6 +6,7 @@ import { HttpError } from '../utils/errors.js';
 import { listStudentChallengeBadges } from '../services/studentEngagementService.js';
 import { refreshAdaptiveEngagement } from '../services/adaptiveEngagementService.js';
 import { latestQuestResume } from '../services/questService.js';
+import { studentHasFeature } from '../services/studentFeatureAccess.js';
 
 export async function refreshStudentChallenges(req, res) {
   // No client-supplied metrics, award IDs, dates or point values are trusted.
@@ -41,10 +42,24 @@ function publicRanking(ranking = {}) {
 
 export async function getStudentDashboard(req, res) {
   res.set('Cache-Control', 'private, no-store');
-  const [data, quest] = await Promise.all([getStudentDashboardData(req.user), latestQuestResume(req.user).catch(() => null)]);
+  const canQuickPrep = studentHasFeature(req.user, 'quickprep');
+  const canCoding = studentHasFeature(req.user, 'prep_coding');
+  const canLearning = studentHasFeature(req.user, 'learning');
+  const canRanking = studentHasFeature(req.user, 'rankings') || studentHasFeature(req.user, 'prep_coins');
+  const [data, quest] = await Promise.all([getStudentDashboardData(req.user), canQuickPrep ? latestQuestResume(req.user).catch(() => null) : null]);
   // The quest a student last opened competes with their other unfinished work on recency.
   if (quest) data.resumeItems = [quest, ...(data.resumeItems || [])].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).slice(0, 4);
-  data.ranking = publicRanking(data.ranking);
+  data.resumeItems = (data.resumeItems || []).filter((item) => (
+    (item.type === 'coding' && canCoding)
+    || (item.type === 'learning' && canLearning)
+    || (item.type === 'quest' && canQuickPrep)
+  ));
+  if (!canCoding) {
+    data.coding = null;
+    data.suggestedPractice = [];
+  }
+  if (!canLearning) data.learning = null;
+  data.ranking = canRanking ? publicRanking(data.ranking) : null;
   res.json(data);
 }
 

@@ -3,10 +3,15 @@ import { currentTenant } from "../platform/tenantContext.js";
 import AIInterview from "../models/AIInterview.js";
 import Resource from "../models/AIInterviewResource.js";
 import QuestionLibrary from "../models/QuestionLibrary.js";
-import { interviewServiceConfigured } from "../services/interviewServiceClient.js";
+import { anviConfig, anviConfigured } from "../modules/anviInterview/anviInterview.config.js";
+import { createGeminiClient } from "../modules/anviInterview/anviInterview.gemini.js";
+import { questionGenerationPrompt } from "../modules/anviInterview/anviInterview.prompts.js";
+import { defaultUsageLedger } from "../modules/anviInterview/anviInterview.usage.js";
+import { defaultAudioPregen, pendingOutbox } from "../modules/anviInterview/anviInterview.audioPregen.js";
 import {
   AuthoringError,
   CAPABILITIES,
+  LIMITS,
   cleanText,
   normalizedName,
   normalizeDefinition,
@@ -23,6 +28,35 @@ const objectId = (value) => {
     error(400, "INVALID_IDENTIFIER", "Invalid identifier.");
   return value;
 };
+// Scheduled assignments pin the published snapshot, so an interview with a live one stays published.
+// Loaded on first use (the scheduling service imports ANVI modules); tests replace the method.
+let schedulingModule;
+export const assignmentGuard = {
+  activeAssignmentFor: async (interviewId) =>
+    (await (schedulingModule ||= import("../modules/anviInterview/anviInterview.scheduling.service.js"))).activeAssignmentFor(interviewId),
+  deleteInterviewData: async (admin, interviewId) =>
+    (await (schedulingModule ||= import("../modules/anviInterview/anviInterview.scheduling.service.js"))).anviScheduling().deleteInterviewData(admin, interviewId),
+};
+async function assertNoActiveAssignment(interviewId, verb) {
+  const active = await assignmentGuard.activeAssignmentFor(interviewId);
+  if (!active) return;
+  const name = cleanText(active.title || "", 120);
+  error(
+    409,
+    "ASSIGNMENT_ACTIVE",
+    `${name ? `The schedule "${name}"` : "A schedule"} is still ${active.status || "active"} for this interview. Close or cancel it before you ${verb} the interview.`,
+    { assignmentId: active.id || active._id ? String(active.id || active._id) : null },
+  );
+}
+// Publish-time question audio (ANVI hybrid); tests replace `pregen`. A publish never awaits it.
+export const audioPregenHooks = { pregen: () => defaultAudioPregen() };
+function kickAudioPregen(interviewId, rev) {
+  try {
+    Promise.resolve(audioPregenHooks.pregen().kick(String(interviewId), rev)).catch(() => {});
+  } catch {
+    // Question audio is optional: the interview falls back to text.
+  }
+}
 const owner = (req) => ({ ownerId: req.user._id });
 const filter = (req) => ({ ...owner(req), _id: objectId(req.params.id) });
 const revision = (req) => {
@@ -165,7 +199,7 @@ async function references(req, data, previous) {
       );
   }
 }
-export const capabilities = (_req, res) => res.json({ ...CAPABILITIES, aiConfigured: interviewServiceConfigured() });
+export const capabilities = (_req, res) => res.json({ ...CAPABILITIES, aiConfigured: anviConfigured() });
 export async function listInterviews(req, res) {
   const { page, limit } = pageParams(req);
   const where = {
@@ -175,6 +209,8 @@ export async function listInterviews(req, res) {
   if (req.query.status === "complete") where["validation.complete"] = true;
   if (req.query.status === "incomplete")
     where["validation.complete"] = { $ne: true };
+  // Published (schedulable) interviews, including ones whose draft was edited after publishing.
+  if (req.query.published === "true") where.publishedAt = { $ne: null };
   if (req.query.company) where["data.companyId"] = objectId(req.query.company);
   const search = literalSearch(req.query.search);
   if (search)
@@ -236,7 +272,7 @@ export async function getInterview(req, res) {
 }
 export async function saveInterview(req, res) {
   const previous = await find(req);
-  const data = normalizeDefinition(req.body.data);
+  const data = normalizeDefinition(req.body.data, { previous: previous.data });
   await references(req, data, previous.data);
   const checked = inspectDefinition(data);
   const doc = await cas(req, {
@@ -302,6 +338,7 @@ export async function lifecycleInterview(req, res) {
   const current = await find(req);
   if ((action === "archive") !== (current.lifecycle === "draft"))
     error(409, "INVALID_LIFECYCLE", "This action is not available.");
+  if (action === "archive") await assertNoActiveAssignment(current._id, "archive");
   const doc = await cas(
     req,
     {
@@ -309,6 +346,8 @@ export async function lifecycleInterview(req, res) {
         lifecycle: action === "archive" ? "archived" : "draft",
         archivedAt: action === "archive" ? new Date() : null,
         validation: { complete: false },
+        // Archive only stops the audio outbox; clips pinned by assignments or attempts stay.
+        ...(action === "archive" && current.audioPregen ? { "audioPregen.status": "inactive" } : {}),
       },
       ...(action === "archive" ? { $unset: { publishedSnapshot: "", publishedAt: "", publishedRevision: "", requiresResume: "" } } : {}),
       $inc: { revision: 1 },
@@ -333,8 +372,10 @@ export async function releaseInterview(req, res) {
   if (current.lifecycle !== "draft") error(409, "INVALID_LIFECYCLE", "Restore the interview first.");
   if (action === "publish" && (!current.validation?.complete || current.validation.validatedRevision !== current.revision))
     error(422, "VALIDATION_REQUIRED", "Finish and validate the latest setup before making it available to students.");
-  if (action === "publish" && !interviewServiceConfigured())
-    error(503, "AI_NOT_CONFIGURED", "Configure INTERVIEW_SERVICE_URL and INTERVIEW_SERVICE_SECRET on the backend before making AI interviews available.");
+  if (action === "publish" && !anviConfigured())
+    error(503, "AI_NOT_CONFIGURED", "Set GEMINI_API_KEY on the backend before making AI interviews available.");
+  // Republishing is fine: an assignment keeps the snapshot it was scheduled with.
+  if (action === "unpublish") await assertNoActiveAssignment(current._id, "unpublish");
   const next = current.revision + 1;
   const update = {
     $inc: { revision: 1 },
@@ -346,16 +387,43 @@ export async function releaseInterview(req, res) {
     publishedRevision: next,
     requiresResume: current.data.sections.some((section) => section.groups.some((group) => (group.questions || []).some((question) => question.kind === "resume"))),
     "validation.validatedRevision": next,
+    // The question audio outbox for this revision, committed with the snapshot.
+    audioPregen: pendingOutbox(next),
   };
   else {
     update.$unset = { publishedSnapshot: "", publishedAt: "", publishedRevision: "", requiresResume: "" };
     if (current.validation?.complete && current.validation.validatedRevision === current.revision)
       update.$set = { "validation.validatedRevision": next };
+    if (current.audioPregen) update.$set = { ...update.$set, "audioPregen.status": "inactive" };
   }
   const doc = await cas(req, update);
+  // Fire-and-forget: the publish has already succeeded whatever happens to the audio.
+  if (action === "publish") kickAudioPregen(doc._id, next);
   delete doc.validatedSnapshot;
   delete doc.publishedSnapshot;
   res.json(doc);
+}
+async function published(req) {
+  const doc = await find(req);
+  if (doc.lifecycle !== "draft" || !doc.publishedAt)
+    error(409, "INTERVIEW_NOT_PUBLISHED", "Publish this interview before generating its question audio.");
+  return doc;
+}
+// Re-queues the published revision's question audio (failed clips retry now). Rate-limited per interview.
+export async function regenerateInterviewAudio(req, res) {
+  const doc = await published(req);
+  const result = await audioPregenHooks.pregen().regenerate(doc._id);
+  if (!result.ok && result.code === "RATE_LIMITED") {
+    const seconds = Math.max(1, Math.ceil((new Date(result.retryAt).getTime() - Date.now()) / 1000));
+    res.set("Retry-After", String(seconds));
+    error(429, "RATE_LIMITED", "Question audio was requested a moment ago. Try again shortly.", { retryAfterSeconds: seconds });
+  }
+  if (!result.ok) error(409, "INTERVIEW_NOT_PUBLISHED", "Publish this interview before generating its question audio.");
+  res.status(202).json(await audioPregenHooks.pregen().status(doc._id));
+}
+export async function interviewAudioStatus(req, res) {
+  const doc = await find(req);
+  res.json(await audioPregenHooks.pregen().status(doc._id));
 }
 export async function duplicateInterview(req, res) {
   const source = await find(req);
@@ -397,15 +465,18 @@ export async function deleteInterview(req, res) {
     );
   if (current.lifecycle !== "draft")
     error(409, "INVALID_LIFECYCLE", "Restore before deleting.");
-  // Session documents are written by the separate interview service. Keep
-  // this read-only guard so admins cannot delete a definition in active use.
-  if (await (currentTenant()?.connection || mongoose.connection).collection("aiinterviewsessions").findOne(
-    { interviewId: current._id }, { projection: { _id: 1 } },
-  ))
-    error(409, "HAS_STUDENT_SESSIONS", "This interview has student sessions and cannot be deleted. Archive it instead.");
+  const expected = revision(req);
+  if (current.revision !== expected)
+    error(409, "REVISION_CONFLICT", "This interview changed. Reload before deleting.");
+  // A confirmed permanent delete owns the whole interview aggregate. Linked schedules and finished
+  // student work are removed with it; only an attempt that is live right now remains a blocker.
+  await assignmentGuard.deleteInterviewData(req.user, current._id);
+  await (currentTenant()?.connection || mongoose.connection).collection("aiinterviewsessions").deleteMany({
+    interviewId: { $in: [current._id, String(current._id)] },
+  });
   const result = await AIInterview.deleteOne({
     ...filter(req),
-    revision: revision(req),
+    revision: expected,
     lifecycle: "draft",
   });
   if (!result.deletedCount)
@@ -495,3 +566,160 @@ export async function library(req, res) {
   ]);
   res.json({ items, pagination: pagination(page, limit, total) });
 }
+
+// Generate & review: ANVI drafts questions for one ANVI-prompt topic. Nothing is saved here; the
+// admin edits and approves them in the builder, which saves them as manual questions.
+const TOPIC_ID = /^[a-zA-Z0-9_-]{1,80}$/;
+const GENERATE_PER_MINUTE = 10;
+const GENERATED_KEY_POINTS = 6;
+const generatedText = (value, max) =>
+  cleanText(typeof value === "string" ? value.slice(0, max) : "", max)
+    .replace(/\s+/g, " ")
+    .trim();
+export function createGenerateQuestions({
+  gemini,
+  usage,
+  now = Date.now,
+  limit = GENERATE_PER_MINUTE,
+  windowMs = 60_000,
+} = {}) {
+  // In-memory sliding window per admin. Per process, which is enough to stop accidental bursts.
+  const recent = new Map();
+  const retryAfter = (adminId) => {
+    const at = now();
+    const kept = (recent.get(adminId) || []).filter((t) => at - t < windowMs);
+    if (kept.length >= limit) {
+      recent.set(adminId, kept);
+      return Math.max(1, Math.ceil((kept[0] + windowMs - at) / 1000));
+    }
+    kept.push(at);
+    recent.set(adminId, kept);
+    if (recent.size > 1000)
+      for (const [key, times] of recent)
+        if (!times.some((t) => at - t < windowMs)) recent.delete(key);
+    return 0;
+  };
+  return async function generateQuestions(req, res) {
+    if (!anviConfigured())
+      return res.status(503).json({
+        code: "AI_NOT_CONFIGURED",
+        error: "Set GEMINI_API_KEY on the backend before generating questions.",
+      });
+    const wait = retryAfter(String(req.user._id));
+    if (wait) {
+      res.set("Retry-After", String(wait));
+      error(
+        429,
+        "RATE_LIMITED",
+        "Too many generation requests. Wait a minute and try again.",
+        { retryAfterSeconds: wait },
+      );
+    }
+    const doc = await find(req);
+    if (doc.lifecycle !== "draft")
+      error(409, "INVALID_LIFECYCLE", "Restore this interview before editing.");
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    if (typeof body.groupId !== "string" || !TOPIC_ID.test(body.groupId))
+      error(422, "VALIDATION_FAILED", "Choose the topic to generate questions for.");
+    const count = body.count;
+    if (!Number.isInteger(count) || count < 1 || count > LIMITS.generateQuestions)
+      error(
+        422,
+        "VALIDATION_FAILED",
+        `Choose 1–${LIMITS.generateQuestions} questions to generate.`,
+      );
+    if (
+      body.skills !== undefined &&
+      (!Array.isArray(body.skills) || body.skills.length > 30)
+    )
+      error(422, "VALIDATION_FAILED", "Expected a list of at most 30 skills.");
+    if (
+      body.difficulty !== undefined &&
+      !["", "easy", "medium", "hard"].includes(body.difficulty)
+    )
+      error(422, "VALIDATION_FAILED", "Invalid difficulty.");
+    // The topic may be unsaved (staged in the topic drawer); then only the request body describes it.
+    const data = doc.data || {};
+    let section = null,
+      group = null;
+    for (const s of data.sections || []) {
+      group = (s.groups || []).find((g) => g.id === body.groupId) || null;
+      if (group) {
+        section = s;
+        break;
+      }
+    }
+    const annu = group?.source === "annu" && group.annu ? group.annu : {};
+    const requirements = cleanText(body.requirements ?? annu.requirements ?? "");
+    if (!requirements)
+      error(
+        422,
+        "VALIDATION_FAILED",
+        "Describe what ANVI should ask before generating questions.",
+      );
+    const skills = (body.skills ?? annu.skills ?? [])
+      .map((skill) => cleanText(skill, 80))
+      .filter(Boolean);
+    const avoid = (data.sections || [])
+      .flatMap((s) => s.groups || [])
+      .flatMap((g) => g.questions || [])
+      .filter((q) => q.kind !== "resume" && q.prompt)
+      .map((q) => q.prompt)
+      .slice(0, 40);
+    const { systemText, userText, schema } = questionGenerationPrompt({
+      kind: "annu",
+      count,
+      role: data.role,
+      companyName: data.companyName,
+      experience: data.experience,
+      difficulty: body.difficulty || group?.difficulty || data.difficulty,
+      language: data.rules?.language,
+      sectionName: section?.name,
+      sectionInstructions: section?.instructions,
+      groupName: group?.name,
+      requirements,
+      skills,
+      exclusions: annu.exclusions,
+      avoid,
+    });
+    let result;
+    try {
+      result = await (gemini ?? createGeminiClient()).generateJson({
+        model: anviConfig().generateModel,
+        systemText,
+        parts: [{ text: userText }],
+        schema,
+        temperature: 0.5,
+        timeoutMs: 30000,
+        // Metered against the interview (an admin action: no student or attempt).
+        usageKind: "generate",
+        onUsage: (usage || defaultUsageLedger()).recorder({ interviewId: doc._id }),
+      });
+    } catch {
+      result = null;
+    }
+    const seen = new Set(),
+      questions = [];
+    for (const entry of Array.isArray(result?.questions) ? result.questions : []) {
+      const prompt = generatedText(entry?.text, 1200).replace(
+        /^(?:question|q)\s*\d{1,3}\s*[:.)-]\s*/i,
+        "",
+      );
+      if (prompt.length < 8 || seen.has(prompt.toLowerCase())) continue;
+      seen.add(prompt.toLowerCase());
+      const keyPoints = (Array.isArray(entry.keyPoints) ? entry.keyPoints : [])
+        .map((point) => generatedText(point, 200))
+        .filter(Boolean)
+        .slice(0, GENERATED_KEY_POINTS);
+      questions.push({ prompt, expectedAnswer: keyPoints.join("\n"), keyPoints });
+      if (questions.length === count) break;
+    }
+    if (!questions.length)
+      return res.status(502).json({
+        code: "GENERATION_FAILED",
+        error: "ANVI could not generate questions right now. Try again in a moment.",
+      });
+    res.json({ questions });
+  };
+}
+export const generateQuestions = createGenerateQuestions();

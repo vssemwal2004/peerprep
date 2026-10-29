@@ -47,6 +47,7 @@ const activitySchema = new mongoose.Schema({
     required: true,
     enum: [
       'STUDENT',
+      'ADMIN',
       'COORDINATOR',
       'EVENT',
       'SUBJECT',
@@ -68,7 +69,9 @@ const activitySchema = new mongoose.Schema({
       'TEMPLATE',
       'SLOT',
       'PROGRESS',
-      'SPECIAL_STUDENT'
+      'SPECIAL_STUDENT',
+      'MASTER_DATA',
+      'UPLOAD_BATCH'
     ]
   },
   targetId: {

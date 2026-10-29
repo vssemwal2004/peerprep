@@ -24,6 +24,16 @@ export const avatarApi = {
       timeoutMs: 120000,
     });
   },
+  uploadGesture: (id, revision, gesture, file) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("revision", String(revision));
+    return send(`/${id}/gestures/${gesture}`, {
+      method: "POST",
+      formData,
+      timeoutMs: 120000,
+    });
+  },
   render: (id, revision) =>
     send(`/${id}/render`, {
       method: "POST",

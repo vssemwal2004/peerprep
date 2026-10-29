@@ -201,6 +201,7 @@ async function request(
     skipDedupe = false,
     skipQueue = false,
     queueTimeoutMs = REQUEST_QUEUE_TIMEOUT_MS,
+    signal,
   } = {},
 ) {
   method = method.toUpperCase();
@@ -271,6 +272,7 @@ async function request(
   const runNetworkRequest = async () => {
     let controller = null;
     let timeoutId = null;
+    let unlinkCallerSignal = null;
 
     try {
       if (timeoutMs && timeoutMs > 0) {
@@ -278,6 +280,17 @@ async function request(
         controller = new AbortController();
         timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         opts.signal = controller.signal;
+      }
+      if (signal) {
+        // A caller-supplied signal (e.g. a superseded live refresh) cancels the fetch too.
+        controller = controller || new AbortController();
+        opts.signal = controller.signal;
+        const abortFromCaller = () => controller.abort();
+        if (signal.aborted) abortFromCaller();
+        else {
+          signal.addEventListener("abort", abortFromCaller, { once: true });
+          unlinkCallerSignal = () => signal.removeEventListener("abort", abortFromCaller);
+        }
       }
 
       const res = await fetch(url, opts);
@@ -320,6 +333,12 @@ async function request(
 
       return result;
     } catch (err) {
+      if (err.name === "AbortError" && signal?.aborted) {
+        const abortErr = new Error("Request cancelled");
+        abortErr.name = "AbortError";
+        abortErr.response = { status: 0 };
+        throw abortErr;
+      }
       if (err.name === "AbortError") {
         const timeoutErr = new Error(
           "Request timed out. Please check your connection and try again.",
@@ -332,6 +351,7 @@ async function request(
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
+      unlinkCallerSignal?.();
     }
   };
 
@@ -351,29 +371,83 @@ async function request(
   return promise;
 }
 
-async function interviewMediaRequest(path, { method = 'GET', recording, version } = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 90000);
-  try {
-    const response = await fetch(`${API_BASE}${path}`, {
-      method, credentials: 'include', signal: controller.signal,
-      headers: {
-        'X-Interview-Version': String(version),
-        ...(recording ? { 'Content-Type': recording.type || 'audio/webm' } : {}),
-      },
-      ...(recording ? { body: recording } : {}),
-    });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      const error = new Error(payload.error || 'Interview audio request failed.');
-      error.response = { status: response.status, data: payload };
-      throw error;
+/** An ANVI start body: the options object as given, or { resumeConsent } from the legacy boolean. */
+const anviStartBody = (options) => (options && typeof options === 'object' ? options : { resumeConsent: options === true });
+
+const anviResumePath = (target) => {
+  const id = encodeURIComponent(String(target?.id || ''));
+  return target?.kind === 'assignment' ? `/student/ai-interviews/assignments/${id}/resume` : `/student/ai-interviews/${id}/resume`;
+};
+
+const ANVI_AUDIO_RATE = 24000;
+const ANVI_AUDIO_TIMEOUT_MS = 15000;
+
+/**
+ * The s16le samples of an ANVI clip body: a mono 16-bit PCM WAV (header parsed) or raw PCM.
+ * Returns { pcm: Uint8Array, sampleRate }; throws on any other WAV layout.
+ */
+export function anviClipFromBytes(buffer, contentType = '') {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const tag = (offset) => String.fromCharCode(...bytes.subarray(offset, offset + 4));
+  if (bytes.length < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') {
+    if (/wav/i.test(contentType)) throw new Error('The question audio could not be read.');
+    return { pcm: bytes.subarray(0, bytes.length - (bytes.length % 2)), sampleRate: ANVI_AUDIO_RATE };
+  }
+  let sampleRate = 0;
+  for (let offset = 12; offset + 8 <= bytes.length;) {
+    const id = tag(offset);
+    const size = view.getUint32(offset + 4, true);
+    const body = offset + 8;
+    if (id === 'fmt ' && size >= 16) {
+      const format = view.getUint16(body, true);
+      const channels = view.getUint16(body + 2, true);
+      const bits = view.getUint16(body + 14, true);
+      if (format !== 1 || channels !== 1 || bits !== 16) throw new Error('The question audio has an unsupported format.');
+      sampleRate = view.getUint32(body + 4, true);
+    } else if (id === 'data') {
+      if (!sampleRate) break;
+      const end = Math.min(bytes.length, body + size);
+      return { pcm: bytes.subarray(body, end - ((end - body) % 2)), sampleRate };
     }
-    return recording ? response.json() : response.blob();
-  } catch (error) {
-    if (error.name === 'AbortError') throw new Error('Interview audio request timed out. Please retry.');
-    throw error;
-  } finally { clearTimeout(timeout); }
+    offset = body + size + (size % 2);
+  }
+  throw new Error('The question audio could not be read.');
+}
+
+/**
+ * POSTs one file as multipart `field`, reporting upload progress (fetch cannot). Errors carry
+ * `response: { status, data }` like `request`; status 0 means the upload did not finish.
+ */
+function uploadWithProgress(path, field, file, { onProgress, timeoutMs = 90000 } = {}) {
+  const formData = new FormData();
+  formData.append(field, file);
+  if (typeof XMLHttpRequest === 'undefined') return request(path, { method: 'POST', formData, timeoutMs, skipQueue: true });
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const fail = (message, status, data = {}) => {
+      const err = new Error(message);
+      err.response = { status, data };
+      reject(err);
+    };
+    xhr.open('POST', `${API_BASE}${path}`);
+    xhr.withCredentials = true;
+    xhr.timeout = timeoutMs;
+    if (onProgress && xhr.upload) xhr.upload.onprogress = (event) => { if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total); };
+    xhr.onload = () => {
+      let data = null;
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { data = null; }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        invalidateApiCacheForPath(path);
+        resolve(data);
+        return;
+      }
+      fail(data?.error || data?.message || xhr.statusText || 'The upload failed.', xhr.status, data || {});
+    };
+    xhr.onerror = () => fail('The upload did not finish. Check your connection and try again.', 0);
+    xhr.ontimeout = () => fail('The upload timed out. Check your connection and try again.', 0);
+    xhr.send(formData);
+  });
 }
 
 export const api = {
@@ -435,16 +509,78 @@ export const api = {
   },
   deleteUniversityLogo: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/logo`, { method: 'DELETE' }),
   publishPlatformContent: (kind, id, body) => request(`/platform/admin/publications/${kind}/${encodeURIComponent(id)}`, { method: 'PUT', body }),
-  platformAudit: ({ universityId = '', action = '', before = '' } = {}) => request(`/platform/admin/audit?${new URLSearchParams(Object.entries({ universityId, action, before }).filter(([, value]) => value))}`, { skipCache: true }),
+  platformAudit: ({ action = '', before = '' } = {}) => request(`/platform/admin/audit?${new URLSearchParams(Object.entries({ action, before }).filter(([, value]) => value))}`, { skipCache: true }),
   universityPolicy: () => request('/platform/university/policy', { skipCache: true }),
   aiInterviewRequest: (path = '', options = {}) => request(`/ai-interviews${path}`, { ...options, skipCache: true, skipDedupe: true }),
+  // Hybrid ANVI question audio for a published interview: queue a regeneration, and read its progress.
+  regenerateInterviewAudio: (id) => request(`/ai-interviews/${encodeURIComponent(id)}/audio/regenerate`, { method: 'POST', skipCache: true, skipQueue: true }),
+  getInterviewAudioStatus: (id) => request(`/ai-interviews/${encodeURIComponent(id)}/audio/status`, { skipCache: true, skipDedupe: true }),
   listStudentAIInterviews: () => request('/student/ai-interviews', { skipCache: true }),
   // expectedCost: the Prep Coin cost the student confirmed; the server refuses if it has changed.
-  startStudentAIInterview: (id, resumeConsent = false, expectedCost = null) => request(`/student/ai-interviews/${id}/start`, { method: 'POST', body: { resumeConsent }, timeoutMs: 60000, skipQueue: true, headers: coinCostHeader(expectedCost) }),
-  getStudentAIInterviewSession: (id) => request(`/student/ai-interviews/sessions/${id}`, { skipCache: true }),
-  answerStudentAIInterview: (id, version, transcriptId) => request(`/student/ai-interviews/sessions/${id}/answer`, { method: 'POST', body: { version, transcriptId }, timeoutMs: 60000, skipQueue: true }),
-  transcribeStudentAIAnswer: (id, recording, version) => interviewMediaRequest(`/student/ai-interviews/sessions/${id}/transcribe`, { method: 'POST', recording, version }),
-  getStudentAIQuestionAudio: (id, version) => interviewMediaRequest(`/student/ai-interviews/sessions/${id}/question-audio`, { version }),
+  // `options`: the start body ({ termsAccepted, resumeConsent, language }), or the legacy resumeConsent boolean.
+  startStudentAIInterview: (id, options = false, expectedCost = null) => request(`/student/ai-interviews/${id}/start`, { method: 'POST', body: anviStartBody(options), timeoutMs: 60000, skipQueue: true, headers: coinCostHeader(expectedCost) }),
+  // ANVI attempts: the live conversation runs over Socket.IO; REST reads the saved answers and ends a stranded attempt.
+  getStudentAIAttempt: (id) => request(`/student/ai-interviews/attempts/${encodeURIComponent(id)}`, { skipCache: true }),
+  endStudentAIAttempt: (id) => request(`/student/ai-interviews/attempts/${encodeURIComponent(id)}/end`, { method: 'POST', timeoutMs: 30000, skipQueue: true }),
+  // Hybrid ANVI: one question clip through the authenticated proxy, used only when the socket's
+  // `anvi:clip` copy is missing. Returns { pcm: Uint8Array (s16le mono), sampleRate }. Error messages
+  // never carry the URL or the audio.
+  getAnviAudio: async (attemptId, assetId) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ANVI_AUDIO_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${API_BASE}/student/ai-interviews/attempts/${encodeURIComponent(attemptId)}/audio/${encodeURIComponent(assetId)}`, {
+        credentials: 'include', cache: 'no-store', signal: controller.signal,
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        const err = new Error(payload.error || 'The question audio is not available.');
+        err.response = { status: res.status, data: payload };
+        throw err;
+      }
+      return anviClipFromBytes(new Uint8Array(await res.arrayBuffer()), res.headers.get('content-type') || '');
+    } catch (err) {
+      if (err.name !== 'AbortError') throw err;
+      const timeoutErr = new Error('The question audio took too long to load.');
+      timeoutErr.response = { status: 0 };
+      throw timeoutErr;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+  // Scheduled ANVI interviews: the institution assigns them; slots, bookings and the start are checked on the server.
+  listStudentAnviAssignments: () => request('/student/ai-interviews/assignments', { skipCache: true }),
+  listAnviAssignmentSlots: (assignmentId) => request(`/student/ai-interviews/assignments/${encodeURIComponent(assignmentId)}/slots`, { skipCache: true, skipDedupe: true }),
+  bookAnviSlot: (assignmentId, slotId) => request(`/student/ai-interviews/assignments/${encodeURIComponent(assignmentId)}/book`, { method: 'POST', body: { slotId }, skipQueue: true }),
+  rescheduleAnviBooking: (bookingId, slotId) => request(`/student/ai-interviews/bookings/${encodeURIComponent(bookingId)}/reschedule`, { method: 'POST', body: { slotId }, skipQueue: true }),
+  cancelAnviBooking: (bookingId) => request(`/student/ai-interviews/bookings/${encodeURIComponent(bookingId)}`, { method: 'DELETE', skipQueue: true }),
+  // An assigned start never charges Prep Coins, so no cost header is sent.
+  startAnviAssignment: (assignmentId, options = false) => request(`/student/ai-interviews/assignments/${encodeURIComponent(assignmentId)}/start`, { method: 'POST', body: anviStartBody(options), timeoutMs: 60000, skipQueue: true }),
+  // The resume ANVI may ask about, per practice interview ({ kind: 'practice', id }) or assignment
+  // ({ kind: 'assignment', id }). Each returns { source, createdAt, expiresAt, preview }.
+  getAnviResume: (target) => request(anviResumePath(target), { skipCache: true, skipDedupe: true }),
+  saveAnviBuilderResume: (target) => request(anviResumePath(target), { method: 'POST', body: { source: 'builder' }, timeoutMs: 60000, skipQueue: true }),
+  // A PDF or TXT file (≤ 5 MB) in the multipart field "file"; `onProgress(fraction)` follows the upload.
+  uploadAnviResume: (target, file, { onProgress } = {}) => uploadWithProgress(anviResumePath(target), 'file', file, { onProgress, timeoutMs: 90000 }),
+  deleteAnviResume: (target) => request(anviResumePath(target), { method: 'DELETE', skipQueue: true }),
+  anviBookingCalendarUrl: (bookingId) => `${API_BASE}/student/ai-interviews/bookings/${encodeURIComponent(bookingId)}/calendar.ics`,
+  downloadAnviBookingCalendar: async (bookingId) => {
+    const res = await fetch(`${API_BASE}/student/ai-interviews/bookings/${encodeURIComponent(bookingId)}/calendar.ics`, { credentials: 'include' });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      throw new Error(payload.error || 'The calendar file could not be downloaded.');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const disposition = res.headers.get('Content-Disposition') || '';
+    a.download = disposition.match(/filename="?([^";]+)"?/i)?.[1] || 'anvi-interview.ics';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
   updateEventJoinDisable: (eventId, joinDisabled, joinDisableTime) =>
     request(`/events/${eventId}/join-disable`, {
       method: "PATCH",
@@ -664,10 +800,12 @@ export const api = {
       skipCache: Boolean(options.skipCache),
     });
   },
-  listMasterData: ({ category = "", activeOnly = false } = {}) => {
+  // Active-only lists feed dropdowns, which never show per-entry student counts.
+  listMasterData: ({ category = "", activeOnly = false, includeUsage = !activeOnly } = {}) => {
     const params = new URLSearchParams();
     if (category) params.set("category", category);
     if (activeOnly) params.set("active", "true");
+    if (!includeUsage) params.set("usage", "false");
     const query = params.toString();
     return request(`/master-data${query ? `?${query}` : ""}`, {
       skipCache: true,
@@ -704,10 +842,11 @@ export const api = {
     fd.append("file", file);
     return request("/students/check", { method: "POST", formData: fd });
   },
-  uploadStudentsCsv: (file, batchName = "") => {
+  uploadStudentsCsv: (file, batchName = "", featureAccess) => {
     const fd = new FormData();
     fd.append("file", file);
     if (batchName) fd.append("batchName", batchName);
+    if (featureAccess) fd.append("featureAccess", JSON.stringify(featureAccess));
     return request("/students/upload", {
       method: "POST",
       formData: fd,
@@ -730,6 +869,14 @@ export const api = {
     request(`/students/upload-batches/${batchId}`, { method: "DELETE" }),
   createStudent: (body) =>
     request("/students/create", { method: "POST", body }),
+  getStudentAccessPolicy: () =>
+    request("/students/access-policy", { skipCache: true }),
+  updateStudentAccessPolicy: (body) =>
+    request("/students/access-policy", { method: "PUT", body, skipCache: true }),
+  getStudentAccess: (studentId) =>
+    request(`/students/${encodeURIComponent(studentId)}/access`, { skipCache: true }),
+  updateStudentAccess: (studentId, access) =>
+    request(`/students/${encodeURIComponent(studentId)}/access`, { method: "PATCH", body: { access }, skipCache: true }),
   listPromotionSemesters: () =>
     request("/students/promotion/semesters", { skipCache: true }),
   listPromotionStudents: (semester) =>
@@ -1086,6 +1233,18 @@ export const api = {
     request(`/admin/assessment/reports/submissions/${submissionId}`, {
       skipCache: true,
     }),
+  // Live report roster: the full roster without `since`, or only the rows
+  // changed after the cursor with it. Never cached or deduplicated.
+  getAssessmentReportRoster: (assessmentId, { since, signal } = {}) =>
+    request(
+      `/admin/assessment/${encodeURIComponent(assessmentId)}/report/roster${since ? `?since=${encodeURIComponent(since)}` : ""}`,
+      { skipCache: true, skipDedupe: true, signal, timeoutMs: 30000 },
+    ),
+  releaseAssessmentResults: (assessmentId, release = true) =>
+    request(`/admin/assessment/${encodeURIComponent(assessmentId)}/release-results`, {
+      method: "POST",
+      body: { release: Boolean(release) },
+    }),
   exportAssessmentReports: async (params = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -1240,14 +1399,17 @@ export const api = {
       body,
       timeoutMs: 10000,
     }),
+  // Answer writes bypass the shared client queue: a burst of background GETs
+  // must never turn a save or the final submit into a synthetic 429.
   saveStudentAssessmentProgress: (id, body) =>
     request(`/student/assessment/${id}/answers`, {
       method: "PATCH",
       body,
       timeoutMs: 10000,
+      skipQueue: true,
     }),
   submitStudentAssessment: (body) =>
-    request("/student/assessment/submit", { method: "POST", body }),
+    request("/student/assessment/submit", { method: "POST", body, timeoutMs: 30000, skipQueue: true }),
   getAssessmentEvidence: (eventId) =>
     request(`/admin/assessment/evidence/${encodeURIComponent(eventId)}`, { skipCache: true }),
   getSubmissionViolations: (submissionId, { before } = {}) =>
@@ -1469,7 +1631,8 @@ export const api = {
   // Activity Tracking
   getActivities: (queryString) =>
     request(`/activity${queryString ? "?" + queryString : ""}`),
-  getActivityStats: () => request("/activity/stats"),
+  getActivityStats: (queryString) =>
+    request(`/activity/stats${queryString ? "?" + queryString : ""}`),
   logActivity: ({
     actionType,
     targetType,
@@ -1563,6 +1726,12 @@ export const api = {
   },
   updateCompilerProblem: (problemId, formData) =>
     request(`/compiler/problems/${problemId}`, { method: "PUT", formData }),
+  cloneCompilerProblemForAssessment: (problemId, { assessmentId, draftKey } = {}) => {
+    const fd = new FormData();
+    if (assessmentId) fd.append("assessmentId", assessmentId);
+    if (draftKey) fd.append("draftKey", draftKey);
+    return request(`/compiler/problems/${problemId}/assessment-clone`, { method: "POST", formData: fd });
+  },
   updateCompilerProblemVisibility: (problemId, visibility) => {
     const fd = new FormData();
     fd.append("visibility", visibility);

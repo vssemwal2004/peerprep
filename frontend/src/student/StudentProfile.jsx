@@ -20,6 +20,8 @@ import { EditProfileModal, PhotoModal } from './profile/ProfileModals';
 import { focusRing, languageLabel } from './profile/format';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { scopeEngagement } from './engagement/scopeEngagement';
+import { useAuth } from '../context/AuthContext';
+import { hasStudentFeature } from './studentFeatureAccess';
 
 const MotionDiv = motion.div;
 
@@ -30,13 +32,17 @@ function nullableNumber(value) {
 }
 
 export default function StudentProfile() {
+  const { user: sessionUser } = useAuth();
   const { allowsModule } = useUniversityPolicy();
-  const canQuestions = allowsModule('questions');
-  const canAssessments = allowsModule('assessments');
-  const canInterviews = allowsModule('interviews');
-  const canLearning = allowsModule('learning');
-  const canEvents = allowsModule('events');
-  const canEngage = canQuestions || canLearning || canAssessments || canInterviews || canEvents;
+  const canQuestions = allowsModule('questions') && hasStudentFeature(sessionUser, 'prep_coding');
+  const canAssessments = allowsModule('assessments') && hasStudentFeature(sessionUser, 'assessments');
+  const canInterviews = allowsModule('interviews') && hasStudentFeature(sessionUser, 'ai_interviews');
+  const canLearning = allowsModule('learning') && hasStudentFeature(sessionUser, 'learning');
+  const canEvents = allowsModule('events') && hasStudentFeature(sessionUser, 'interviews');
+  const canQuickPrep = hasStudentFeature(sessionUser, 'quickprep');
+  const canAnalysis = hasStudentFeature(sessionUser, 'analysis');
+  const canRanking = hasStudentFeature(sessionUser, 'rankings') || hasStudentFeature(sessionUser, 'prep_coins');
+  const canEngage = canQuickPrep;
   const [user, setUser] = useState(null);
   const [ranking, setRanking] = useState(null);
   const [avatarFile, setAvatarFile] = useState(null);
@@ -94,6 +100,7 @@ export default function StudentProfile() {
   const rankingRequestRef = useRef(0);
 
   const loadActivityData = useCallback(async (showSpinner = false) => {
+    if (!canQuestions && !canQuickPrep) { if (isMountedRef.current) { setActivity({}); setActivityStats(null); } return; }
     if (showSpinner && isMountedRef.current) {
       setLoadingActivity(true);
     }
@@ -112,11 +119,12 @@ export default function StudentProfile() {
         setLoadingActivity(false);
       }
     }
-  }, []);
+  }, [canQuestions, canQuickPrep]);
 
   // Analysis (assessments/interviews/learning) is slow and rate limited; load it on its own so it
   // never delays the solved/streak counters.
   const loadAnalysis = useCallback(async (force = false) => {
+    if (!canAnalysis) { if (isMountedRef.current) setAnalysis(null); return; }
     try {
       const analysisData = await api.getStudentAnalysis(force);
       if (!isMountedRef.current) return;
@@ -125,7 +133,7 @@ export default function StudentProfile() {
     } catch (analysisError) {
       console.warn('[StudentProfile] Failed to load analysis:', analysisError);
     }
-  }, []);
+  }, [canAnalysis]);
 
   const loadRanking = useCallback(async () => {
     const requestId = ++rankingRequestRef.current;
@@ -134,24 +142,25 @@ export default function StudentProfile() {
       setRankingFailed(false);
       setEngagement((previous) => ({ ...previous, loading: previous.data === null }));
     }
-    try {
-      const challengeData = await api.refreshStudentEngagement();
-      if (isMountedRef.current && requestId === rankingRequestRef.current) setEngagement({ data: challengeData, loading: false, error: false });
-    } catch {
-      if (isMountedRef.current && requestId === rankingRequestRef.current) setEngagement((previous) => ({ ...previous, loading: false, error: true }));
-    }
-    try {
-      const data = await api.getStudentRanking(true);
-      if (isMountedRef.current && requestId === rankingRequestRef.current) {
-        setRanking(data?.ranking || null);
+    if (canQuickPrep) {
+      try {
+        const challengeData = await api.refreshStudentEngagement();
+        if (isMountedRef.current && requestId === rankingRequestRef.current) setEngagement({ data: challengeData, loading: false, error: false });
+      } catch {
+        if (isMountedRef.current && requestId === rankingRequestRef.current) setEngagement((previous) => ({ ...previous, loading: false, error: true }));
       }
-    } catch (rankingError) {
-      if (isMountedRef.current && requestId === rankingRequestRef.current) setRankingFailed(true);
-      console.warn('[StudentProfile] Failed to load university rank:', rankingError);
-    } finally {
-      if (isMountedRef.current && requestId === rankingRequestRef.current) setLoadingRanking(false);
-    }
-  }, []);
+    } else if (isMountedRef.current) setEngagement({ data: null, loading: false, error: false });
+    if (canRanking) {
+      try {
+        const data = await api.getStudentRanking(true);
+        if (isMountedRef.current && requestId === rankingRequestRef.current) setRanking(data?.ranking || null);
+      } catch (rankingError) {
+        if (isMountedRef.current && requestId === rankingRequestRef.current) setRankingFailed(true);
+        console.warn('[StudentProfile] Failed to load university rank:', rankingError);
+      }
+    } else if (isMountedRef.current) setRanking(null);
+    if (isMountedRef.current && requestId === rankingRequestRef.current) setLoadingRanking(false);
+  }, [canQuickPrep, canRanking]);
 
   useEffect(() => {
     setEngagement({ data: null, loading: true, error: false });
@@ -171,6 +180,7 @@ export default function StudentProfile() {
   }, [engagement.data, loadRanking]);
 
   const loadStats = useCallback(async () => {
+    if (!canQuestions) { if (isMountedRef.current) { setStats(null); setProblemStatusSummary((previous) => ({ ...previous, loaded: true })); } return; }
     try {
       const [statsResult, problemsResult] = await Promise.allSettled([
         api.getStudentStats(true),
@@ -352,7 +362,7 @@ export default function StudentProfile() {
       console.warn('[StudentProfile] Failed to refresh stats:', statsError);
       // Keep the last good stats on screen; a failed refresh must not reset the profile to zeros.
     }
-  }, []);
+  }, [canQuestions]);
 
   const refreshMetrics = useCallback(async ({ withActivitySpinner = false, forceAnalysis = false } = {}) => {
     await Promise.all([
@@ -998,9 +1008,9 @@ export default function StudentProfile() {
               />}
             </div>
 
-            <ActivitySection activity={engagement.data?.activity?.activityByDate || (canQuestions ? activity : {})}
+            {(canQuestions || canQuickPrep) && <ActivitySection activity={engagement.data?.activity?.activityByDate || (canQuestions ? activity : {})}
               activityStats={engagement.data?.activity?.stats || (canQuestions ? activityStats : null)} loading={engagement.loading || loadingActivity}
-              breakdown={engagement.data?.activity?.breakdownByDate} domains={engagement.data?.domains} verified={engagement.data?.version === 2} />
+              breakdown={engagement.data?.activity?.breakdownByDate} domains={engagement.data?.domains} verified={engagement.data?.version === 2} />}
 
             <div className="grid gap-4 xl:grid-cols-2">
               {canEngage && <BadgesCard
@@ -1013,13 +1023,13 @@ export default function StudentProfile() {
                 learnerProgress={engagement.data?.learnerProgress || learnerProgress}
                 onOpenGallery={setBadgesGallery}
               />}
-              {(canAssessments || canInterviews || canLearning) && <PeerPrepProgress
+              {canAnalysis && (canAssessments || canInterviews || canEvents || canLearning) && <PeerPrepProgress
                 className="h-full"
                 assessments={assessments}
                 interviews={interviews}
                 learning={learning}
                 content={learningContent}
-                visible={{ assessments: canAssessments, interviews: canInterviews, learning: canLearning }}
+                visible={{ assessments: canAssessments, interviews: canInterviews || canEvents, learning: canLearning }}
               />}
             </div>
 

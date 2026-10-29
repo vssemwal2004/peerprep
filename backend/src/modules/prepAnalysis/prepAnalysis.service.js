@@ -182,8 +182,6 @@ export async function getAnalysisContext(user, range, { refresh = false, modules
   return promise;
 }
 
-export function clearPrepAnalysisCache() { contextCache.clear(); }
-
 // ---------------------------------------------------------------- queries
 
 function selectRows(rows, filter, rank) {

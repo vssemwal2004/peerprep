@@ -1,11 +1,6 @@
 import { currentTenant } from '../platform/tenantContext.js';
-import { sendSlotProposalEmail, sendSlotAcceptanceEmail, sendInterviewScheduledEmail, sendMail, renderTemplate } from '../utils/mailer.js';
 import Pair from '../models/Pair.js';
 import SlotProposal from '../models/SlotProposal.js';
-import bcrypt from 'bcrypt';
-import fs from 'fs';
-import path from 'path';
-import { Readable } from 'stream';
 import { HttpError } from '../utils/errors.js';
 import { supabase } from '../utils/supabase.js';
 import { logActivity } from './adminActivityController.js';
@@ -90,38 +85,6 @@ function generateRandomSlot(baseDate) {
   const next = new Date(day.getTime() + 24*60*60*1000);
   next.setHours(ALLOWED_START_HOUR, 0, 0, 0);
   return next;
-}
-
-// PATCH /events/:id/join-disable
-export async function updateEventJoinDisable(req, res) {
-  const event = await Event.findById(req.params.id);
-  if (!event) throw new HttpError(404, 'Event not found');
-  const { joinDisabled, joinDisableTime } = req.body;
-  // Manual disable overrides scheduled disable
-  if (typeof joinDisabled !== 'undefined') {
-    event.joinDisabled = !!joinDisabled;
-    if (joinDisabled) {
-      event.joinDisableTime = null; // clear scheduled if manually disabled
-    }
-  }
-  if (typeof joinDisableTime !== 'undefined' && !event.joinDisabled) {
-    event.joinDisableTime = joinDisableTime ? new Date(joinDisableTime) : null;
-  }
-  await event.save();
-  
-  // Log activity
-  logActivity({
-    userEmail: req.user.email,
-    userRole: req.user.role,
-    actionType: 'UPDATE',
-    targetType: 'EVENT',
-    targetId: event._id.toString(),
-    description: `Updated event join settings: ${event.name}`,
-    metadata: { joinDisabled: event.joinDisabled },
-    req
-  });
-  
-  res.json(event);
 }
 
 async function uploadTemplate(file) {
@@ -556,7 +519,7 @@ export async function checkSpecialEventCsv(req, res) {
           { email: { $in: emails } },
           { studentId: { $in: studentIds } },
         ],
-      }).select('email studentId name branch semester group course college teacherIds').lean(),
+      }).collation({ locale: 'en', strength: 2 }).select('email studentId name branch semester group course college teacherIds').lean(),
       User.find({ role: 'coordinator' }).select('coordinatorId').lean(),
     ]);
 
@@ -811,7 +774,9 @@ export async function checkInterviewParticipantCsv(req, res) {
     $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }],
   };
   if (req.user.role === 'coordinator') query.teacherIds = req.user.coordinatorId;
-  const students = await User.find(query).select('_id name email studentId semester branch course college group teacherIds').lean();
+  const students = await User.find(query)
+    .collation({ locale: 'en', strength: 2 })
+    .select('_id name email studentId semester branch course college group teacherIds').lean();
   const byEmail = new Map(students.map((student) => [student.email?.toLowerCase(), student]));
   const byStudentId = new Map(students.map((student) => [String(student.studentId), student]));
   const seen = new Set();
@@ -890,7 +855,7 @@ export async function createSpecialEvent(req, res) {
           { email: { $in: emails } },
           { studentId: { $in: studentIds } },
         ],
-      }).select('email studentId name branch semester group course college teacherIds').lean(),
+      }).collation({ locale: 'en', strength: 2 }).select('email studentId name branch semester group course college teacherIds').lean(),
       User.find({ role: 'coordinator' }).select('coordinatorId').lean(),
     ]);
 

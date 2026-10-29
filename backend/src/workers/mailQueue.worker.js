@@ -1,16 +1,16 @@
 import MailJob from '../models/MailJob.js';
 import User from '../models/User.js';
 import EventParticipant from '../models/EventParticipant.js';
-import { decryptMailPayload, ensureMailQueueRetention } from '../services/mailQueueService.js';
+import { decryptMailPayload } from '../services/mailQueueService.js';
 import {
   sendAssessmentInvitationEmail,
   sendCoordinatorOnboardingEmail,
   sendEventCancellationEmail,
   sendEventNotificationEmail,
+  sendMail,
   sendOnboardingEmail,
 } from '../utils/mailer.js';
 
-let timer = null;
 let running = false;
 
 async function deliver(job) {
@@ -35,6 +35,10 @@ async function deliver(job) {
   }
   if (job.type === 'event_cancellation') {
     return sendEventCancellationEmail(payload);
+  }
+  if (job.type === 'anvi_interview') {
+    // Rendered (and escaped) when queued by the ANVI scheduling notifier; no attachments.
+    return sendMail({ to: payload.to, subject: payload.subject, html: payload.html });
   }
   throw new Error(`Unsupported queued email type: ${job.type}`);
 }
@@ -141,13 +145,3 @@ export async function drainMailQueue() {
   }
 }
 
-export function startMailQueueWorker() {
-  if (timer) return;
-  ensureMailQueueRetention().catch((error) => console.error('[MailQueue] Retention setup failed:', error.message));
-  const intervalMs = Math.max(2000, Number(process.env.MAIL_QUEUE_POLL_MS || 5000));
-  const concurrency = Math.max(1, Math.min(5, Number(process.env.MAIL_QUEUE_CONCURRENCY || 1)));
-  console.info(`[MailQueue] Worker started (poll=${intervalMs}ms, concurrency=${concurrency}).`);
-  timer = setInterval(() => drainMailQueue().catch((error) => console.error('[MailQueue]', error.message)), intervalMs);
-  timer.unref?.();
-  drainMailQueue().catch((error) => console.error('[MailQueue]', error.message));
-}

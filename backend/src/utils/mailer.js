@@ -1,8 +1,12 @@
 import { currentTenant } from '../platform/tenantContext.js';
 import nodemailer from 'nodemailer';
 import EmailTemplate from '../models/EmailTemplate.js';
-import { EMAIL_TEMPLATE_TYPES } from '../services/emailTemplateService.js';
+import {
+  EMAIL_TEMPLATE_TYPES,
+  normalizeStudentOnboardingTemplate,
+} from '../services/emailTemplateService.js';
 import { normalizeAssessmentInvitationHtml } from '../services/assessmentInvitationTemplate.js';
+import { normalizeEmailAddress } from './emailIdentity.js';
 
 const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
 const smtpPort = Number(process.env.SMTP_PORT) || 587;
@@ -28,17 +32,6 @@ const transporter = nodemailer.createTransport({
     minVersion: 'TLSv1.2',
   },
 });
-
-export function isSmtpConfigured() {
-  return smtpConfigured;
-}
-
-export function isEmailFeatureEnabled(feature) {
-  if (isEmailGloballyDisabled()) return false;
-  if (process.env.EMAIL_ENABLED === 'true') return true;
-  const key = `EMAIL_ON_${String(feature || '').trim().toUpperCase()}`;
-  return process.env[key] === 'true';
-}
 
 export async function verifyMailTransport() {
   if (isEmailGloballyDisabled()) {
@@ -70,29 +63,12 @@ export async function sendMail({ to, subject, html, text, attachments }) {
     throw new Error('SMTP is not configured. Set SMTP_USER and SMTP_PASS in the backend environment.');
   }
   const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@example.com';
-  const info = await transporter.sendMail({ from, to, subject, html, text, attachments });
-  console.log(`[MAIL] Sent to: ${to} | Subject: ${subject}`);
+  const recipient = typeof to === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim())
+    ? normalizeEmailAddress(to)
+    : to;
+  const info = await transporter.sendMail({ from, to: recipient, subject, html, text, attachments });
+  console.log(`[MAIL] Sent to: ${recipient} | Subject: ${subject}`);
   return info;
-}
-
-// Send multiple emails in parallel (faster for bulk operations)
-export async function sendBulkMail(emails) {
-  if (!emails || emails.length === 0) return [];
-  
-  console.log(`[MAIL] Sending ${emails.length} emails in parallel...`);
-  const startTime = Date.now();
-  
-  const results = await Promise.allSettled(
-    emails.map(email => sendMail(email))
-  );
-  
-  const successful = results.filter(r => r.status === 'fulfilled').length;
-  const failed = results.filter(r => r.status === 'rejected').length;
-  const elapsed = Date.now() - startTime;
-  
-  console.log(`[MAIL] Bulk send complete: ${successful} sent, ${failed} failed in ${elapsed}ms`);
-  
-  return results;
 }
 
 export function renderTemplate(template, vars = {}) {
@@ -156,12 +132,19 @@ export function buildICS({ uid, start, end, summary, description, url, organizer
   return lines.join('\r\n');
 }
 
-// Onboarding email: StudentId & Password
-export async function sendOnboardingEmail({ to, studentId, password }) {
-  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.ONBOARDING);
-  const vars = { studentId, password, dashboardUrl: getDashboardUrl() };
+// Student onboarding uses the same email address shown on the login form.
+export async function sendOnboardingEmail({ to, password }) {
+  const email = normalizeEmailAddress(to);
+  const template = normalizeStudentOnboardingTemplate(
+    await getTemplateByType(EMAIL_TEMPLATE_TYPES.ONBOARDING),
+  );
+  const vars = {
+    email: escapeHtml(email),
+    password: escapeHtml(password),
+    dashboardUrl: getDashboardUrl(),
+  };
   return sendMail({
-    to,
+    to: email,
     subject: renderTemplate(template.subject, vars),
     html: renderTemplate(template.htmlContent, vars),
   });
@@ -216,31 +199,6 @@ export async function sendEventCancellationEmail({ to, event, studentName, cance
   });
 }
 
-// Assessment notification email
-export async function sendAssessmentNotificationEmail({ to, assessment, student }) {
-  const start = assessment.startTime ? new Date(assessment.startTime) : null;
-  const end = assessment.endTime ? new Date(assessment.endTime) : null;
-  const startLabel = start ? start.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
-  const endLabel = end ? end.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
-  const duration = assessment.duration ? `${assessment.duration} minutes` : '-';
-
-  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.ASSESSMENT_NOTIFICATION);
-  const vars = {
-    studentName: student?.name || 'Student',
-    assessmentTitle: assessment.title,
-    startLabel,
-    endLabel,
-    duration,
-    dashboardUrl: getDashboardUrl(),
-  };
-
-  return sendMail({
-    to,
-    subject: renderTemplate(template.subject, vars),
-    html: renderTemplate(template.htmlContent, vars),
-  });
-}
-
 function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -261,13 +219,18 @@ export function renderAssessmentInvitationEmail({ to, assessment, student, passw
   const start = assessment.startTime ? new Date(assessment.startTime) : null;
   const end = assessment.endTime ? new Date(assessment.endTime) : null;
   const assessmentUrl = `${getDashboardUrl()}student/assessments`;
+  const studentId = String(student?.studentId || '').trim();
+  const usesStudentIdPassword = assessment?.settings?.candidateCredentialMode === 'student_id';
+  const signInIdentifiers = studentId
+    ? `<div style="margin-top:7px;font-size:14px;"><strong>Student ID:</strong> ${escapeHtml(studentId)}</div><div style="margin-top:7px;font-size:12px;color:#475569;">You can sign in with either your email or Student ID.</div>`
+    : '';
   const passwordSection = assessment.passwordEnabled
     ? `<div style="margin:20px 0;padding:16px;border:1px solid #fde68a;border-radius:10px;background:#fffbeb;color:#78350f;"><div style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;">Assessment password</div><div style="margin-top:7px;font-size:19px;font-weight:800;letter-spacing:.08em;">${escapeHtml(password)}</div><div style="margin-top:7px;font-size:12px;">Keep this password private.</div></div>`
     : '<div style="margin:20px 0;padding:14px;border-radius:10px;background:#ecfdf5;color:#065f46;font-size:13px;font-weight:700;">No assessment password is required.</div>';
   const credentialsSection = accountPassword
-    ? `<div style="margin:20px 0;padding:18px;border:1px solid #bae6fd;border-radius:12px;background:#f0f9ff;color:#0c4a6e;"><div style="font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;">Your PeerPrep login</div><div style="margin-top:10px;font-size:14px;"><strong>Email:</strong> ${escapeHtml(to)}</div><div style="margin-top:7px;font-size:14px;"><strong>Temporary password:</strong> ${escapeHtml(accountPassword)}</div><div style="margin-top:9px;font-size:12px;color:#475569;">Sign in to access this assessment. You will be asked to change the temporary password.</div></div>`
+    ? `<div style="margin:20px 0;padding:18px;border:1px solid #bae6fd;border-radius:12px;background:#f0f9ff;color:#0c4a6e;"><div style="font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;">Your PeerPrep login</div><div style="margin-top:10px;font-size:14px;"><strong>Email:</strong> ${escapeHtml(to)}</div>${signInIdentifiers}<div style="margin-top:7px;font-size:14px;"><strong>${usesStudentIdPassword ? 'Initial password' : 'Temporary password'}:</strong> ${escapeHtml(accountPassword)}</div><div style="margin-top:9px;font-size:12px;color:#475569;">Sign in to access this assessment.${usesStudentIdPassword ? ' For this assessment account, the initial password is your Student ID.' : ' You will be asked to change the temporary password.'}</div></div>`
     : assessmentOnly
-      ? '<div style="margin:20px 0;padding:14px;border-radius:10px;background:#f0f9ff;color:#0c4a6e;font-size:13px;">Use your existing assessment-candidate login to continue.</div>'
+      ? `<div style="margin:20px 0;padding:14px;border-radius:10px;background:#f0f9ff;color:#0c4a6e;font-size:13px;">Use your existing assessment-candidate login to continue.${studentId ? ` You may sign in with your email or Student ID <strong>${escapeHtml(studentId)}</strong>.` : ''}</div>`
       : '';
   const vars = {
     studentName: escapeHtml(student?.name || 'Student'),
@@ -304,16 +267,17 @@ export async function sendAssessmentInvitationEmail({ to, assessment, student, p
 }
 
 export async function sendCoordinatorOnboardingEmail({ to, name, coordinatorId, password }) {
+  const email = normalizeEmailAddress(to);
   const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.COORDINATOR_ONBOARDING);
   const vars = {
     name: escapeHtml(name || 'Coordinator'),
     coordinatorId: escapeHtml(coordinatorId),
-    email: escapeHtml(to),
+    email: escapeHtml(email),
     password: escapeHtml(password),
     dashboardUrl: getDashboardUrl(),
   };
   return sendMail({
-    to,
+    to: email,
     subject: renderTemplate(template.subject, vars),
     html: renderTemplate(template.htmlContent, vars),
   });

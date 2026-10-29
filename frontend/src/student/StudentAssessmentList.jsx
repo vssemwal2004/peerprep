@@ -6,6 +6,7 @@ import AssessmentCard from './assessment-dashboard/AssessmentCard';
 import AssessmentLaunchModal from './assessment-dashboard/AssessmentLaunchModal';
 import { useStudentAssessmentDashboardData } from './assessment-dashboard/useStudentAssessmentDashboardData';
 import { api } from '../utils/api';
+import { isResultAnnounced } from '../utils/assessmentEvaluation';
 
 function EmptyState({ text }) {
   return (
@@ -28,6 +29,13 @@ export default function StudentAssessmentList() {
   const navigate = useNavigate();
   const { dashboard, loading, error } = useStudentAssessmentDashboardData();
   const [launchAssessment, setLaunchAssessment] = useState(null);
+  // Average percentage over announced results only; held or unevaluated results never count.
+  const announcedPercentages = (dashboard.reports || [])
+    .filter((report) => isResultAnnounced(report) && Number.isFinite(Number(report.accuracy)) && report.accuracy !== null)
+    .map((report) => Number(report.accuracy));
+  const announcedAverage = announcedPercentages.length
+    ? Math.round(announcedPercentages.reduce((sum, value) => sum + value, 0) / announcedPercentages.length)
+    : null;
 
   return (
     <AssessmentModuleLayout title="Your Assessments">
@@ -45,7 +53,7 @@ export default function StudentAssessmentList() {
               { label: 'Live now', value: dashboard.overview?.liveCount ?? dashboard.ongoingAssessments?.length ?? 0, Icon: ClipboardList, tone: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300' },
               { label: 'Upcoming', value: dashboard.overview?.upcomingCount ?? dashboard.upcomingAssessments?.length ?? 0, Icon: CalendarClock, tone: 'bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-300' },
               { label: 'Completed', value: dashboard.overview?.historyCount ?? dashboard.completedAssessments?.length ?? 0, Icon: CheckCircle2, tone: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-400/10 dark:text-indigo-300' },
-              { label: 'Average score', value: dashboard.overview?.reportsCount ? `${Math.round(Number(dashboard.overview?.averageScore || 0))}%` : 'Not available', Icon: BarChart3, tone: 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300' },
+              { label: 'Average score', value: announcedAverage === null ? 'Not announced' : `${announcedAverage}%`, Icon: BarChart3, tone: 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300' },
             ].map(({ label, value, Icon, tone }) => <div key={label} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"><span className={`flex h-8 w-8 items-center justify-center rounded-md ${tone}`}><Icon className="h-4 w-4" /></span><span><b className="block text-lg font-semibold text-slate-950 dark:text-white">{value}</b><span className="text-[10px] font-medium text-slate-500">{label}</span></span></div>)}
           </div>
 

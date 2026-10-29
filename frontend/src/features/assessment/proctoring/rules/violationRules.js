@@ -1,88 +1,158 @@
-// AI Proctoring placeholder - implementation will be added in later steps.
 import { AI_PROCTORING_EVENTS } from '../constants/proctoringEvents';
 import { getConfidenceForEvent, shouldAcceptDetection } from './confidenceRules';
 
+export const MULTIPLE_PEOPLE_GROUP = 'multiple_people';
+export const DEFAULT_FACE_OUT_OF_FRAME_GRACE_SEC = 8;
+
+// Each rule is an episode state machine (idle -> pending -> active -> idle) fed
+// only by fresh samples of its source. See services/violationBuffer.js.
 export const AI_PROCTORING_RULES = Object.freeze({
-  [AI_PROCTORING_EVENTS.NO_FACE]: {
-    message: 'No person is visible in the camera',
-    severity: 'high',
-    confirmAfterMs: 3000,
-    confirmCount: 1,
-    confirmStrategy: 'all',
-  },
-  [AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME]: {
-    message: 'Please sit upright and move back into the camera frame',
-    severity: 'low',
-    confirmAfterMs: 10000,
-    confirmCount: 1,
-    confirmStrategy: 'all',
-  },
-  [AI_PROCTORING_EVENTS.LOOKING_AWAY]: {
-    message: 'Please look back at the assessment screen',
-    severity: 'low',
-    confirmAfterMs: 10000,
-    confirmCount: 4,
-    confirmStrategy: 'all',
-  },
-  [AI_PROCTORING_EVENTS.MOBILE_DETECTED]: {
+  [AI_PROCTORING_EVENTS.MOBILE_DETECTED]: Object.freeze({
     message: 'Mobile phone detected',
     severity: 'critical',
-    confirmAfterMs: 800,
+    source: 'object',
+    // Two fresh positives ~0.7 s apart (pending re-sample cadence): with the
+    // 1.2 s steady sampling a phone warns within ~2-2.5 s, never on one frame.
     confirmCount: 2,
-    confirmStrategy: 'any',
-  },
-  [AI_PROCTORING_EVENTS.MULTIPLE_FACES]: {
+    confirmAfterMs: 700,
+    gapToleranceMs: 0,
+    clearCount: 2,
+    clearAfterMs: 2000,
+  }),
+  [AI_PROCTORING_EVENTS.MULTIPLE_FACES]: Object.freeze({
     message: 'Multiple faces detected',
     severity: 'high',
-    confirmAfterMs: 1500,
-    confirmCount: 1,
-    confirmStrategy: 'all',
-  },
-  [AI_PROCTORING_EVENTS.MULTIPLE_PERSONS]: {
+    source: 'face',
+    group: MULTIPLE_PEOPLE_GROUP,
+    confirmCount: 3,
+    confirmAfterMs: 2000,
+    gapToleranceMs: 500,
+    clearCount: 3,
+    clearAfterMs: 1000,
+  }),
+  [AI_PROCTORING_EVENTS.MULTIPLE_PERSONS]: Object.freeze({
     message: 'Multiple persons detected',
     severity: 'high',
-    confirmAfterMs: 1500,
-    confirmCount: 1,
-    confirmStrategy: 'all',
-  },
-  [AI_PROCTORING_EVENTS.CAMERA_BLOCKED]: {
+    source: 'object',
+    group: MULTIPLE_PEOPLE_GROUP,
+    confirmCount: 2,
+    confirmAfterMs: 700,
+    gapToleranceMs: 0,
+    clearCount: 2,
+    clearAfterMs: 2000,
+  }),
+  [AI_PROCTORING_EVENTS.NO_FACE]: Object.freeze({
+    message: 'No person is visible in the camera',
+    severity: 'high',
+    source: 'face',
+    confirmCount: 3,
+    confirmAfterMs: 2000,
+    gapToleranceMs: 500,
+    clearCount: 2,
+    clearAfterMs: 500,
+  }),
+  [AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME]: Object.freeze({
+    message: 'Please sit upright and move back into the camera frame',
+    severity: 'medium',
+    source: 'face',
+    confirmCount: 3,
+    confirmAfterMs: DEFAULT_FACE_OUT_OF_FRAME_GRACE_SEC * 1000,
+    gapToleranceMs: 1000,
+    clearCount: 3,
+    clearAfterMs: 1500,
+  }),
+  // Only evaluated when settings.detectLookingAway === true (never for assessments).
+  [AI_PROCTORING_EVENTS.LOOKING_AWAY]: Object.freeze({
+    message: 'Please look back at the assessment screen',
+    severity: 'low',
+    source: 'face',
+    confirmCount: 4,
+    confirmAfterMs: 10000,
+    gapToleranceMs: 1000,
+    clearCount: 3,
+    clearAfterMs: 1500,
+  }),
+  [AI_PROCTORING_EVENTS.CAMERA_BLOCKED]: Object.freeze({
     message: 'Camera permission blocked or unavailable',
     severity: 'high',
-    confirmAfterMs: 0,
+    source: 'camera',
     confirmCount: 1,
-    confirmStrategy: 'any',
-  },
+    confirmAfterMs: 0,
+    gapToleranceMs: 0,
+    clearCount: 1,
+    clearAfterMs: 0,
+  }),
 });
 
-export const AI_PROCTORING_TRACKED_EVENTS = Object.freeze(Object.keys(AI_PROCTORING_RULES));
-export const AI_PROCTORING_INTERMITTENT_EVENTS = Object.freeze(
-  Object.entries(AI_PROCTORING_RULES)
-    .filter(([, rule]) => rule.allowIntermittent)
-    .map(([type]) => type),
-);
+const PRESENT_BY_TYPE = Object.freeze({
+  [AI_PROCTORING_EVENTS.MOBILE_DETECTED]: (result) => result.mobileDetected === true
+    && shouldAcceptDetection(AI_PROCTORING_EVENTS.MOBILE_DETECTED, result),
+  [AI_PROCTORING_EVENTS.MULTIPLE_FACES]: (result) => Number(result.faceCount || 0) > 1
+    && shouldAcceptDetection(AI_PROCTORING_EVENTS.MULTIPLE_FACES, result),
+  // Object detector only; a second face is already covered by MULTIPLE_FACES.
+  [AI_PROCTORING_EVENTS.MULTIPLE_PERSONS]: (result) => Number(result.objectPersonCount || 0) > 1
+    && shouldAcceptDetection(AI_PROCTORING_EVENTS.MULTIPLE_PERSONS, result),
+  [AI_PROCTORING_EVENTS.NO_FACE]: (result) => result.facePresent === false,
+  [AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME]: (result) => result.facePresent !== false
+    && result.faceOutOfFrame === true
+    && shouldAcceptDetection(AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME, result),
+  [AI_PROCTORING_EVENTS.LOOKING_AWAY]: (result) => result.facePresent !== false
+    && result.lookingAway === true
+    && shouldAcceptDetection(AI_PROCTORING_EVENTS.LOOKING_AWAY, result),
+});
 
-function getFaceAbsenceGraceMs(settings = {}) {
-  const requestedSeconds = Number(settings.faceOutOfFrameGraceSec);
+export function getFaceOutOfFrameGraceMs(settings = {}) {
+  const raw = settings?.faceOutOfFrameGraceSec;
+  const requestedSeconds = raw === null || raw === '' ? NaN : Number(raw);
   const seconds = Number.isFinite(requestedSeconds)
     ? Math.max(3, Math.min(60, requestedSeconds))
-    : 10;
+    : DEFAULT_FACE_OUT_OF_FRAME_GRACE_SEC;
   return seconds * 1000;
 }
 
-function createCandidate(type, result = {}, settings = {}) {
-  const rule = AI_PROCTORING_RULES[type];
-  const usesFaceAbsenceGrace = type === AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME;
+function isRuleEnabled(type, settings = {}) {
+  switch (type) {
+    case AI_PROCTORING_EVENTS.MOBILE_DETECTED:
+      return settings.detectMobile !== false;
+    case AI_PROCTORING_EVENTS.MULTIPLE_FACES:
+    case AI_PROCTORING_EVENTS.MULTIPLE_PERSONS:
+      return settings.detectMultiplePersons !== false;
+    case AI_PROCTORING_EVENTS.NO_FACE:
+      return settings.detectNoFace !== false;
+    case AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME:
+      return settings.detectFaceOutOfFrame !== false;
+    case AI_PROCTORING_EVENTS.LOOKING_AWAY:
+      return settings.detectLookingAway === true;
+    default:
+      return false;
+  }
+}
+
+// The sample-driven rules enabled by the settings, with the grace applied.
+export function getActiveRules(settings = {}) {
+  return Object.keys(PRESENT_BY_TYPE)
+    .filter((type) => isRuleEnabled(type, settings))
+    .map((type) => {
+      const rule = AI_PROCTORING_RULES[type];
+      return {
+        ...rule,
+        type,
+        confirmAfterMs: type === AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME
+          ? getFaceOutOfFrameGraceMs(settings)
+          : rule.confirmAfterMs,
+        present: PRESENT_BY_TYPE[type],
+      };
+    });
+}
+
+export function createCandidate(type, result = {}) {
+  const rule = AI_PROCTORING_RULES[type] || {};
   return {
     type,
     message: rule.message,
     severity: rule.severity,
     confidence: getConfidenceForEvent(result, type),
-    confirmAfterMs: usesFaceAbsenceGrace ? getFaceAbsenceGraceMs(settings) : rule.confirmAfterMs,
-    confirmCount: rule.confirmCount,
-    repeatCount: rule.repeatCount,
-    repeatWindowMs: rule.repeatWindowMs,
-    confirmStrategy: rule.confirmStrategy,
-    allowIntermittent: Boolean(rule.allowIntermittent),
+    group: rule.group || null,
   };
 }
 
@@ -96,55 +166,10 @@ export function classifyViolationSeverity(candidate = {}, confirmed = {}) {
   return candidate.severity || AI_PROCTORING_RULES[candidate.type]?.severity || 'medium';
 }
 
+// The enabled rules whose condition holds in this result (no timing applied).
 export function getViolationCandidates(result = {}, settings = {}) {
-  const candidates = [];
-  const cameraActive = result.cameraActive !== false;
-
-  if (!cameraActive) return candidates;
-
-  if (settings.detectNoFace !== false && result.facePresent === false) {
-    candidates.push(createCandidate(AI_PROCTORING_EVENTS.NO_FACE, result, settings));
-  }
-
-  if (
-    settings.detectFaceOutOfFrame !== false
-    && result.faceOutOfFrame === true
-    && shouldAcceptDetection(AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME, result)
-  ) {
-    candidates.push(createCandidate(AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME, result, settings));
-  }
-
-  if (
-    settings.detectLookingAway !== false
-    && result.lookingAway === true
-    && shouldAcceptDetection(AI_PROCTORING_EVENTS.LOOKING_AWAY, result)
-  ) {
-    candidates.push(createCandidate(AI_PROCTORING_EVENTS.LOOKING_AWAY, result, settings));
-  }
-
-  if (
-    settings.detectMobile !== false
-    && result.mobileDetected === true
-    && shouldAcceptDetection(AI_PROCTORING_EVENTS.MOBILE_DETECTED, result)
-  ) {
-    candidates.push(createCandidate(AI_PROCTORING_EVENTS.MOBILE_DETECTED, result, settings));
-  }
-
-  if (
-    settings.detectMultiplePersons !== false
-    && Number(result.faceCount || 0) > 1
-    && shouldAcceptDetection(AI_PROCTORING_EVENTS.MULTIPLE_FACES, result)
-  ) {
-    candidates.push(createCandidate(AI_PROCTORING_EVENTS.MULTIPLE_FACES, result, settings));
-  }
-
-  if (
-    settings.detectMultiplePersons !== false
-    && Number(result.personCount || 0) > 1
-    && shouldAcceptDetection(AI_PROCTORING_EVENTS.MULTIPLE_PERSONS, result)
-  ) {
-    candidates.push(createCandidate(AI_PROCTORING_EVENTS.MULTIPLE_PERSONS, result, settings));
-  }
-
-  return candidates;
+  if (result.cameraActive === false) return [];
+  return getActiveRules(settings)
+    .filter((rule) => rule.present(result))
+    .map((rule) => createCandidate(rule.type, result));
 }

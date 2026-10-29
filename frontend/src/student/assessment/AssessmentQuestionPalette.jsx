@@ -2,6 +2,10 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, PanelRightOpen, Pin, PinOff } from 'lucide-react';
 
 const PAGE_SIZE = 30;
+// Hover intent: a pointer passing over the rail on its way to Monaco's
+// scrollbar should not slide the palette over the code.
+const OPEN_DELAY_MS = 140;
+const CLOSE_DELAY_MS = 300;
 
 function AssessmentQuestionPalette({
   assessmentTitle,
@@ -13,6 +17,7 @@ function AssessmentQuestionPalette({
   onNavigate,
   onSubmit,
   submitLabel = 'Submit Assessment',
+  showSubmit = true,
   isSubmitted = false,
   saving = false,
   dockable = false,
@@ -26,9 +31,48 @@ function AssessmentQuestionPalette({
   const [page, setPage] = useState(0);
   const [pinned, setPinned] = useState(false);
   const [hovered, setHovered] = useState(false);
+  // Space beside the editor is reserved only after the slide finishes, so
+  // Monaco relayouts once instead of on every animation frame.
+  const [reserveSpace, setReserveSpace] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const rootRef = useRef(null);
+  const openTimerRef = useRef(null);
+  const closeTimerRef = useRef(null);
   const expanded = !dockable || pinned || hovered;
+
+  const openWithIntent = () => {
+    if (!dockable || pinned) return;
+    clearTimeout(closeTimerRef.current);
+    clearTimeout(openTimerRef.current);
+    openTimerRef.current = setTimeout(() => setHovered(true), OPEN_DELAY_MS);
+  };
+  const closeWithIntent = () => {
+    if (!dockable || pinned) return;
+    clearTimeout(openTimerRef.current);
+    clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => setHovered(false), CLOSE_DELAY_MS);
+  };
+  const togglePinned = () => {
+    if (pinned) {
+      setReserveSpace(false);
+      setPinned(false);
+      setHovered(false);
+      return;
+    }
+    setPinned(true);
+    setHovered(true);
+    // The pin button lives inside the open panel, so no slide follows.
+    if (expanded) setReserveSpace(true);
+  };
+
+  useEffect(() => () => {
+    clearTimeout(openTimerRef.current);
+    clearTimeout(closeTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!dockable) setReserveSpace(false);
+  }, [dockable]);
 
   const filteredQuestions = useMemo(() => questions.filter((item) => item.kind === filter), [questions, filter]);
   const totalPages = Math.max(1, Math.ceil(filteredQuestions.length / PAGE_SIZE));
@@ -66,7 +110,12 @@ function AssessmentQuestionPalette({
 
   const counts = useMemo(() => filteredQuestions.reduce((summary, item) => {
     const status = questionStatus(item.sectionIndex, item.questionIndex);
-    summary[status] = (summary[status] || 0) + 1;
+    if (status === 'answered_review') {
+      summary.answered += 1;
+      summary.review += 1;
+    } else {
+      summary[status] = (summary[status] || 0) + 1;
+    }
     return summary;
   }, { answered: 0, unanswered: 0, review: 0 }), [filteredQuestions, questionStatus]);
 
@@ -78,11 +127,13 @@ function AssessmentQuestionPalette({
     <div
       ref={rootRef}
       className={`relative z-30 w-full flex-none overflow-visible lg:h-full ${
-        dockable ? (pinned ? 'lg:w-[18rem]' : 'lg:w-12') : 'lg:w-[18rem]'
+        dockable ? (reserveSpace ? 'lg:w-[18rem]' : 'lg:w-12') : 'lg:w-[18rem]'
       }`}
-      onMouseEnter={() => { if (dockable && !pinned) setHovered(true); }}
-      onMouseLeave={() => { if (dockable && !pinned) setHovered(false); }}
-      onFocusCapture={() => { if (dockable && !pinned) setHovered(true); }}
+      onMouseEnter={openWithIntent}
+      onMouseLeave={closeWithIntent}
+      onFocusCapture={(event) => {
+        if (dockable && !pinned && event.target.matches?.(':focus-visible')) setHovered(true);
+      }}
       onBlurCapture={(event) => {
         if (dockable && !pinned && !event.currentTarget.contains(event.relatedTarget)) setHovered(false);
       }}
@@ -99,11 +150,15 @@ function AssessmentQuestionPalette({
         </button>
       ) : null}
       <aside
-        className={`${dockable && !mobileOpen ? 'hidden lg:flex' : 'flex'} w-full flex-none flex-col overflow-hidden rounded-[24px] border border-slate-200/90 bg-white shadow-[0_22px_55px_-28px_rgba(15,23,42,0.36)] transition-transform duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform dark:border-gray-700 dark:bg-gray-900 lg:h-full lg:w-[18rem] ${
+        className={`${dockable && !mobileOpen ? 'hidden lg:flex' : 'flex'} w-full flex-none flex-col overflow-hidden rounded-[24px] border border-slate-200/90 bg-white dark:border-gray-700 dark:bg-gray-900 lg:h-full lg:w-[18rem] ${
           dockable
-            ? `${pinned ? 'lg:relative' : 'lg:absolute lg:right-0 lg:top-0'} ${expanded ? 'lg:translate-x-0' : 'lg:translate-x-[calc(100%_-_3rem)]'}`
-            : ''
+            ? `transition-transform duration-200 ease-out will-change-transform [contain:layout_paint] motion-reduce:transition-none lg:absolute lg:right-0 lg:top-0 ${expanded ? 'shadow-[0_22px_55px_-28px_rgba(15,23,42,0.36)] lg:translate-x-0' : 'lg:translate-x-[calc(100%_-_3rem)]'}`
+            : 'shadow-[0_22px_55px_-28px_rgba(15,23,42,0.36)]'
         }`}
+        onTransitionEnd={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.propertyName === 'transform' || event.propertyName === 'translate') setReserveSpace(pinned && expanded);
+        }}
         aria-label="Assessment question palette"
       >
         {dockable ? (
@@ -111,7 +166,7 @@ function AssessmentQuestionPalette({
             type="button"
             onClick={() => setHovered(true)}
             aria-label="Open question palette"
-            className={`absolute inset-y-0 left-0 z-30 hidden w-12 flex-col items-center justify-center gap-3 border-r border-sky-700 bg-slate-950 text-white transition-opacity lg:flex ${
+            className={`absolute inset-y-0 left-0 z-30 hidden w-12 flex-col items-center justify-center gap-3 border-r border-sky-700 bg-slate-950 text-white transition-opacity duration-200 ease-out lg:flex ${
               expanded ? 'pointer-events-none opacity-0' : 'opacity-100'
             }`}
           >
@@ -133,7 +188,7 @@ function AssessmentQuestionPalette({
               {dockable ? (
                 <button
                   type="button"
-                  onClick={() => setPinned((current) => !current)}
+                  onClick={togglePinned}
                   aria-pressed={pinned}
                   aria-label={pinned ? 'Unpin question palette' : 'Pin question palette'}
                   title={pinned ? 'Unpin question palette' : 'Pin question palette'}
@@ -180,23 +235,30 @@ function AssessmentQuestionPalette({
             const active = item.sectionIndex === activeSection && item.questionIndex === activeQuestion;
             const allowed = canNavigate(item.sectionIndex, item.questionIndex);
             const displayNumber = item.typeNumber || item.number;
-            const tone = active
-              ? 'border-sky-600 bg-sky-600 text-white shadow-sm ring-2 ring-sky-100 dark:ring-sky-900/40'
-              : status === 'answered'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300'
-                : status === 'review'
-                  ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300';
+            const answered = status === 'answered' || status === 'answered_review';
+            // The status colour always shows (the answered tile turns green the
+            // moment an answer is picked); the current question gets a ring.
+            const baseTone = answered
+              ? 'border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600 dark:border-emerald-600 dark:bg-emerald-600'
+              : status === 'review'
+                ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
+                : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300';
+            const tone = active ? `${baseTone} ring-2 ring-sky-500 ring-offset-1 dark:ring-offset-gray-900` : baseTone;
+            const statusLabel = status === 'answered_review' ? 'answered, marked for review' : status;
             return (
               <button
                 key={`${item.sectionIndex}-${item.questionIndex}`}
                 type="button"
                 onClick={() => onNavigate(item.sectionIndex, item.questionIndex)}
                 aria-disabled={!allowed}
-                title={allowed ? `${typeLabel} question ${displayNumber} - ${status}` : 'Restricted by assessment navigation rules'}
-                className={`aspect-square rounded-lg border text-[11px] font-bold transition-colors ${tone} ${!allowed && !active ? 'cursor-not-allowed opacity-45' : ''}`}
+                aria-current={active ? 'true' : undefined}
+                title={allowed ? `${typeLabel} question ${displayNumber} - ${statusLabel}` : 'Restricted by assessment navigation rules'}
+                className={`relative aspect-square rounded-lg border text-[11px] font-bold transition-colors ${tone} ${!allowed && !active ? 'cursor-not-allowed opacity-45' : ''}`}
               >
                 {displayNumber}
+                {status === 'answered_review' ? (
+                  <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border border-white bg-amber-400" aria-hidden="true" />
+                ) : null}
               </button>
             );
           })}
@@ -213,11 +275,13 @@ function AssessmentQuestionPalette({
           </div>
         ) : null}
 
-        <div className="mt-auto border-t border-slate-200/70 p-3 dark:border-gray-800">
-          <button type="button" onClick={onSubmit} disabled={isSubmitted} className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50">
-            {isSubmitted ? 'Submitted' : submitLabel}
-          </button>
-        </div>
+        {showSubmit ? (
+          <div className="mt-auto border-t border-slate-200/70 p-3 dark:border-gray-800">
+            <button type="button" onClick={onSubmit} disabled={isSubmitted} className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50">
+              {isSubmitted ? 'Submitted' : submitLabel}
+            </button>
+          </div>
+        ) : null}
       </aside>
     </div>
   );
@@ -232,6 +296,7 @@ function palettePropsEqual(previous, next) {
     && previous.isSubmitted === next.isSubmitted
     && previous.saving === next.saving
     && previous.submitLabel === next.submitLabel
+    && previous.showSubmit === next.showSubmit
     && previous.dockable === next.dockable
     && previous.navigationRevision === next.navigationRevision;
 }

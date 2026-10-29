@@ -184,42 +184,12 @@ export function hashToken(token) {
 }
 
 /**
- * Validate request body fields presence
- * Prevents undefined/null injection
- */
-export function requireFields(body, requiredFields) {
-  const missing = [];
-  
-  for (const field of requiredFields) {
-    const value = body[field];
-    if (value === undefined || value === null || value === '') {
-      missing.push(field);
-    }
-  }
-  
-  if (missing.length > 0) {
-    throw new Error(`Missing required fields: ${missing.join(', ')}`);
-  }
-}
-
-/**
  * Sanitize string input
  * Trim whitespace and limit length
  */
 export function sanitizeString(str, maxLength = 1000) {
   if (!str) return '';
   return String(str).trim().slice(0, maxLength);
-}
-
-/**
- * Validate semester number (1-8)
- */
-export function validateSemester(semester) {
-  const num = Number(semester);
-  if (isNaN(num) || num < 1 || num > 8 || !Number.isInteger(num)) {
-    throw new Error('Semester must be an integer between 1 and 8');
-  }
-  return num;
 }
 
 /**

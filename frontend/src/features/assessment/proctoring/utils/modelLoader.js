@@ -1,4 +1,3 @@
-// AI Proctoring placeholder - implementation will be added in later steps.
 const MEDIAPIPE_VERSION = '0.10.35';
 const DEFAULT_VISION_WASM_BASE_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`;
 const DEFAULT_FACE_LANDMARKER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task';
@@ -100,7 +99,8 @@ export async function createFaceLandmarker(options = {}) {
       },
       runningMode: 'VIDEO',
       numFaces: Math.max(1, Math.min(2, Number(options.numFaces || 2))),
-      outputFaceBlendshapes: true,
+      // Blendshapes are only read by looking-away detection, and cost CPU.
+      outputFaceBlendshapes: options.outputFaceBlendshapes === true,
       outputFacialTransformationMatrixes: false,
     };
 
@@ -133,9 +133,28 @@ export async function createFaceLandmarker(options = {}) {
   throw lastError || new Error('FaceLandmarker model failed to load.');
 }
 
+// Prefer WebGL; without it TF.js runs on the CPU backend, and callers reduce work.
+async function selectTensorFlowBackend(tf) {
+  let webglReady = false;
+  try {
+    webglReady = Boolean(await tf.setBackend?.('webgl'));
+  } catch {
+    webglReady = false;
+  }
+  if (!webglReady) {
+    try {
+      await tf.setBackend?.('cpu');
+    } catch {
+      // tf.ready() below picks whatever backend is available.
+    }
+  }
+  await tf.ready?.();
+  return tf.getBackend?.() || 'unknown';
+}
+
 export async function createCocoSsdModel(options = {}) {
   const tf = await loadTensorFlow();
-  await tf.ready?.();
+  const backend = await selectTensorFlowBackend(tf);
   const cocoSsd = await loadCocoSsdPackage();
   const modelUrls = [
     options.modelUrl,
@@ -151,7 +170,9 @@ export async function createCocoSsdModel(options = {}) {
     if (modelUrl) loadOptions.modelUrl = modelUrl;
 
     try {
-      return await withModelLoadTimeout(cocoSsd.load(loadOptions), 'COCO-SSD');
+      const model = await withModelLoadTimeout(cocoSsd.load(loadOptions), 'COCO-SSD');
+      if (model && typeof model === 'object') model.peerprepBackend = backend;
+      return model;
     } catch (error) {
       lastError = error;
     }

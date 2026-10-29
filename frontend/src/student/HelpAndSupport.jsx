@@ -403,9 +403,6 @@ export default function HelpAndSupport() {
                   <p className="text-gray-700 dark:text-gray-300">
                     <strong>Primary Support:</strong> <a href="mailto:peerprep62@gmail.com" className="text-sky-600 dark:text-sky-400 hover:underline">peerprep62@gmail.com</a>
                   </p>
-                  <p className="text-gray-700 dark:text-gray-300">
-                    <strong>Secondary Support:</strong> <a href="mailto:gehuashishharg@gmail.com" className="text-sky-600 dark:text-sky-400 hover:underline">gehuashishharg@gmail.com</a>
-                  </p>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                     We typically respond within 24-48 hours. For urgent issues, please mark your email as "URGENT" in the subject line.
                   </p>

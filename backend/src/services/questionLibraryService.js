@@ -375,6 +375,10 @@ export async function syncAssessmentQuestionsToLibrary(assessmentInput) {
 }
 
 export async function syncProblemToLibrary(problemInput) {
+  // Assessment-owned copies are implementation details of an assessment, not
+  // reusable catalogue entries. The assessment itself is synced separately.
+  if (problemInput?.assessmentOwnerId
+    || (problemInput?.visibility === 'assessment' && problemInput?.assessmentSourceProblemId)) return;
   const context = await loadProblemLibraryContext(problemInput);
   if (!context?.problem?._id) return;
 
@@ -479,12 +483,6 @@ export async function ensureQuestionLibrarySynchronized({ force = false, blockin
   if (blocking) {
     await pendingFullSync;
   }
-}
-
-export async function backfillQuestionLibraryIfEmpty() {
-  const existingCount = await QuestionLibrary.estimatedDocumentCount();
-  if (existingCount > 0) return;
-  await ensureQuestionLibrarySynchronized({ force: true });
 }
 
 export async function cleanupDuplicateLibraryEntries() {

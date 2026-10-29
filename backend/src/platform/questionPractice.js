@@ -82,8 +82,6 @@ export const PRACTICE_LIST_MAX_LIMIT = 200;
 const FACET_CACHE_MS = 30_000;
 const facetCaches = new Map();
 
-export function resetPracticeListCache() { facetCaches.clear(); }
-
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const exactText = (value) => new RegExp(`^${escapeRegExp(value)}$`, 'i');
 const tagPattern = (words) => new RegExp(`^${words.map(escapeRegExp).join('[-_\\s]*')}`, 'i');

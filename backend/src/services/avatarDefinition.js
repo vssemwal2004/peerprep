@@ -16,6 +16,21 @@ export const AVATAR_LANGUAGES = Object.freeze([
   { value: "hi", label: "Hindi" },
   { value: "hinglish", label: "Hinglish", experimental: true },
 ]);
+export const AVATAR_GESTURES = Object.freeze([
+  { id: "idle", label: "Idle", description: "Calm neutral loop while the room is waiting." },
+  { id: "idle_smile", label: "Idle · smile", description: "Warm alternate idle loop with a subtle smile." },
+  { id: "listening", label: "Listening", description: "Attentive loop while the candidate answers." },
+  { id: "listening_nod", label: "Listening · nod", description: "Occasional gentle acknowledgement while listening." },
+  { id: "thinking", label: "Thinking", description: "Short transition while ANVI prepares a response." },
+  { id: "thinking_side", label: "Thinking · reflective", description: "Subtle reflective alternate thinking loop." },
+  { id: "speaking_neutral", label: "Speaking · neutral", description: "Default speaking loop." },
+  { id: "speaking_explain", label: "Speaking · explaining", description: "Open-hand explanatory speaking loop." },
+  { id: "speaking_emphasis", label: "Speaking · emphasis", description: "Confident emphasis speaking loop." },
+  { id: "speaking_encourage", label: "Speaking · encouraging", description: "Warm supportive speaking gesture." },
+  { id: "speaking_question", label: "Speaking · question", description: "Curious professional question gesture." },
+  { id: "speaking_closing", label: "Speaking · closing", description: "Calm concluding speaking gesture." },
+]);
+export const AVATAR_GESTURE_IDS = Object.freeze(AVATAR_GESTURES.map(({ id }) => id));
 export const avatarError = (status, code, message) => { throw new AuthoringError(status, code, message); };
 export function normalizeAvatar(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) avatarError(422, "INVALID_DATA", "Avatar details are required.");
@@ -47,7 +62,7 @@ export function avatarFingerprint(doc) {
   })).digest("hex");
 }
 export function inspectUpload(buffer, kind, suppliedName = "upload") {
-  if (!["source", "audio"].includes(kind)) avatarError(422, "INVALID_UPLOAD_KIND", "Upload a source image/video or introduction audio.");
+  if (!["source", "audio", "gesture"].includes(kind)) avatarError(422, "INVALID_UPLOAD_KIND", "Upload a source image/video, introduction audio, or gesture video.");
   if (!Buffer.isBuffer(buffer) || !buffer.length || buffer.length > AVATAR_LIMITS.maxUploadMB * 1024 * 1024) avatarError(413, "UPLOAD_TOO_LARGE", `Uploads must be between 1 byte and ${AVATAR_LIMITS.maxUploadMB} MB.`);
   const head = buffer.subarray(0, 48), ascii = (start, end) => head.toString("ascii", start, end);
   let media;
@@ -59,6 +74,6 @@ export function inspectUpload(buffer, kind, suppliedName = "upload") {
   else if (ascii(0, 4) === "OggS") media = { mime: "audio/ogg", extension: "ogg", kind: "audio" };
   else if (head.subarray(0, 4).equals(Buffer.from([26, 69, 223, 163]))) media = { mime: kind === "audio" ? "audio/webm" : "video/webm", extension: "webm", kind: kind === "audio" ? "audio" : "video" };
   else if (ascii(4, 8) === "ftyp") media = { mime: kind === "audio" ? "audio/mp4" : "video/mp4", extension: kind === "audio" ? "m4a" : "mp4", kind: kind === "audio" ? "audio" : "video" };
-  if (!media || (kind === "source" && media.kind === "audio") || (kind === "audio" && media.kind !== "audio")) avatarError(422, "UNSUPPORTED_MEDIA", "Use JPEG, PNG or WebP images, MP4/WebM videos, or WAV, MP3, OGG, M4A/WebM audio. File contents must match the media type.");
+  if (!media || (kind === "source" && media.kind === "audio") || (kind === "audio" && media.kind !== "audio") || (kind === "gesture" && media.kind !== "video")) avatarError(422, "UNSUPPORTED_MEDIA", "Use JPEG, PNG or WebP images, MP4/WebM videos, or WAV, MP3, OGG, M4A/WebM audio. Gesture clips must be MP4 or WebM video.");
   return { ...media, name: cleanText(String(suppliedName).split(/[\\/]/).pop(), 180), size: buffer.length };
 }

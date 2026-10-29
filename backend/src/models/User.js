@@ -2,13 +2,31 @@ import { tenantModel, currentTenant } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
 import { attachAdminAnalyticsInvalidation } from '../modules/adminAnalytics/adminAnalytics.invalidation.js';
+import { normalizeEmailAddress } from '../utils/emailIdentity.js';
 
 const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['admin', 'student', 'coordinator'], default: 'student' },
   accessScope: { type: String, enum: ['full', 'assessment_only'], default: 'full', index: true },
+  featureAccess: {
+    mode: { type: String, enum: ['all', 'custom'], default: 'all' },
+    features: [{
+      type: String,
+      enum: ['dashboard', 'quickprep', 'analysis', 'rankings', 'interviews', 'ai_interviews', 'assessments', 'learning', 'prep_coding', 'resume', 'prep_coins'],
+    }],
+    source: { type: String, enum: ['default', 'manual', 'legacy'], default: 'default' },
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    updatedAt: Date,
+  },
   username: { type: String, unique: true, sparse: true, trim: true, maxlength: 32 },
   name: String,
-  email: { type: String, unique: true, sparse: true },
+  email: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    lowercase: true,
+    set: normalizeEmailAddress,
+  },
   studentId: { type: String, unique: true, sparse: true },
   coordinatorId: { type: String, unique: true, sparse: true },
   teacherIds: [String], // For students: links to coordinator's coordinatorID (supports multiple)
@@ -93,6 +111,9 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ role: 1, semester: 1, createdAt: 1 });
 userSchema.index({ role: 1, teacherIds: 1, semester: 1, createdAt: 1 });
 userSchema.index({ role: 1, createdAt: -1 });
+// Student List pages sort by { createdAt, _id }; without the _id tie-breaker in the
+// index, every page fetched and sorted every student in memory.
+userSchema.index({ role: 1, createdAt: 1, _id: 1 });
 userSchema.index({ role: 1, updatedAt: 1 });
 
 attachAdminAnalyticsInvalidation(userSchema, {
@@ -112,7 +133,7 @@ userSchema.statics.hashPassword = async function (pw) {
 
 // SECURITY: Invalidate password reset tokens when password changes
 userSchema.pre('save', function(next) {
-  this.$locals.syncLoginIdentity = this.isNew || this.isModified('email');
+  this.$locals.syncLoginIdentity = this.isNew || this.isModified('email') || this.isModified('studentId') || this.isModified('role');
   if (this.isModified('passwordHash') && !this.isNew) {
     // Password was changed - invalidate all reset tokens
     this.passwordChangedAt = new Date();
@@ -162,9 +183,9 @@ userSchema.post('save', async function(error, doc, next) {
 
 userSchema.post('findOneAndUpdate', async function(doc) {
   const update = this.getUpdate() || {};
-  const emailChanged = Object.hasOwn(update, 'email') || Object.hasOwn(update.$set || {}, 'email') || Object.hasOwn(update.$unset || {}, 'email');
-  if (!currentTenant() || !doc || !emailChanged) return;
-  const fresh = await this.model.findById(doc._id).select('_id email').lean();
+  const touches = (field) => Object.hasOwn(update, field) || Object.hasOwn(update.$set || {}, field) || Object.hasOwn(update.$unset || {}, field);
+  if (!currentTenant() || !doc || !['email', 'studentId', 'role'].some(touches)) return;
+  const fresh = await this.model.findById(doc._id).select('_id email role studentId').lean();
   const { syncTenantLoginIdentity } = await import('../platform/loginDirectory.js');
   await syncTenantLoginIdentity(fresh || { _id: doc._id, email: '' });
 });

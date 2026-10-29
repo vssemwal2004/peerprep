@@ -2,7 +2,6 @@ import {
   extractDeclaredIdentifiers,
   IDENTIFIER_COMPLETION_LANGUAGES,
 } from './identifierExtraction.js';
-import { getLanguageVocabulary } from './languageVocabulary.js';
 
 // One completion provider per language is shared by every mounted student code
 // editor. Monaco providers are global, so the provider only answers for models
@@ -11,14 +10,13 @@ import { getLanguageVocabulary } from './languageVocabulary.js';
 //
 // Monaco asks provider groups in order of selector score and stops at the first
 // group that returns items, so a language-specific provider hides the built-in
-// word-based list. This provider therefore returns everything a student needs in
-// one list, best first: names they declared (with their type or signature),
-// library names, keywords, then any other word already in the file. After `.`,
-// `->` or `::` it offers member names instead.
+// word-based list. This provider intentionally returns only variables,
+// parameters, and functions declared by the student before the cursor.
 
 const registry = {
   monaco: null,
   disposables: [],
+  signatureDisposables: [],
   holders: new Set(),
   cache: new WeakMap(),
 };
@@ -42,6 +40,71 @@ const RANK = {
   word: '5',
 };
 
+function splitParameters(text) {
+  const pieces = [];
+  let start = 0;
+  let depth = 0;
+  let quote = '';
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote) {
+      if (character === '\\') index += 1;
+      else if (character === quote) quote = '';
+      continue;
+    }
+    if (character === '"' || character === "'" || character === '`') {
+      quote = character;
+      continue;
+    }
+    if ('([{<'.includes(character)) depth += 1;
+    else if (')]}>' .includes(character)) depth = Math.max(0, depth - 1);
+    else if (character === ',' && depth === 0) {
+      pieces.push(text.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  const tail = text.slice(start).trim();
+  if (tail) pieces.push(tail);
+  return pieces;
+}
+
+function parameterName(piece) {
+  const source = String(piece || '').split('=')[0].trim();
+  if (!source || source === 'void') return '';
+  const beforeType = source.includes(':') ? source.slice(0, source.indexOf(':')) : source;
+  const names = beforeType.match(/[A-Za-z_$][\w$]*/g) || [];
+  const ignored = new Set(['const', 'final', 'mut', 'vararg', 'self', 'this', 'cls', 'void']);
+  return [...names].reverse().find((name) => !ignored.has(name)) || '';
+}
+
+function functionCallInfo(identifier) {
+  if (identifier?.kind !== 'function') return null;
+  const name = identifier.name;
+  const detail = String(identifier.detail || '');
+  const nameIndex = detail.indexOf(name);
+  const openIndex = nameIndex >= 0 ? detail.indexOf('(', nameIndex + name.length) : -1;
+  if (openIndex < 0) return { snippet: `${name}($0)`, parameters: [], signature: `${name}()` };
+  let depth = 0;
+  let closeIndex = -1;
+  for (let index = openIndex; index < detail.length; index += 1) {
+    if (detail[index] === '(') depth += 1;
+    if (detail[index] === ')') {
+      depth -= 1;
+      if (depth === 0) { closeIndex = index; break; }
+    }
+  }
+  const rawParameters = closeIndex > openIndex ? splitParameters(detail.slice(openIndex + 1, closeIndex)) : [];
+  const parameters = rawParameters
+    .map((label) => ({ label, name: parameterName(label) }))
+    .filter((entry) => entry.name && !['self', 'this', 'cls'].includes(entry.name));
+  const placeholders = parameters.map((entry, index) => `\${${index + 1}:${entry.name}}`).join(', ');
+  return {
+    snippet: `${name}(${placeholders})${placeholders ? '$0' : ''}`,
+    parameters,
+    signature: detail || `${name}(${rawParameters.join(', ')})`,
+  };
+}
+
 function completionKind(monaco, kind) {
   const kinds = monaco.languages.CompletionItemKind || {};
   switch (kind) {
@@ -59,6 +122,15 @@ function completionKind(monaco, kind) {
 
 function isInsideRegisteredEditor(monaco, model) {
   if (registry.holders.size === 0) return false;
+
+  // `editor.getEditors()` is not part of Monaco's public ESM API and is absent
+  // in the production bundle. Prefer the explicit model ownership callback
+  // supplied by each mounted PeerPrep editor.
+  for (const holder of registry.holders) {
+    if (holder.ownsModel?.(model)) return true;
+  }
+
+  // Keep the DOM check as a compatibility fallback for older integrations.
   const editors = monaco.editor?.getEditors?.() || [];
   return editors.some((editor) => {
     if (editor.getModel?.() !== model) return false;
@@ -110,27 +182,45 @@ function getModelAnalysis(model) {
   return analysis;
 }
 
-function createSuggestionList(monaco, range, currentWord) {
+function createSuggestionList(monaco, range) {
   const suggestions = [];
   const seen = new Set();
   return {
     suggestions,
     has: (name) => seen.has(name),
-    add(name, kind, rank, description = '', detail = '') {
-      // The word being typed is usually its own (partial) declaration.
-      if (!name || name === currentWord || seen.has(name)) return;
+    add(name, kind, rank, description = '', detail = '', options = {}) {
+      if (!name || seen.has(name)) return;
       seen.add(name);
-      suggestions.push({
+      const suggestion = {
         label: description ? { label: name, description } : name,
         kind: completionKind(monaco, kind),
         detail: detail || description || undefined,
-        insertText: name,
+        insertText: options.insertText || name,
         filterText: name,
         sortText: `${rank}${name.toLowerCase()}`,
         range,
-      });
+      };
+      if (options.snippet && monaco.languages.CompletionItemInsertTextRule) {
+        suggestion.insertTextRules = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
+      }
+      suggestions.push(suggestion);
     },
   };
+}
+
+function addDeclaredSuggestion(list, identifier) {
+  const description = identifier.detail && identifier.kind !== 'function'
+    ? identifier.detail
+    : KIND_DESCRIPTIONS[identifier.kind] || KIND_DESCRIPTIONS.variable;
+  const call = functionCallInfo(identifier);
+  list.add(
+    identifier.name,
+    identifier.kind,
+    RANK.declared,
+    description,
+    identifier.detail,
+    call ? { insertText: call.snippet, snippet: true } : {},
+  );
 }
 
 const TRIGGER_CHARACTER = 1; // monaco.languages.CompletionTriggerKind.TriggerCharacter
@@ -162,40 +252,94 @@ export function provideIdentifierCompletions(monaco, model, position, context) {
     endColumn: word.endColumn,
   };
   const languageId = model.getLanguageId();
-  const vocabulary = getLanguageVocabulary(languageId);
-  const { identifiers, documentWords, usedMembers } = getModelAnalysis(model);
-  const list = createSuggestionList(monaco, range, currentWord);
+  const list = createSuggestionList(monaco, range);
 
-  if (accessor === '::') {
-    // C++ scope access: std::sort, MyClass::helper.
-    identifiers.filter((item) => item.kind === 'class' || item.kind === 'function')
-      .forEach((item) => list.add(item.name, item.kind, RANK.declared, KIND_DESCRIPTIONS[item.kind], item.detail));
-    vocabulary.library.forEach((name) => list.add(name, 'library', RANK.library, 'std'));
-    return { suggestions: list.suggestions, incomplete: false };
-  }
+  // Member/library completion is deliberately disabled. The student asked for
+  // only their own previously declared variables, parameters, and functions.
+  if (accessor) return NO_SUGGESTIONS;
 
-  if (accessor) {
-    // Member access: names already used after a dot in this file, then the
-    // usual container/string methods, then the student's own functions (methods).
-    usedMembers.forEach((kind, name) => list.add(name, kind, RANK.usedMember, kind === 'field' ? 'field' : 'member'));
-    vocabulary.members.forEach((name) => list.add(name, 'method', RANK.member, 'method'));
-    identifiers.filter((item) => item.kind === 'function')
-      .forEach((item) => list.add(item.name, 'method', RANK.declared, 'function', item.detail));
-    return { suggestions: list.suggestions, incomplete: false };
-  }
-
-  for (const identifier of identifiers) {
-    const description = identifier.detail && identifier.kind !== 'function'
-      ? identifier.detail
-      : KIND_DESCRIPTIONS[identifier.kind] || KIND_DESCRIPTIONS.variable;
-    list.add(identifier.name, identifier.kind, RANK.declared, description, identifier.detail);
-  }
-  vocabulary.library.forEach((name) => list.add(name, 'library', RANK.library, 'library'));
-  vocabulary.keywords.forEach((name) => list.add(name, 'keyword', RANK.keyword, 'keyword'));
-  documentWords.forEach((name) => {
-    if (!usedMembers.has(name)) list.add(name, 'word', RANK.word);
-  });
+  const identifiers = declaredIdentifiersBefore(model, position.lineNumber, startColumn, languageId)
+    .filter((identifier) => (
+      (identifier.kind === 'variable' || identifier.kind === 'function')
+      && (!currentWord || identifier.name.toLowerCase().startsWith(currentWord.toLowerCase()))
+    ));
+  for (const identifier of identifiers) addDeclaredSuggestion(list, identifier);
   return { suggestions: list.suggestions, incomplete: false };
+}
+
+// Monaco asks again for the same position right after the automatic trigger,
+// so one remembered result makes that second request free.
+let lastDeclaredLookup = null;
+
+function declaredIdentifiersBefore(model, lineNumber, column, languageId) {
+  const version = typeof model.getVersionId === 'function' ? model.getVersionId() : null;
+  const key = `${version}:${languageId}:${lineNumber}:${column}`;
+  if (version !== null && lastDeclaredLookup?.model === model && lastDeclaredLookup.key === key) {
+    return lastDeclaredLookup.identifiers;
+  }
+  const identifiers = extractDeclaredIdentifiers(textBeforePosition(model, { lineNumber, column }), languageId);
+  lastDeclaredLookup = { model, key, identifiers };
+  return identifiers;
+}
+
+function textBeforePosition(model, position) {
+  if (typeof model.getValueInRange === 'function') {
+    return model.getValueInRange({
+      startLineNumber: 1,
+      startColumn: 1,
+      endLineNumber: position.lineNumber,
+      endColumn: position.column,
+    });
+  }
+  if (typeof model.getOffsetAt === 'function') return model.getValue().slice(0, model.getOffsetAt(position));
+  return model.getValue().split('\n').slice(0, position.lineNumber - 1).concat(
+    model.getLineContent(position.lineNumber).slice(0, position.column - 1),
+  ).join('\n');
+}
+
+function activeCall(text) {
+  let depth = 0;
+  for (let index = text.length - 1; index >= 0; index -= 1) {
+    const character = text[index];
+    if (character === ')') depth += 1;
+    else if (character === '(') {
+      if (depth > 0) { depth -= 1; continue; }
+      const before = text.slice(0, index);
+      const name = /([A-Za-z_$][\w$]*)\s*$/.exec(before)?.[1];
+      if (!name) return null;
+      const argumentText = text.slice(index + 1);
+      let activeParameter = 0;
+      let argumentDepth = 0;
+      for (const argumentCharacter of argumentText) {
+        if ('([{<'.includes(argumentCharacter)) argumentDepth += 1;
+        else if (')]}>' .includes(argumentCharacter)) argumentDepth = Math.max(0, argumentDepth - 1);
+        else if (argumentCharacter === ',' && argumentDepth === 0) activeParameter += 1;
+      }
+      return { name, activeParameter };
+    }
+  }
+  return null;
+}
+
+export function provideIdentifierSignatureHelp(monaco, model, position) {
+  if (!isInsideRegisteredEditor(monaco, model)) return undefined;
+  const call = activeCall(textBeforePosition(model, position));
+  if (!call) return undefined;
+  const identifier = getModelAnalysis(model).identifiers.find((item) => item.kind === 'function' && item.name === call.name);
+  const info = functionCallInfo(identifier);
+  if (!info) return undefined;
+  return {
+    value: {
+      signatures: [{
+        label: info.signature,
+        documentation: 'Function declared in this solution',
+        parameters: info.parameters.map((parameter) => ({ label: parameter.label })),
+      }],
+      activeSignature: 0,
+      activeParameter: Math.min(call.activeParameter, Math.max(0, info.parameters.length - 1)),
+    },
+    dispose() {},
+  };
 }
 
 function registerProviders(monaco) {
@@ -207,13 +351,25 @@ function registerProviders(monaco) {
       provideCompletionItems: (model, position, context) => provideIdentifierCompletions(monaco, model, position, context),
     })
   ));
+  if (monaco.languages.registerSignatureHelpProvider) {
+    registry.signatureDisposables = IDENTIFIER_COMPLETION_LANGUAGES.map((languageId) => (
+      monaco.languages.registerSignatureHelpProvider(languageId, {
+        signatureHelpTriggerCharacters: ['(', ','],
+        signatureHelpRetriggerCharacters: [','],
+        provideSignatureHelp: (model, position) => provideIdentifierSignatureHelp(monaco, model, position),
+      })
+    ));
+  }
 }
 
 function disposeProviders() {
   registry.disposables.forEach((disposable) => disposable?.dispose?.());
+  registry.signatureDisposables.forEach((disposable) => disposable?.dispose?.());
   registry.disposables = [];
+  registry.signatureDisposables = [];
   registry.monaco = null;
   registry.cache = new WeakMap();
+  lastDeclaredLookup = null;
 }
 
 /**
@@ -221,12 +377,12 @@ function disposeProviders() {
  * `scopeElement`. Returns a release function; the providers are disposed when
  * the last editor releases them.
  */
-export function acquireIdentifierCompletions(monaco, scopeElement) {
+export function acquireIdentifierCompletions(monaco, scopeElement, ownsModel) {
   if (!monaco?.languages?.registerCompletionItemProvider || !scopeElement) return () => {};
   if (registry.holders.size > 0 && registry.monaco !== monaco) disposeProviders();
   if (registry.disposables.length === 0) registerProviders(monaco);
 
-  const holder = { element: scopeElement };
+  const holder = { element: scopeElement, ownsModel };
   registry.holders.add(holder);
   let released = false;
   return () => {

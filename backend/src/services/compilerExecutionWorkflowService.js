@@ -6,6 +6,7 @@ import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import ExecutionJob from '../models/ExecutionJob.js';
 import Problem from '../models/Problem.js';
+import QuestionLibrary from '../models/QuestionLibrary.js';
 import Submission from '../models/Submission.js';
 import TestCase from '../models/TestCase.js';
 import { HttpError } from '../utils/errors.js';
@@ -15,7 +16,9 @@ import { readTestcaseTextObject } from '../utils/testcaseStorage.js';
 import { createNotification } from './notificationService.js';
 import { getIo } from '../utils/io.js';
 import { personalRoom, compilerMonitorRoom } from '../utils/realtime.js';
-import { serializeSubmissionForRealtime, refreshProblemStats } from '../controllers/compilerHelpers.js';
+import {
+  serializeSubmissionForRealtime, refreshProblemStats, problemUsedInAssessment, isHiddenJudgeFailure, HIDDEN_RUNTIME_ERROR_MESSAGE,
+} from '../controllers/compilerHelpers.js';
 import {
   assessmentQueue,
   compilerQueue,
@@ -45,6 +48,8 @@ import {
 } from './executionService.js';
 import { getCodingQuestionScore } from './assessmentScoringService.js';
 import { mutateAssessmentSubmission } from './assessmentPersistenceService.js';
+import { isAssessmentAttemptExpired } from './assessmentExpiryPolicy.js';
+import { notifyAssessmentReportChanged } from './assessmentReportRealtime.js';
 import {
   getVisibleCodeTemplate,
   prepareFunctionSourceForExecution,
@@ -72,38 +77,88 @@ function ensureObjectId(id, fieldName) {
   }
 }
 
-function assessmentIncludesProblem(assessment, problemId) {
-  const targetId = String(problemId);
-  const sections = Array.isArray(assessment?.sections) ? assessment.sections : [];
-  return sections.some((section) => {
+export function assessmentSectionsForProblemAccess(assessment, studentId = '', deliverySections = null) {
+  if (Array.isArray(deliverySections)) return deliverySections;
+  const source = assessment || {};
+  if (!source.settings?.questionSetEnabled) return Array.isArray(source.sections) ? source.sections : [];
+
+  const assignment = (source.candidateSetAssignments || []).find((entry) => (
+    String(entry?.student?._id || entry?.student || '') === String(studentId || '')
+  ));
+  const assignedSetNumber = Math.max(1, Number(assignment?.setNumber) || 1);
+  const selectedSet = (source.questionSets || []).find((entry) => (
+    Number(entry?.setNumber) === assignedSetNumber
+  ));
+  return Array.isArray(selectedSet?.sections)
+    ? selectedSet.sections
+    : (Array.isArray(source.sections) ? source.sections : []);
+}
+
+export function assessmentIncludesProblem(assessment, problemId, {
+  studentId = '',
+  deliverySections = null,
+} = {}) {
+  return assessmentProblemCandidates(assessment, problemId, { studentId, deliverySections }).length > 0;
+}
+
+function codingQuestionProblemIds(question = {}) {
+  return [...new Set([
+    question?.problemId,
+    question?.sourceProblemId,
+    question?.coding?.problemId,
+    question?.problemDataSnapshot?._id,
+    question?.problemDataSnapshot?.id,
+    question?.problemDataSnapshot?.sourceProblemId,
+    question?.problemDataSnapshot?.assessmentSourceProblemId,
+    question?.coding?.problemData?._id,
+    question?.coding?.problemData?.id,
+    question?.coding?.problemData?.sourceProblemId,
+    question?.coding?.problemData?.assessmentSourceProblemId,
+    question?.problemData?._id,
+    question?.problemData?.id,
+  ].filter((id) => validateObjectIdQuietly(id)).map(String))];
+}
+
+function validateObjectIdQuietly(id) {
+  return /^[a-f\d]{24}$/i.test(String(id || ''));
+}
+
+function libraryRowProblemIds(row = {}) {
+  return [...new Set([
+    row?.sourceProblemId,
+    ...codingQuestionProblemIds(row?.questionData || {}),
+  ].filter((id) => validateObjectIdQuietly(id)).map(String))];
+}
+
+export function assessmentProblemCandidates(assessment, problemId, {
+  studentId = '',
+  deliverySections = null,
+} = {}) {
+  const targetId = String(problemId || '');
+  const sections = assessmentSectionsForProblemAccess(assessment, studentId, deliverySections);
+  for (const section of sections) {
     const questionType = section?.type;
     const questions = Array.isArray(section?.questions) ? section.questions : [];
-    return questions.some((question) => {
+    for (const question of questions) {
       const resolvedType = question?.type || questionType;
-      if (resolvedType !== 'coding') return false;
-      const resolvedProblemId = question?.problemId
-        || question?.coding?.problemId
-        || question?.problemDataSnapshot?._id
-        || question?.coding?.problemData?._id
-        || question?.problemData?._id;
-      return resolvedProblemId && String(resolvedProblemId) === targetId;
-    });
-  });
+      if (resolvedType !== 'coding') continue;
+      const candidates = codingQuestionProblemIds(question);
+      if (candidates.includes(targetId)) return candidates;
+    }
+  }
+  return [];
 }
 
 export async function resolveActiveProblem(problemId, { userId, assessmentId, accessScope } = {}) {
   ensureObjectId(problemId, 'Problem ID');
-  const localProblem = await Problem.findById(problemId).select('+executionHarnesses');
-  const problem = localProblem || await sharedAssessmentProblem(assessmentId, problemId);
-  const normalizedStatus = String(problem?.status || '').toLowerCase();
-  const isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
-  if (!problem || !isPublished) {
-    throw new HttpError(404, 'Problem not found.');
-  }
+  let localProblem = await Problem.findById(problemId).select('+executionHarnesses');
+  let problem = localProblem || await sharedAssessmentProblem(assessmentId, problemId);
+  let normalizedStatus = String(problem?.status || '').toLowerCase();
+  let isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
 
-  const visibility = localProblem ? (problem.visibility || 'public') : 'assessment';
+  let visibility = localProblem ? (problem.visibility || 'public') : 'assessment';
   const requiresAssessmentContext = accessScope === 'assessment_only';
-  if (visibility === 'public' && !requiresAssessmentContext && !assessmentId) {
+  if (problem && isPublished && visibility === 'public' && !requiresAssessmentContext && !assessmentId) {
     return problem;
   }
 
@@ -117,9 +172,14 @@ export async function resolveActiveProblem(problemId, { userId, assessmentId, ac
     throw new HttpError(404, 'Problem not found.');
   }
 
-  if ((assessment.platformPublished === false || assessment.lifecycleStatus === 'draft') && !(await AssessmentSubmission.exists({
-    assessmentId, studentId: userId, status: 'in_progress',
-  }))) throw new HttpError(404, 'Problem not found.');
+  const activeSubmission = await AssessmentSubmission.findOne({
+    assessmentId,
+    studentId: userId,
+    status: 'in_progress',
+  }).select('deliveryPreparedAt deliverySections').lean();
+  if ((assessment.platformPublished === false || assessment.lifecycleStatus === 'draft') && !activeSubmission) {
+    throw new HttpError(404, 'Problem not found.');
+  }
 
   const studentId = String(userId);
   if (assessment.targetType !== 'all') {
@@ -129,9 +189,60 @@ export async function resolveActiveProblem(problemId, { userId, assessmentId, ac
     }
   }
 
-  if (!assessmentIncludesProblem(assessment, problemId)) {
+  const deliverySections = activeSubmission?.deliveryPreparedAt && Array.isArray(activeSubmission.deliverySections)
+    ? activeSubmission.deliverySections
+    : null;
+  const candidateProblemIds = assessmentProblemCandidates(assessment, problemId, {
+    studentId: userId,
+    deliverySections,
+  });
+  if (!candidateProblemIds.length) {
     throw new HttpError(404, 'Problem not found.');
   }
+
+  // Older assessments can contain a deleted clone ID or a library-row ID in
+  // question.problemId while their frozen snapshot still carries the real
+  // compiler/source problem. Recover only from IDs on this student's delivered
+  // question, preserving the authorization boundary.
+  if (!problem || !isPublished) {
+    const libraryRows = await QuestionLibrary.find({
+      $or: [
+        { _id: { $in: candidateProblemIds } },
+        { sourceProblemId: { $in: candidateProblemIds } },
+      ],
+    }).select('_id sourceProblemId questionData').lean();
+    const resolvedCandidateIds = [...new Set([
+      ...candidateProblemIds,
+      ...libraryRows.flatMap(libraryRowProblemIds),
+    ])];
+    const localCandidates = await Problem.find({
+      _id: { $in: resolvedCandidateIds },
+      status: { $in: ['published', 'active', 'Active', 'Published'] },
+    }).select('+executionHarnesses');
+    const localById = new Map(localCandidates.map((entry) => [String(entry._id), entry]));
+    localProblem = resolvedCandidateIds.map((id) => localById.get(String(id))).find(Boolean) || null;
+    problem = localProblem;
+    if (!problem) {
+      for (const candidateId of resolvedCandidateIds) {
+        problem = await sharedAssessmentProblem(assessmentId, candidateId);
+        if (problem) break;
+      }
+    }
+    normalizedStatus = String(problem?.status || '').toLowerCase();
+    isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
+    visibility = localProblem ? (problem?.visibility || 'public') : 'assessment';
+    if (!problem || !isPublished) {
+      console.warn('[CompilerProblemAccess] Delivered coding problem is unavailable.', {
+        assessmentId: String(assessmentId),
+        requestedProblemId: String(problemId),
+        deliveredCandidateIds: candidateProblemIds,
+        libraryCandidateIds: resolvedCandidateIds.filter((id) => !candidateProblemIds.includes(id)),
+        requestedStatus: normalizedStatus || 'missing',
+      });
+    }
+  }
+
+  if (!problem || !isPublished) throw new HttpError(404, 'Problem not found.');
 
   return problem;
 }
@@ -349,11 +460,16 @@ async function loadSubmissionTestCases(problem) {
   return allTestCases;
 }
 
-function buildSubmitApiResponse(executionResult) {
+// Job results and the stored assessment answer reach the student. A failure on a hidden case keeps only
+// its index; `revealHidden` is for practice problems that no assessment grades on (product behaviour).
+export function buildSubmitApiResponse(executionResult, { revealHidden = false } = {}) {
   const testCaseMarks = {
     passedTestCaseMarks: Number(executionResult.passedTestCaseMarks || 0),
     totalTestCaseMarks: Number(executionResult.totalTestCaseMarks || 0),
   };
+  const failed = executionResult.failedCase;
+  const concealFailure = isHiddenJudgeFailure(failed) && !revealHidden;
+  const failedCaseIndex = failed ? { index: failed.index, hidden: isHiddenJudgeFailure(failed) } : undefined;
 
   if (executionResult.status === 'AC') {
     return {
@@ -376,14 +492,14 @@ function buildSubmitApiResponse(executionResult) {
       ...testCaseMarks,
       time: roundNumber(executionResult.executionTimeMs / 1000, 3),
       memory: executionResult.memoryUsedKb || 0,
-      failedTestCase: executionResult.failedCase
+      failedTestCase: failed && !concealFailure
         ? {
-          index: executionResult.failedCase.index,
-          input: executionResult.failedCase.input || '',
-          expected: executionResult.failedCase.expectedOutput || '',
-          actual: executionResult.failedCase.actualOutput || '',
+          ...failedCaseIndex,
+          input: failed.input || '',
+          expected: failed.expectedOutput || '',
+          actual: failed.actualOutput || '',
         }
-        : undefined,
+        : failedCaseIndex,
     };
   }
 
@@ -407,19 +523,49 @@ function buildSubmitApiResponse(executionResult) {
       ...testCaseMarks,
       time: roundNumber(executionResult.executionTimeMs / 1000, 3),
       memory: executionResult.memoryUsedKb || 0,
+      failedTestCase: failedCaseIndex,
     };
   }
 
   return {
     mode: 'submit',
     status: 'Runtime Error',
-    error: executionResult.stderr || 'Execution failed.',
+    // Hidden-case stderr can echo the hidden input. Compile errors (above) never depend on it.
+    error: concealFailure ? HIDDEN_RUNTIME_ERROR_MESSAGE : (executionResult.stderr || 'Execution failed.'),
+    failedTestCase: failedCaseIndex,
     passed: executionResult.passedTestCases || 0,
     total: executionResult.totalTestCases || 0,
     ...testCaseMarks,
     time: roundNumber(executionResult.executionTimeMs / 1000, 3),
     memory: executionResult.memoryUsedKb || 0,
   };
+}
+
+const ADMIN_RESULT_TEXT_LIMIT = 4000;
+const capAdminText = (value) => {
+  const text = String(value ?? '');
+  return text.length > ADMIN_RESULT_TEXT_LIMIT ? `${text.slice(0, ADMIN_RESULT_TEXT_LIMIT)}…` : text;
+};
+
+/**
+ * The full result for admin reports: the failing case (hidden or not) and raw
+ * stderr, each capped so many coding answers cannot bloat the attempt
+ * document. Stored as answers[].adminExecutionResult; never sent to students.
+ */
+export function buildAdminSubmitResult(executionResult) {
+  const response = buildSubmitApiResponse(executionResult, { revealHidden: true });
+  if (response.error) response.error = capAdminText(response.error);
+  const failed = executionResult?.failedCase;
+  if (failed) {
+    response.failedTestCase = {
+      index: failed.index,
+      hidden: isHiddenJudgeFailure(failed),
+      input: capAdminText(failed.input),
+      expected: capAdminText(failed.expectedOutput),
+      actual: capAdminText(failed.actualOutput),
+    };
+  }
+  return response;
 }
 
 async function resolveRunExpectedOutput({
@@ -794,6 +940,8 @@ async function executeSubmitPayload({ sourceCode, sourceCodeFactory, languageId,
       if (!firstFailure) {
         firstFailure = {
           index: index + 1,
+          // Only a sample case may be shown to the student; external bulk cases have no kind.
+          hidden: testCase.kind !== 'sample',
           input: testCase.input || '',
           expectedOutput: testCase.output || '',
           actualOutput: evaluation.actualOutput || judgeResult.stdout || '',
@@ -827,6 +975,7 @@ async function executeSubmitPayload({ sourceCode, sourceCodeFactory, languageId,
       failedCase: firstFailure
         ? {
           index: firstFailure.index,
+          hidden: firstFailure.hidden,
           input: firstFailure.input,
           expectedOutput: firstFailure.expectedOutput,
           actualOutput: firstFailure.actualOutput,
@@ -968,10 +1117,17 @@ export async function enqueueCompilerSubmitJob({ user, body }) {
   validateProblemLanguage(problem, languageKey);
   const sourceCode = validateProblemSourceCode(problem, languageKey, body.source_code, { action: 'submit' });
 
+  const assessment = assessmentId ? await assessmentDefinitionById(assessmentId) : null;
+  if (assessmentId && !assessment) throw new HttpError(404, 'Assessment not found.');
   const activeAttempt = assessmentId ? await AssessmentSubmission.findOne({
     assessmentId, studentId: user._id, status: 'in_progress',
-  }).select('attemptGeneration').lean() : null;
-  if (assessmentId && !activeAttempt) throw new HttpError(409, 'This assessment attempt is not active.');
+  }).select('attemptGeneration status startedAt pausedDurationMs pauseStartedAt').lean() : null;
+  // The expiry sweep runs once a minute; code sent after time-up (plus the
+  // submit grace) must not become the graded answer in the meantime.
+  if (assessmentId && (!activeAttempt || isAssessmentAttemptExpired(assessment, activeAttempt, new Date()))) {
+    throw new HttpError(409, 'This assessment attempt is not active.');
+  }
+  if (activeAttempt?.pauseStartedAt) throw new HttpError(409, 'Complete the security re-check before submitting code.');
 
   const submission = await createTrackedSubmission({
     user,
@@ -985,15 +1141,12 @@ export async function enqueueCompilerSubmitJob({ user, body }) {
   submission.jobId = submission._id.toString();
   await submission.save();
 
-  if (assessmentId) {
-    const assessment = await assessmentDefinitionById(assessmentId);
-    if (assessment) {
-      await persistAssessmentCodingDraft({
-        assessment,
-        userId: user._id,
-        trackedSubmission: submission,
-      });
-    }
+  if (assessment) {
+    await persistAssessmentCodingDraft({
+      assessment,
+      userId: user._id,
+      trackedSubmission: submission,
+    });
   }
 
   const queue = assessmentId ? assessmentQueue : submissionQueue;
@@ -1055,6 +1208,8 @@ async function persistAssessmentCodingDraft({ assessment, userId, trackedSubmiss
     filter: { assessmentId: assessment._id, studentId: userId, status: 'in_progress' },
     async mutate(current) {
       if (Number(current.attemptGeneration || 1) !== Number(trackedSubmission.assessmentAttemptGeneration || 1)) return false;
+      // Re-checked inside the CAS: the deadline or a security pause may arrive while enqueuing.
+      if (isAssessmentAttemptExpired(assessment, current, new Date()) || current.pauseStartedAt) return false;
       const delivered = deliveredAssessmentForEvaluation(assessment, current);
       const matches = findAssessmentCodingQuestions(delivered, trackedSubmission.problem);
       const answers = (current.answers || []).map((answer) => answer.toObject?.() || { ...answer });
@@ -1075,7 +1230,7 @@ async function persistAssessmentCodingDraft({ assessment, userId, trackedSubmiss
           language: trackedSubmission.language, code: trackedSubmission.sourceCode,
           jobId: String(trackedSubmission._id), submissionId: trackedSubmission._id,
           executionStatus: 'queued', executionVerdict: 'PENDING', executionResult: null,
-          lastEvaluatedAt: undefined,
+          adminExecutionResult: undefined, lastEvaluatedAt: undefined,
         };
         if (answerIndex >= 0) answers[answerIndex] = nextAnswer;
         else answers.push(nextAnswer);
@@ -1097,6 +1252,7 @@ async function syncAssessmentAnswerFromTrackedSubmission(trackedSubmission) {
   const assessment = await assessmentDefinitionById(trackedSubmission.assessmentId);
   if (!assessment) return null;
   const executionResult = buildSubmitApiResponse(trackedSubmission);
+  const adminExecutionResult = buildAdminSubmitResult(trackedSubmission);
   const updated = await mutateAssessmentSubmission({
     filter: { assessmentId: trackedSubmission.assessmentId, studentId: trackedSubmission.user, status: 'in_progress' },
     mutate(current) {
@@ -1111,6 +1267,7 @@ async function syncAssessmentAnswerFromTrackedSubmission(trackedSubmission) {
         answer.executionStatus = trackedSubmission.status === 'RE' ? 'failed' : 'completed';
         answer.executionVerdict = trackedSubmission.status;
         answer.executionResult = executionResult;
+        answer.adminExecutionResult = adminExecutionResult;
         answer.lastEvaluatedAt = trackedSubmission.completedAt || new Date();
         if (!firstScore) firstScore = getCodingQuestionScore(match.question, answer, match.section);
       }
@@ -1120,6 +1277,7 @@ async function syncAssessmentAnswerFromTrackedSubmission(trackedSubmission) {
   });
   const firstScore = updated.result;
   if (!firstScore) return null;
+  notifyAssessmentReportChanged(trackedSubmission.assessmentId, 'answers');
 
   return {
     earnedMarks: firstScore.earnedMarks,
@@ -1153,7 +1311,8 @@ export async function enqueueAssessmentCodingEvaluationJobs({
           const problemId = question?.problemId || question?.coding?.problemId;
           const sourceCode = String(answer?.code || '');
           const languageKey = String(answer?.language || question?.coding?.supportedLanguages?.[0] || DEFAULT_LANGUAGE).trim().toLowerCase();
-          const languageId = KEY_TO_LANGUAGE_ID[languageKey];
+          // Own keys only: an answer language such as 'constructor' must not resolve.
+          const languageId = Object.hasOwn(KEY_TO_LANGUAGE_ID, languageKey) ? KEY_TO_LANGUAGE_ID[languageKey] : undefined;
           if (!answer || !problemId || !sourceCode.trim() || !languageId) return;
           const jobId = `${current._id}:${expectedVersion.attemptGeneration}:${expectedVersion.evaluationVersion}:${sectionIndex}:${questionIndex}`;
           if (answer.jobId !== jobId) {
@@ -1162,6 +1321,7 @@ export async function enqueueAssessmentCodingEvaluationJobs({
             answer.executionStatus = 'queued';
             answer.executionVerdict = 'PENDING';
             answer.executionResult = null;
+            answer.adminExecutionResult = undefined;
           }
           if (['completed', 'failed'].includes(answer.executionStatus)) return;
           queuedJobs.push({
@@ -1342,7 +1502,11 @@ export async function processCompilerExecutionJob(job) {
       }
     }
 
-    const responsePayload = buildSubmitApiResponse(submitResult.persisted);
+    // Practice submits keep showing the failing case unless an assessment grades on this problem.
+    const revealHidden = job.name === 'submit' && !assessmentId && Boolean(problem?._id)
+      && isHiddenJudgeFailure(submitResult.persisted.failedCase)
+      && !(await problemUsedInAssessment(problem._id).catch(() => true));
+    const responsePayload = buildSubmitApiResponse(submitResult.persisted, { revealHidden });
     if (job.name === 'assessment-code-submit' && finalizedSubmission) {
       const assessmentMarks = await syncAssessmentAnswerFromTrackedSubmission(finalizedSubmission);
       if (assessmentMarks) responsePayload.assessmentMarks = assessmentMarks;
@@ -1392,14 +1556,18 @@ async function updateAssessmentAnswerExecutionState({
   executionStatus,
   executionVerdict,
   executionResult,
+  adminExecutionResult,
   ...job
 }) {
   const updated = await mutateAssessmentSubmission({
     filter: { _id: assessmentSubmissionId },
     mutate: (submission) => applyAssessmentExecutionResult(submission, assessment, job, {
-      executionStatus, executionVerdict, executionResult,
+      executionStatus, executionVerdict, executionResult, adminExecutionResult,
     }),
   });
+  if (updated.result && ['completed', 'failed'].includes(executionStatus)) {
+    notifyAssessmentReportChanged(updated.submission?.assessmentId || job.assessmentId, 'evaluation');
+  }
   return updated.result ? updated.submission : null;
 }
 
@@ -1456,6 +1624,38 @@ async function processAssessmentFinalCodingJob(job) {
       throw new HttpError(503, 'Assessment evaluation retry budget exhausted.');
     }
 
+    // Autosave accepts any language string, so the question's language lock is enforced here.
+    if (!Array.isArray(problem?.supportedLanguages) || !problem.supportedLanguages.includes(languageKey)) {
+      const response = {
+        mode: 'submit',
+        status: 'Compilation Error',
+        error: 'Language not allowed for this question.',
+        passed: 0,
+        total: 0,
+        passedTestCaseMarks: 0,
+        totalTestCaseMarks: 0,
+        time: 0,
+        memory: 0,
+      };
+      await updateAssessmentAnswerExecutionState({
+        ...job.data,
+        assessment,
+        executionStatus: 'completed',
+        executionVerdict: 'CE',
+        executionResult: response,
+      });
+      const resultPayload = {
+        kind: 'assessment-submit',
+        assessmentSubmissionId,
+        sectionIndex,
+        questionIndex,
+        response,
+        persisted: { status: 'CE' },
+      };
+      await markExecutionJobCompleted(executionJobId, resultPayload);
+      return resultPayload;
+    }
+
     const validatedSourceCode = validateProblemSourceCode(problem, languageKey, sourceCode, { action: 'submit' });
     const submitResult = await executeSubmitPayload({
       sourceCodeFactory: (testInput = '') => prepareFunctionSourceForExecution(
@@ -1474,6 +1674,7 @@ async function processAssessmentFinalCodingJob(job) {
       executionStatus: 'completed',
       executionVerdict: submitResult.persisted.status,
       executionResult: buildSubmitApiResponse(submitResult.persisted),
+      adminExecutionResult: buildAdminSubmitResult(submitResult.persisted),
     });
 
     const resultPayload = {

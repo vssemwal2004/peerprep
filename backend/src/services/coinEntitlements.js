@@ -7,16 +7,27 @@ import EventParticipant from '../models/EventParticipant.js';
 import { InterviewEngagementReceipt } from '../models/AdaptiveEngagement.js';
 import { engagementTenant } from './engagementPolicyService.js';
 import { currentTenant } from '../platform/tenantContext.js';
+import { AnviAttempt } from '../modules/anviInterview/anviInterview.models.js';
 
-// The interview service stores sessions in the university's database; older sessions predate
-// local start receipts, so their owner field is probed the same way platform inspection does.
+// The retired interview service stored sessions in the university's database; those sessions
+// predate local start receipts, so their owner field is probed the same way platform inspection does.
 const SESSION_OWNER_FIELDS = ['studentId', 'student_id', 'userId', 'user_id', 'candidateId', 'candidate_id'];
 
 export async function aiInterviewStarted(student, interviewId) {
   const id = String(interviewId || '');
   if (!id) return false;
-  const receipt = await InterviewEngagementReceipt.exists({ tenantKey: engagementTenant(student), studentId: student._id, interviewId: id });
+  const anviId = /^[a-f0-9]{24}$/i.test(id);
+  // Attempts an institution scheduled were free, so neither they nor their start receipts make
+  // later practice of the same interview free.
+  const assigned = anviId
+    ? (await AnviAttempt.find({ studentId: student._id, interviewId: id, assignmentId: { $ne: null } }).select('_id').limit(500).lean()).map((row) => String(row._id))
+    : [];
+  const receipt = await InterviewEngagementReceipt.exists({
+    tenantKey: engagementTenant(student), studentId: student._id, interviewId: id, ...(assigned.length ? { sessionId: { $nin: assigned } } : {}),
+  });
   if (receipt) return true;
+  // Any practice ANVI attempt (even an abandoned one) means this interview was already paid for.
+  if (anviId && await AnviAttempt.exists({ studentId: student._id, interviewId: id, assignmentId: null })) return true;
   const connection = currentTenant()?.connection || mongoose.connection;
   const owners = [student._id, String(student._id)];
   const interviews = mongoose.isValidObjectId(id) ? [id, new mongoose.Types.ObjectId(id)] : [id];

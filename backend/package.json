@@ -20,6 +20,8 @@
     "prep-score:recompute": "node --env-file=.env scripts/recomputePrepScores.js",
     "migrate:login-directory": "node --env-file=.env scripts/backfillLoginDirectory.js",
     "migrate:student-engagement": "node --env-file=.env src/migrations/create-student-engagement-indexes.js",
+    "migrate:anvi-indexes": "node --env-file=.env src/migrations/create-anvi-indexes.js",
+    "migrate:tenant-indexes": "node --env-file=.env src/migrations/create-tenant-indexes.js",
     "migrate:coding-taxonomy": "node --env-file=.env src/migrations/backfill-coding-taxonomy.js",
     "sync:leetcode-images": "node --env-file=.env scripts/syncLeetCodeProblemImages.js",
     "sync:leetcode-sequence": "node --env-file=.env scripts/syncLeetCodeQuestionSequence.js",

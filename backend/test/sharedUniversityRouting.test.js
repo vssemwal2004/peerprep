@@ -89,6 +89,12 @@ test('one API isolates university users, sessions and student lists with duplica
     });
     assert.equal(mainStudentWallet.status, 200);
     assert.equal((await mainStudentWallet.json()).balance, 0);
+    const mainStudentIdLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: 'PEERPREP-S1', password: 'student-password' }) });
+    const mainStudentIdPayload = await mainStudentIdLogin.json();
+    assert.equal(mainStudentIdLogin.status, 200, JSON.stringify(mainStudentIdPayload));
+    assert.equal(mainStudentIdPayload.user.universityId, null);
     const mainRecipientSearch = await fetch(`${origin}/api/platform/admin/wallet-recipients?role=student&search=peerprep-student`, {
       headers: { Cookie: platformCookie },
     });
@@ -181,8 +187,13 @@ test('one API isolates university users, sessions and student lists with duplica
     const idOnlyLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier: 'same-student-id', password: 'student-password' }) });
-    assert.equal(idOnlyLogin.status, 400);
-    const { backfillLoginDirectory, loginDirectoryComplete, loginDirectoryCandidates } = await import('../src/platform/loginDirectory.js');
+    assert.equal(idOnlyLogin.status, 409);
+    assert.match((await idOnlyLogin.json()).error, /more than one university/i);
+    const {
+      backfillLoginDirectory,
+      loginDirectoryComplete,
+      loginDirectoryCandidates,
+    } = await import('../src/platform/loginDirectory.js');
     assert.equal(await loginDirectoryComplete(), false);
     await backfillLoginDirectory();
     assert.equal(await loginDirectoryComplete(), true);
@@ -196,13 +207,46 @@ test('one API isolates university users, sessions and student lists with duplica
       body: JSON.stringify({ identifier: 'late@example.test', password: 'late-password' }) });
     assert.equal(indexedLogin.status, 200);
     assert.equal((await indexedLogin.json()).user.universityId, 'gamma');
+    const indexedStudentIdLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: 'late-001', password: 'late-password' }) });
+    const indexedStudentIdPayload = await indexedStudentIdLogin.json();
+    assert.equal(indexedStudentIdLogin.status, 200, JSON.stringify(indexedStudentIdPayload));
+    assert.equal(indexedStudentIdPayload.user.universityId, 'gamma');
+
+    // Existing production rows may retain mixed-case emails from older imports.
+    // Both the root router and university-specific login must still resolve them.
+    const legacyUppercaseId = new mongoose.Types.ObjectId();
+    const legacyUppercaseEmail = 'Legacy.Student@Example.Test';
+    const gammaTenant = await getTenant('gamma');
+    await gammaTenant.connection.collection('users').insertOne({
+      _id: legacyUppercaseId,
+      role: 'student',
+      name: 'Legacy uppercase student',
+      email: legacyUppercaseEmail,
+      studentId: 'legacy-uppercase-001',
+      passwordHash: await User.hashPassword('legacy-password'),
+      isActive: true,
+    });
+    assert.equal((await loginDirectoryCandidates(legacyUppercaseEmail)).length, 0);
+    const legacyRootLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: 'legacy.student@example.test', password: 'legacy-password' }) });
+    assert.equal(legacyRootLogin.status, 200, await legacyRootLogin.text());
+    assert.equal((await loginDirectoryCandidates(legacyUppercaseEmail)).length, 1);
+    const legacyTenantLogin = await fetch(`${origin}/api/u/gamma/auth/login`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: 'LEGACY.STUDENT@EXAMPLE.TEST', password: 'legacy-password' }) });
+    assert.equal(legacyTenantLogin.status, 200, await legacyTenantLogin.text());
+
     assert.equal((await getTenant('gamma')).universityId, 'gamma');
     const get = (id, path, cookie) => fetch(`${origin}/api/u/${id}${path}`, { headers: { Cookie: cookie } });
     const cross = await get('beta', '/auth/me', alphaCookie);
     assert.equal(cross.status, 401);
     const alpha = await get('alpha', '/students/list', alphaCookie);
     const beta = await get('beta', '/students/list', betaCookie);
-    const gammaMe = await get('gamma', '/auth/me', gammaCookie);
+    // The root login above is the newest session for the gamma administrator.
+    const gammaMe = await get('gamma', '/auth/me', rootCookie);
     assert.equal(alpha.status, 200);
     assert.equal(beta.status, 200);
     assert.equal(gammaMe.status, 200);

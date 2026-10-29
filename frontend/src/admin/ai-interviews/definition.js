@@ -1,11 +1,67 @@
+import { liveTopicCounts } from "./wizard/livetopics/counts.js";
+
 export const ROOT = "/admin/ai-interviews";
+// The four wizard steps, in order. Server issue paths map onto them:
+// basics -> basics, sections* -> questions, interviewer and rules -> anvi.
 export const divisions = [
-  { id: "basics", label: "Basics" },
-  { id: "sections", label: "Sections & questions" },
-  { id: "interviewer", label: "Interviewer" },
-  { id: "rules", label: "Rules & rubric" },
-  { id: "review", label: "Review" },
+  { id: "basics", label: "Basics", title: "What is this interview for?" },
+  { id: "questions", label: "Questions", title: "What should ANVI ask?" },
+  { id: "anvi", label: "ANVI settings", title: "How should ANVI conduct it?" },
+  { id: "review", label: "Review & publish", title: "Review and publish" },
 ];
+// Older links used the five-step builder ids; they open the matching wizard step.
+export const STEP_ALIASES = Object.freeze({
+  sections: "questions",
+  interviewer: "anvi",
+  rules: "anvi",
+  preview: "review",
+});
+// Mirrors backend LIMITS, used until /capabilities has loaded.
+export const DEFAULT_LIMITS = Object.freeze({
+  sections: 20,
+  groups: 10,
+  questions: 200,
+  subquestions: 10,
+  plannedQuestionsPerGroup: 50,
+  followUps: 5,
+  marks: 100,
+  competency: 60,
+  generateQuestions: 20,
+});
+// Mirrors backend LIMITS: authored cross-questions plus AI follow-ups per question.
+export const FOLLOW_UP_LIMIT = 5;
+export const MARKS_LIMIT = 100;
+export const ANVI_DEFAULTS = Object.freeze({
+  persona: Object.freeze({
+    tone: "warm",
+    pace: "normal",
+    acknowledgements: true,
+    introduction: "",
+    closing: "",
+  }),
+  turns: Object.freeze({
+    silenceSeconds: 2,
+    nudgeSeconds: 45,
+    maxNudges: 2,
+    voiceCommands: true,
+  }),
+  // The Gemini Live voice and its locale. languageCode "" follows the interview language
+  // (English -> en-IN, Hindi -> hi-IN, Hinglish -> no fixed locale).
+  voice: Object.freeze({
+    name: "Aoede",
+    languageCode: "",
+  }),
+  avatar: Object.freeze({ enabled: false, avatarId: "" }),
+});
+// Saved interviews from before ANVI settings existed have no `anvi`; missing keys mean defaults.
+// Keys this editor does not show (conduct, warm-up, resume) are kept as they are.
+export const anviSettings = (anvi) => ({
+  ...(anvi || {}),
+  persona: { ...ANVI_DEFAULTS.persona, ...(anvi?.persona || {}) },
+  turns: { ...ANVI_DEFAULTS.turns, ...(anvi?.turns || {}) },
+  voice: { ...ANVI_DEFAULTS.voice, ...(anvi?.voice || {}) },
+  avatar: { ...ANVI_DEFAULTS.avatar, ...(anvi?.avatar || {}) },
+});
 export const categories = [
   "Technical",
   "Behavioral",
@@ -36,6 +92,9 @@ export const newQuestion = () => ({
   maxFollowUps: 0,
   context: "",
   expectedAnswer: "",
+  marks: 10,
+  competency: "",
+  skippable: true,
   difficulty: "",
   tags: [],
   subquestions: [],
@@ -81,42 +140,51 @@ export const newDefinition = () => ({
     resume: "none",
     documents: "none",
   },
-  rubric: [
-    {
-      id: uid(),
-      name: "Correctness",
-      description: "Accurate and relevant knowledge.",
-      weight: 40,
-    },
-    {
-      id: uid(),
-      name: "Reasoning",
-      description: "A clear, structured approach.",
-      weight: 40,
-    },
-    {
-      id: uid(),
-      name: "Clarity",
-      description: "Understandable explanations.",
-      weight: 20,
-    },
-  ],
+  anvi: anviSettings(),
+  rubric: defaultRubric(),
 });
+export const defaultRubric = () => [
+  {
+    id: uid(),
+    name: "Knowledge",
+    description: "Accurate, relevant understanding of the topic.",
+    weight: 40,
+  },
+  {
+    id: uid(),
+    name: "Communication",
+    description: "Clear, well-structured explanations.",
+    weight: 30,
+  },
+  {
+    id: uid(),
+    name: "Problem solving",
+    description: "A sound approach and reasoning about trade-offs.",
+    weight: 30,
+  },
+];
 export function summarize(data) {
   let manual = 0,
     planned = 0,
-    followUps = 0;
+    followUps = 0,
+    marks = 0;
+  // Live topics without their own count share the interview pool by priority.
+  const liveCounts = liveTopicCounts(data);
   for (const s of data.sections)
     for (const g of s.groups) {
       if (g.source === "manual") {
         manual += g.questions.reduce((n, q) => n + questionSlots(q), 0);
         followUps += g.questions.reduce((n, q) => n + (q.followUps.length + (q.maxFollowUps || 0)) * questionSlots(q), 0);
+        marks += g.questions.reduce((n, q) => n + (Number(q.marks) || 10) * questionSlots(q), 0);
       } else {
-        planned += g.annu.targetCount;
-        followUps += g.annu.targetCount * g.annu.maxFollowUps;
+        const count = liveCounts[g.id] ?? 0;
+        planned += count;
+        followUps += count * g.annu.maxFollowUps;
+        // Planned (live) questions use the default 10 marks each.
+        marks += count * 10;
       }
     }
-  return { manual, planned, followUps };
+  return { manual, planned, followUps, marks };
 }
 export function rekeySection(section) {
   const clone = structuredClone(section);

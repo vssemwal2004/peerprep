@@ -6,20 +6,21 @@ import { AuthProvider } from './context/AuthContext';
 import { UniversityPolicyProvider } from './platform/UniversityPolicyContext';
 import { canAdjustPrepScore, canManageInterviewCompanies, isUniversityDeployment, LEGACY_PREP_COIN_PRICING_PATH, PREP_COIN_PRICING_PATH, PREP_SCORE_ADJUSTMENT_PATH, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
 import { ToastProvider } from './components/CustomToast';
-import AdminLayout from './admin/AdminLayout';
 import AdminProtectedRoute from './admin/AdminProtectedRoute';
 import CoordinatorProtectedRoute from './coordinator/CoordinatorProtectedRoute';
 import StudentProtectedRoute from './student/StudentProtectedRoute';
 import { LandingPageSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
+import { hideGlobalLoader } from './utils/globalLoader';
 import { useAuth } from './context/AuthContext';
 import { hasPermission } from './admin/coordinatorPermissions';
 import PopupDismissManager from './components/PopupDismissManager';
-import GlobalSidebar from './components/GlobalSidebar';
-import StudentDashboardHeader from './components/StudentDashboardHeader';
 import { STUDENT_SIDEBAR_PANEL_WIDTH, STUDENT_SIDEBAR_RAIL_WIDTH } from './components/sidebarLayout';
 
-// Lazy-load navbars to keep them out of the main bundle
+// Shells are role-specific and should not delay the public landing/login bundle.
+const AdminLayout = lazy(() => import('./admin/AdminLayout'));
 const CoordinatorLayout = lazy(() => import('./coordinator/CoordinatorLayout'));
+const GlobalSidebar = lazy(() => import('./components/GlobalSidebar'));
+const StudentDashboardHeader = lazy(() => import('./components/StudentDashboardHeader'));
 const Footer = lazy(() => import('./components/Footer').then(m => ({ default: m.Footer })));
 
 // Lazy load all route components for code splitting
@@ -82,6 +83,7 @@ const AdminLearning = lazy(() => import("./admin/AdminLearning"));
 const AdminLearningDetail = lazy(() => import("./admin/AdminLearningDetail"));
 const StudentOnboarding = lazy(() => import("./admin/StudentOnboarding"));
 const StudentDirectory = lazy(() => import("./admin/StudentDirectory"));
+const StudentAccessSettings = lazy(() => import("./admin/StudentAccessSettings"));
 const StudentBulkLists = lazy(() => import("./admin/StudentBulkLists"));
 const BulkUploads = lazy(() => import("./admin/BulkUploads"));
 const AdminStudentProfile = lazy(() => import("./admin/AdminStudentProfile"));
@@ -135,7 +137,7 @@ const LAZY_IMPORT_RETRY_KEY = 'peerprep:lazy-import-retry';
 // the current tab holding an obsolete dynamic-module URL. One guarded reload
 // fetches the current module graph without creating a reload loop.
 function lazy(loader) {
-  return reactLazy(async () => {
+  const load = async () => {
     try {
       const module = await loader();
       window.sessionStorage.removeItem(LAZY_IMPORT_RETRY_KEY);
@@ -151,7 +153,12 @@ function lazy(loader) {
       }
       throw error;
     }
-  });
+  };
+  const Component = reactLazy(load);
+  // Calling preload uses the same browser module cache as React.lazy. This lets
+  // idle/intent prefetching warm a route without downloading it twice.
+  Component.preload = () => load().catch(() => undefined);
+  return Component;
 }
 
 /**
@@ -186,9 +193,10 @@ function RoutePrefetcher() {
   }, [user?.accessScope]);
 
   const prefetchAdminRoutes = useCallback(() => {
-    import("./admin/AssessmentDashboard");
-    import("./admin/library/LibraryWorkspace");
-    import("./admin/StudentDirectory");
+    AssessmentDashboard.preload();
+    CreateAssessment.preload();
+    LibraryWorkspace.preload();
+    StudentDirectory.preload();
   }, []);
 
   const prefetchCoordinatorRoutes = useCallback(() => {
@@ -244,19 +252,12 @@ function ScrollToTop() {
   return null;
 }
 
-// Hide the HTML global-loader once React has mounted and rendered
-function useHideGlobalLoader() {
+// Hide the HTML global-loader once React has mounted and rendered.
+// The landing page keeps it up until its iframe is ready, so "/" shows a single loading screen.
+function useHideGlobalLoader(pathname) {
   useEffect(() => {
-    const loader = document.getElementById('global-loader');
-    if (!loader) return;
-    // rAF ensures the browser has painted at least one frame before we hide
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        loader.classList.add('fade-out');
-        setTimeout(() => loader.remove(), 300);
-      });
-    });
-  }, []);
+    if (pathname !== '/') hideGlobalLoader();
+  }, [pathname]);
 }
 
 // QuickPrep questions are picked in the existing Question Library; the old picker address goes there.
@@ -271,11 +272,19 @@ function LegacyQuickPrepRedirect() {
   return <Navigate to={`/student/quickprep/${slug}`} replace />;
 }
 
+// The shell stays mounted across admin/coordinator navigations, so only the page is
+// keyed: each page still starts fresh while the sidebar stays put as its code loads.
+function ShellPage({ children }) {
+  const { pathname, search } = useLocation();
+  return <Suspense key={`${pathname}${search}`} fallback={<PageSkeleton />}>{children}</Suspense>;
+}
+
 function AdminShell({ children, layout = true }) {
+  const page = <ShellPage>{children}</ShellPage>;
   return (
     <AdminProtectedRoute>
       <Suspense fallback={<DashboardSkeleton />}>
-        {layout ? <AdminLayout>{children}</AdminLayout> : children}
+        {layout ? <AdminLayout>{page}</AdminLayout> : page}
       </Suspense>
     </AdminProtectedRoute>
   );
@@ -298,9 +307,9 @@ function CoordinatorAccessDenied() {
 
 function CoordinatorShell({ children, layout = true, permission }) {
   const { user } = useAuth();
-  const content = permission && !hasPermission(user, permission)
+  const content = <ShellPage>{permission && !hasPermission(user, permission)
     ? <CoordinatorAccessDenied />
-    : children;
+    : children}</ShellPage>;
 
   return (
     <CoordinatorProtectedRoute>
@@ -312,8 +321,9 @@ function CoordinatorShell({ children, layout = true, permission }) {
 }
 
 function AppContent() {
-  useHideGlobalLoader();
   const location = useLocation();
+  const navigationKey = `${location.pathname}${location.search}`;
+  useHideGlobalLoader(location.pathname);
   const { user } = useAuth();
   const [isStudentSidebarPinned, setIsStudentSidebarPinned] = useState(() => {
     try {
@@ -353,6 +363,9 @@ function AppContent() {
     && !isProblemSolver;
   const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges)\/?$/.test(location.pathname);
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
+  // Admin and coordinator shells key their own page area (see ShellPage); keying this
+  // boundary per navigation remounted the whole shell and hid the sidebar on every click.
+  const routeBoundaryKey = isAdmin ? 'admin' : isCoordinator ? 'coordinator' : navigationKey;
   return (
     <div
       className={`${isStudentShell ? 'h-screen overflow-hidden' : 'min-h-screen'} w-full flex flex-col`}
@@ -368,14 +381,16 @@ function AppContent() {
           Shows NavbarSkeleton briefly instead of nothing, so the page structure
           streams in progressively (navbar skeleton â†’ navbar â†’ content skeleton â†’ content) */}
       {isStudentShell && (
-        <GlobalSidebar
-          role="student"
-          isExpanded={isStudentSidebarExpanded}
-          isPinned={isStudentSidebarPinned}
-          onTogglePin={toggleStudentSidebarPin}
-          onExpand={() => setIsStudentSidebarHovered(true)}
-          onCollapse={() => setIsStudentSidebarHovered(false)}
-        />
+        <Suspense fallback={null}>
+          <GlobalSidebar
+            role="student"
+            isExpanded={isStudentSidebarExpanded}
+            isPinned={isStudentSidebarPinned}
+            onTogglePin={toggleStudentSidebarPin}
+            onExpand={() => setIsStudentSidebarHovered(true)}
+            onCollapse={() => setIsStudentSidebarHovered(false)}
+          />
+        </Suspense>
       )}
      
       {/* Main content: Each route section gets a role-appropriate skeleton.
@@ -383,12 +398,14 @@ function AppContent() {
           immediately as skeleton shapes, then real content swaps in when loaded */}
       <main data-app-scroll-container={isStudentShell ? true : undefined} tabIndex="-1" className={gradientBg + ` dark:bg-gray-900 flex-grow outline-none transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isStudentShell ? 'h-screen min-h-0 overflow-y-auto overscroll-contain' : ''}`} style={isStudentShell ? { paddingLeft: 'var(--admin-sidebar-width)', scrollPaddingTop: showStudentHeader ? 'calc(5rem + 1px)' : undefined } : undefined}>
         {showStudentHeader && (
-          <StudentDashboardHeader
-            sidebarPinned={isStudentSidebarPinned}
-            onToggleSidebar={toggleStudentSidebarPin}
-          />
+          <Suspense fallback={null}>
+            <StudentDashboardHeader
+              sidebarPinned={isStudentSidebarPinned}
+              onToggleSidebar={toggleStudentSidebarPin}
+            />
+          </Suspense>
         )}
-        <Suspense fallback={
+        <Suspense key={routeBoundaryKey} fallback={
           isMain ? <LandingPageSkeleton /> :
           isAdmin ? <DashboardSkeleton /> :
           isCoordinator ? <DashboardSkeleton /> :
@@ -465,6 +482,7 @@ function AppContent() {
         <Route path="/admin/event" element={<AdminShell><EventManagement /></AdminShell>} />
         <Route path="/admin/event/create" element={<AdminShell><EventManagement /></AdminShell>} />
         <Route path="/admin/settings/student-progression" element={<AdminShell><EngagementSettings /></AdminShell>} />
+        <Route path="/admin/settings/student-access" element={<AdminShell><StudentAccessSettings /></AdminShell>} />
         <Route path="/admin/quickprep" element={<AdminShell><QuickPrepList /></AdminShell>} />
         <Route path="/admin/quickprep/new" element={<AdminShell><QuickPrepWizard /></AdminShell>} />
         <Route path="/admin/quickprep/insights" element={<AdminShell><QuickPrepInsights /></AdminShell>} />
@@ -501,7 +519,7 @@ function AppContent() {
         <Route path={PREP_SCORE_ADJUSTMENT_PATH} element={canAdjustPrepScore ? <AdminShell><PrepScoreAdjustment /></AdminShell> : <Navigate to="/admin/dashboard" replace />} />
         <Route path={PREP_COIN_PRICING_PATH} element={canAdjustPrepScore ? <AdminShell><PrepCoinPricing /></AdminShell> : <Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin/learning/:semester/:subject/:teacherId" element={<AdminShell><AdminLearningDetail /></AdminShell>} />
-        <Route path="/admin/activity" element={<AdminShell><AdminActivity /></AdminShell>} />
+        <Route path="/admin/activity" element={<AdminShell>{isUniversityDeployment ? <AdminActivity /> : <UniversityActivity />}</AdminShell>} />
         <Route path="/admin/analysis" element={<AdminShell><PrepAnalysisPage /></AdminShell>} />
         <Route path="/admin/analysis/assessments" element={<AdminShell><AdminAnalyticsPage /></AdminShell>} />
         <Route path="/admin/assessment" element={<AdminShell><AssessmentDashboard /></AdminShell>} />

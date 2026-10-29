@@ -58,6 +58,7 @@ import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
 import { getInterviewNavigation, getInterviewSection } from './interviews/interviewNavigation';
 import { getSidebarWidth, STUDENT_SIDEBAR_PANEL_WIDTH, STUDENT_SIDEBAR_RAIL_WIDTH } from './sidebarLayout';
+import { firstStudentFeaturePath, hasStudentFeature } from '../student/studentFeatureAccess';
 
 const buildNavItems = (role = 'admin', accessScope = 'full') => {
   if (role === 'student') {
@@ -75,26 +76,28 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       }];
     }
     return [
-      { type: 'link', label: 'Dashboard', to: '/student/dashboard', icon: LayoutDashboard },
-      { type: 'link', label: 'QuickPrep', to: '/student/quickprep', icon: Zap },
-      { type: 'link', label: 'Analysis', to: '/student/analysis', icon: BarChart3 },
-      { type: 'link', label: 'Rankings', to: '/student/rankings', icon: BarChart3 },
-      { type: 'link', label: 'Interviews', to: '/student/interview', icon: CalendarDays },
-      { type: 'link', label: 'AI Interviews', to: '/student/ai-interviews', icon: Bot },
+      { type: 'link', label: 'Dashboard', to: '/student/dashboard', icon: LayoutDashboard, featureKey: 'dashboard' },
+      { type: 'link', label: 'QuickPrep', to: '/student/quickprep', icon: Zap, featureKey: 'quickprep' },
+      { type: 'link', label: 'Analysis', to: '/student/analysis', icon: BarChart3, featureKey: 'analysis' },
+      { type: 'link', label: 'Rankings', to: '/student/rankings', icon: BarChart3, featureKey: 'rankings' },
+      { type: 'link', label: 'Interviews', to: '/student/interview', icon: CalendarDays, featureKey: 'interviews' },
+      { type: 'link', label: 'AI Interviews', to: '/student/ai-interviews', icon: Bot, featureKey: 'ai_interviews' },
       {
         type: 'group',
         key: 'assessments',
         label: 'Assessments',
         icon: ClipboardList,
+        featureKey: 'assessments',
         items: [
           { label: 'Available Tests', to: '/student/assessments', icon: ClipboardList },
           { label: 'Reports', to: '/student/assessment-reports', icon: BarChart3 },
           { label: 'History', to: '/student/assessment-history', icon: History },
         ],
       },
-      { type: 'link', label: 'Learning', to: '/student/learning', icon: BookOpen },
-      { type: 'link', label: 'PrepCoding', to: '/problems', icon: ListChecks },
-      { type: 'link', label: 'Resume Builder', to: '/student/resume', icon: UserCog },
+      { type: 'link', label: 'Learning', to: '/student/learning', icon: BookOpen, featureKey: 'learning' },
+      { type: 'link', label: 'PrepCoding', to: '/problems', icon: ListChecks, featureKey: 'prep_coding' },
+      { type: 'link', label: 'Resume Builder', to: '/student/resume', icon: UserCog, featureKey: 'resume' },
+      { type: 'link', label: 'Prep Coins', to: '/student/wallet', icon: Wallet, featureKey: 'prep_coins' },
     ];
   }
   if (role === 'coordinator') {
@@ -288,6 +291,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
           children: [
             { label: 'All AI Interviews', to: '/admin/ai-interviews', icon: ClipboardList, match: (loc) => loc.pathname === '/admin/ai-interviews' },
             { label: 'Create AI Interview', to: '/admin/ai-interviews/new', icon: CalendarPlus },
+            { label: 'Schedules', to: '/admin/ai-interviews/schedules', icon: CalendarClock },
             { label: 'Avatars', to: '/admin/ai-interviews/avatars', icon: UserCog },
             { label: 'Reports', to: '/admin/ai-interviews/reports', icon: BarChart3 },
           ],
@@ -393,6 +397,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
           icon: GraduationCap,
           folder: true,
           children: [
+            { label: 'Student Access', to: '/admin/settings/student-access', icon: ShieldCheck },
             { label: 'Bulk Uploads', to: '/admin/settings/bulk-uploads', icon: FileSpreadsheet },
             { label: 'Promote Students', to: '/admin/settings/promote-students', icon: GraduationCap },
           ],
@@ -453,11 +458,12 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const displayName = user?.name || localStorage.getItem(`${storagePrefix}Name`) || roleLabel;
   const displayEmail = user?.email || localStorage.getItem(`${storagePrefix}Email`) || '';
   const avatarUrl = user?.avatarUrl || localStorage.getItem(`${storagePrefix}AvatarUrl`) || '';
-  const homePath = isCoordinator ? '/coordinator/overview' : isAssessmentCandidate ? '/student/assessments' : isStudent ? '/student/dashboard' : '/admin/overview';
+  const homePath = isCoordinator ? '/coordinator/overview' : isAssessmentCandidate ? '/student/assessments' : isStudent ? firstStudentFeaturePath(user) : '/admin/overview';
   const accountMenuId = `${storagePrefix}-account-menu`;
   const accent = isCoordinator ? 'emerald' : 'sky';
   const navItems = useMemo(() => {
     const items = buildNavItems(role, user?.accessScope);
+    if (role === 'student') return items.filter((item) => !item.featureKey || hasStudentFeature(user, item.featureKey));
     if (role !== 'student' && (isUniversityDeployment || role !== 'admin')) items.unshift({ type: 'link', label: 'Prep Coin management', to: `/${role}/wallet`, icon: Wallet });
     if (role !== 'coordinator') return applyPlatformPermissions(items, allowsPath, role);
     return applyPlatformPermissions(items

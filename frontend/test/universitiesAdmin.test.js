@@ -129,7 +129,7 @@ test('adding a university is a guided flow that cannot skip the connection test'
   assert.equal(next().disabled, false);
 });
 
-test('the activity log filters by university and pages older entries', async () => {
+test('the activity log stays in the master workspace and pages within ten days', async () => {
   const calls = [];
   api.platformAudit = async (query) => {
     calls.push(query);
@@ -139,7 +139,9 @@ test('the activity log filters by university and pages older entries', async () 
   };
   await render('/admin/universities/activity', '/admin/universities/activity', pages.UniversityActivity);
   assert.match(document.body.textContent, /Prep Coin prices changed/);
-  await act(async () => button('Load older activity').click());
+  assert.equal(document.querySelector('select[aria-label="University"]'), null);
+  assert.match(document.body.textContent, /does not combine or expose activity from university databases/);
+  await act(async () => button('Load more within 10 days').click());
   await settle();
   assert.match(document.body.textContent, /University updated/);
   assert.equal(calls.at(-1).before, '2026-02-01T00:00:00Z');

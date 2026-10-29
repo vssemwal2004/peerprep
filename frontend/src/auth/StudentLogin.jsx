@@ -7,6 +7,7 @@ import ForgotPasswordModal from './ForgotPasswordModal';
 import { isUniversityDeployment } from '../platform/universityPermissions';
 import { useToast } from '../components/CustomToast';
 import { consumeSessionNotice } from './sessionNotice';
+import { firstStudentFeaturePath } from '../student/studentFeatureAccess';
 
 // Small delay to ensure cookie is set before navigation
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -57,11 +58,7 @@ export default function StudentLoginPage() {
     const trimmedPassword = password.trim();
 
     if (!trimmedEmail || !trimmedPassword) {
-      setError('Email and password are required.');
-      return;
-    }
-    if (!isUniversityDeployment && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setError('Enter the email address registered with PeerPrep.');
+      setError('Email or student ID and password are required.');
       return;
     }
 
@@ -102,7 +99,7 @@ export default function StudentLoginPage() {
             ? (res.user?.mustChangePassword ? '/coordinator/change-password' : '/coordinator')
             : (res.user?.mustChangePassword && res.user?.accessScope !== 'assessment_only'
               ? '/student/change-password'
-              : res.user?.accessScope === 'assessment_only' ? '/student/assessments' : '/student/dashboard');
+              : firstStudentFeaturePath(res.user));
         window.location.replace(`/u/${res.user.universityId}${destination}`);
         return;
       }
@@ -129,7 +126,7 @@ export default function StudentLoginPage() {
         if (res.user?.mustChangePassword && res.user?.accessScope !== 'assessment_only') {
           navigate('/student/change-password', { replace: true });
         } else {
-          navigate(res.user?.accessScope === 'assessment_only' ? '/student/assessments' : '/student/dashboard', { replace: true });
+          navigate(firstStudentFeaturePath(res.user), { replace: true });
         }
       }
     } catch (e) {
@@ -192,25 +189,28 @@ export default function StudentLoginPage() {
                         className="mx-auto h-20 w-auto object-contain"
                       />
                       <h1 className="mt-4 text-2xl font-bold text-slate-800">{isUniversityDeployment ? 'Student Portal' : 'Sign in to PeerPrep'}</h1>
-                      <p className="mt-2 text-sm text-slate-500">{isUniversityDeployment ? 'Access your learning platform' : 'Use the email registered with your university.'}</p>
+                      <p className="mt-2 text-sm text-slate-500">{isUniversityDeployment ? 'Access your learning platform' : 'Use the email or student ID registered with your university.'}</p>
                     </div>
 
                     <div className="mt-8 space-y-5">
                       <div className="group">
                         <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          {isUniversityDeployment ? 'Email / Student ID / Coordinator ID' : 'Email address'}
+                          {isUniversityDeployment ? 'Email / Student ID / Coordinator ID' : 'Email or Student ID'}
                         </label>
                         <div className="relative mt-2">
                           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                             <Mail size={16} className="text-slate-400" />
                           </div>
                           <input
-                            type={isUniversityDeployment ? 'text' : 'email'}
+                            type="text"
+                            autoComplete="username"
+                            autoCapitalize="none"
+                            spellCheck={false}
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             onKeyPress={handleKeyPress}
                             className="w-full rounded-lg border border-slate-200 bg-white px-10 py-3 text-sm text-slate-700 placeholder-slate-400 shadow-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                            placeholder={isUniversityDeployment ? 'Enter email or ID' : 'Enter your email'}
+                            placeholder={isUniversityDeployment ? 'Enter email or ID' : 'Enter your email or student ID'}
                           />
                         </div>
                       </div>

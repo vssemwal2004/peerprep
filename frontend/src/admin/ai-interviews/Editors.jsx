@@ -8,26 +8,27 @@ import {
   Pencil,
   Sparkles,
   MessageSquare,
+  Radio,
+  ListChecks,
 } from "lucide-react";
-import { ResourcePicker } from "./Resources";
 import { interviewApi } from "./api";
-import { uid, newQuestion } from "./definition";
+import { MARKS_LIMIT, uid, newQuestion } from "./definition";
 import { useRemote, useDebounced } from "./useRemote";
 import { useStagedDraft } from "./useStagedDraft";
 import { AnnuBrand } from "./AnnuBrand";
+import GenerateReviewDialog from "./GenerateReviewDialog";
 import {
-  Avatar,
   Badge,
   Dialog,
   Drawer,
   EmptyState,
   Field,
   Notice,
-  Panel,
   Pagination,
   Select,
   TextArea,
   TextInput,
+  Toggle,
   primaryClass,
   secondaryClass,
 } from "./ui";
@@ -38,156 +39,21 @@ const difficultyOptions = [
   { value: "medium", label: "Medium" },
   { value: "hard", label: "Hard" },
 ];
-export function BasicsEditor({ data, onChange }) {
-  const set = (key, value) => onChange({ ...data, [key]: value });
-  return (
-    <Panel title="Interview details">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Interview title *" className="sm:col-span-2">
-          <TextInput
-            required
-            maxLength={160}
-            placeholder="e.g. Junior backend interview"
-            value={data.title}
-            onChange={(e) => set("title", e.target.value)}
-          />
-        </Field>
-        <div>
-          <span className="mb-1.5 block text-xs font-semibold text-slate-600">
-            Company
-          </span>
-          <ResourcePicker
-            kind="companies"
-            selected={data.companyName}
-            onSelect={(item) =>
-              onChange({ ...data, companyId: item._id, companyName: item.name })
-            }
-          />
-          {data.companyId && (
-            <button
-              type="button"
-              className="mt-1 text-xs text-slate-500 underline"
-              onClick={() =>
-                onChange({ ...data, companyId: "", companyName: "" })
-              }
-            >
-              Use general practice instead
-            </button>
-          )}
-        </div>
-        <Field label="Job role">
-          <TextInput
-            maxLength={120}
-            placeholder="e.g. Backend developer"
-            value={data.role}
-            onChange={(e) => set("role", e.target.value)}
-          />
-        </Field>
-        <Field label="Experience level">
-          <Select
-            value={data.experience}
-            options={[
-              { value: "", label: "Select experience" },
-              { value: "fresher", label: "Fresher" },
-              { value: "junior", label: "Junior" },
-              { value: "mid", label: "Mid-level" },
-              { value: "senior", label: "Senior" },
-            ]}
-            onChange={(e) => set("experience", e.target.value)}
-          />
-        </Field>
-        <Field label="Default question difficulty">
-          <Select
-            value={data.difficulty}
-            options={difficultyOptions}
-            onChange={(e) => set("difficulty", e.target.value)}
-          />
-        </Field>
-        <Field label="Description / job context" className="sm:col-span-2">
-          <TextArea
-            maxLength={12000}
-            placeholder="What should this interview assess?"
-            value={data.description}
-            onChange={(e) => set("description", e.target.value)}
-          />
-        </Field>
-      </div>
-    </Panel>
-  );
-}
-export function InterviewerEditor({ data, onChange }) {
-  const select = (p) =>
-    onChange({
-      ...data,
-      interviewer: { ...p.data, profileId: p._id, profileRevision: p.revision },
-    });
-  return (
-    <Panel title="Interviewer profile">
-      <div className="space-y-5">
-        <div className="max-w-md">
-          <ResourcePicker
-            kind="profiles"
-            selected={data.interviewer?.name}
-            onSelect={select}
-          />
-        </div>
-        {data.interviewer ? (
-          <div className="rounded-xl border border-slate-200 p-5 dark:border-gray-700">
-            <div className="flex items-center gap-3">
-              <Avatar size={56} variant={data.interviewer.avatar} />
-              <div>
-                <h3 className="font-semibold">
-                  {data.interviewer.displayName}
-                </h3>
-                <p className="text-xs text-slate-500">
-                  {data.interviewer.language} · {data.interviewer.tone}
-                </p>
-              </div>
-              <Badge>Static preview</Badge>
-            </div>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <div>
-                <h4 className="mb-1 text-xs font-semibold text-slate-500">
-                  INTRODUCTION
-                </h4>
-                <p className="whitespace-pre-wrap text-sm">
-                  {data.interviewer.introduction || "No introduction set."}
-                </p>
-              </div>
-              <div>
-                <h4 className="mb-1 text-xs font-semibold text-slate-500">
-                  CLOSING
-                </h4>
-                <p className="whitespace-pre-wrap text-sm">
-                  {data.interviewer.closing || "No closing message set."}
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <EmptyState
-            title="Choose an interviewer"
-            detail="Select or create a reusable profile to set the avatar and introduction."
-          />
-        )}
-        <p className="text-xs text-slate-500">
-          A profile snapshot is saved with this interview. Reselect the profile
-          to apply its latest version. Voice and animated video are not
-          connected.
-        </p>
-      </div>
-    </Panel>
-  );
-}
-export function TimingFields({ value = {}, onChange, overrides = false }) {
+const TIMING_FIELDS = [
+  ["preparationSeconds", "Preparation time", 600],
+  ["responseSeconds", "Response limit", 1800],
+  ["minimumSeconds", "Minimum response time", 1800],
+  ["replays", "Question replays", 7],
+];
+export function TimingFields({
+  value = {},
+  onChange,
+  overrides = false,
+  fields = TIMING_FIELDS.map(([key]) => key),
+}) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      {[
-        ["preparationSeconds", "Preparation time", 600],
-        ["responseSeconds", "Response limit", 1800],
-        ["minimumSeconds", "Minimum response time", 1800],
-        ["replays", "Question replays", 7],
-      ].map(([key, label, max]) => (
+      {TIMING_FIELDS.filter(([key]) => fields.includes(key)).map(([key, label, max]) => (
         <Field
           key={key}
           label={`${label}${key === "replays" ? "" : " (seconds)"}`}
@@ -196,7 +62,7 @@ export function TimingFields({ value = {}, onChange, overrides = false }) {
             {overrides && (
               <select
                 aria-label={`${label} override`}
-                className="w-28 rounded-lg border border-slate-200 bg-transparent px-2 text-xs"
+                className="w-28 rounded-lg border border-slate-200 bg-transparent px-2 text-xs dark:border-gray-700 dark:[color-scheme:dark]"
                 value={key in value ? "custom" : "inherit"}
                 onChange={(e) => {
                   const next = { ...value };
@@ -240,168 +106,6 @@ export function TimingFields({ value = {}, onChange, overrides = false }) {
             )}
         </Field>
       ))}
-    </div>
-  );
-}
-export function RulesEditor({ data, onChange }) {
-  const setRules = (rules) => onChange({ ...data, rules });
-  return (
-    <div className="space-y-4">
-      <Panel title="Timing defaults">
-        <TimingFields value={data.rules} onChange={setRules} />
-        <p className="mt-3 text-xs text-slate-500">
-          These defaults apply unless a section, topic or question overrides
-          them. A minimum of 0 does not impose a minimum response length.
-        </p>
-      </Panel>
-      <Panel title="Interview behavior">
-        <div className="grid gap-4 sm:grid-cols-2">
-          {[
-            [
-              "mode",
-              "Mode",
-              [
-                { value: "mock", label: "Mock — no hints" },
-                { value: "guided", label: "Guided practice" },
-              ],
-            ],
-            ["language", "Language", ["English", "Hindi", "Hinglish"]],
-            [
-              "resume",
-              "Resume policy",
-              [
-                { value: "none", label: "Not required" },
-                { value: "optional", label: "Optional" },
-                { value: "required", label: "Required" },
-              ],
-            ],
-            [
-              "documents",
-              "Reference documents",
-              [
-                { value: "none", label: "Not required" },
-                { value: "optional", label: "Optional" },
-                { value: "required", label: "Required" },
-              ],
-            ],
-          ].map(([key, label, options]) => (
-            <Field key={key} label={label}>
-              <Select
-                options={options}
-                value={data.rules[key]}
-                onChange={(e) =>
-                  setRules({ ...data.rules, [key]: e.target.value })
-                }
-              />
-            </Field>
-          ))}
-        </div>
-        <p className="mt-3 text-xs text-slate-500">
-          Delivery preferences only. Candidate uploads, hints and recording are
-          not active.
-        </p>
-      </Panel>
-      <Panel
-        title="Evaluation rubric"
-        action={
-          <span
-            className={`text-xs ${Math.abs(data.rubric.reduce((n, r) => n + r.weight, 0) - 100) > 0.001 ? "text-amber-600" : "text-emerald-600"}`}
-          >
-            Total: {data.rubric.reduce((n, r) => n + r.weight, 0).toFixed(2)}%
-          </span>
-        }
-      >
-        <div className="space-y-3">
-          {data.rubric.map((r, index) => (
-            <div key={r.id} className="grid grid-cols-[1fr_80px_36px] gap-2">
-              <TextInput
-                aria-label={`Criterion ${index + 1}`}
-                placeholder="Criterion"
-                value={r.name}
-                maxLength={120}
-                onChange={(e) =>
-                  onChange({
-                    ...data,
-                    rubric: data.rubric.map((x) =>
-                      x.id === r.id ? { ...x, name: e.target.value } : x,
-                    ),
-                  })
-                }
-              />
-              <TextInput
-                aria-label={`Weight for ${r.name}`}
-                type="number"
-                min={0}
-                max={100}
-                step="0.01"
-                value={r.weight}
-                onChange={(e) =>
-                  onChange({
-                    ...data,
-                    rubric: data.rubric.map((x) =>
-                      x.id === r.id
-                        ? { ...x, weight: Number(e.target.value) }
-                        : x,
-                    ),
-                  })
-                }
-              />
-              <button
-                type="button"
-                aria-label={`Remove ${r.name}`}
-                className={secondaryClass}
-                onClick={() =>
-                  onChange({
-                    ...data,
-                    rubric: data.rubric.filter((x) => x.id !== r.id),
-                  })
-                }
-              >
-                <Trash2 size={14} />
-              </button>
-              <div className="col-span-3">
-                <TextInput
-                  aria-label={`Guidance for ${r.name}`}
-                  placeholder="What evidence should this criterion assess?"
-                  value={r.description}
-                  maxLength={2000}
-                  onChange={(e) =>
-                    onChange({
-                      ...data,
-                      rubric: data.rubric.map((x) =>
-                        x.id === r.id
-                          ? { ...x, description: e.target.value }
-                          : x,
-                      ),
-                    })
-                  }
-                />
-              </div>
-            </div>
-          ))}
-          <button
-            type="button"
-            className={secondaryClass}
-            disabled={data.rubric.length >= 12}
-            onClick={() =>
-              onChange({
-                ...data,
-                rubric: [
-                  ...data.rubric,
-                  { id: uid(), name: "", description: "", weight: 0 },
-                ],
-              })
-            }
-          >
-            <Plus size={14} />
-            Add criterion
-          </button>
-          <p className="text-xs text-slate-500">
-            Configuration only. No AI scoring or answer-length penalties are
-            applied.
-          </p>
-        </div>
-      </Panel>
     </div>
   );
 }
@@ -450,7 +154,7 @@ function LibraryPicker({ onAdd, onClose, maxCount = 200 }) {
             remote.result.items.map((q) => (
               <label
                 key={q._id}
-                className="flex items-start gap-3 rounded-lg border border-slate-200 p-3"
+                className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 dark:border-gray-700"
               >
                 <input
                   className="mt-1"
@@ -521,6 +225,45 @@ function LibraryPicker({ onAdd, onClose, maxCount = 200 }) {
     </Dialog>
   );
 }
+// A promoted timing override: empty inherits the topic/interview default, and it still writes ruleOverrides.
+function OverrideSeconds({ label, hint, field, max, value = {}, onChange }) {
+  const current = value[field];
+  const update = (next) => {
+    const rules = { ...value };
+    if (next === undefined) delete rules[field];
+    else rules[field] = next;
+    onChange(rules);
+  };
+  return (
+    <Field label={label} hint={hint}>
+      <TextInput
+        type="number"
+        min={0}
+        max={max}
+        step={1}
+        value={current ?? ""}
+        disabled={current === null}
+        placeholder={current === null ? "Unlimited" : "Inherit"}
+        onChange={(e) =>
+          update(
+            e.target.value === ""
+              ? undefined
+              : Math.max(0, Math.round(Number(e.target.value))),
+          )
+        }
+      />
+      <span className="mt-1 flex items-center gap-1 text-xs text-slate-500 dark:text-gray-400">
+        <input
+          type="checkbox"
+          aria-label={`Unlimited ${label.toLowerCase()}`}
+          checked={current === null}
+          onChange={(e) => update(e.target.checked ? null : undefined)}
+        />
+        Unlimited
+      </span>
+    </Field>
+  );
+}
 function QuestionDrawer({
   question,
   groupId,
@@ -561,8 +304,20 @@ function QuestionDrawer({
       setError("Write the main question or topic before saving.");
       return;
     }
-    if (!Number.isInteger(draft.maxFollowUps ?? 0) || (draft.maxFollowUps ?? 0) < 0 || (draft.maxFollowUps ?? 0) > limits.followUps) {
+    const aiFollowUps = draft.maxFollowUps ?? 0;
+    if (!Number.isInteger(aiFollowUps) || aiFollowUps < 0 || aiFollowUps > limits.followUps) {
       setError(`Choose 0–${limits.followUps} AI follow-ups.`);
+      return;
+    }
+    if (draft.followUps.length + aiFollowUps > limits.followUps) {
+      setError(
+        `Use at most ${limits.followUps} follow-ups in total: cross-questions plus AI follow-ups.`,
+      );
+      return;
+    }
+    const marks = draft.marks ?? 10;
+    if (!Number.isInteger(marks) || marks < 1 || marks > MARKS_LIMIT) {
+      setError(`Give this question 1–${MARKS_LIMIT} marks.`);
       return;
     }
     if (draft.kind === "resume" && (!Number.isInteger(draft.resumeCount) || draft.resumeCount < 1 || draft.resumeCount > (limits.plannedQuestionsPerGroup ?? 50))) {
@@ -631,7 +386,7 @@ function QuestionDrawer({
           </Notice>
         ) : (
           recovered && (
-            <p role="status" className="text-xs text-sky-700">
+            <p role="status" className="text-xs text-sky-700 dark:text-sky-300">
               Your unsaved question was recovered in this tab. Save the
               question, then save the topic.
             </p>
@@ -653,7 +408,7 @@ function QuestionDrawer({
           <Field label="Number of questions from the resume">
             <TextInput type="number" min={1} max={limits.plannedQuestionsPerGroup ?? 50} value={draft.resumeCount ?? 1} onChange={(e) => set("resumeCount", Number(e.target.value))} />
           </Field>
-        ) : <Field label={draft.kind === "topic" ? "Topic *" : "Main question *"}>
+        ) : <Field label={draft.kind === "topic" ? "Topic" : "Main question"} required>
           <TextArea
             rows={4}
             autoFocus
@@ -663,9 +418,71 @@ function QuestionDrawer({
             onChange={(e) => set("prompt", e.target.value)}
           />
         </Field>}
-        <Field label="AI follow-ups after each answer" hint="ANNU writes each follow-up using the student's most recent answer.">
-          <TextInput type="number" min={0} max={limits.followUps} value={draft.maxFollowUps ?? 0} onChange={(e) => set("maxFollowUps", Number(e.target.value))} />
+        {draft.provenance?.generated && (
+          <p className="flex items-center gap-2 text-xs text-indigo-700 dark:text-indigo-300">
+            <Sparkles size={13} aria-hidden="true" />
+            Generated by ANVI and reviewed by you
+            {draft.provenance.generatedAt
+              ? ` on ${new Date(draft.provenance.generatedAt).toLocaleDateString()}`
+              : ""}
+            .
+          </p>
+        )}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label="Marks"
+            required
+            hint={`1–${MARKS_LIMIT}. Used for the score in the report.`}
+          >
+            <TextInput
+              type="number"
+              min={1}
+              max={MARKS_LIMIT}
+              step={1}
+              value={draft.marks ?? 10}
+              onChange={(e) => set("marks", Number(e.target.value))}
+            />
+          </Field>
+          <Field
+            label="Competency"
+            hint="Optional. Empty uses the section type in the report."
+          >
+            <TextInput
+              maxLength={60}
+              value={draft.competency ?? ""}
+              placeholder="e.g. API design"
+              onChange={(e) => set("competency", e.target.value)}
+            />
+          </Field>
+          <OverrideSeconds
+            label="Max answer time (seconds)"
+            hint="Empty uses the topic or interview default."
+            field="responseSeconds"
+            max={1800}
+            value={draft.ruleOverrides}
+            onChange={(value) => set("ruleOverrides", value)}
+          />
+          <OverrideSeconds
+            label="Think time (seconds)"
+            hint="Time to think before answering. Empty inherits."
+            field="preparationSeconds"
+            max={600}
+            value={draft.ruleOverrides}
+            onChange={(value) => set("ruleOverrides", value)}
+          />
+        </div>
+        <Field
+          label="AI follow-ups after each answer"
+          hint={`ANVI writes each follow-up using the student's most recent answer. Up to ${limits.followUps} in total with cross-questions.`}
+        >
+          <TextInput type="number" min={0} max={Math.max(0, limits.followUps - draft.followUps.length)} value={draft.maxFollowUps ?? 0} onChange={(e) => set("maxFollowUps", Number(e.target.value))} />
         </Field>
+        <Toggle
+          label="Students can skip this question"
+          description="When off, ANVI encourages an attempt instead of moving on when a student asks to skip."
+          checked={draft.skippable ?? true}
+          onChange={(skippable) => set("skippable", skippable)}
+        />
         {[
           [
             "subquestions",
@@ -678,7 +495,11 @@ function QuestionDrawer({
             "followUps",
             "Cross-questions",
             "Follow-up prompts asked in order after the candidate answers.",
-            limits.followUps,
+            Math.max(
+              0,
+              limits.followUps -
+                (Number.isInteger(draft.maxFollowUps) ? draft.maxFollowUps : 0),
+            ),
             "cross-question",
           ],
         ].map(([key, title, description, max, singular]) => (
@@ -695,7 +516,7 @@ function QuestionDrawer({
               </h3>
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-40 dark:text-sky-400"
+                className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-40 dark:text-sky-400 dark:hover:bg-sky-400/10"
                 disabled={draft[key].length >= max}
                 onClick={() =>
                   set(key, [
@@ -828,11 +649,12 @@ function QuestionDrawer({
             </Field>
             <details>
               <summary className="cursor-pointer text-xs font-medium text-slate-500">
-                Custom timing
+                More timing
               </summary>
               <div className="mt-3">
                 <TimingFields
                   overrides
+                  fields={["minimumSeconds", "replays"]}
                   value={draft.ruleOverrides}
                   onChange={(value) => set("ruleOverrides", value)}
                 />
@@ -885,10 +707,13 @@ function ReadOnlyTopic({ group }) {
       {group.source === "annu" ? (
         <div className="space-y-3 rounded-xl border border-indigo-100 bg-gradient-to-br from-sky-50/60 to-indigo-50/40 p-4 dark:border-indigo-900 dark:from-sky-950/30 dark:to-indigo-950/20">
           <p className="whitespace-pre-wrap break-words text-sm">
-            {group.annu.requirements || "No ANNU instructions added."}
+            {group.annu.requirements || "No ANVI instructions added."}
           </p>
           <p className="text-xs text-slate-500">
-            {group.annu.targetCount} planned questions · Up to{" "}
+            {group.annu.targetCount == null
+              ? "Shares the question total by priority"
+              : `${group.annu.targetCount} planned questions`}{" "}
+            · Up to{" "}
             {group.annu.maxFollowUps} cross-questions per answer
           </p>
           {!!group.annu.skills?.length && (
@@ -977,6 +802,11 @@ function ReadOnlyTopic({ group }) {
                     Difficulty:{" "}
                     {question.difficulty || "Use topic / interview default"}
                   </p>
+                  <p>
+                    {question.marks ?? 10} marks · Competency:{" "}
+                    {question.competency || "Section type"} ·{" "}
+                    {question.skippable === false ? "Cannot be skipped" : "Can be skipped"}
+                  </p>
                   {!!question.tags?.length && (
                     <p>Tags: {question.tags.join(", ")}</p>
                   )}
@@ -1007,10 +837,31 @@ export function GroupEditor({
   limits,
   readOnly = false,
   recoveryKey = group.id,
+  onGenerate,
 }) {
   const [library, setLibrary] = useState(false);
   const [switchTo, setSwitchTo] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  // Approved generated questions replace the ANVI instructions (replaceSource semantics, confirmed in the dialog).
+  const applyGenerated = (items) => {
+    if (readOnly) return;
+    const { questions: _questions, annu, ...settings } = group;
+    const generatedAt = new Date().toISOString();
+    onChange({
+      ...settings,
+      source: "manual",
+      questions: items.map((item) => ({
+        ...newQuestion(),
+        kind: "specific",
+        prompt: item.prompt.trim(),
+        expectedAnswer: item.expectedAnswer.trim(),
+        maxFollowUps: Math.min(annu?.maxFollowUps || 0, limits.followUps),
+        provenance: { generated: true, generatedAt },
+      })),
+    });
+    setGenerating(false);
+  };
   const set = (key, value) => {
     if (!readOnly) onChange({ ...group, [key]: value });
   };
@@ -1065,7 +916,8 @@ export function GroupEditor({
   return (
     <fieldset disabled={readOnly} className="min-w-0 space-y-5">
       <Field
-        label="Topic name *"
+        label="Topic name"
+        required
         hint="Keep related questions together in one topic."
       >
         <TextInput
@@ -1087,7 +939,7 @@ export function GroupEditor({
             "Write or pick from your Library",
             MessageSquare,
           ],
-          ["annu", "ANNU AI", "Describe what ANNU should ask", Sparkles],
+          ["annu", "ANVI AI", "Describe what ANVI should ask", Sparkles],
         ].map(([value, label, hint, Icon]) => (
           <button
             key={value}
@@ -1127,7 +979,7 @@ export function GroupEditor({
               </span>
             </div>
             <div className="space-y-2 p-4">
-              <Field label="What should ANNU ask? *">
+              <Field label="What should ANVI ask?" required>
                 <TextArea
                   rows={5}
                   maxLength={12000}
@@ -1143,7 +995,7 @@ export function GroupEditor({
                 <span>Include the role, topics and expected depth.</span>
                 <span
                   className="tabular-nums"
-                  aria-label="ANNU prompt character count"
+                  aria-label="ANVI prompt character count"
                 >
                   {group.annu.requirements.length.toLocaleString()} / 12,000
                 </span>
@@ -1154,12 +1006,58 @@ export function GroupEditor({
                 size={14}
                 className="mt-0.5 shrink-0 text-indigo-500 dark:text-indigo-400"
               />
-              ANNU uses these instructions when a student starts an available interview.
+              ANVI uses these instructions when a student starts an available interview.
             </p>
+          </section>
+          <section
+            data-annu-mode
+            aria-labelledby={`annu-mode-${group.id}`}
+            className="rounded-xl border border-slate-200 p-4 dark:border-gray-700"
+          >
+            <h3 id={`annu-mode-${group.id}`} className="text-sm font-semibold">
+              When should ANVI write the questions?
+            </h3>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="flex flex-col gap-1 rounded-lg border border-indigo-300 bg-indigo-50/60 p-3 text-indigo-900 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-100">
+                <span className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-2 text-sm font-semibold">
+                    <Radio size={15} aria-hidden="true" />
+                    Live
+                  </span>
+                  <span className="rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-gray-900 dark:text-indigo-300">
+                    Current
+                  </span>
+                </span>
+                <span className="text-xs leading-relaxed opacity-80">
+                  New questions for each student, written when they start.
+                </span>
+              </div>
+              <button
+                type="button"
+                data-generate-review
+                disabled={!onGenerate || !group.annu.requirements.trim()}
+                onClick={() => setGenerating(true)}
+                className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-white p-3 text-left text-slate-700 transition-colors hover:border-sky-400 hover:bg-sky-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-sky-950 dark:focus-visible:ring-offset-gray-900"
+              >
+                <span className="inline-flex items-center gap-2 text-sm font-semibold">
+                  <ListChecks size={15} aria-hidden="true" className="text-sky-600 dark:text-sky-400" />
+                  Generate now & review
+                </span>
+                <span className="text-xs leading-relaxed text-slate-500 dark:text-gray-400">
+                  Same questions for everyone; recommended for assigned
+                  interviews.
+                </span>
+              </button>
+            </div>
+            {!group.annu.requirements.trim() && onGenerate && (
+              <p className="mt-2 text-xs text-slate-500 dark:text-gray-400">
+                Describe what ANVI should ask to generate questions now.
+              </p>
+            )}
           </section>
           <details className="rounded-xl border border-slate-200 p-4 dark:border-gray-700">
             <summary className="cursor-pointer text-sm font-medium">
-              Fine-tune ANNU{" "}
+              Fine-tune ANVI{" "}
               <span className="font-normal text-slate-400">· Optional</span>
             </summary>
             <div className="mt-4 space-y-4">
@@ -1172,11 +1070,13 @@ export function GroupEditor({
                       limits.plannedQuestionsPerGroup ?? 50,
                       limits.questions,
                     )}
-                    value={group.annu.targetCount}
+                    value={group.annu.targetCount ?? ""}
+                    placeholder="Shared by priority"
                     onChange={(e) =>
                       set("annu", {
                         ...group.annu,
-                        targetCount: Number(e.target.value),
+                        // Empty keeps the topic on the shared, priority-based total.
+                        targetCount: e.target.value === "" ? null : Number(e.target.value),
                       })
                     }
                   />
@@ -1269,7 +1169,7 @@ export function GroupEditor({
                   </span>
                   <button
                     type="button"
-                    className="min-w-0 flex-1 rounded py-1 text-left hover:text-sky-700"
+                    className="min-w-0 flex-1 rounded py-1 text-left hover:text-sky-700 dark:hover:text-sky-300"
                     aria-label={`Edit question ${index + 1}`}
                     onClick={() => setEditing({ question: q, isNew: false })}
                   >
@@ -1288,7 +1188,7 @@ export function GroupEditor({
                       title="Move up"
                       aria-label={`Move question ${index + 1} up`}
                       disabled={index === 0}
-                      className="rounded p-1.5 text-slate-400 hover:bg-slate-100 disabled:opacity-25"
+                      className="rounded p-1.5 text-slate-400 hover:bg-slate-100 disabled:opacity-25 dark:hover:bg-gray-800"
                       onClick={() => moveQuestion(index, -1)}
                     >
                       <ArrowUp size={14} />
@@ -1298,7 +1198,7 @@ export function GroupEditor({
                       title="Move down"
                       aria-label={`Move question ${index + 1} down`}
                       disabled={index === group.questions.length - 1}
-                      className="rounded p-1.5 text-slate-400 hover:bg-slate-100 disabled:opacity-25"
+                      className="rounded p-1.5 text-slate-400 hover:bg-slate-100 disabled:opacity-25 dark:hover:bg-gray-800"
                       onClick={() => moveQuestion(index, 1)}
                     >
                       <ArrowDown size={14} />
@@ -1307,7 +1207,7 @@ export function GroupEditor({
                       type="button"
                       title="Edit question"
                       aria-label={`Edit question ${index + 1} details`}
-                      className="rounded p-1.5 text-slate-500 hover:bg-sky-50 hover:text-sky-700"
+                      className="rounded p-1.5 text-slate-500 hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-400/10 dark:hover:text-sky-300"
                       onClick={() => setEditing({ question: q, isNew: false })}
                     >
                       <Pencil size={14} />
@@ -1316,7 +1216,7 @@ export function GroupEditor({
                       type="button"
                       title="Remove question"
                       aria-label={`Remove question ${index + 1}`}
-                      className="rounded p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                      className="rounded p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-400/10 dark:hover:text-rose-300"
                       onClick={() => {
                         if (
                           window.confirm(
@@ -1408,17 +1308,26 @@ export function GroupEditor({
           }}
         />
       )}
+      {generating && !readOnly && onGenerate && group.source === "annu" && (
+        <GenerateReviewDialog
+          group={group}
+          capacity={limits.questions}
+          onGenerate={onGenerate}
+          onUse={applyGenerated}
+          onClose={() => setGenerating(false)}
+        />
+      )}
       {switchTo && !readOnly && (
         <Dialog
           title="Change question source?"
           onClose={() => setSwitchTo(null)}
         >
-          <p className="text-sm text-slate-600">
-            Changing to {switchTo === "annu" ? "ANNU AI" : "manual questions"}{" "}
+          <p className="text-sm text-slate-600 dark:text-gray-300">
+            Changing to {switchTo === "annu" ? "ANVI AI" : "manual questions"}{" "}
             removes this topic’s{" "}
             {group.source === "manual"
               ? "questions and cross-questions"
-              : "ANNU instructions"}
+              : "ANVI instructions"}
             . The topic name and settings stay unchanged.
           </p>
           <div className="mt-5 flex justify-end gap-2">

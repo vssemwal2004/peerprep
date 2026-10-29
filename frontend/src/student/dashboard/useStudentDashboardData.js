@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../utils/api';
 import socketService from '../../utils/socket';
-import { PROGRESS_TYPES } from '../../components/notificationKinds';
+import { PROGRESS_TYPES, isAnviNotification } from '../../components/notificationKinds';
 
 const initialSection = () => ({ data: null, loading: true, error: false });
 const unwrap = (value, key) => Array.isArray(value) ? value : Array.isArray(value?.[key]) ? value[key] : [];
 
-export default function useStudentDashboardData({ userId, canQuestions, canLearning, canEvents, canAssessments, canInterviews }) {
-  const [sections, setSections] = useState(() => ({ dashboard: initialSection(), engagement: initialSection(), events: initialSection(), assessments: initialSection(), announcements: initialSection() }));
+export default function useStudentDashboardData({ userId, canQuestions, canLearning, canEvents, canAssessments, canInterviews, canQuickPrep }) {
+  const [sections, setSections] = useState(() => ({ dashboard: initialSection(), engagement: initialSection(), events: initialSection(), assessments: initialSection(), announcements: initialSection(), anvi: initialSection() }));
   const [revision, setRevision] = useState(0);
   const refreshedAt = useRef(0);
   const previousUser = useRef(userId);
@@ -29,7 +29,7 @@ export default function useStudentDashboardData({ userId, canQuestions, canLearn
     const loadDashboard = () => load('dashboard', () => api.getStudentDashboard(true));
     let nextChallengeReset = Infinity;
     const loadEngagement = () => load('engagement', async () => {
-      const value = canQuestions || canLearning || canEvents || canAssessments || canInterviews ? await api.refreshStudentEngagement() : { periods: [], badges: [], lifetime: { points: 0, badges: 0 } };
+      const value = canQuickPrep ? await api.refreshStudentEngagement() : { periods: [], badges: [], lifetime: { points: 0, badges: 0 } };
       nextChallengeReset = Math.min(...[value.daily?.endsAt, ...(value.periods || []).map((period) => period.endsAt)].filter(Boolean).map((date) => new Date(date).getTime()).filter(Number.isFinite));
       if (alive && value.lifetime?.points > 0 && (value.lifetime.points !== challengePoints.current || value.newAwards?.length)) {
         // Wait out a potentially older in-flight snapshot, then reload verified rank and level.
@@ -40,19 +40,22 @@ export default function useStudentDashboardData({ userId, canQuestions, canLearn
       return value;
     });
     const loadAnnouncements = () => load('announcements', () => api.listStudentAnnouncements(), (data) => unwrap(data, 'announcements'));
+    // Scheduled ANVI interviews (assignments and bookings) for "Coming up".
+    const loadAnvi = () => load('anvi', () => canInterviews ? api.listStudentAnviAssignments() : [], (data) => unwrap(data, 'assignments'));
     const loadAll = () => {
       refreshedAt.current = Date.now();
       return Promise.allSettled([
         loadDashboard(), loadEngagement(), loadAnnouncements(),
         load('events', () => canEvents ? api.listEvents() : [], (data) => unwrap(data, 'events')),
         load('assessments', () => canAssessments ? api.listStudentAssessments() : [], (data) => unwrap(data, 'assessments')),
+        loadAnvi(),
       ]);
     };
     const differentUser = previousUser.current !== userId;
     previousUser.current = userId;
     if (differentUser) challengePoints.current = null;
     setSections((previous) => differentUser
-      ? { dashboard: initialSection(), engagement: initialSection(), events: initialSection(), assessments: initialSection(), announcements: initialSection() }
+      ? { dashboard: initialSection(), engagement: initialSection(), events: initialSection(), assessments: initialSection(), announcements: initialSection(), anvi: initialSection() }
       : Object.fromEntries(Object.entries(previous).map(([key, section]) => [key, key === 'engagement' ? initialSection() : { ...section, loading: section.data === null }])));
     void loadAll();
     socketService.connect();
@@ -61,7 +64,10 @@ export default function useStudentDashboardData({ userId, canQuestions, canLearn
       ['compiler-submission-updated', () => Promise.allSettled([loadDashboard(), loadEngagement()])],
       ['learning-updated', () => Promise.allSettled([loadDashboard(), loadEngagement()])],
       // Challenge, badge and level notices can come from a refresh in another tab; resync XP and rank.
-      ['new_notification', (notification) => { if (PROGRESS_TYPES.has(notification?.type)) void Promise.allSettled([loadDashboard(), loadEngagement()]); }],
+      ['new_notification', (notification) => {
+        if (PROGRESS_TYPES.has(notification?.type)) void Promise.allSettled([loadDashboard(), loadEngagement()]);
+        if (isAnviNotification(notification)) void loadAnvi();
+      }],
     ];
     updates.forEach(([event, handler]) => socketService.on(event, handler));
     const onFocus = () => { if (Date.now() - refreshedAt.current > 30000) void loadAll(); };
@@ -73,7 +79,7 @@ export default function useStudentDashboardData({ userId, canQuestions, canLearn
       window.removeEventListener('focus', onFocus);
       clearInterval(rollover);
     };
-  }, [userId, canQuestions, canLearning, canEvents, canAssessments, canInterviews, revision]);
+  }, [userId, canQuestions, canLearning, canEvents, canAssessments, canInterviews, canQuickPrep, revision]);
 
   return { ...sections, refresh: () => setRevision((value) => value + 1) };
 }

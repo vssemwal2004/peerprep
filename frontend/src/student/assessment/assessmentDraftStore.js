@@ -66,6 +66,44 @@ export async function writeAssessmentDraft(key, draft) {
   }
 }
 
+const DRAFT_KEY_PREFIX = 'peerprep_assessment_answer_draft:';
+
+/**
+ * Removes every assessment draft from this browser (shared lab machines). Used
+ * at logout; bounded so a busy or blocked database never holds logout up.
+ */
+export async function clearAllAssessmentDrafts() {
+  const pending = databasePromise;
+  databasePromise = null;
+  // Our own open connection would block deleteDatabase.
+  if (pending) {
+    try { (await pending).close(); } catch { /* never opened */ }
+  }
+  try {
+    const storage = localStore();
+    if (storage) {
+      const keys = [];
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        if (key?.startsWith(DRAFT_KEY_PREFIX)) keys.push(key);
+      }
+      keys.forEach((key) => storage.removeItem(key));
+    }
+  } catch { /* storage unavailable */ }
+  if (!globalThis.indexedDB) return;
+  await new Promise((resolve) => {
+    const timeout = setTimeout(resolve, 2000);
+    const done = () => { clearTimeout(timeout); resolve(); };
+    try {
+      const request = globalThis.indexedDB.deleteDatabase(DB_NAME);
+      // A blocked delete completes once other tabs close their connection.
+      request.onsuccess = done;
+      request.onerror = done;
+      request.onblocked = done;
+    } catch { done(); }
+  });
+}
+
 export async function deleteAssessmentDraft(key) {
   try { await transact('readwrite', (store) => store.delete(key)); } catch { /* best effort after submit */ }
   try { localStore()?.removeItem(key); } catch { /* best effort */ }

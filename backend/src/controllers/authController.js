@@ -17,6 +17,8 @@ import { normalizeCoordinatorPermissions } from '../services/coordinatorPermissi
 import { cacheUserSessionState, invalidateUserCache } from '../middleware/auth.js';
 import { currentTenant } from '../platform/tenantContext.js';
 import { deploymentRole } from '../platform/deployment.js';
+import { normalizeStudentFeatureAccess, studentHasFeature } from '../services/studentFeatureAccess.js';
+import { exactEmailPattern, normalizeEmailAddress } from '../utils/emailIdentity.js';
 
 const tenantTokenClaims = () => deploymentRole() === 'shared'
   ? { tenantId: currentTenant()?.universityId || 'platform' } : {};
@@ -103,7 +105,7 @@ export async function changePassword(req, res) {
   }
 
   // Auto-enroll student in all courses for their semester on first login
-  if (wasFirstLogin && user.accessScope !== 'assessment_only') {
+  if (wasFirstLogin && user.accessScope !== 'assessment_only' && studentHasFeature(user, 'learning')) {
     // Re-fetch with populated semester field (lean object from req.user may be stale)
     const freshStudent = await User.findById(user._id).lean();
     autoEnrollStudentInCourses(freshStudent).then(result => {
@@ -180,8 +182,8 @@ export async function seedAdminIfNeeded() {
   const email = process.env.ADMIN_EMAIL;
   const password = process.env.ADMIN_PASSWORD;
   if (!email || !password) return;
-  const emailLower = String(email).trim().toLowerCase();
-  const existing = await User.findOne({ role: 'admin', email: emailLower });
+  const emailLower = normalizeEmailAddress(email);
+  const existing = await User.findOne({ role: 'admin', email: exactEmailPattern(emailLower) });
   if (existing) {
     const forceReset = String(process.env.ADMIN_FORCE_RESET).toLowerCase() === 'true';
     const isDev = process.env.NODE_ENV !== 'production';
@@ -211,7 +213,7 @@ export async function me(req, res) {
   // req.user comes from the auth cache, which does not select the editable profile fields.
   // Read them fresh so bio/username/links (and learner progress) survive a page reload.
   const profile = await User.findById(u._id)
-    .select('username bio linkedinUrl githubUrl portfolioUrl learnerProgress practiceLanguage')
+    .select('username bio linkedinUrl githubUrl portfolioUrl learnerProgress practiceLanguage featureAccess accessScope')
     .lean() || {};
   // Return fields based on role
   const response = {
@@ -239,6 +241,7 @@ export async function me(req, res) {
     response.semester = u.semester;
     response.learnerProgress = profile.learnerProgress || null;
     response.practiceLanguage = profile.practiceLanguage || await latestPracticeLanguage(u._id);
+    response.featureAccess = normalizeStudentFeatureAccess(profile.featureAccess || u.featureAccess, { legacyAccessScope: profile.accessScope || u.accessScope });
 
     // Fetch coordinator names from teacherIds
     if (Array.isArray(u.teacherIds) && u.teacherIds.length > 0) {
@@ -493,8 +496,9 @@ export async function login(req, res) {
   if (!id || !password) throw new HttpError(400, 'Missing credentials');
 
   // Try admin first (by email only)
-  const idLower = id.toLowerCase();
-  const admin = await User.findOne({ role: 'admin', email: idLower });
+  const idLower = normalizeEmailAddress(id);
+  const emailPattern = exactEmailPattern(idLower);
+  const admin = await User.findOne({ role: 'admin', email: emailPattern });
   if (admin) {
     const ok = await admin.verifyPassword(password);
     if (!ok) {
@@ -531,7 +535,7 @@ export async function login(req, res) {
   // Try regular student by email OR studentId within the selected database.
   const student = await User.findOne({
     role: 'student',
-    $or: [{ email: idLower }, { studentId: id }],
+    $or: [{ email: emailPattern }, { studentId: id }],
   });
   if (student) {
     const ok = await student.verifyPassword(password);
@@ -583,7 +587,7 @@ export async function login(req, res) {
   const coordinator = await User.findOne({
     role: 'coordinator',
     $or: [
-      { email: idLower },
+      { email: emailPattern },
       { coordinatorId: id },
     ],
   });
@@ -650,6 +654,7 @@ function sanitizeUser(u) {
     id: u._id,
     role: u.role,
     accessScope: u.accessScope || 'full',
+    featureAccess: normalizeStudentFeatureAccess(u.featureAccess, { legacyAccessScope: u.accessScope }),
     name: u.name,
     email: u.email,
     studentId: u.studentId,
@@ -674,13 +679,14 @@ export async function requestPasswordReset(req, res) {
   const { email } = req.body;
   if (!email) throw new HttpError(400, 'Email or Student ID is required');
 
-  const identifier = email.trim().toLowerCase();
+  const identifier = normalizeEmailAddress(email);
+  const emailPattern = exactEmailPattern(identifier);
   
   // PeerPrep's own coordinators can reset their password from the main login.
   // Existing university reset behavior remains student-only.
   const user = await User.findOne(deploymentRole() === 'shared' && !currentTenant()
-    ? { role: { $in: ['student', 'coordinator'] }, email: identifier }
-    : { role: 'student', $or: [{ email: identifier }, { studentId: identifier }] });
+    ? { role: { $in: ['student', 'coordinator'] }, email: emailPattern }
+    : { role: 'student', $or: [{ email: emailPattern }, { studentId: identifier }] });
   
   // Always return success to prevent email enumeration
   if (!user) {

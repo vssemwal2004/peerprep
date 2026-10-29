@@ -18,6 +18,9 @@ const answerSchema = new mongoose.Schema({
     enum: ['PENDING', 'AC', 'WA', 'TLE', 'RE', 'CE', 'FAILED'],
   },
   executionResult: { type: mongoose.Schema.Types.Mixed },
+  // Full judge result for admin reports (hidden failing case, raw stderr).
+  // Stripped from every student payload; students get executionResult.
+  adminExecutionResult: { type: mongoose.Schema.Types.Mixed },
   submissionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Submission' },
   lastEvaluatedAt: { type: Date },
 }, { _id: false });
@@ -73,6 +76,10 @@ const assessmentSubmissionSchema = new mongoose.Schema({
   pausedDurationMs: { type: Number, default: 0 },
   lastNetworkPauseAt: { type: Date },
   securityHeartbeat: { type: mongoose.Schema.Types.Mixed, default: {} },
+  // Review flags from heartbeats (never penalties): self-reported inconsistent
+  // status, and silences over 60 s between stored heartbeats.
+  inconsistentHeartbeatCount: { type: Number, default: 0 },
+  heartbeatGapCount: { type: Number, default: 0 },
   violations: { type: [mongoose.Schema.Types.Mixed], default: [] },
   violationLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
   proctoringSnapshots: { type: [mongoose.Schema.Types.Mixed], default: [] },
@@ -118,6 +125,8 @@ assessmentSubmissionSchema.index({ studentId: 1, status: 1, activeSessionHeartbe
 assessmentSubmissionSchema.index({ status: 1, deadlineAt: 1, _id: 1 });
 assessmentSubmissionSchema.index({ status: 1, _id: 1 });
 assessmentSubmissionSchema.index({ updatedAt: 1 });
+// Live report roster deltas: one assessment's attempts changed since a cursor.
+assessmentSubmissionSchema.index({ assessmentId: 1, updatedAt: 1 });
 assessmentSubmissionSchema.index({ 'pendingWork.status': 1, 'pendingWork.nextAttemptAt': 1, 'pendingWork.leaseUntil': 1 });
 
 attachAdminAnalyticsInvalidation(assessmentSubmissionSchema, {

@@ -99,7 +99,7 @@ beforeEach(async () => {
     revision: 1,
     active: true,
     data: {
-      name: "Annu",
+      name: "Anvi",
       role: "Technical interviewer",
       description: "",
       language: "en",
@@ -302,7 +302,7 @@ test("avatar library filters, paginates and archives with revision confirmation"
     calls.filter(([name]) => name === "list").at(-1)[1].active,
     "false",
   );
-  await click(document.querySelector('[aria-label="Archive Annu"]'));
+  await click(document.querySelector('[aria-label="Archive Anvi"]'));
   assert.equal(calls.filter(([name]) => name === "archive").length, 0);
   await click(button("Archive avatar", document.querySelector("dialog")));
   assert.deepEqual(
@@ -505,7 +505,7 @@ test("clicking a card opens details and switching languages plays the saved matc
   };
   doc.assets.preview = doc.languagePreviews.en;
   await mount();
-  await click(document.querySelector('[aria-label="Open Annu introduction"]'));
+  await click(document.querySelector('[aria-label="Open Anvi introduction"]'));
   const dialog = document.querySelector("dialog");
   assert.match(dialog.textContent, /Technical interviewer/);
   assert.equal(dialog.querySelector('video').getAttribute("src"), "https://media.example/english.mp4");
@@ -519,7 +519,7 @@ test("an in-progress introduction opened from the library resolves to a current 
   doc.render.status = "queued";
   doc.previewStale = true;
   await mount();
-  await click(document.querySelector('[aria-label="Open Annu introduction"]'));
+  await click(document.querySelector('[aria-label="Open Anvi introduction"]'));
   assert.match(document.querySelector("dialog").textContent, /Generating the English introduction/);
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2200)); });
   assert.ok(document.querySelector('video[aria-label="Generated avatar video"]'));
@@ -530,7 +530,7 @@ test("missing language preview never plays the wrong audio and opens language-sp
   doc.assets.preview = { url: "https://media.example/english.mp4", language: "en" };
   doc.render.status = "ready";
   await mount();
-  await click(document.querySelector('[aria-label="Open Annu introduction"]'));
+  await click(document.querySelector('[aria-label="Open Anvi introduction"]'));
   await type(document.querySelector('[aria-label="Preview language"]'), "hi");
   assert.equal(document.querySelector('video[aria-label="Generated avatar video"]'), null);
   assert.match(document.querySelector("dialog").textContent, /No Hindi preview yet/);

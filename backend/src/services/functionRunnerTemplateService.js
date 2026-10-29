@@ -1,5 +1,5 @@
 // PeerPrep canonical node collections.
-import { USER_CODE_PLACEHOLDER } from './functionProblemAdapterService.js';
+import { USER_CODE_PLACEHOLDER } from './functionRunnerConstants.js';
 
 const ARGUMENTS_JSON_STRING_PLACEHOLDER = '{{ARGUMENTS_JSON_STRING}}';
 

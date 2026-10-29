@@ -1,17 +1,82 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
-import * as bundledMonaco from 'monaco-editor/esm/vs/editor/editor.api';
+// Load Monaco's editor contributions as well as its API. `editor.api` alone
+// renders text but does not register the Suggest Controller, so completion
+// providers can return items while no autocomplete widget ever opens.
+import * as bundledMonaco from 'monaco-editor/esm/vs/editor/edcore.main';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+// C/C++ is used in assessments and must be available immediately. Keeping it
+// in the editor bundle avoids a stale/missing lazy chunk leaving production in
+// plaintext mode after a deployment.
+import 'monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution';
 import { getMonacoLanguage } from './compilerUtils';
-import { acquireIdentifierCompletions } from '../../student/editor/identifierCompletion';
+import {
+  acquireIdentifierCompletions,
+  provideIdentifierCompletions,
+} from '../../student/editor/identifierCompletion';
 
 const internalEditorClipboards = new Map();
 const MAX_CACHED_MODELS = 24;
+const MAX_LOCAL_VALUES = 100;
+const MAX_PERSISTED_VIEW_STATES = 64;
+const EDITOR_FONT = "14px 'JetBrains Mono'";
+const EDITOR_FONT_WAIT_MS = 1500;
+// Cursor and scroll position survive an unmount (e.g. coding -> MCQ -> coding).
+const persistedViewStates = new Map();
 let rCompletionProviderRegistered = false;
 
+// Monaco measures the character width once and trusts it forever. Measuring
+// the fallback font and then drawing JetBrains Mono puts the caret a fraction
+// of a character off per column, so wait (briefly) for the real font.
+function waitForEditorFont(maxMs = EDITOR_FONT_WAIT_MS) {
+  const fonts = typeof document !== 'undefined' ? document.fonts : null;
+  if (!fonts?.load) return Promise.resolve();
+  let timer;
+  return Promise.race([
+    Promise.all([fonts.load(EDITOR_FONT), fonts.load(`bold ${EDITOR_FONT}`)]).catch(() => {}),
+    new Promise((resolve) => { timer = setTimeout(resolve, maxMs); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+function persistViewState(key, viewState) {
+  if (!key || !viewState) return;
+  persistedViewStates.delete(key);
+  persistedViewStates.set(key, viewState);
+  while (persistedViewStates.size > MAX_PERSISTED_VIEW_STATES) {
+    persistedViewStates.delete(persistedViewStates.keys().next().value);
+  }
+}
+
+// Sync bookkeeping shared by Monaco models and the basic textarea. `localValues`
+// holds recent texts this editor reported through onChange; when the parent
+// renders one of them while newer local edits exist, it is a stale echo of a
+// debounced commit, not a replacement.
+function createSyncState(value) {
+  return { lastExternalValue: value, dirty: false, localValues: new Set() };
+}
+
+function recordLocalValue(state, value) {
+  state.dirty = true;
+  state.localValues.delete(value);
+  state.localValues.add(value);
+  if (state.localValues.size > MAX_LOCAL_VALUES) {
+    state.localValues.delete(state.localValues.values().next().value);
+  }
+}
+
+function acknowledgeExternalValue(state, value) {
+  state.lastExternalValue = value;
+  state.dirty = false;
+  state.localValues.clear();
+}
+
+function isStaleEcho(state, value) {
+  return state.dirty && state.localValues.has(value);
+}
+
 const languageContributionLoaders = {
-  c: () => import('monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution'),
-  cpp: () => import('monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution'),
+  c: () => Promise.resolve(),
+  cpp: () => Promise.resolve(),
   csharp: () => import('monaco-editor/esm/vs/basic-languages/csharp/csharp.contribution'),
   go: () => import('monaco-editor/esm/vs/basic-languages/go/go.contribution'),
   java: () => import('monaco-editor/esm/vs/basic-languages/java/java.contribution'),
@@ -222,7 +287,8 @@ function trimModelCache(entries, activeKey) {
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function preloadMonacoEditor(language) {
-  return ensureLanguageContribution(language).then(() => bundledMonaco);
+  // Also starts the editor font download so the first editor measures it.
+  return Promise.all([ensureLanguageContribution(language), waitForEditorFont()]).then(() => bundledMonaco);
 }
 
 export default function MonacoCodeEditor({
@@ -253,9 +319,15 @@ export default function MonacoCodeEditor({
   const latestBlockContextMenuRef = useRef(blockContextMenu);
   const clipboardScopeRef = useRef(clipboardScope);
   const onClipboardStatusRef = useRef(onClipboardStatus);
+  const fallbackTextareaRef = useRef(null);
+  const fallbackTextRef = useRef(value || '');
+  const fallbackSyncRef = useRef(null);
+  if (!fallbackSyncRef.current) fallbackSyncRef.current = createSyncState(value || '');
+  const pendingFocusRef = useRef(null);
   const [fallbackValue, setFallbackValue] = useState(value || '');
   const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [assistMessage, setAssistMessage] = useState('Type to see suggestions automatically');
 
   const resolvedHeight = typeof height === 'number' ? `${height}px` : height;
 
@@ -280,10 +352,20 @@ export default function MonacoCodeEditor({
     const forceExternalValue = valueVersionRef.current !== valueVersion;
     externalValueRef.current = nextValue;
     valueVersionRef.current = valueVersion;
-    setFallbackValue(nextValue);
 
     const editor = editorRef.current;
     if (!editor) {
+      // Basic textarea (Monaco still loading or unavailable): same stale-echo
+      // rule as the models, so a debounced commit cannot undo newer typing.
+      const fallbackSync = fallbackSyncRef.current;
+      const fallbackKeyChanged = activeModelKeyRef.current !== nextModelKey;
+      if (fallbackTextRef.current === nextValue) {
+        acknowledgeExternalValue(fallbackSync, nextValue);
+      } else if (forceExternalValue || fallbackKeyChanged || !isStaleEcho(fallbackSync, nextValue)) {
+        acknowledgeExternalValue(fallbackSync, nextValue);
+        fallbackTextRef.current = nextValue;
+        setFallbackValue(nextValue);
+      }
       contentKeyRef.current = contentKey;
       activeModelKeyRef.current = nextModelKey;
       return;
@@ -300,11 +382,10 @@ export default function MonacoCodeEditor({
     let entry = entries.get(nextModelKey);
     if (!entry) {
       entry = {
+        ...createSyncState(nextValue),
         model: bundledMonaco.editor.createModel(nextValue, getMonacoLanguage(latestLanguageRef.current)),
-        viewState: null,
-        lastExternalValue: nextValue,
+        viewState: persistedViewStates.get(nextModelKey) || null,
         lastUsed: Date.now(),
-        dirty: false,
       };
       entries.set(nextModelKey, entry);
     } else {
@@ -312,18 +393,33 @@ export default function MonacoCodeEditor({
       bundledMonaco.editor.setModelLanguage(entry.model, getMonacoLanguage(latestLanguageRef.current));
     }
 
-    const modelValue = entry.model.getValue();
-    const parentAcknowledgedLocalValue = modelValue === nextValue;
-    const staleParentRender = entry.dirty && nextValue === entry.lastExternalValue;
-    if (parentAcknowledgedLocalValue) {
-      entry.lastExternalValue = nextValue;
-      entry.dirty = false;
-    } else if (forceExternalValue || !staleParentRender) {
+    if (entry.model.getValue() === nextValue) {
+      acknowledgeExternalValue(entry, nextValue);
+    } else if (forceExternalValue || contentChanged || !isStaleEcho(entry, nextValue)) {
+      // A stale echo (the parent rendering an older debounced commit while the
+      // user kept typing) is ignored; anything else replaces the text. Opening
+      // another model is authoritative: no commit is pending for it.
       applyingExternalValueRef.current = true;
       try {
-        entry.model.setValue(nextValue);
-        entry.lastExternalValue = nextValue;
-        entry.dirty = false;
+        const attached = editor.getModel() === entry.model;
+        let applied = false;
+        if (forceExternalValue && attached) {
+          // An undoable edit keeps history (Ctrl+Z after Reset Code) and does
+          // not flush the cursor collection the way setValue does.
+          const previousPosition = editor.getPosition();
+          editor.pushUndoStop();
+          applied = editor.executeEdits('peerprep-external-value', [{
+            range: entry.model.getFullModelRange(),
+            text: nextValue,
+          }], () => {
+            const position = entry.model.validatePosition(previousPosition || { lineNumber: 1, column: 1 });
+            return [new bundledMonaco.Selection(position.lineNumber, position.column, position.lineNumber, position.column)];
+          });
+          editor.pushUndoStop();
+        }
+        // Read-only editors refuse executeEdits; detached models have no cursor.
+        if (!applied) entry.model.setValue(nextValue);
+        acknowledgeExternalValue(entry, nextValue);
       } finally {
         applyingExternalValueRef.current = false;
       }
@@ -354,22 +450,31 @@ export default function MonacoCodeEditor({
     let focusSubscription;
     let widgetFocusSubscription;
     let readOnlyAttemptSubscription;
+    let typingSubscription;
     let mutationObserver;
     let resizeObserver;
     let layoutFrame;
     let releaseIdentifierCompletions;
+    let applySuggestionAction;
+    let assistMessageTimer;
+    let automaticSuggestionTimer;
+    let removeFontListener;
     let cancelled = false;
     const modelEntries = modelEntriesRef.current;
 
     const initializeEditor = async () => {
       try {
-      await ensureLanguageContribution(latestLanguageRef.current);
+      await Promise.all([ensureLanguageContribution(latestLanguageRef.current), waitForEditorFont()]);
       if (cancelled || !containerRef.current) return;
       definePeerprepThemes(bundledMonaco);
       registerRCompletionProvider(bundledMonaco);
       const initialModelKey = getModelKey(contentKeyRef.current);
+      // Start from what was typed into the basic textarea while Monaco loaded,
+      // not from the (possibly older) parent value.
+      const fallbackSync = fallbackSyncRef.current;
+      const initialText = fallbackTextRef.current;
       const initialModel = bundledMonaco.editor.createModel(
-        externalValueRef.current,
+        initialText,
         getMonacoLanguage(latestLanguageRef.current),
       );
       modelEntries.set(initialModelKey, {
@@ -377,9 +482,12 @@ export default function MonacoCodeEditor({
         viewState: null,
         lastExternalValue: externalValueRef.current,
         lastUsed: Date.now(),
-        dirty: false,
+        dirty: initialText !== externalValueRef.current,
+        localValues: initialText !== externalValueRef.current ? new Set(fallbackSync.localValues) : new Set(),
       });
       activeModelKeyRef.current = initialModelKey;
+      const fallbackTextarea = fallbackTextareaRef.current;
+      const fallbackHadFocus = Boolean(fallbackTextarea) && document.activeElement === fallbackTextarea;
       editor = bundledMonaco.editor.create(containerRef.current, {
         model: initialModel,
         theme: isDarkMode() ? 'peerprep-dark' : 'peerprep-light',
@@ -387,11 +495,18 @@ export default function MonacoCodeEditor({
         minimap: { enabled: false },
         fontFamily: "'JetBrains Mono', 'Cascadia Code', Consolas, monospace",
         fontSize: 14,
+        fontWeight: '400',
         lineHeight: 23,
-        fontLigatures: true,
-        smoothScrolling: true,
-        cursorBlinking: 'smooth',
-        cursorSmoothCaretAnimation: 'explicit',
+        // Show the exact source characters. With ligatures enabled, valid C++
+        // `!=` looked like a Unicode `≠`, which was easily mistaken for a
+        // compiler-breaking character.
+        fontLigatures: false,
+        // Position the caret from DOM measurements instead of column x cached
+        // character width, so a late font swap can never misplace it.
+        disableMonospaceOptimizations: true,
+        smoothScrolling: false,
+        cursorBlinking: 'blink',
+        cursorSmoothCaretAnimation: 'off',
         readOnly: Boolean(latestReadOnlyRef.current),
         domReadOnly: Boolean(latestReadOnlyRef.current),
         ariaLabel: 'Code editor',
@@ -401,27 +516,51 @@ export default function MonacoCodeEditor({
         codeLens: false,
         links: false,
         contextmenu: !latestBlockContextMenuRef.current,
-        hover: { enabled: false },
-        parameterHints: { enabled: false },
+        hover: { enabled: true, delay: 350, sticky: true },
+        parameterHints: { enabled: true, cycle: true },
         inlayHints: { enabled: 'off' },
         lightbulb: { enabled: 'off' },
-        quickSuggestions: { other: true, comments: false, strings: false },
-        suggestOnTriggerCharacters: true,
-        wordBasedSuggestions: 'currentDocument',
+        // The student completion provider opens the widget only when an actual
+        // previously-declared variable/function matches. This avoids Monaco's
+        // empty "No suggestions" popup.
+        quickSuggestions: false,
+        quickSuggestionsDelay: 80,
+        suggestOnTriggerCharacters: false,
+        wordBasedSuggestions: 'off',
         inlineSuggest: { enabled: false },
+        suggest: {
+          showIcons: true,
+          showStatusBar: true,
+          // Ghost text after the caret made the caret look misplaced.
+          preview: false,
+          snippetsPreventQuickSuggestions: false,
+          localityBonus: true,
+          shareSuggestSelections: true,
+          showKeywords: false,
+          showWords: false,
+          showClasses: false,
+          showModules: false,
+        },
+        snippetSuggestions: 'top',
+        suggestSelection: 'first',
         tabCompletion: 'on',
-        acceptSuggestionOnEnter: 'smart',
-        bracketPairColorization: { enabled: false, independentColorPoolPerBracketType: false },
+        // Tab accepts (as the status bar says); Enter always inserts a newline.
+        acceptSuggestionOnEnter: 'off',
+        acceptSuggestionOnCommitCharacter: true,
+        autoClosingBrackets: 'always',
+        autoClosingQuotes: 'always',
+        autoSurround: 'languageDefined',
+        bracketPairColorization: { enabled: true, independentColorPoolPerBracketType: true },
         guides: {
-          bracketPairs: false,
+          bracketPairs: 'active',
           bracketPairsHorizontal: false,
-          highlightActiveBracketPair: false,
+          highlightActiveBracketPair: true,
           indentation: false,
           highlightActiveIndentation: false,
         },
-        matchBrackets: 'never',
-        occurrencesHighlight: 'off',
-        selectionHighlight: false,
+        matchBrackets: 'always',
+        occurrencesHighlight: 'singleFile',
+        selectionHighlight: true,
         renderValidationDecorations: 'off',
         stickyScroll: { enabled: false },
         tabSize: 2,
@@ -432,9 +571,9 @@ export default function MonacoCodeEditor({
         copyWithSyntaxHighlighting: false,
         largeFileOptimizations: true,
         maxTokenizationLineLength: 20000,
-        renderLineHighlight: 'none',
+        renderLineHighlight: 'line',
         renderWhitespace: 'none',
-        mouseWheelZoom: true,
+        mouseWheelZoom: false,
         fixedOverflowWidgets: true,
         overviewRulerLanes: 0,
         hideCursorInOverviewRuler: true,
@@ -450,8 +589,82 @@ export default function MonacoCodeEditor({
       });
 
       editorRef.current = editor;
+      const persistedViewState = persistedViewStates.get(initialModelKey);
+      if (persistedViewState) editor.restoreViewState(persistedViewState);
+
+      const fontSet = document.fonts;
+      if (fontSet) {
+        const remeasure = (event) => {
+          if (cancelled) return;
+          const loadedFaces = event?.fontfaces ? [...event.fontfaces] : [];
+          if (loadedFaces.length && !loadedFaces.some((face) => /jetbrains mono/i.test(face.family || ''))) return;
+          bundledMonaco.editor.remeasureFonts();
+        };
+        fontSet.addEventListener?.('loadingdone', remeasure);
+        removeFontListener = () => fontSet.removeEventListener?.('loadingdone', remeasure);
+        fontSet.ready?.then(() => remeasure()).catch(() => {});
+      }
+
+      if (fallbackHadFocus && !latestReadOnlyRef.current) {
+        pendingFocusRef.current = {
+          start: fallbackTextarea.selectionStart,
+          end: fallbackTextarea.selectionEnd,
+          direction: fallbackTextarea.selectionDirection,
+        };
+      }
+
       if (identifierSuggestions) {
-        releaseIdentifierCompletions = acquireIdentifierCompletions(bundledMonaco, containerRef.current);
+        releaseIdentifierCompletions = acquireIdentifierCompletions(
+          bundledMonaco,
+          containerRef.current,
+          (candidateModel) => {
+            for (const entry of modelEntriesRef.current.values()) {
+              if (entry.model === candidateModel) return true;
+            }
+            return false;
+          },
+        );
+        applySuggestionAction = editor.addAction({
+          id: 'peerprep.apply-best-intellisense-suggestion',
+          label: 'Apply best IntelliSense suggestion',
+          keybindings: [bundledMonaco.KeyMod.Alt | bundledMonaco.KeyCode.Enter],
+          run: async (activeEditor) => {
+            setAssistMessage('Finding the best suggestion…');
+            await activeEditor.getAction('editor.action.triggerSuggest')?.run();
+            window.setTimeout(async () => {
+              await activeEditor.getAction('acceptSelectedSuggestion')?.run();
+              setAssistMessage('Suggestion applied · Undo with Ctrl+Z');
+              window.clearTimeout(assistMessageTimer);
+              assistMessageTimer = window.setTimeout(
+                () => setAssistMessage('Type to see suggestions automatically'),
+                2600,
+              );
+            }, 90);
+          },
+        });
+
+        // Monaco's internal quick-suggestion scheduler can be suppressed by
+        // host-page focus/read-only transitions. Trigger the same native
+        // suggestion command after real identifier typing so the popup is
+        // dependable without requiring Ctrl+Space. The check runs once typing
+        // pauses so fast typing never pays for a parse per keystroke.
+        typingSubscription = editor.onDidType((typedText) => {
+          if (!/[A-Za-z0-9_$.:>]/.test(typedText)) return;
+          window.clearTimeout(automaticSuggestionTimer);
+          automaticSuggestionTimer = window.setTimeout(() => {
+            if (cancelled || latestReadOnlyRef.current || !editor.hasTextFocus()) return;
+            const activeModel = editor.getModel();
+            const activePosition = editor.getPosition();
+            const available = activeModel && activePosition
+              ? provideIdentifierCompletions(bundledMonaco, activeModel, activePosition)
+              : null;
+            if (!available?.suggestions?.length) {
+              editor.trigger('peerprep.identifier-completion', 'hideSuggestWidget', null);
+              return;
+            }
+            void editor.getAction('editor.action.triggerSuggest')?.run();
+          }, 180);
+        });
       }
       if (!latestReadOnlyRef.current) ensureEditorWritable(editor);
 
@@ -460,7 +673,7 @@ export default function MonacoCodeEditor({
         const nextValue = editor.getValue();
         const activeEntry = modelEntries.get(activeModelKeyRef.current);
         if (activeEntry) {
-          activeEntry.dirty = true;
+          recordLocalValue(activeEntry, nextValue);
           activeEntry.lastUsed = Date.now();
         }
         onChangeRef.current?.(nextValue);
@@ -516,7 +729,28 @@ export default function MonacoCodeEditor({
       focusSubscription?.dispose();
       widgetFocusSubscription?.dispose();
       readOnlyAttemptSubscription?.dispose();
+      typingSubscription?.dispose();
+      applySuggestionAction?.dispose();
       releaseIdentifierCompletions?.();
+      window.clearTimeout(assistMessageTimer);
+      window.clearTimeout(automaticSuggestionTimer);
+      removeFontListener?.();
+      const activeKey = activeModelKeyRef.current;
+      modelEntries.forEach((entry, key) => {
+        if (key !== activeKey) persistViewState(key, entry.viewState);
+      });
+      const activeEntry = modelEntries.get(activeKey);
+      if (editor && activeEntry) {
+        persistViewState(activeKey, editor.saveViewState());
+        // A re-created editor (identifierSuggestions toggled) starts from the
+        // live text, which may be ahead of the parent's debounced value.
+        fallbackTextRef.current = activeEntry.model.getValue();
+        fallbackSyncRef.current = {
+          lastExternalValue: activeEntry.lastExternalValue,
+          dirty: activeEntry.dirty,
+          localValues: new Set(activeEntry.localValues),
+        };
+      }
       editor?.setModel(null);
       editor?.dispose();
       modelEntries.forEach((entry) => entry.model.dispose());
@@ -551,6 +785,26 @@ export default function MonacoCodeEditor({
     editorRef.current?.updateOptions({ contextmenu: !blockContextMenu });
   }, [blockContextMenu]);
 
+  // The basic textarea had focus when Monaco took over: keep typing flowing
+  // into Monaco at the same caret instead of losing keystrokes to <body>.
+  useLayoutEffect(() => {
+    const pendingFocus = pendingFocusRef.current;
+    const editor = editorRef.current;
+    if (isLoading || !pendingFocus || !editor) return;
+    pendingFocusRef.current = null;
+    const model = editor.getModel();
+    if (!model) return;
+    const start = model.getPositionAt(Number(pendingFocus.start) || 0);
+    const end = model.getPositionAt(Number(pendingFocus.end ?? pendingFocus.start) || 0);
+    const selection = pendingFocus.direction === 'backward'
+      ? new bundledMonaco.Selection(end.lineNumber, end.column, start.lineNumber, start.column)
+      : new bundledMonaco.Selection(start.lineNumber, start.column, end.lineNumber, end.column);
+    editor.layout();
+    editor.focus();
+    editor.setSelection(selection);
+    editor.revealPositionInCenterIfOutsideViewport(selection.getPosition());
+  }, [isLoading]);
+
   useEffect(() => {
     const focusEditor = () => editorRef.current?.focus();
     const repairEditor = () => {
@@ -567,6 +821,8 @@ export default function MonacoCodeEditor({
   }, []);
 
   const handleEditorChange = (nextValue) => {
+    fallbackTextRef.current = nextValue;
+    recordLocalValue(fallbackSyncRef.current, nextValue);
     setFallbackValue(nextValue);
     onChangeRef.current?.(nextValue);
   };
@@ -676,6 +932,7 @@ export default function MonacoCodeEditor({
 
   const basicEditor = (
     <textarea
+      ref={fallbackTextareaRef}
       value={fallbackValue}
       onChange={(event) => handleEditorChange(event.target.value)}
       readOnly={readOnly}
@@ -705,11 +962,25 @@ export default function MonacoCodeEditor({
       onPointerDownCapture={enforceWritableState}
       onFocusCapture={enforceWritableState}
       onClickCapture={enforceWritableState}
-      className="relative h-full min-h-0 overflow-hidden rounded-lg bg-white dark:bg-gray-900"
+      className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-lg bg-white dark:bg-gray-900"
       style={{ height: resolvedHeight }}
     >
-      {isLoading ? <div className="absolute inset-0 z-10">{basicEditor}</div> : null}
-      <div ref={containerRef} aria-hidden={isLoading ? 'true' : undefined} className="h-full w-full" style={{ visibility: isLoading ? 'hidden' : 'visible' }} />
+      <div className="relative min-h-0 flex-1">
+        {isLoading ? <div className="absolute inset-0 z-10">{basicEditor}</div> : null}
+        <div ref={containerRef} aria-hidden={isLoading ? 'true' : undefined} className="h-full w-full" style={{ visibility: isLoading ? 'hidden' : 'visible' }} />
+      </div>
+      {identifierSuggestions && !readOnly ? (
+        <div className="flex h-7 shrink-0 items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-3 text-[10px] font-medium text-slate-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-400">
+          <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+            {assistMessage}
+          </span>
+          <span className="hidden shrink-0 items-center gap-2 sm:inline-flex" aria-label="Editor completion shortcuts">
+            <span><kbd className="rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-[9px] text-slate-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300">Tab</kbd> accept</span>
+            <span><kbd className="rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-[9px] text-slate-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300">Alt Enter</kbd> apply best</span>
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

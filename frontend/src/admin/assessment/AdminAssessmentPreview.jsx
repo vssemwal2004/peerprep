@@ -396,7 +396,7 @@ export default function AdminAssessmentPreview() {
                 {question.questionImage?.url ? <img src={question.questionImage.url} alt={question.questionImage.alt || ''} className="mt-4 max-h-72 w-full rounded-xl border border-slate-200 bg-white object-contain p-2 dark:border-gray-700 dark:bg-gray-800" /> : null}
               </div>
               {section.type === 'mcq' ? (
-                <div className="px-5 pb-5 md:px-6"><AssessmentMcqOptions question={question} answer={previewAnswers[questionKey]} onChange={setAnswer} /></div>
+                <div className="px-5 pb-5 md:px-6"><AssessmentMcqOptions question={question} answer={previewAnswers[questionKey]} onChange={(_sectionIndex, _questionIndex, answer) => setAnswer(answer)} /></div>
               ) : (
                 <div className="px-6 pb-5 pt-4"><textarea value={previewAnswers[questionKey] || ''} onChange={(event) => setAnswer(event.target.value)} rows={section.type === 'one_line' ? 3 : 7} className="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-[0.94rem] leading-relaxed text-slate-800 shadow-sm focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" placeholder="Type your response here..." /></div>
               )}

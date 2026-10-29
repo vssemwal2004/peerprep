@@ -124,21 +124,3 @@ export async function discoverAssessmentReportRefreshes({ limit = 25, now = new 
   return { discovered: rows.length, hasMore: Boolean(discoveryCursors.get(tenantKey)) };
 }
 
-export function startAssessmentReportSummaryWorker() {
-  let stopped = false;
-  let timer;
-  let running = Promise.resolve();
-  let nextDiscovery = 0;
-  const tick = () => {
-    running = (async () => {
-      if (Date.now() >= nextDiscovery) {
-        await discoverAssessmentReportRefreshes();
-        nextDiscovery = Date.now() + 30_000;
-      }
-      await refreshPendingAssessmentReports();
-    })().catch((error) => console.error(`[AssessmentReports] Refresh worker failed (${error?.name || 'Error'}).`))
-      .finally(() => { if (!stopped) timer = setTimeout(tick, 3000); });
-  };
-  tick();
-  return async () => { stopped = true; clearTimeout(timer); await running; };
-}

@@ -26,6 +26,7 @@ import NotificationBell from './NotificationBell';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import DailyChallengeDrawer from '../student/engagement/DailyChallengeDrawer';
 import HeaderPrepCoin from '../student/prepCoin/HeaderPrepCoin';
+import { featureForStudentPath, hasStudentFeature } from '../student/studentFeatureAccess';
 
 const modules = [
   { label: 'Dashboard', hint: 'Your placement overview', to: '/student/dashboard', icon: LayoutDashboard },
@@ -81,15 +82,15 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   const searchRef = useRef(null);
   const appsRef = useRef(null);
   const profileRef = useRef(null);
-  const canShowChallenges = user?.role === 'student' && user?.accessScope !== 'assessment_only' && allowsModule('challenges');
+  const canShowChallenges = user?.role === 'student' && user?.accessScope !== 'assessment_only' && hasStudentFeature(user, 'quickprep') && allowsModule('challenges');
   const challengesOpen = canShowChallenges && challengeRoute === location.key;
-  const canShowPrepCoin = user?.role === 'student' && user?.accessScope !== 'assessment_only';
+  const canShowPrepCoin = user?.role === 'student' && user?.accessScope !== 'assessment_only' && hasStudentFeature(user, 'prep_coins');
   const closeChallenges = useCallback(() => setChallengeRoute(null), []);
 
   const displayName = user?.name || 'Student';
   const displayEmail = user?.email || '';
   const avatarUrl = user?.avatarUrl || '';
-  const visibleModules = useMemo(() => modules.filter((item) => allowsPath(item.to, 'student')), [allowsPath]);
+  const visibleModules = useMemo(() => modules.filter((item) => allowsPath(item.to, 'student') && hasStudentFeature(user, featureForStudentPath(item.to))), [allowsPath, user]);
   const results = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return visibleModules.slice(0, 5);

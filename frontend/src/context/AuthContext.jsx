@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api, clearApiCache } from '../utils/api';
+import { clearAllAssessmentDrafts } from '../student/assessment/assessmentDraftStore';
 
 export const AuthContext = createContext(null);
 
@@ -78,12 +79,37 @@ export function AuthProvider({ children }) {
     setAuthChecked(false);
     cacheTimestampRef.current = 0;
     clearApiCache();
+    // Answer and code drafts live in IndexedDB too; the next user of a shared
+    // lab machine must not find them.
+    await clearAllAssessmentDrafts().catch(() => {});
     localStorage.clear();
   }, []);
 
   const refreshUser = useCallback(() => {
     return fetchUser(true);
   }, [fetchUser]);
+
+  useEffect(() => {
+    if (user?.role !== 'student') return undefined;
+    let cancelled = false;
+    let socketService;
+    const handleAccessUpdate = () => { void refreshUser(); };
+
+    // Socket.IO is only needed for an authenticated student. Loading it here
+    // keeps the public landing and login paths out of the critical bundle.
+    import('../utils/socket').then(({ default: service }) => {
+      if (cancelled) return;
+      socketService = service;
+      socketService.on('student-access-updated', handleAccessUpdate);
+    }).catch(() => {
+      // Live access updates are optional; the next auth refresh still reconciles state.
+    });
+
+    return () => {
+      cancelled = true;
+      socketService?.off('student-access-updated', handleAccessUpdate);
+    };
+  }, [user?.role, refreshUser]);
 
   const value = {
     user,

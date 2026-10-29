@@ -1,4 +1,4 @@
-import { difficultyBadgeClass, problemStatusClass, submissionStatusClass } from './compilerUtils';
+import { difficultyBadgeClass, problemStatusClass } from './compilerUtils';
 
 export function SectionCard({ title, subtitle, action, children, className = '', compact = false }) {
   return (
@@ -78,30 +78,6 @@ export function MiniBarChart({ data, labelKey = 'label', valueKey = 'count' }) {
   );
 }
 
-export function ProgressList({ items, labelKey = 'label', valueKey = 'count' }) {
-  const maxValue = Math.max(...items.map((item) => item[valueKey] || 0), 1);
-
-  return (
-    <div className="space-y-3">
-      {items.map((item) => {
-        const value = item[valueKey] || 0;
-        const width = (value / maxValue) * 100;
-        return (
-          <div key={item[labelKey]} className="space-y-1.5">
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="font-medium text-slate-700 dark:text-gray-200">{item[labelKey]}</span>
-              <span className="text-slate-500 dark:text-gray-400">{value}</span>
-            </div>
-            <div className="h-2.5 rounded-full bg-slate-100 dark:bg-gray-800">
-              <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-sky-300" style={{ width: `${Math.max(width, value > 0 ? 8 : 0)}%` }} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 export function DifficultyBadge({ difficulty }) {
   return <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${difficultyBadgeClass(difficulty)}`}>{difficulty}</span>;
 }
@@ -112,9 +88,6 @@ export function ProblemStatusBadge({ status }) {
     ? 'Published'
     : (normalized === 'draft' ? 'Draft' : (status || 'Draft'));
   return <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${problemStatusClass(status)}`}>{label}</span>;
-}
-export function SubmissionStatusBadge({ status }) {
-  return <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${submissionStatusClass(status)}`}>{status}</span>;
 }
 
 

@@ -1,4 +1,3 @@
-// AI Proctoring placeholder - implementation will be added in later steps.
 import {
   AI_PROCTORING_EVENTS,
   DEFAULT_AI_PROCTORING_SETTINGS,
@@ -6,14 +5,34 @@ import {
 } from './constants/proctoringEvents';
 import { getCooldownMs } from './rules/cooldownRules';
 import {
-  AI_PROCTORING_INTERMITTENT_EVENTS,
+  DEFAULT_FACE_OUT_OF_FRAME_GRACE_SEC,
   classifyViolationSeverity,
-  getViolationCandidates,
+  createCandidate,
+  getActiveRules,
 } from './rules/violationRules';
 import { ViolationBuffer } from './services/violationBuffer';
 import { attachStreamToVideo, requestCameraStream, stopCameraStream } from './utils/cameraUtils';
 import { createFaceDetector } from './detectors/faceDetector';
 import { createObjectDetector } from './detectors/objectDetector';
+
+const MOBILE_OBJECT_DETECTION_INTERVAL_MS = 2500;
+const OBJECT_STEADY_MIN_INTERVAL_MS = 1200;
+// Keep object inference at most ~1/8 of the main thread in steady state.
+const OBJECT_INFERENCE_BUDGET_MULTIPLIER = 8;
+// While a phone or a second person is pending, re-sample quickly to confirm.
+const OBJECT_CONFIRM_RESAMPLE_MS = 700;
+const CPU_MIN_OBJECT_INTERVAL_MS = 3000;
+const TICK_ERROR_THRESHOLD = 3;
+const VIDEO_PLAYBACK_RETRY_MS = 1000;
+const MODEL_RETRY_BASE_MS = 5000;
+const MODEL_RETRY_MAX_MS = 30000;
+const FALLBACK_FACE_CENTER_TOLERANCE_RATIO = 0.32;
+const FALLBACK_FACE_MIN_WIDTH_RATIO = 0.12;
+const FALLBACK_FRAME_VARIANCE_THRESHOLD = 95;
+const OBJECT_CONFIRM_EVENTS = Object.freeze([
+  AI_PROCTORING_EVENTS.MOBILE_DETECTED,
+  AI_PROCTORING_EVENTS.MULTIPLE_PERSONS,
+]);
 
 export function normalizeProctoringSettings(settings = {}) {
   const source = settings?.aiProctoring && typeof settings.aiProctoring === 'object'
@@ -22,6 +41,8 @@ export function normalizeProctoringSettings(settings = {}) {
 
   return {
     ...DEFAULT_AI_PROCTORING_SETTINGS,
+    // The out-of-frame grace defaults to the proctoring policy, not the shared constant.
+    faceOutOfFrameGraceSec: DEFAULT_FACE_OUT_OF_FRAME_GRACE_SEC,
     ...(source && typeof source === 'object' ? source : {}),
   };
 }
@@ -38,23 +59,25 @@ function createSafeDetectionResult(overrides = {}) {
     faceOutOfFrame: false,
     lookingAway: false,
     mobileDetected: false,
+    objectPersonCount: 0,
     personCount: faceCount || 0,
+    fresh: { face: false, object: false },
     ...overrides,
     confidence: {
       face: faceConfidence,
       mobile: 0,
-      person: faceConfidence,
+      person: 0,
       lookingAway: 0,
       ...(overrides.confidence || {}),
     },
   };
 }
 
+// Looking-away alone never needs the face model.
 function shouldUseFaceDetection(settings = {}) {
   return settings.detectNoFace !== false
     || settings.detectMultiplePersons !== false
-    || settings.detectFaceOutOfFrame !== false
-    || settings.detectLookingAway !== false;
+    || settings.detectFaceOutOfFrame !== false;
 }
 
 function shouldUseObjectDetection(settings = {}) {
@@ -68,10 +91,31 @@ function getIgnoreLimit(settings = {}) {
   return Math.max(0, Math.min(50, limit));
 }
 
-function getCameraActive(videoElement, stream) {
-  const hasLiveTrack = Boolean(stream?.getVideoTracks?.().some((track) => track.readyState === 'live'));
-  if (!videoElement) return hasLiveTrack;
-  return hasLiveTrack && !videoElement.paused && !videoElement.ended;
+// A muted track is live but delivers no frames (OS privacy toggle, device
+// grabbed by another app, sleep): treat it as a camera interruption.
+export function getCameraActive(stream) {
+  return Boolean(stream?.getVideoTracks?.().some((track) => track.readyState === 'live' && !track.muted));
+}
+
+// Webcams and OS privacy toggles mute tracks briefly. Rules never run on a
+// muted track, but the footer only reports a camera problem once the mute has
+// lasted CAMERA_MUTE_STATUS_GRACE_MS (matching the page's re-acquire grace).
+const CAMERA_MUTE_STATUS_GRACE_MS = 8000;
+const trackMutedSince = new WeakMap();
+
+export function isCameraMuteWithinGrace(stream, now = Date.now(), graceMs = CAMERA_MUTE_STATUS_GRACE_MS) {
+  return Boolean(stream?.getVideoTracks?.().some((track) => {
+    if (track.readyState !== 'live' || !track.muted) {
+      trackMutedSince.delete(track);
+      return false;
+    }
+    if (!trackMutedSince.has(track)) trackMutedSince.set(track, now);
+    return now - trackMutedSince.get(track) < graceMs;
+  }));
+}
+
+function isVideoPlaying(videoElement) {
+  return !videoElement || (!videoElement.paused && !videoElement.ended);
 }
 
 function isVideoReady(videoElement) {
@@ -81,6 +125,11 @@ function isVideoReady(videoElement) {
       && videoElement.videoWidth > 0
       && videoElement.videoHeight > 0,
   );
+}
+
+function yieldToMain() {
+  if (typeof globalThis.scheduler?.yield === 'function') return globalThis.scheduler.yield();
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function createFallbackUnknownFaceResult(reason) {
@@ -121,18 +170,19 @@ function normalizeBrowserFaceResult(faces = [], videoElement) {
 
   const videoWidth = Math.max(1, Number(videoElement?.videoWidth || 1));
   const videoHeight = Math.max(1, Number(videoElement?.videoHeight || 1));
-  const faceOutOfFrame = normalizedFaces.some((face) => {
-    const box = face?.boundingBox || {};
-    const x = Number(box.x || 0);
-    const y = Number(box.y || 0);
-    const width = Number(box.width || 0);
-    const height = Number(box.height || 0);
-    const centerX = x + (width / 2);
-    const centerY = y + (height / 2);
-    return Math.abs(centerX - videoWidth / 2) > videoWidth * FALLBACK_FACE_CENTER_TOLERANCE_RATIO
-      || Math.abs(centerY - videoHeight / 2) > videoHeight * FALLBACK_FACE_CENTER_TOLERANCE_RATIO
-      || width < videoWidth * FALLBACK_FACE_MIN_WIDTH_RATIO;
-  });
+  const primary = normalizedFaces.reduce((best, face) => {
+    const area = Number(face?.boundingBox?.width || 0) * Number(face?.boundingBox?.height || 0);
+    const bestArea = Number(best?.boundingBox?.width || 0) * Number(best?.boundingBox?.height || 0);
+    return area > bestArea ? face : best;
+  }, normalizedFaces[0]);
+  const box = primary?.boundingBox || {};
+  const width = Number(box.width || 0);
+  const height = Number(box.height || 0);
+  const centerX = Number(box.x || 0) + (width / 2);
+  const centerY = Number(box.y || 0) + (height / 2);
+  const faceOutOfFrame = Math.abs(centerX - videoWidth / 2) > videoWidth * FALLBACK_FACE_CENTER_TOLERANCE_RATIO
+    || Math.abs(centerY - videoHeight / 2) > videoHeight * FALLBACK_FACE_CENTER_TOLERANCE_RATIO
+    || width < videoWidth * FALLBACK_FACE_MIN_WIDTH_RATIO;
 
   return {
     facePresent: true,
@@ -145,69 +195,14 @@ function normalizeBrowserFaceResult(faces = [], videoElement) {
     },
     metadata: {
       source: 'browser_face_detector',
-      limitation: 'eye movement unavailable in browser fallback',
       faces: faceCount,
     },
   };
 }
 
-const FOOTER_ISSUE_CONFIRM_MS = 600;
-const FOOTER_ISSUE_CONFIRM_COUNT = 1;
-const FOOTER_ISSUE_CONFIRM_MS_BY_TYPE = Object.freeze({
-  [AI_PROCTORING_EVENTS.NO_FACE]: 3000,
-  [AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME]: 10000,
-  [AI_PROCTORING_EVENTS.LOOKING_AWAY]: 10000,
-});
-// Keep a tiny debounce to avoid a single-frame flash, then recover the UI quickly
-// once the phone is no longer visible.
-const MOBILE_STATUS_HOLD_MS = 400;
-const MOBILE_CONFIRM_CONSECUTIVE_FRAMES = 2;
-const OBJECT_DETECTION_INTERVAL_MULTIPLIER = 4;
-const MOBILE_OBJECT_DETECTION_INTERVAL_MS = 2500;
-const OBJECT_DETECTION_WARMUP_INTERVAL_MS = 700;
-const OBJECT_DETECTION_WARMUP_SAMPLES = 3;
-const VIDEO_PLAYBACK_RETRY_MS = 1000;
-const MODEL_RETRY_BASE_MS = 5000;
-const MODEL_RETRY_MAX_MS = 30000;
-const FALLBACK_FACE_CENTER_TOLERANCE_RATIO = 0.32;
-const FALLBACK_FACE_MIN_WIDTH_RATIO = 0.12;
-const FALLBACK_FRAME_VARIANCE_THRESHOLD = 95;
-
-function getFaceAbsenceGraceMs(settings = {}) {
-  const requestedSeconds = Number(settings.faceOutOfFrameGraceSec);
-  const seconds = Number.isFinite(requestedSeconds)
-    ? Math.max(3, Math.min(60, requestedSeconds))
-    : DEFAULT_AI_PROCTORING_SETTINGS.faceOutOfFrameGraceSec;
-  return seconds * 1000;
-}
-
-function isBufferedIssueVisible(buffer, type, timestamp = Date.now(), settings = {}) {
-  const state = buffer?.getState?.(type);
-  if (!state?.firstSeenAt) return false;
-  const usesFaceAbsenceGrace = type === AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME;
-  const confirmMs = usesFaceAbsenceGrace
-    ? getFaceAbsenceGraceMs(settings)
-    : (FOOTER_ISSUE_CONFIRM_MS_BY_TYPE[type] ?? FOOTER_ISSUE_CONFIRM_MS);
-  return state.consecutiveCount >= FOOTER_ISSUE_CONFIRM_COUNT
-    && timestamp - state.firstSeenAt >= confirmMs;
-}
-
-function getStatusFromDetectionResult(result = {}, buffer = null, settings = {}) {
-  const cameraActive = result.cameraActive !== false;
-  const faceCount = Number(result.faceCount || 0);
-  const personCount = Number(result.personCount || 0);
-  const timestamp = Number(result.timestamp) || Date.now();
-  const multipleFacesVisible = faceCount > 1
-    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.MULTIPLE_FACES, timestamp, settings);
-  const noFaceVisible = result.facePresent === false
-    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.NO_FACE, timestamp, settings);
-  const faceOutVisible = result.faceOutOfFrame === true
-    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME, timestamp, settings);
-  const lookingAwayVisible = result.lookingAway === true
-    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.LOOKING_AWAY, timestamp, settings);
-  const multiplePersonsVisible = personCount > 1;
-
-  if (!cameraActive) {
+// The footer shows only confirmed (active) episodes, never raw per-tick results.
+export function getStatusFromBuffer(result = {}, buffer = null, settings = {}, availability = {}) {
+  if (result.cameraActive === false && !result.cameraMuteGrace) {
     return {
       camera: 'error',
       face: 'unknown',
@@ -217,26 +212,25 @@ function getStatusFromDetectionResult(result = {}, buffer = null, settings = {})
     };
   }
 
+  const isActive = (type) => Boolean(buffer?.isActive?.(type));
+  const multipleFaces = isActive(AI_PROCTORING_EVENTS.MULTIPLE_FACES);
+  const multiplePeople = multipleFaces || isActive(AI_PROCTORING_EVENTS.MULTIPLE_PERSONS);
+  const faceIssue = multipleFaces
+    ? 'multiple'
+    : isActive(AI_PROCTORING_EVENTS.NO_FACE)
+      ? 'missing'
+      : isActive(AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME)
+        ? 'out_of_frame'
+        : 'ok';
+  const faceAvailable = availability.face !== false;
+  const objectAvailable = availability.object !== false;
+
   return {
     camera: 'ok',
-    face: multipleFacesVisible
-      ? 'multiple'
-      : noFaceVisible
-        ? 'missing'
-        : faceOutVisible
-          ? 'out_of_frame'
-          : 'ok',
-    eye: lookingAwayVisible ? 'looking_away' : 'ok',
-    mobile: result.mobileAvailable === false
-      ? 'unknown'
-      : (result.mobileVisible ?? result.mobileDetected)
-        ? 'detected'
-        : 'ok',
-    person: multiplePersonsVisible
-      ? 'multiple'
-      : personCount === 0 && noFaceVisible
-        ? 'missing'
-        : 'ok',
+    face: faceIssue === 'ok' && !faceAvailable ? 'unknown' : faceIssue,
+    eye: settings.detectLookingAway === true && isActive(AI_PROCTORING_EVENTS.LOOKING_AWAY) ? 'looking_away' : 'ok',
+    mobile: !objectAvailable ? 'unknown' : isActive(AI_PROCTORING_EVENTS.MOBILE_DETECTED) ? 'detected' : 'ok',
+    person: multiplePeople ? 'multiple' : !faceAvailable && !objectAvailable ? 'unknown' : 'ok',
   };
 }
 
@@ -264,19 +258,22 @@ export class ProctoringManager {
     this.faceDetectorAvailable = false;
     this.objectDetectorAvailable = false;
     this.faceFallbackAvailable = false;
+    this.objectBackend = null;
     this.detectionTickInProgress = false;
+    this.tickFailureCount = 0;
     this.confirmedViolationCount = 0;
-    this.lastMobileSeenAt = 0;
-    this.lastMobileConfidence = 0;
-    this.mobileDetectionStreak = 0;
-    this.mobileConfirmedUntil = 0;
     this.lastObjectDetectionAt = 0;
     this.lastObjectResult = null;
-    this.objectDetectionSamples = 0;
     this.lastVideoPlaybackRetryAt = 0;
     this.modelRetryTimeoutId = null;
     this.modelRetryAttempt = 0;
     this.modelLoadInProgress = false;
+    this.paused = false;
+    this.stopped = false;
+    this.cameraStarting = false;
+    // Bumped by stop(); async work from an older lifecycle is discarded.
+    this.generation = 0;
+    this.groupLastEmitAt = new Map();
     this.handleOnline = () => this.scheduleModelRetry(0);
     this.violationBuffer = new ViolationBuffer({
       cooldownMs: getCooldownMs(this.settings),
@@ -284,7 +281,8 @@ export class ProctoringManager {
   }
 
   async start() {
-    if (this.status.running) return this.getStatus();
+    if (this.status.running || this.cameraStarting) return this.getStatus();
+    this.stopped = false;
 
     if (!this.settings.enabled) {
       this.updateStatus({
@@ -294,23 +292,30 @@ export class ProctoringManager {
       return this.getStatus();
     }
 
+    this.cameraStarting = true;
     try {
       await this.startCamera();
+      // replaceStream() may have swapped the stream while it was attaching.
+      if (this.stream && this.videoElement && this.videoElement.srcObject !== this.stream) {
+        await attachStreamToVideo(this.videoElement, this.stream);
+      }
     } catch (error) {
       this.stopDetectionLoop();
       this.stopCamera();
       this.handleCameraError(error);
       return this.getStatus();
+    } finally {
+      this.cameraStarting = false;
     }
+    if (this.stopped) return this.getStatus();
 
-    // Camera monitoring is live immediately. Model downloads can take several
-    // seconds, so expose the running state and keep the footer responsive while
-    // face and object detection initialize in parallel.
+    // Camera monitoring is live immediately; models load in parallel.
     this.updateStatus({
       running: true,
       camera: 'ok',
       error: null,
     });
+    const generation = this.generation;
     this.startDetectionLoop();
     globalThis.addEventListener?.('online', this.handleOnline);
     await this.runDetectionTick();
@@ -322,11 +327,10 @@ export class ProctoringManager {
       return this.getStatus();
     }
 
-    // The manager may have been stopped while an external model was loading.
-    if (!this.status.running) return this.getStatus();
+    // The manager may have been stopped while a model was loading.
+    if (!this.isCurrent(generation)) return this.getStatus();
 
     this.updateStatus({
-      camera: 'ok',
       error: this.getModelAvailabilityError(),
     });
     await this.runDetectionTick();
@@ -335,19 +339,19 @@ export class ProctoringManager {
   }
 
   stop() {
+    this.generation += 1;
+    this.stopped = true;
     this.stopDetectionLoop();
     this.stopCamera();
     this.stopModels();
     this.violationBuffer.clear();
+    this.groupLastEmitAt.clear();
     this.confirmedViolationCount = 0;
-    this.lastMobileSeenAt = 0;
-    this.lastMobileConfidence = 0;
-    this.mobileDetectionStreak = 0;
-    this.mobileConfirmedUntil = 0;
     this.lastObjectDetectionAt = 0;
     this.lastObjectResult = null;
-    this.objectDetectionSamples = 0;
     this.lastVideoPlaybackRetryAt = 0;
+    this.tickFailureCount = 0;
+    this.modelLoadInProgress = false;
     this.clearModelRetry();
     globalThis.removeEventListener?.('online', this.handleOnline);
     this.updateStatus({
@@ -362,6 +366,55 @@ export class ProctoringManager {
       error: null,
     });
     this.listeners.clear();
+  }
+
+  // Swap the camera stream (e.g. after the page re-acquires the camera) while
+  // keeping models and the detection loop. A stopped-by-error manager restarts.
+  async replaceStream(stream) {
+    const next = stream || null;
+    if (next !== this.stream) {
+      if (this.ownsStream && this.stream) stopCameraStream(this.stream);
+      this.stream = next;
+      this.ownsStream = false;
+    }
+    this.lastVideoPlaybackRetryAt = 0;
+    this.lastObjectDetectionAt = 0;
+    this.lastObjectResult = null;
+    // The outage ends open episodes silently; a quick return is the same episode.
+    this.violationBuffer.suspend(Date.now(), { exceptTypes: [AI_PROCTORING_EVENTS.CAMERA_BLOCKED] });
+
+    if (!this.status.running && !this.cameraStarting) {
+      if (next && !this.stopped && this.settings.enabled) return this.start();
+      return this.getStatus();
+    }
+
+    const generation = this.generation;
+    if (next) await attachStreamToVideo(this.videoElement, next);
+    if (this.isCurrent(generation)) await this.runDetectionTick();
+    return this.getStatus();
+  }
+
+  // While paused (re-verification, violation screen) detection may continue,
+  // but nothing is confirmed or emitted and every episode starts over.
+  setPaused(paused) {
+    const next = paused === true;
+    if (next === this.paused) return this.getStatus();
+    this.paused = next;
+    this.violationBuffer.clear();
+    this.groupLastEmitAt.clear();
+    if (this.status.running) {
+      this.updateStatus(getStatusFromBuffer(
+        { cameraActive: getCameraActive(this.stream) },
+        this.violationBuffer,
+        this.settings,
+        this.getAvailability(),
+      ));
+    }
+    return this.getStatus();
+  }
+
+  isPaused() {
+    return this.paused;
   }
 
   getStatus() {
@@ -379,29 +432,43 @@ export class ProctoringManager {
     this.listeners.delete(listener);
   }
 
+  isCurrent(generation) {
+    return this.status.running && generation === this.generation;
+  }
+
   async loadModels() {
     if (this.modelLoadInProgress) return false;
     this.modelLoadInProgress = true;
+    const generation = this.generation;
+    const firstAttempt = this.modelRetryAttempt === 0;
+    const superseded = (current, detector) => generation !== this.generation || current !== detector;
+
     const loadFaceModel = async () => {
       if (!shouldUseFaceDetection(this.settings) || this.faceDetectorAvailable) return;
-      this.updateStatus({ faceModel: 'loading' });
+      if (firstAttempt) this.updateStatus({ faceModel: 'loading' });
+      const detector = this.faceDetector || createFaceDetector({
+        mediaPipe: { outputFaceBlendshapes: this.settings.detectLookingAway === true },
+      });
+      this.faceDetector = detector;
       try {
-        this.faceDetector = this.faceDetector || createFaceDetector();
-        await this.faceDetector.load();
+        await detector.load();
+        if (superseded(this.faceDetector, detector)) {
+          detector.dispose?.();
+          return;
+        }
         this.faceDetectorAvailable = true;
         this.updateStatus({ faceModel: 'ready' });
       } catch (error) {
+        detector.dispose?.();
+        if (superseded(this.faceDetector, detector)) return;
         this.faceDetectorAvailable = false;
-        this.faceDetector?.dispose?.();
         this.faceDetector = null;
-        const fallbackReady = this.setupFaceFallback();
+        const fallbackReady = this.faceFallbackAvailable || this.setupFaceFallback();
         this.faceFallbackAvailable = fallbackReady;
         this.updateStatus({
           faceModel: fallbackReady ? 'fallback' : 'unavailable',
-          face: fallbackReady ? 'unknown' : 'unknown',
-          eye: 'unavailable',
           error: fallbackReady
-            ? 'Face AI model unavailable. Basic face fallback is active; eye movement detection is unavailable.'
+            ? 'Face AI model unavailable. Basic face fallback is active.'
             : (error?.message || 'Face model failed to load'),
         });
         if (this.onError) this.safeCall(this.onError, error);
@@ -410,20 +477,25 @@ export class ProctoringManager {
 
     const loadObjectModel = async () => {
       if (!shouldUseObjectDetection(this.settings) || this.objectDetectorAvailable) return;
-      this.updateStatus({ objectModel: 'loading' });
+      if (firstAttempt) this.updateStatus({ objectModel: 'loading' });
+      const detector = this.objectDetector || createObjectDetector();
+      this.objectDetector = detector;
       try {
-        this.objectDetector = this.objectDetector || createObjectDetector();
-        await this.objectDetector.load();
+        await detector.load();
+        if (superseded(this.objectDetector, detector)) {
+          detector.dispose?.();
+          return;
+        }
         this.objectDetectorAvailable = true;
+        this.objectBackend = detector.backend || null;
         this.updateStatus({ objectModel: 'ready' });
       } catch (error) {
+        detector.dispose?.();
+        if (superseded(this.objectDetector, detector)) return;
         this.objectDetectorAvailable = false;
-        this.objectDetector?.dispose?.();
         this.objectDetector = null;
         this.updateStatus({
           objectModel: 'unavailable',
-          mobile: 'unknown',
-          person: 'unknown',
           error: error?.message || 'Object model failed to load',
         });
         if (this.onError) this.safeCall(this.onError, error);
@@ -432,6 +504,7 @@ export class ProctoringManager {
 
     try {
       await Promise.all([loadFaceModel(), loadObjectModel()]);
+      if (generation !== this.generation) return false;
       this.modelsLoaded = this.faceDetectorAvailable || this.objectDetectorAvailable || this.faceFallbackAvailable;
       if (this.hasUnavailableRequiredModel()) this.scheduleModelRetry();
       else {
@@ -440,7 +513,7 @@ export class ProctoringManager {
       }
       return this.modelsLoaded;
     } finally {
-      this.modelLoadInProgress = false;
+      if (generation === this.generation) this.modelLoadInProgress = false;
     }
   }
 
@@ -500,90 +573,99 @@ export class ProctoringManager {
     this.detectionIntervalId = null;
   }
 
+  getAvailability() {
+    return {
+      face: !shouldUseFaceDetection(this.settings) || this.faceDetectorAvailable || this.faceFallbackAvailable,
+      object: !shouldUseObjectDetection(this.settings) || this.objectDetectorAvailable,
+    };
+  }
+
   async runDetectionTick() {
     if (!this.status.running) return null;
     if (this.detectionTickInProgress) return null;
 
     this.detectionTickInProgress = true;
+    const generation = this.generation;
     try {
       const timestamp = Date.now();
       await this.ensureVideoPlayback(timestamp);
-      const cameraActive = getCameraActive(this.videoElement, this.stream);
+      if (!this.isCurrent(generation)) return null;
+
+      const cameraActive = getCameraActive(this.stream);
+      const cameraMuteGrace = !cameraActive && isCameraMuteWithinGrace(this.stream, timestamp);
+      // A paused element only repeats its last frame: not a fresh sample.
+      const canSample = cameraActive && isVideoPlaying(this.videoElement);
+      const useFace = shouldUseFaceDetection(this.settings);
       let faceResult = null;
-      let objectResult = null;
 
-      if (cameraActive && this.faceDetectorAvailable && this.faceDetector && shouldUseFaceDetection(this.settings)) {
+      if (canSample && useFace && this.faceDetectorAvailable && this.faceDetector) {
         faceResult = this.faceDetector.detect(this.videoElement, timestamp);
-      } else if (cameraActive && this.faceFallbackAvailable && shouldUseFaceDetection(this.settings)) {
+      } else if (canSample && useFace && this.faceFallbackAvailable) {
         faceResult = await this.detectWithFaceFallback(this.videoElement);
+        if (!this.isCurrent(generation)) return null;
       }
+      const faceFresh = Boolean(faceResult) && !faceResult.metadata?.skipped;
 
-      if (cameraActive && this.shouldRunObjectDetection(timestamp)) {
-        objectResult = await this.objectDetector.detect(this.videoElement);
-        this.lastObjectResult = objectResult;
-        this.lastObjectDetectionAt = timestamp;
-        if (objectResult?.metadata?.skipped !== 'video_not_ready') {
-          this.objectDetectionSamples += 1;
+      let objectResult = this.lastObjectResult;
+      let objectFresh = false;
+      if (canSample && this.shouldRunObjectDetection(timestamp)) {
+        await yieldToMain();
+        if (!this.isCurrent(generation) || !this.objectDetector) return null;
+        const nextObjectResult = await this.objectDetector.detect(this.videoElement, {
+          scanAllCrops: this.violationBuffer.isPending(AI_PROCTORING_EVENTS.MOBILE_DETECTED),
+        });
+        if (!this.isCurrent(generation)) return null;
+        objectFresh = Boolean(nextObjectResult) && !nextObjectResult.metadata?.skipped;
+        if (objectFresh) {
+          this.lastObjectResult = nextObjectResult;
+          this.lastObjectDetectionAt = timestamp;
+          objectResult = nextObjectResult;
         }
-      } else {
-        objectResult = this.lastObjectResult;
       }
 
       const faceCount = Number(faceResult?.faceCount ?? 1);
       const faceConfidence = Number(faceResult?.confidence?.face ?? 0.9);
       const objectPersonCount = Number(objectResult?.personCount || 0);
-      const objectPersonConfidence = Number(objectResult?.confidence?.person || 0);
-      const personCount = Math.max(faceCount || 0, objectPersonCount || 0);
-      const personConfidence = Math.max(faceConfidence, objectPersonConfidence);
-      const rawMobileCandidate = Boolean(objectResult?.mobileDetected);
-      const mobileConfidence = Number(objectResult?.confidence?.mobile || 0);
-      if (rawMobileCandidate) {
-        this.mobileDetectionStreak += 1;
-      } else {
-        this.mobileDetectionStreak = 0;
-      }
-      const rawMobileDetected = this.mobileDetectionStreak >= MOBILE_CONFIRM_CONSECUTIVE_FRAMES;
-      if (rawMobileDetected) {
-        this.lastMobileSeenAt = timestamp;
-        this.lastMobileConfidence = mobileConfidence;
-        this.mobileConfirmedUntil = timestamp + MOBILE_STATUS_HOLD_MS;
-      }
-      const mobileVisible = rawMobileDetected || timestamp <= this.mobileConfirmedUntil;
       const result = createSafeDetectionResult({
         timestamp,
         cameraActive,
+        cameraMuteGrace,
         ...(faceResult || {}),
-        mobileDetected: rawMobileDetected,
-        mobileVisible,
+        faceCount,
+        mobileDetected: Boolean(objectResult?.mobileDetected),
         mobileAvailable: !shouldUseObjectDetection(this.settings) || this.objectDetectorAvailable,
-        personCount,
+        objectPersonCount,
+        personCount: Math.max(faceCount || 0, objectPersonCount),
+        fresh: { face: faceFresh, object: objectFresh },
         confidence: {
           face: faceConfidence,
-          mobile: Math.max(mobileConfidence, mobileVisible ? this.lastMobileConfidence : 0),
-          person: personConfidence,
+          mobile: Number(objectResult?.confidence?.mobile || 0),
+          person: Number(objectResult?.confidence?.person || 0),
           lookingAway: Number(faceResult?.confidence?.lookingAway || 0),
         },
         metadata: {
           face: faceResult?.metadata || null,
-          object: {
-            ...(objectResult?.metadata || {}),
-            mobileCandidate: rawMobileCandidate,
-            mobileDetectionStreak: this.mobileDetectionStreak,
-            mobileConfirmConsecutiveFrames: MOBILE_CONFIRM_CONSECUTIVE_FRAMES,
-          },
+          object: objectResult?.metadata || null,
+          objectBackend: this.objectBackend,
+          objectInferenceMs: this.objectDetector?.lastInferenceMs || 0,
         },
       });
 
+      this.tickFailureCount = 0;
       this.handleDetectionResult(result);
       return result;
     } catch (error) {
-      this.updateStatus({
-        error: error?.message || 'AI face detection failed',
-      });
-      if (this.onError) this.safeCall(this.onError, error);
+      this.tickFailureCount += 1;
+      // A single failed inference is noise; report only a persistent failure.
+      if (this.tickFailureCount === TICK_ERROR_THRESHOLD && this.isCurrent(generation)) {
+        this.updateStatus({
+          error: error?.message || 'AI detection failed',
+        });
+        if (this.onError) this.safeCall(this.onError, error);
+      }
       return null;
     } finally {
-      this.detectionTickInProgress = false;
+      if (generation === this.generation) this.detectionTickInProgress = false;
     }
   }
 
@@ -602,45 +684,67 @@ export class ProctoringManager {
   }
 
   handleDetectionResult(result = {}) {
-    const candidates = getViolationCandidates(result, this.settings);
-    const activeTypes = candidates.map((candidate) => candidate.type);
-    this.violationBuffer.resetExcept(activeTypes, {
-      preserveTypes: AI_PROCTORING_INTERMITTENT_EVENTS,
-    });
+    const timestamp = Number.isFinite(result.timestamp) ? result.timestamp : Date.now();
 
-    candidates.forEach((candidate) => {
-      const confirmed = this.violationBuffer.record(candidate.type, {
-        timestamp: result.timestamp,
-        confirmAfterMs: candidate.confirmAfterMs,
-        confirmCount: candidate.confirmCount,
-        repeatCount: candidate.repeatCount,
-        repeatWindowMs: candidate.repeatWindowMs,
-        confirmStrategy: candidate.confirmStrategy,
+    if (result.cameraActive === false) {
+      // No face/object rules run during an outage (no "no face" for a dead camera).
+      this.violationBuffer.suspend(timestamp, { exceptTypes: [AI_PROCTORING_EVENTS.CAMERA_BLOCKED] });
+    } else if (!this.paused) {
+      const rules = getActiveRules(this.settings);
+      rules.forEach((rule) => {
+        if (!result.fresh?.[rule.source]) return;
+        const confirmed = this.violationBuffer.observe(rule.type, rule.present(result), timestamp, rule);
+        if (!confirmed || !this.shouldEmitForGroup(rule, rules, confirmed, timestamp)) return;
+        this.emitConfirmedViolation(createCandidate(rule.type, result), confirmed);
       });
-      if (confirmed) this.emitConfirmedViolation(candidate, confirmed);
-    });
+    }
 
-      const statusPatch = getStatusFromDetectionResult(result, this.violationBuffer, this.settings);
-      this.updateStatus({
-        ...statusPatch,
+    this.updateStatus({
+      ...getStatusFromBuffer(result, this.violationBuffer, this.settings, this.getAvailability()),
       error: this.getModelAvailabilityError(),
     });
+  }
+
+  // Grouped events (multiple faces / multiple persons) share one warning per episode.
+  shouldEmitForGroup(rule, rules, confirmed, timestamp) {
+    if (!rule.group) return true;
+    const siblingActive = rules.some((other) => (
+      other.group === rule.group
+        && other.type !== rule.type
+        && this.violationBuffer.isActive(other.type)
+    ));
+    if (confirmed.reason === 'episode_start' && siblingActive) return false;
+    const lastGroupEmitAt = this.groupLastEmitAt.get(rule.group);
+    const quietMs = confirmed.reason === 'still_present'
+      ? this.violationBuffer.repeatAfterMs
+      : this.violationBuffer.cooldownMs;
+    if (lastGroupEmitAt !== undefined && timestamp - lastGroupEmitAt < quietMs) return false;
+    this.groupLastEmitAt.set(rule.group, timestamp);
+    return true;
+  }
+
+  getObjectDetectionIntervalMs() {
+    const cpuBackend = this.objectDetector?.backend === 'cpu';
+    const confirming = OBJECT_CONFIRM_EVENTS.some((type) => this.violationBuffer.isPending(type));
+    if (confirming && !this.paused) {
+      return cpuBackend ? CPU_MIN_OBJECT_INTERVAL_MS : OBJECT_CONFIRM_RESAMPLE_MS;
+    }
+
+    const measuredMs = Number(this.objectDetector?.lastInferenceMs || 0);
+    const steadyMs = Math.max(
+      OBJECT_STEADY_MIN_INTERVAL_MS,
+      measuredMs * OBJECT_INFERENCE_BUDGET_MULTIPLIER,
+      isLikelyMobileDevice() ? MOBILE_OBJECT_DETECTION_INTERVAL_MS : 0,
+    );
+    return cpuBackend ? Math.max(CPU_MIN_OBJECT_INTERVAL_MS, steadyMs) : steadyMs;
   }
 
   shouldRunObjectDetection(timestamp = Date.now()) {
     if (!this.objectDetectorAvailable || !this.objectDetector || !shouldUseObjectDetection(this.settings)) {
       return false;
     }
-
-    const baseIntervalMs = Math.max(500, Math.min(5000, Number(this.settings.detectionIntervalMs || 500)));
-    const warmingUp = this.objectDetectionSamples < OBJECT_DETECTION_WARMUP_SAMPLES;
-    const objectIntervalMs = warmingUp
-      ? OBJECT_DETECTION_WARMUP_INTERVAL_MS
-      : isLikelyMobileDevice()
-        ? Math.max(MOBILE_OBJECT_DETECTION_INTERVAL_MS, baseIntervalMs * OBJECT_DETECTION_INTERVAL_MULTIPLIER)
-        : Math.max(1200, baseIntervalMs * 2);
-
-    return !this.lastObjectDetectionAt || timestamp - this.lastObjectDetectionAt >= objectIntervalMs;
+    if (!this.lastObjectDetectionAt) return true;
+    return timestamp - this.lastObjectDetectionAt >= this.getObjectDetectionIntervalMs();
   }
 
   async ensureVideoPlayback(timestamp = Date.now()) {
@@ -671,14 +775,16 @@ export class ProctoringManager {
       ? Math.min(MODEL_RETRY_MAX_MS, MODEL_RETRY_BASE_MS * (2 ** this.modelRetryAttempt))
       : Math.max(0, delayMs);
     this.modelRetryAttempt = Math.min(4, this.modelRetryAttempt + 1);
+    const generation = this.generation;
     this.modelRetryTimeoutId = globalThis.setTimeout(async () => {
       this.modelRetryTimeoutId = null;
+      if (generation !== this.generation) return;
       if (!this.status.running || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
         this.scheduleModelRetry();
         return;
       }
       await this.loadModels();
-      if (this.status.running) await this.runDetectionTick();
+      if (this.isCurrent(generation)) await this.runDetectionTick();
     }, retryDelay);
   }
 
@@ -688,14 +794,15 @@ export class ProctoringManager {
     this.modelRetryTimeoutId = null;
   }
 
+  // System health only: shown at most as a neutral "AI limited" state.
   getModelAvailabilityError() {
     const faceRequired = shouldUseFaceDetection(this.settings);
     const objectRequired = shouldUseObjectDetection(this.settings);
     if (faceRequired && this.faceFallbackAvailable && this.status.faceModel === 'fallback') {
-      return 'Face AI model unavailable. Basic fallback is active; eye movement detection is unavailable.';
+      return 'Face AI model unavailable. Basic face fallback is active.';
     }
     if (faceRequired && this.faceDetectorAvailable === false && this.status.faceModel === 'unavailable') {
-      return 'AI face/eye model unavailable. Detection cannot run for face and eye checks.';
+      return 'AI face model unavailable. Face checks cannot run.';
     }
     if (objectRequired && this.objectDetectorAvailable === false && this.status.objectModel === 'unavailable') {
       return 'AI object model unavailable. Mobile and multiple-person detection cannot run.';
@@ -811,25 +918,18 @@ export class ProctoringManager {
     }
   }
 
+  // Model problems never stop the camera or the loop: liveness and the face
+  // fallback keep running while the model is retried.
   handleModelError(error) {
-    this.stopDetectionLoop();
-    this.stopCamera();
-    this.stopModels();
     this.updateStatus({
-      running: false,
-      camera: 'unknown',
-      face: 'unknown',
-      eye: 'unknown',
-      mobile: 'unknown',
-      person: 'unknown',
-      error: error?.message || 'AI face detection model failed to load',
+      error: error?.message || 'AI model failed to load',
     });
-
     if (this.onError) this.safeCall(this.onError, error);
+    this.scheduleModelRetry();
   }
 
   emitConfirmedViolation(candidate, confirmed) {
-    if (!this.onViolationConfirmed) return;
+    if (!this.onViolationConfirmed || this.paused) return;
     this.confirmedViolationCount += 1;
     const ignoreLimit = getIgnoreLimit(this.settings);
     const limitExceeded = this.confirmedViolationCount > ignoreLimit;
@@ -850,6 +950,8 @@ export class ProctoringManager {
         durationMs: confirmed.durationMs,
         cooldownUntil: confirmed.cooldownUntil,
         confirmedBy: confirmed.confirmedBy,
+        episode: confirmed.reason || 'episode_start',
+        objectBackend: this.objectBackend,
         ignoreLimit,
         confirmedViolationCount: this.confirmedViolationCount,
         limitExceeded,

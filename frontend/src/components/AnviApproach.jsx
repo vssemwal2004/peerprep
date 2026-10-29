@@ -36,31 +36,6 @@ export function AnviWordmark({ className = '', tone = 'dark' }) {
   );
 }
 
-export function AnviIdentity({ className = '', compact = false, subtitle = '', tone = 'dark' }) {
-  const subtitleTone = tone === 'light' ? 'text-slate-500' : 'text-violet-100/75';
-  if (tone === 'dark') {
-    return (
-      <div className={`flex min-w-0 items-center ${className}`}>
-        <span className="min-w-0">
-          <AnviWordmark tone="dark" className={compact ? 'h-8 w-28' : 'h-11 w-44'} />
-          {subtitle ? <span className={`mt-1 block truncate text-xs ${subtitleTone}`}>{subtitle}</span> : null}
-        </span>
-      </div>
-    );
-  }
-  return (
-    <div className={`flex min-w-0 items-center ${compact ? 'gap-2' : 'gap-3'} ${className}`}>
-      <span className={`flex shrink-0 items-center justify-center rounded-xl border ${compact ? 'h-9 w-9' : 'h-11 w-11'} ${tone === 'light' ? 'border-violet-100 bg-violet-50 shadow-sm' : 'border-cyan-300/20 bg-white/10 shadow-[0_0_24px_rgba(34,211,238,0.12)]'}`}>
-        <AnviMark tone="light" className={compact ? 'h-8 w-8' : 'h-10 w-10'} />
-      </span>
-      <span className="min-w-0">
-        <AnviWordmark tone={tone} className={compact ? 'text-lg' : 'text-2xl'} />
-        {subtitle ? <span className={`mt-1 block truncate text-xs ${subtitleTone}`}>{subtitle}</span> : null}
-      </span>
-    </div>
-  );
-}
-
 function chooseRandomApproach(approaches, previousIndex) {
   if (!approaches.length) return -1;
   if (approaches.length === 1) return 0;

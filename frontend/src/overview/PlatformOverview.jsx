@@ -168,7 +168,8 @@ export default function PlatformOverview() {
   const central = model.central;
   const firstName = user?.name?.split(' ')[0] || 'Admin';
   const problems = central?.content.problems;
-  const problemTotal = problems ? problems.byDifficulty.reduce((total, row) => total + row.count, 0) : 0;
+  const publishedProblemTotal = problems ? problems.byDifficulty.reduce((total, row) => total + row.count, 0) : 0;
+  const problemTotal = Number(problems?.published || 0) + Number(problems?.draft || 0);
 
   const kpis = [
     { label: 'Total students', value: formatNumber(model.students), helper: `${formatNumber(model.mainStudents)} main · ${formatNumber(model.universityStudents)} universities`, Icon: Users, color: '#0284c7', to: '/admin/students' },
@@ -177,10 +178,10 @@ export default function PlatformOverview() {
     { label: 'Coding submissions', value: formatNumber(model.codingSubmissions), helper: ws?.coding?.acceptanceRate != null ? `${Math.round(ws.coding.acceptanceRate)}% accepted · 14 days` : 'Last 14 days', Icon: Code2, color: MODULE_META.coding.color, trend: model.trend.map((day) => day.coding), delta: weekChange(model.trend.map((day) => day.coding)), to: '/admin/analysis?source=coding' },
     { label: 'Average Prep Score', value: ws?.prepScore?.average ?? '—', helper: `${formatNumber(ws?.prepScore?.scored)} scored · ${central?.prepScore.version ? `policy v${central.prepScore.version}` : 'default policy'}`, Icon: Gauge, color: '#0ea5e9', to: '/admin/analysis' },
     {
-      label: 'Coding problems', value: formatNumber(problems?.published), helper: problems?.draft ? `${formatNumber(problems.draft)} drafts` : 'All published', Icon: FileQuestion, color: '#d97706', to: '/admin/library/coding/problems',
+      label: 'Coding problems', value: formatNumber(problemTotal), helper: problems ? `${formatNumber(problems.published)} published · ${formatNumber(problems.draft)} drafts` : 'Shared catalogue', Icon: FileQuestion, color: '#d97706', to: '/admin/library/coding/problems',
       footer: problems ? (
         <div className="flex h-2 overflow-hidden rounded-full" aria-label="Problems by difficulty">
-          {problems.byDifficulty.map((row) => <span key={row.difficulty} title={`${titleCase(row.difficulty)}: ${formatNumber(row.count)}`} style={{ width: `${percent(row.count, problemTotal)}%`, backgroundColor: DIFFICULTY_COLORS[row.difficulty] }} />)}
+          {problems.byDifficulty.map((row) => <span key={row.difficulty} title={`${titleCase(row.difficulty)}: ${formatNumber(row.count)}`} style={{ width: `${percent(row.count, publishedProblemTotal)}%`, backgroundColor: DIFFICULTY_COLORS[row.difficulty] }} />)}
         </div>
       ) : null,
     },

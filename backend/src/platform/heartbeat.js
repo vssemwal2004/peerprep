@@ -16,12 +16,15 @@ export function startUniversityHeartbeat() {
       void syncUniversityGlobalRanking().catch(() => console.warn('[platform] Global ranking sync unavailable')).finally(() => { rankingBusy = false; });
     }
     try {
-      const [students, coordinators, submissions, interviewSessions] = await Promise.all([
+      // ANVI attempts, plus anything left in the legacy interview-service collection.
+      const [students, coordinators, submissions, anviAttempts, legacySessions] = await Promise.all([
         User.countDocuments({ role: 'student' }),
         User.countDocuments({ role: 'coordinator' }),
         AssessmentSubmission.countDocuments(),
+        mongoose.connection.collection('anviattempts').countDocuments(),
         mongoose.connection.collection('aiinterviewsessions').countDocuments(),
       ]);
+      const interviewSessions = anviAttempts + legacySessions;
       await controlRequest('heartbeat', { method: 'POST', body: { usage: { students, coordinators, submissions, interviewSessions } } });
     } catch (error) { console.warn('[platform] Heartbeat failed:', error.message); }
   };

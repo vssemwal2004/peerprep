@@ -70,6 +70,20 @@ const audioTypes = [
   "audio/mp4",
   "audio/x-m4a",
 ];
+const fallbackGestures = [
+  { id: "idle", label: "Idle", description: "Calm loop while waiting." },
+  { id: "idle_smile", label: "Idle · smile", description: "Warm alternate idle loop." },
+  { id: "listening", label: "Listening", description: "While the candidate answers." },
+  { id: "listening_nod", label: "Listening · nod", description: "Gentle acknowledgement while listening." },
+  { id: "thinking", label: "Thinking", description: "Between hearing and replying." },
+  { id: "thinking_side", label: "Thinking · reflective", description: "Reflective alternate thinking loop." },
+  { id: "speaking_neutral", label: "Speaking · neutral", description: "Main speaking loop." },
+  { id: "speaking_explain", label: "Speaking · explaining", description: "Explanatory hand gesture." },
+  { id: "speaking_emphasis", label: "Speaking · emphasis", description: "Confident emphasis gesture." },
+  { id: "speaking_encourage", label: "Speaking · encouraging", description: "Warm supportive gesture." },
+  { id: "speaking_question", label: "Speaking · question", description: "Curious professional gesture." },
+  { id: "speaking_closing", label: "Speaking · closing", description: "Calm concluding gesture." },
+];
 
 function EditorSession({ initial, capabilities, onReload }) {
   const navigate = useNavigate(),
@@ -401,6 +415,24 @@ function EditorSession({ initial, capabilities, onReload }) {
         setSuggestion({ text: result.text, action });
       },
     );
+  const uploadGesture = (gesture, file) => {
+    if (!file || locked) return;
+    const mime = file.type.split(";")[0];
+    if (!["video/mp4", "video/webm"].includes(mime)) {
+      setError("Choose an MP4 or WebM gesture video.");
+      return;
+    }
+    if (file.size > maxUpload * 1024 * 1024) {
+      setError(`Gesture clips must be ${maxUpload} MB or smaller.`);
+      return;
+    }
+    perform(`Uploading ${gesture.replaceAll("_", " ")}…`, async () => {
+      const saved = await persist();
+      const nextDoc = applyDoc(await avatarApi.uploadGesture(saved._id, saved.revision, gesture, file));
+      setMessage(`${file.name} is ready for live interviews.`);
+      canonical(nextDoc, 2);
+    });
+  };
   const goBack = () => {
     if (busy || recording) return;
     if (step > 0) {
@@ -507,7 +539,7 @@ function EditorSession({ initial, capabilities, onReload }) {
         </button>
       )}
       {message && (
-        <p role="status" className="text-xs text-emerald-700">
+        <p role="status" className="text-xs text-emerald-700 dark:text-emerald-300">
           {message}
         </p>
       )}
@@ -526,7 +558,7 @@ function EditorSession({ initial, capabilities, onReload }) {
                     <TextInput
                       maxLength={120}
                       value={data.name}
-                      placeholder="e.g. Annu"
+                      placeholder="e.g. Anvi"
                       onChange={(event) => set("name", event.target.value)}
                     />
                   </Field>
@@ -553,7 +585,7 @@ function EditorSession({ initial, capabilities, onReload }) {
                   {sourceInput}
                 </div>
                 {source && (
-                  <p className="text-xs text-sky-700">
+                  <p className="text-xs text-sky-700 dark:text-sky-300">
                     {source.name} · Pending upload when you save
                   </p>
                 )}
@@ -563,7 +595,7 @@ function EditorSession({ initial, capabilities, onReload }) {
                   </p>
                 )}
                 {!availableStorage && (
-                  <p className="text-xs text-amber-700">
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
                     {capabilities.storage?.reason ||
                       "Media storage is not configured. Avatar details can still be saved as a draft."}
                   </p>
@@ -611,7 +643,7 @@ function EditorSession({ initial, capabilities, onReload }) {
                   </Field>
                   <p className="text-xs leading-relaxed text-slate-500">Each language has its own introduction video. Translate and review the script, or provide a recording in the selected language.</p>
                   {data.language === "hinglish" && (
-                    <p className="text-xs text-amber-700">
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
                       Hinglish is experimental. Upload or record your own audio
                       for this language.
                     </p>
@@ -629,7 +661,7 @@ function EditorSession({ initial, capabilities, onReload }) {
                       className="min-h-36 leading-relaxed"
                       maxLength={2000}
                       value={data.introduction}
-                      placeholder="Hello, I’m Annu. I’ll guide you through today’s practice interview…"
+                      placeholder="Hello, I’m Anvi. I’ll guide you through today’s practice interview…"
                       onChange={(event) =>
                         set("introduction", event.target.value)
                       }
@@ -783,6 +815,7 @@ function EditorSession({ initial, capabilities, onReload }) {
             </div>
           )}
           {step === 2 && (
+            <div className="space-y-4">
             <Panel title="Review & generate">
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -859,7 +892,7 @@ function EditorSession({ initial, capabilities, onReload }) {
                 {ready && (
                   <p
                     role="status"
-                    className="flex items-center gap-2 text-sm text-emerald-700"
+                    className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300"
                   >
                     <CheckCircle2 size={17} />
                     Your latest preview is ready.
@@ -871,6 +904,38 @@ function EditorSession({ initial, capabilities, onReload }) {
                 </p>
               </div>
             </Panel>
+            <Panel title="Live interview gesture clips">
+              <div className="space-y-4">
+                <p className="text-sm leading-relaxed text-slate-600 dark:text-gray-300">
+                  Upload short, silent, seamless MP4 or WebM loops. ANVI switches them automatically as she listens, thinks and speaks. Idle and Speaking · neutral are required before this avatar can be enabled for an interview.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(capabilities.gestures?.length ? capabilities.gestures : fallbackGestures).map((gesture) => {
+                    const clip = doc.gestures?.[gesture.id];
+                    const required = ["idle", "speaking_neutral"].includes(gesture.id);
+                    return (
+                      <div key={gesture.id} className="rounded-xl border border-slate-200 p-3 dark:border-gray-700">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h3 className="text-sm font-semibold">{gesture.label}{required ? " *" : ""}</h3>
+                            <p className="mt-0.5 text-xs text-slate-500">{gesture.description}</p>
+                          </div>
+                          {clip && <CheckCircle2 size={17} className="shrink-0 text-emerald-600" aria-label="Uploaded" />}
+                        </div>
+                        {clip?.url && <video muted loop playsInline controls preload="metadata" src={clip.url} className="mt-3 aspect-video w-full rounded-lg bg-slate-950 object-cover" />}
+                        <label className={`${secondaryClass} mt-3 cursor-pointer ${locked || !availableStorage ? "pointer-events-none opacity-50" : ""}`}>
+                          <Film size={14} />{clip ? "Replace clip" : "Upload clip"}
+                          <input type="file" className="sr-only" accept="video/mp4,video/webm" disabled={locked || !availableStorage}
+                            onChange={(event) => { uploadGesture(gesture.id, event.target.files?.[0]); event.target.value = ""; }} />
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-slate-500">These reusable clips add no per-response video generation charge. Gemini Live audio continues separately.</p>
+              </div>
+            </Panel>
+            </div>
           )}
         </div>
         <aside className="space-y-4 lg:sticky lg:top-5">
@@ -914,7 +979,7 @@ function EditorSession({ initial, capabilities, onReload }) {
             </div>
             {!ready && doc.assets?.preview?.url && (
               <div className="mt-3 border-t border-slate-100 pt-3 dark:border-gray-800">
-                <p className="mb-2 text-xs text-amber-700">
+                <p className="mb-2 text-xs text-amber-700 dark:text-amber-300">
                   Previous version — regenerate after your changes.
                 </p>
                 <button
@@ -934,7 +999,7 @@ function EditorSession({ initial, capabilities, onReload }) {
               {[[Boolean(data.name.trim() && data.consent && displayedSource), "Identity & source", 0], [Boolean(data.introduction.trim() && (data.speechMode === "tts" ? ttsSupported : (audio || doc.assets?.audio) && !audioMismatch)), "Voice & introduction", 1], [ready, "Generated preview", 2]].map(([complete, label, index]) => <li key={label} className="flex items-center gap-2 text-xs"><CheckCircle2 size={15} className={complete ? "text-emerald-600" : "text-slate-300"} /><button type="button" disabled={index > step || Boolean(busy || recording)} onClick={() => setStep(index)} className="text-left text-slate-600 enabled:hover:text-sky-700 dark:text-gray-300">{label}</button><span className="ml-auto text-[10px] text-slate-400">{complete ? "Done" : "Pending"}</span></li>)}
             </ul>
           </div>
-          <p className="px-1 text-[11px] leading-relaxed text-slate-500">A generated introduction, not a live interview. Facial animation depends on the source and renderer; body gestures are not configured here.</p>
+          <p className="px-1 text-[11px] leading-relaxed text-slate-500">The generated introduction is separate from live interviews. Add the reusable gesture clips in the final step to enable this avatar in an ANVI interview.</p>
         </aside>
       </div>
       <footer className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">

@@ -23,9 +23,11 @@ import { isCompleteTreeInserterProblem, prepareCompleteTreeInserterSource } from
 import { pendingProvidedRule, preparePendingProvidedSource } from './pendingProvidedApiRunnerService.js';
 import { standaloneProvidedRule, prepareStandaloneProvidedSource } from './standaloneProvidedApiRunnerService.js';
 import { linkedListRewireRule, prepareLinkedListRewireSource } from './linkedListRewireRunnerService.js';
+import { generateFunctionRunnerTemplate } from './functionRunnerTemplateService.js';
+import { USER_CODE_PLACEHOLDER } from './functionRunnerConstants.js';
 
 const PYTHON_ADAPTER_MARKER = '# PeerPrep generated function adapter. Keep this section unchanged.';
-export const USER_CODE_PLACEHOLDER = '{{USER_CODE}}';
+export { USER_CODE_PLACEHOLDER };
 
 function asTemplateObject(codeTemplates) {
   if (!codeTemplates) return {};
@@ -175,6 +177,18 @@ export function prepareFunctionSourceForExecution(problem, languageKey, submitte
     }
     return materializeFunctionInputPlaceholders(
       [injectableSource.trim(), configuredHarness.trim()].filter(Boolean).join('\n\n'),
+      testInput,
+      runtimeContract,
+    );
+  }
+
+  // Legacy/imported function questions may have only the visible function
+  // template. Generate the private stdin adapter on demand so C/C++/Java do
+  // not reach the compiler without headers and a main entry point.
+  const generatedHarness = generateFunctionRunnerTemplate(normalizedLanguage, storedContract, source);
+  if (generatedHarness.trim()) {
+    return materializeFunctionInputPlaceholders(
+      generatedHarness.split(USER_CODE_PLACEHOLDER).join(injectableSource),
       testInput,
       runtimeContract,
     );

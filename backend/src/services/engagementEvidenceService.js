@@ -11,12 +11,15 @@ import Pair from '../models/Pair.js';
 import { EngagementActivity } from '../models/AdaptiveEngagement.js';
 import { buildCurriculumTopicMap, getSharedCodingCatalog, publicProblemMatch, publicCodingProblemStages, learningResumeItem } from './studentDashboardService.js';
 import { learningSemesters, sharedAssessments } from '../platform/sharedContent.js';
-import { interviewServiceConfigured } from './interviewServiceClient.js';
-import { createInterviewServiceToken } from './interviewServiceAuth.js';
-import { interviewServiceUrl } from './interviewServiceConfig.js';
 import { dayKey } from './adaptiveEngagementRules.js';
 
 const aggregate = (model, pipeline) => model.aggregate(pipeline).option({ maxTimeMS: 8000 });
+// Loaded lazily: the ANVI service records receipts through a module that imports this one.
+// A slow or failing list only drops interview tasks from the mission; it never fails it.
+const studentInterviews = (student) => Promise.race([
+  import('../modules/anviInterview/anviInterview.service.js').then((module) => module.listStudentInterviews(student)),
+  new Promise((resolve) => setTimeout(resolve, 5000, []).unref()),
+]).catch(() => []);
 const id = (value) => new mongoose.Types.ObjectId(String(value));
 const scoreFor = (difficulty) => ({ Easy: 35, Medium: 65, Hard: 95 })[difficulty] || 35;
 
@@ -40,9 +43,7 @@ export async function loadEvidenceAndCandidates(scope, student, domains, now, pr
     has('assessments') ? Promise.all([Assessment.find({ lifecycleStatus: { $ne: 'draft' }, isVisible: { $ne: false }, $or: [{ targetType: 'all' }, { assignedStudents: student._id }] }).select('_id title targetType assignedStudents audienceType startTime endTime duration manuallyCompletedAt').maxTimeMS(8000).lean(), sharedAssessments()]).then(([a, b]) => [...a, ...b]) : [],
     has('assessments') ? AssessmentSubmission.find({ studentId: student._id }).select('assessmentId status evaluationStatus submittedAt score maxMarks').maxTimeMS(8000).lean() : [],
     has('events') ? Pair.find({ interviewee: student._id, status: { $in: ['scheduled', 'completed'] } }).select('_id event interviewer status finalConfirmedTime scheduledAt').maxTimeMS(8000).lean() : [],
-    has('interviews') && interviewServiceConfigured() ? fetch(new URL('/internal/ai-interviews', interviewServiceUrl()), {
-      headers: { Authorization: `Bearer ${createInterviewServiceToken(student._id)}` }, signal: AbortSignal.timeout(5000),
-    }).then(async (response) => response.ok ? await response.json() : []).catch(() => []) : [],
+    has('interviews') ? studentInterviews(student) : [],
   ]);
   const topics = buildCurriculumTopicMap(semesters, student);
   const sharedMap = new Map(shared.map((row) => [String(row._id), row]));

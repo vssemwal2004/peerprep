@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X, Layers, LayoutList, Target, Timer, Zap, ShieldAlert, BookOpen, ChevronDown, ChevronUp, Code2, CheckCircle2, XCircle, LoaderCircle } from 'lucide-react';
-import { formatDateTime, formatDuration } from './ReportComponents';
+import { EvaluationChip, formatDateTime, formatDuration } from './ReportComponents';
 import { DonutChart, HorizontalProgress } from './ReportCharts';
 import AIProctoringReportPanel from '../../features/assessment/admin/components/AIProctoringReportPanel';
 import { assessmentEvaluationLabel } from '../../utils/assessmentEvaluation';
@@ -203,7 +203,10 @@ function SecurityInfo({ info }) {
 
 export default function ReportDetailDrawer({ student, loading, data, onClose, openViolationReport }) {
   const [tab, setTab] = useState('overview'); // overview | questions | security
-  const evaluationLabel = assessmentEvaluationLabel(data);
+  // The roster row knows the attempt status even when the detail payload omits it.
+  const attemptStatus = data?.status || student?.status;
+  const evaluationLabel = assessmentEvaluationLabel(data ? { ...data, status: attemptStatus } : null);
+  const unscored = Boolean(evaluationLabel) || ['in_progress', 'not_started'].includes(attemptStatus) || data?.score == null;
   if (!student) return null;
 
   const tabs = [
@@ -273,18 +276,20 @@ export default function ReportDetailDrawer({ student, loading, data, onClose, op
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-gray-700 dark:bg-gray-800">
                     <div className="flex flex-col items-center gap-5 sm:flex-row sm:justify-between">
                       <div className="flex items-center gap-4">
-                        {!evaluationLabel && <DonutChart value={data.score || 0} total={data.totalMarks || 100} size={80} stroke={6} />}
+                        {!unscored && <DonutChart value={data.score || 0} total={data.totalMarks || 100} size={80} stroke={6} />}
                         <div>
-                          <div className="text-3xl font-bold text-slate-900 dark:text-white">{evaluationLabel || `${data.score ?? 0} / ${data.totalMarks || 100}`}</div>
-                          <div className="text-xs text-slate-500 dark:text-gray-400">Final Score</div>
+                          <div className="text-3xl font-bold text-slate-900 dark:text-white">
+                            {evaluationLabel ? <EvaluationChip label={evaluationLabel} /> : unscored ? '—' : `${data.score} / ${data.totalMarks || 100}`}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500 dark:text-gray-400">{attemptStatus === 'in_progress' ? 'Attempt in progress' : 'Final Score'}</div>
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                         {[
-                          { label: 'Accuracy', value: evaluationLabel ? 'Not available' : `${data.accuracy ?? 0}%`, icon: Target, color: 'text-sky-600' },
+                          { label: 'Accuracy', value: unscored || data.accuracy == null ? '—' : `${data.accuracy}%`, icon: Target, color: 'text-sky-600' },
                           { label: 'Time', value: formatDuration(data.timeTakenSec), icon: Timer, color: 'text-amber-600' },
-                          { label: 'Correct', value: evaluationLabel ? 'Not available' : data.correctAnswers || 0, icon: Zap, color: 'text-emerald-600' },
-                          { label: 'Wrong', value: evaluationLabel ? 'Not available' : data.wrongAnswers || 0, icon: X, color: 'text-rose-600' },
+                          { label: 'Correct', value: unscored ? '—' : data.correctAnswers || 0, icon: Zap, color: 'text-emerald-600' },
+                          { label: 'Wrong', value: unscored ? '—' : data.wrongAnswers || 0, icon: X, color: 'text-rose-600' },
                         ].map((stat) => (
                           <div key={stat.label} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center dark:border-gray-700 dark:bg-gray-900">
                             <stat.icon className={`mx-auto h-3.5 w-3.5 ${stat.color}`} />

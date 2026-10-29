@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
 import { returnToLogin, SESSION_EXPIRED_MESSAGE } from '../auth/sessionNotice';
+import { firstStudentFeaturePath } from './studentFeatureAccess';
 
 export default function ChangePassword() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -35,7 +36,7 @@ export default function ChangePassword() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const isAssessmentOnly = user?.accessScope === 'assessment_only';
-  const homePath = isAssessmentOnly ? '/student/assessments' : '/student/dashboard';
+  const homePath = firstStudentFeaturePath(user);
 
   useEffect(() => {
     setPasswordStrength({

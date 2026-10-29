@@ -15,8 +15,12 @@ export const adminAuthoringOnly = (req, res, next) =>
           code: "FORBIDDEN",
           error: "AI interview authoring is available to administrators only.",
         });
-export function createAuthoringRouter(authenticate = requireAuth) {
+// deps.gemini injects a fake Gemini client in tests; production builds its client per request.
+export function createAuthoringRouter(authenticate = requireAuth, deps = {}) {
   const router = Router();
+  const generateQuestions = deps.gemini
+    ? controller.createGenerateQuestions({ gemini: deps.gemini })
+    : controller.generateQuestions;
   router.use(asyncRoute(authenticate), adminAuthoringOnly);
   router.get("/capabilities", controller.capabilities);
   router.get("/resources/:kind", asyncRoute(controller.listResources));
@@ -29,6 +33,10 @@ export function createAuthoringRouter(authenticate = requireAuth) {
   router.put("/:id", asyncRoute(controller.saveInterview));
   router.post("/:id/validate", asyncRoute(controller.validateInterview));
   router.post("/:id/duplicate", asyncRoute(controller.duplicateInterview));
+  router.post("/:id/generate-questions", asyncRoute(generateQuestions));
+  // Published question audio (ANVI hybrid): owner-only, like every route here; regenerate is rate-limited.
+  router.post("/:id/audio/regenerate", asyncRoute(controller.regenerateInterviewAudio));
+  router.get("/:id/audio/status", asyncRoute(controller.interviewAudioStatus));
   router.post("/:id/:action(publish|unpublish)", asyncRoute(controller.releaseInterview));
   router.post("/:id/:action", asyncRoute(controller.lifecycleInterview));
   router.delete("/:id", asyncRoute(controller.deleteInterview));

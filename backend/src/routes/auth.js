@@ -3,7 +3,7 @@ import { routeLogin, routePasswordResetRequest } from '../platform/rootLogin.js'
 import { getStudentGlobalRanking } from '../services/globalStudentRankingService.js';
 import { forcePasswordChange, me, changePassword, changeAdminPassword, resetPassword, updateMe, updateMyAvatar, acknowledgeLearnerProgress, updatePracticeLanguage } from '../controllers/authController.js';
 import { getStudentActivity, getStudentStats, debugStudentActivity } from '../controllers/activityController.js';
-import { requireAuth, requireStudent, requireFullStudent } from '../middleware/auth.js';
+import { requireAuth, requireStudent, requireFullStudent, requireStudentFeature, requireAnyStudentFeature } from '../middleware/auth.js';
 import { getStudentDashboard, getStudentRanking, recordStudentProblemView, recordStudentTopicView, refreshStudentChallenges, getStudentChallengeBadges } from '../controllers/studentDashboardController.js';
 import { authLimiter, passwordResetLimiter, uploadLimiter } from '../middleware/rateLimiter.js';
 import multer from 'multer';
@@ -39,20 +39,20 @@ router.put('/me/avatar', requireAuth, uploadLimiter, upload.single('avatar'), up
 router.put('/me/learner-progress', requireAuth, acknowledgeLearnerProgress);
 router.put('/me/practice-language', requireAuth, updatePracticeLanguage);
 router.get('/activity/debug', requireAuth, debugStudentActivity);
-router.get('/activity', requireAuth, getStudentActivity);
-router.get('/stats', requireAuth, getStudentStats);
-router.get('/dashboard', requireAuth, requireStudent, requireFullStudent, getStudentDashboard);
-router.get('/ranking', requireAuth, requireStudent, requireFullStudent, getStudentRanking);
-router.get('/global-ranking', requireAuth, requireStudent, requireFullStudent, async (req, res, next) => {
+router.get('/activity', requireAuth, requireAnyStudentFeature('dashboard', 'analysis', 'prep_coding', 'quickprep'), getStudentActivity);
+router.get('/stats', requireAuth, requireStudentFeature('prep_coding'), getStudentStats);
+router.get('/dashboard', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('dashboard'), getStudentDashboard);
+router.get('/ranking', requireAuth, requireStudent, requireFullStudent, requireAnyStudentFeature('rankings', 'prep_coins'), getStudentRanking);
+router.get('/global-ranking', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('rankings'), async (req, res, next) => {
   try {
     res.set('Cache-Control', 'private, no-store');
     // Identity and score are server-owned; query/body student IDs and points are ignored.
     res.json({ ranking: await getStudentGlobalRanking(req.user) });
   } catch (error) { next(error); }
 });
-router.post('/engagement/refresh', requireAuth, requireStudent, requireFullStudent, refreshStudentChallenges);
-router.get('/engagement/badges', requireAuth, requireStudent, requireFullStudent, getStudentChallengeBadges);
-router.post('/dashboard/problem-view', requireAuth, requireStudent, requireFullStudent, recordStudentProblemView);
-router.post('/dashboard/topic-view', requireAuth, requireStudent, requireFullStudent, recordStudentTopicView);
+router.post('/engagement/refresh', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('quickprep'), refreshStudentChallenges);
+router.get('/engagement/badges', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('quickprep'), getStudentChallengeBadges);
+router.post('/dashboard/problem-view', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('prep_coding'), recordStudentProblemView);
+router.post('/dashboard/topic-view', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('learning'), recordStudentTopicView);
 
 export default router;

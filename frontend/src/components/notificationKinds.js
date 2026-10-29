@@ -1,4 +1,4 @@
-import { Bell, BookOpen, CheckCircle2, ClipboardList, Crown, Flame, Map as MapIcon, Medal, Megaphone, MessageSquare, Settings2, Target, Users } from 'lucide-react';
+import { Bell, BookOpen, CalendarClock, CheckCircle2, ClipboardList, Crown, Flame, Map as MapIcon, Medal, Megaphone, MessageSquare, Settings2, Target, Users } from 'lucide-react';
 
 // Progress updates: the daily challenge, quests, badges, levels and streaks.
 export const PROGRESS_TYPES = new Set(['CHALLENGE', 'QUEST', 'BADGE', 'LEVEL', 'STREAK']);
@@ -17,6 +17,19 @@ const KINDS = {
   FEEDBACK: { label: 'Feedback', icon: MessageSquare, tile: 'bg-teal-50 text-teal-600 dark:bg-teal-500/10 dark:text-teal-300', chip: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300', rail: 'bg-teal-500', cta: 'Open' },
   SYSTEM: { label: 'Account', icon: Settings2, tile: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300', chip: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300', rail: 'bg-slate-400', cta: 'Open' },
 };
+// Scheduled ANVI interviews: assigned, booked, rescheduled, cancelled, reminders, missed, report released.
+export const ANVI_NOTIFICATION_TYPES = new Set(['AI_INTERVIEW', 'ANVI', 'ANVI_INTERVIEW']);
+export const ANVI_ROUTE = '/student/ai-interviews';
+const ANVI_KIND = { label: 'AI interview', icon: CalendarClock, tile: 'bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-300', chip: 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300', rail: 'bg-violet-500', cta: 'Open', route: ANVI_ROUTE };
+for (const type of ANVI_NOTIFICATION_TYPES) KINDS[type] = ANVI_KIND;
+
+export const isAnviNotification = (notification) => ANVI_NOTIFICATION_TYPES.has(String(notification?.type || '').toUpperCase());
+
+/** Where a notification opens: its own actionUrl, else its kind's default route (ANVI only), else nowhere. */
+export function notificationRoute(notification) {
+  if (notification?.actionUrl) return notification.actionUrl;
+  return isAnviNotification(notification) ? ANVI_ROUTE : null;
+}
 const ANNOUNCEMENT = { label: 'Announcement', icon: Megaphone, tile: 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300', chip: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300', rail: 'bg-rose-500', cta: 'View' };
 const FALLBACK = { label: 'Update', icon: Bell, tile: 'bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300', chip: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300', rail: 'bg-sky-500', cta: 'Open' };
 

@@ -84,8 +84,6 @@ export const BADGES = [
   tier('confident-speaker', 'Confident Speaker', 'interviews', 'interviews', 5, 'Rare', 'Complete 5 different AI interviews.'),
   tier('peer-debut', 'Peer Interview Debut', 'events', 'events', 1, 'Common', 'Receive verified feedback from a scheduled peer interview.'),
 ];
-export const BADGE_TIERS = { Common: 'Bronze', Uncommon: 'Silver', Rare: 'Gold', Epic: 'Platinum', Legendary: 'Diamond', Special: 'Special', Legacy: 'Legacy' };
-
 /** Quest badges need coding; every other category follows its feature allocation. */
 export const badgeCategoryAllowed = (category, domains) => category === 'quests' ? domains.includes('coding') : (!DOMAIN_ACCESS[category] || domains.includes(category));
 

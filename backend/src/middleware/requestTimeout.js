@@ -4,9 +4,14 @@ const HEALTH_REQUEST_TIMEOUT_MS = Number(process.env.HEALTH_REQUEST_TIMEOUT_MS |
 const STUDENT_UPLOAD_TIMEOUT_MS = Number(process.env.STUDENT_UPLOAD_TIMEOUT_MS || 12 * 1000);
 
 const LONG_REQUEST_PATTERNS = [
+  // ANVI start may generate resume and topic questions with Gemini before it responds.
   /^\/api\/student\/ai-interviews\/[^/]+\/start$/,
-  /^\/api\/student\/ai-interviews\/sessions\/[^/]+\/answer$/,
-  /^\/api\/student\/ai-interviews\/sessions\/[^/]+\/(?:transcribe|question-audio)$/,
+  /^\/api\/student\/ai-interviews\/assignments\/[^/]+\/start$/,
+  // Scheduling materializes up to 2000 targets and their notifications synchronously.
+  /^\/api\/ai-interviews\/schedules$/,
+  /^\/api\/ai-interviews\/schedules\/[^/]+\/targets$/,
+  // Close, cancel and release notify the whole cohort.
+  /^\/api\/ai-interviews\/schedules\/[^/]+\/(?:close|cancel|release)$/,
   /^\/api\/admin\/assessment\/reports\/export/,
   /^\/api\/admin\/assessment\/reports\/export-data/,
   /^\/api\/students\/export/,
