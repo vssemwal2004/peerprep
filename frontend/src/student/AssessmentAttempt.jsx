@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
+import { AnviMark } from '../components/AnviApproach';
 import {
   AlertCircle,
   AlertTriangle,
@@ -173,65 +174,61 @@ function AnviProctoringCard({ settings = {}, snapshotsEnabled = false }) {
     settings.detectMultiplePersons !== false && 'another person in view',
     settings.detectNoFace !== false && 'no face in the camera',
   ].filter(Boolean);
-  const items = [
-    quickChecks.length > 0 && {
-      tone: 'alert',
-      text: `Flagged after about 2–3 seconds: ${quickChecks.join(', ')}.`,
-    },
-    settings.detectFaceOutOfFrame !== false && {
-      tone: 'alert',
-      text: `Moving out of the frame is flagged only after ${graceSec} seconds in a row.`,
-    },
-    {
-      tone: 'ok',
-      text: 'Eye and head movement are never flagged. Looking down to think or write is fine.',
-    },
-    {
-      tone: 'ok',
-      text: 'A small preview of your camera stays in the corner. Keep your face visible and the room lit.',
-    },
-    snapshotsEnabled && {
-      tone: 'info',
-      text: 'Periodic camera snapshots are saved for the examiner to review.',
-    },
+  const flagged = [
+    quickChecks.length > 0 && `After about 2–3 seconds: ${quickChecks.join(', ')}.`,
+    settings.detectFaceOutOfFrame !== false && `Leaving the camera frame for ${graceSec} seconds in a row.`,
   ].filter(Boolean);
+  const notFlagged = [
+    'Eye and head movement.',
+    'Looking down to think or write.',
+  ];
 
   return (
     <section
       aria-labelledby="anvi-proctoring-title"
-      className="relative overflow-hidden rounded-lg border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-3 shadow-sm dark:border-violet-900/60 dark:from-violet-950/40 dark:via-slate-900 dark:to-sky-950/30"
+      className="rounded-xl border border-violet-200/80 bg-gradient-to-br from-violet-50/80 via-white to-white p-4 dark:border-violet-900/60 dark:from-violet-950/30 dark:via-slate-900 dark:to-slate-900"
     >
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white shadow-sm">
-          <Video className="h-4 w-4" />
-        </div>
+      <div className="flex items-center gap-3">
+        <AnviMark className="h-10 w-10" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 id="anvi-proctoring-title" className="text-[13px] font-bold text-violet-800 dark:text-violet-200">ANVI Proctoring</h3>
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Active for this assessment
+            <h3 id="anvi-proctoring-title" className="text-sm font-semibold text-slate-900 dark:text-white">ANVI AI Proctoring</h3>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:ring-emerald-800">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> On
             </span>
           </div>
-          <p className="mt-0.5 text-[11px] leading-4 text-slate-600 dark:text-slate-300">
-            AI camera monitoring runs on your device during the test. Only confirmed events are recorded, never a single frame.
+          <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            Runs on your device. Only confirmed events are recorded{snapshotsEnabled ? ', with periodic snapshots for the examiner' : ''}.
           </p>
         </div>
       </div>
-      <ul className="mt-2.5 grid gap-1.5 sm:grid-cols-2">
-        {items.map((item) => (
-          <li
-            key={item.text}
-            className="flex items-start gap-2 rounded-md border border-white/80 bg-white/80 px-2.5 py-2 text-[11px] font-medium leading-4 text-slate-700 dark:border-slate-800 dark:bg-slate-950/60 dark:text-gray-300"
-          >
-            {item.tone === 'alert'
-              ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-              : item.tone === 'ok'
-                ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                : <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400" />}
-            <span>{item.text}</span>
-          </li>
-        ))}
-      </ul>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Flagged</div>
+          <ul className="mt-1.5 space-y-1.5">
+            {flagged.map((text) => (
+              <li key={text} className="flex items-start gap-2 text-[13px] leading-5 text-slate-700 dark:text-slate-300">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                <span>{text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Not flagged</div>
+          <ul className="mt-1.5 space-y-1.5">
+            {notFlagged.map((text) => (
+              <li key={text} className="flex items-start gap-2 text-[13px] leading-5 text-slate-700 dark:text-slate-300">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                <span>{text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      <p className="mt-3 border-t border-violet-100 pt-2.5 text-xs leading-5 text-slate-500 dark:border-violet-900/50 dark:text-slate-400">
+        A small camera preview stays in the corner. Keep your face visible and the room well lit.
+      </p>
     </section>
   );
 }
@@ -820,25 +817,6 @@ export default function AssessmentAttempt() {
   const totalWarnings = totalViolations + screenshotWarnings + aiWarnings;
   const forcePauseActive = isPaused && phase === 'violation' && !isSubmitted;
   const securityRecheckActive = isPaused && !isSubmitted && (phase === 'violation' || phase === 'validation');
-  const finalRules = useMemo(() => {
-    const rules = [];
-    if (fullscreenRequired) rules.push({ type: 'bullet', text: 'Fullscreen mode must remain active during the test.' });
-    if (tabGuardEnabled) rules.push({ type: 'bullet', text: `Tab switching is monitored${tabSwitchLimit ? ` with a limit of ${tabSwitchLimit}` : ''}.` });
-    if (cameraRequired) rules.push({ type: 'bullet', text: 'Camera monitoring must remain enabled and your face should stay visible.' });
-    if (copyBlockEnabled) rules.push({ type: 'bullet', text: 'Copy, paste, print, page source, and restricted shortcuts are blocked.' });
-    if (preventMultipleTabs) rules.push({ type: 'bullet', text: 'Only one assessment tab may remain open.' });
-    if (securitySettings.randomShuffle) rules.push({ type: 'bullet', text: 'Questions may appear in a randomized order.' });
-    if (securitySettings.autoSubmitOnEnd) rules.push({ type: 'bullet', text: 'The test auto-submits when the timer ends.' });
-    if (securitySettings.restrictNavigation) {
-      rules.push({
-        type: 'bullet',
-        text: allowSectionReview
-          ? 'You may review questions only inside your current section. Once you move to another section, earlier sections cannot be reopened.'
-          : 'Backward navigation is locked. Once you move forward, previous questions cannot be reopened.',
-      });
-    }
-    return rules;
-  }, [fullscreenRequired, tabGuardEnabled, tabSwitchLimit, cameraRequired, copyBlockEnabled, preventMultipleTabs, securitySettings, allowSectionReview]);
   const setupSteps = useMemo(() => {
     const steps = [];
     if (!securityRecheckActive && environmentRequired) steps.push({ key: 'environment', title: 'Clean Environment Check', icon: <Monitor className="h-4 w-4" /> });
@@ -3952,23 +3930,35 @@ export default function AssessmentAttempt() {
   const currentAttemptType = question?.type || section?.type || currentQuestionKind;
   const currentAttemptLimit = Number(assessment?.settings?.questionAttemptRequirements?.[currentAttemptType] || 0);
   const currentAttemptedCount = Number(attemptedQuestionCounts[currentAttemptType] || 0);
-  const fallbackRules = [
-    { type: 'bullet', text: 'Fullscreen mode is required' },
-    { type: 'bullet', text: 'Do not switch tabs during the test' },
-    { type: 'bullet', text: 'Do not exit fullscreen once the test starts' },
-    { type: 'bullet', text: 'Do not refresh the page' },
-    { type: 'bullet', text: 'Do not use keyboard shortcuts' },
-    { type: 'bullet', text: 'Complete the test in one session' },
-  ];
-  const assessmentInstructionRules = [
-    ...(assessment.instructions ? [{ type: 'paragraph', text: assessment.instructions }] : []),
-    ...((assessment.customInstructions || []).map((text) => ({ type: 'bullet', text }))),
-  ];
-  const effectiveRules = [
-    ...assessmentInstructionRules,
-    ...fallbackRules,
-    ...finalRules,
-  ];
+  // The briefing groups each rule once, by what the student does, instead of
+  // repeating the generic and the settings-driven variants of the same rule.
+  const briefingConductRules = [
+    fullscreenRequired && 'Stay in fullscreen for the whole test.',
+    tabGuardEnabled && `Do not switch tabs or windows. Every switch is recorded${tabSwitchLimit ? ` (limit: ${tabSwitchLimit})` : ''}.`,
+    preventMultipleTabs && 'Keep only this assessment tab open.',
+    cameraRequired && 'Keep your camera on and your face clearly visible.',
+    copyBlockEnabled ? 'Copy, paste, printing and keyboard shortcuts are blocked.' : 'Do not use keyboard shortcuts.',
+    'Do not refresh or close this page.',
+  ].filter(Boolean);
+  const briefingFlowRules = [
+    'Complete the test in one sitting.',
+    securitySettings.randomShuffle && 'Questions may appear in a different order for each student.',
+    securitySettings.restrictNavigation && (allowSectionReview
+      ? 'You can review questions only inside your current section. Earlier sections cannot be reopened.'
+      : 'You cannot go back. Once you move forward, earlier questions cannot be reopened.'),
+    'Your answers are saved automatically as you work.',
+    securitySettings.autoSubmitOnEnd && 'The test submits automatically when the timer reaches zero.',
+  ].filter(Boolean);
+  const briefingInstructorNotes = [
+    ...(assessment.instructions ? [assessment.instructions] : []),
+    ...(assessment.customInstructions || []),
+  ].map((text) => String(text || '').trim()).filter(Boolean);
+  const briefingRequirements = [
+    'A desktop or laptop with a supported browser',
+    cameraRequired && 'Camera access',
+    locationRequired && 'Location access during setup',
+    fullscreenRequired && 'Fullscreen allowed for this site',
+  ].filter(Boolean);
   const showAssessmentWorkspace = phase === 'active' || isSubmitted;
   const isSecureAssessmentTab = new URLSearchParams(window.location.search).get('secure') === '1';
 
@@ -4059,6 +4049,12 @@ export default function AssessmentAttempt() {
       totals[sec.type === 'coding' ? 'coding' : 'mcq'] += sec.questionCount;
       return totals;
     }, { mcq: 0, coding: 0 });
+  const briefingQuestionCount = rulesTypeTotals.mcq + rulesTypeTotals.coding;
+  const briefingQuestionMix = [
+    rulesTypeTotals.mcq > 0 && `${rulesTypeTotals.mcq} MCQ/short`,
+    rulesTypeTotals.coding > 0 && `${rulesTypeTotals.coding} coding`,
+  ].filter(Boolean).join(' · ');
+  const briefingProgress = rulesReady ? 100 : Math.min(100, Math.max(0, ((30 - rulesCountdown) / 30) * 100));
   const footerIssueItems = securityStatusItems.filter((item) => item.enabled && !item.ok);
   const footerHasIssue = Boolean(securityNotice || hasAiFooterIssue || footerIssueItems.length || (cameraStatusLine && !cameraStatusLine.ok));
   const footerNoticeText = securityNotice
@@ -4878,174 +4874,171 @@ export default function AssessmentAttempt() {
       )}
 
       {phase === 'rules' && !isSubmitted && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/55 px-3 py-3 backdrop-blur-sm sm:px-4">
-          <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-[min(96vw,1220px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_32px_110px_-56px_rgba(15,23,42,0.58)] dark:border-slate-700 dark:bg-slate-950">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950 sm:px-5">
-              <div className="min-w-0 flex-1">
-                <div className="inline-flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300">
-                  <BookOpen className="h-3.5 w-3.5" />
-                  Assessment Briefing
-                </div>
-                <h2 className="mt-1.5 text-xl font-bold text-sky-700 dark:text-sky-300 sm:text-2xl">Assessment Instructions</h2>
-                <p className="mt-0.5 max-w-3xl text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  Review the assessment details before starting.
-                </p>
-              </div>
-
-              <div className="flex items-stretch gap-2">
-                <div className="flex min-w-[88px] flex-col justify-center rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-center dark:border-sky-800 dark:bg-sky-950/40">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Unlocks In</div>
-                  <div className="mt-0.5 tabular-nums text-xl font-bold leading-none text-sky-700 dark:text-sky-300">
-                    {rulesCountdown}s
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-labelledby="assessment-briefing-title">
+          <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/10 dark:bg-slate-950 dark:ring-white/10 sm:max-h-[calc(100dvh-3rem)]">
+            <header className="border-b border-slate-200 px-5 pb-5 pt-5 dark:border-slate-800 sm:px-7">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-600 dark:text-sky-400">Before you begin</p>
+              <h2 id="assessment-briefing-title" className="mt-1 text-xl font-semibold text-slate-900 dark:text-white sm:text-2xl">
+                {assessment.title || 'Assessment instructions'}
+              </h2>
+              <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-slate-200 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-800 sm:grid-cols-4">
+                {[
+                  { icon: Clock, label: 'Duration', value: `${assessment.duration} min` },
+                  { icon: Hash, label: 'Questions', value: briefingQuestionCount, hint: briefingQuestionMix },
+                  { icon: Layers, label: 'Total marks', value: assessment.totalMarks || 0 },
+                  { icon: BookOpen, label: 'Sections', value: rulesSections.length },
+                ].map(({ icon: Icon, label, value, hint }) => (
+                  <div key={label} className="bg-white px-4 py-3 dark:bg-slate-900">
+                    <dt className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                      <Icon className="h-3.5 w-3.5" />
+                      {label}
+                    </dt>
+                    <dd className="mt-1 text-lg font-semibold tabular-nums text-slate-900 dark:text-white">{value}</dd>
+                    {hint && <dd className="truncate text-[11px] text-slate-500 dark:text-slate-400">{hint}</dd>}
                   </div>
-                </div>
+                ))}
+              </dl>
+            </header>
 
-                <button
-                  type="button"
-                  onClick={() => { void startAssessment(); }}
-                  disabled={!rulesReady}
-                  className={`inline-flex min-w-[132px] items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors ${
-                    rulesReady
-                      ? 'bg-sky-600 hover:bg-sky-500 dark:bg-sky-600 dark:hover:bg-sky-500'
-                      : 'cursor-not-allowed bg-slate-300 text-white dark:bg-slate-700 dark:text-slate-400'
-                  }`}
-                >
-                  {rulesReady ? 'Start Assessment' : `Start in ${rulesCountdown}s`}
-                </button>
-              </div>
-            </div>
-
-            <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-slate-50/75 p-3 dark:bg-slate-950 sm:p-4 xl:grid-cols-[0.88fr_1.12fr]">
-              <div className="space-y-3">
-                <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <div className="flex items-center gap-2 text-[13px] font-semibold text-sky-700 dark:text-sky-300">
-                    <Layers className="h-4 w-4 text-sky-600 dark:text-sky-400" />
-                    Assessment Overview
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
-                    {[
-                      ['MCQ / Short Questions', rulesTypeTotals.mcq],
-                      ['Coding Questions', rulesTypeTotals.coding],
-                      ['Total Marks', assessment.totalMarks || 0],
-                      ['Duration', `${assessment.duration} minutes`],
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="truncate text-[9px] font-semibold uppercase text-slate-400">{label}</div>
-                        <div className="mt-0.5 text-sm font-bold text-sky-700 dark:text-sky-300">{value}</div>
-                      </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
+              {briefingInstructorNotes.length > 0 && (
+                <section className="mb-6 rounded-xl border border-sky-200 bg-sky-50/70 p-4 dark:border-sky-900 dark:bg-sky-950/30">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-sky-900 dark:text-sky-200">
+                    <AlertCircle className="h-4 w-4" />
+                    From your instructor
+                  </h3>
+                  <ul className="mt-2 space-y-1.5 text-[13px] leading-5 text-slate-700 dark:text-slate-300">
+                    {briefingInstructorNotes.map((text, idx) => (
+                      <li key={`note-${idx}`} className="whitespace-pre-line">{text}</li>
                     ))}
-                  </div>
-                </div>
+                  </ul>
+                </section>
+              )}
 
-                <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 text-[13px] font-semibold text-sky-700 dark:text-sky-300">
-                      <Hash className="h-4 w-4 text-sky-600 dark:text-sky-400" />
-                      Section Breakdown
-                    </div>
-                    <div className="rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                      {rulesSections.length} section{rulesSections.length !== 1 ? 's' : ''}
-                    </div>
-                  </div>
+              <div className="grid gap-x-8 gap-y-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+                <div className="space-y-6">
+                  <section>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Sections</h3>
+                    <ol className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                      {rulesSections.map((sec, idx) => {
+                        const summary = sectionSummaries[idx];
+                        const questionCount = sec.questionCount;
+                        const marksEach = sec.marksEach;
+                        const totalSectionMarks = sec.totalMarks || (questionCount * marksEach);
+                        const sectionType = summary?.typeLabel || formatSectionTypeLabel(sec?.type);
+                        const sectionLabel = sec?.sectionName || `Section ${idx + 1}`;
 
-                  <div className="mt-2 space-y-2">
-                    {rulesSections.map((sec, idx) => {
-                      const summary = sectionSummaries[idx];
-                      const questionCount = sec.questionCount;
-                      const marksEach = sec.marksEach;
-                      const totalSectionMarks = sec.totalMarks || (questionCount * marksEach);
-                      const sectionType = summary?.typeLabel || formatSectionTypeLabel(sec?.type);
-                      const sectionLabel = sec?.sectionName || `Section ${idx + 1}`;
-
-                      return (
-                        <div key={`${sectionLabel}-${idx}`} className="rounded-lg border border-slate-200 bg-white p-2.5 dark:border-slate-800 dark:bg-slate-950">
-                          <div className="flex flex-wrap items-center gap-2.5">
-                            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-sky-50 text-[11px] font-bold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
+                        return (
+                          <li key={`${sectionLabel}-${idx}`} className="flex items-center gap-3 px-3.5 py-3">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                               {idx + 1}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium text-slate-900 dark:text-white">{sectionLabel}</div>
+                              <div className="text-xs text-slate-500 dark:text-slate-400">
+                                {sectionType} · Q{summary?.start || 1}–Q{summary?.end || questionCount}
+                              </div>
                             </div>
-                            <div className="min-w-[130px] flex-1">
-                              <div className="text-[12px] font-semibold text-slate-900 dark:text-white">{sectionLabel}</div>
-                              <div className="text-[9px] font-semibold uppercase text-slate-400">Q{summary?.start || 1}-Q{summary?.end || questionCount} - {sectionType}</div>
+                            <div className="shrink-0 text-right">
+                              <div className="text-sm font-semibold tabular-nums text-slate-900 dark:text-white">{totalSectionMarks} {totalSectionMarks === 1 ? 'mark' : 'marks'}</div>
+                              <div className="text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                                {questionCount} × {marksEach} {marksEach === 1 ? 'mark' : 'marks'}
+                              </div>
                             </div>
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500 dark:text-slate-400">
-                              <span><b className="text-slate-800 dark:text-slate-200">{questionCount}</b> questions</span>
-                              <span><b className="text-slate-800 dark:text-slate-200">{marksEach}</b> each</span>
-                              <span className="rounded-md bg-sky-50 px-2 py-1 font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
-                                {totalSectionMarks} marks
-                              </span>
-                            </div>
-                          </div>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </section>
+
+                  <section>
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                      <Monitor className="h-4 w-4 text-slate-400" />
+                      What you need
+                    </h3>
+                    <ul className="mt-2 space-y-2">
+                      {briefingRequirements.map((text) => (
+                        <li key={text} className="flex items-start gap-2 text-[13px] leading-5 text-slate-700 dark:text-slate-300">
+                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
+                          <span>{text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                </div>
+
+                <div>
+                  <section>
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                      <ShieldCheck className="h-4 w-4 text-slate-400" />
+                      Rules
+                    </h3>
+                    <div className="mt-2 grid gap-5 sm:grid-cols-2">
+                      {[
+                        ['During the test', briefingConductRules],
+                        ['Questions and time', briefingFlowRules],
+                      ].map(([title, rules]) => (
+                        <div key={title}>
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{title}</div>
+                          <ul className="mt-2 space-y-2">
+                            {rules.map((text) => (
+                              <li key={text} className="flex items-start gap-2.5 text-[13px] leading-5 text-slate-700 dark:text-slate-300">
+                                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
+                                <span>{text}</span>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
-                      );
-                    })}
-                  </div>
+                      ))}
+                    </div>
+                  </section>
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <div className="flex items-center gap-2 text-[13px] font-semibold text-sky-700 dark:text-sky-300">
-                    <ShieldCheck className="h-4 w-4 text-sky-600 dark:text-sky-400" />
-                    Rules & Regulations
-                  </div>
-                  <div className="mt-2 grid gap-1.5 text-[11px] text-slate-600 dark:text-gray-300 sm:grid-cols-2 sm:text-[11.5px]">
-                    {effectiveRules.map((block, idx) => (
-                      block.type === 'paragraph' ? (
-                        <div key={`rule-${idx}`} className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 font-medium leading-4 dark:border-slate-800 dark:bg-slate-950">
-                          {block.text}
-                        </div>
-                      ) : (
-                        <div key={`rule-${idx}`} className="flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 dark:border-slate-800 dark:bg-slate-950">
-                          <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
-                          <span className="font-medium leading-4 text-slate-700 dark:text-gray-300">{block.text}</span>
-                        </div>
-                      )
-                    ))}
-                  </div>
-                </div>
-
-                {aiProctoringEnabled && (
+              {aiProctoringEnabled && (
+                <div className="mt-6">
                   <AnviProctoringCard
                     settings={aiProctoringSettings}
                     snapshotsEnabled={cameraRequired}
                   />
-                )}
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    <div className="flex items-center gap-2 text-[13px] font-semibold text-sky-700 dark:text-sky-300">
-                      <Monitor className="h-4 w-4 text-sky-600 dark:text-sky-400" />
-                      System Requirements
-                    </div>
-                    <ul className="mt-2 space-y-1 text-[11px] font-medium leading-4 text-slate-700 dark:text-gray-300">
-                      {cameraRequired && <li>Allow camera access for this assessment</li>}
-                      {preventMultipleTabs && <li>Keep only one assessment tab open</li>}
-                      {fullscreenRequired && <li>Keep the assessment in fullscreen</li>}
-                      {locationRequired && <li>Allow location access during setup</li>}
-                      <li>Use a supported desktop browser</li>
-                    </ul>
-                  </div>
-
-                  <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-800 dark:text-slate-100">
-                      <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                      Important Notes
-                    </div>
-                    <ul className="mt-2 space-y-1 text-[11px] font-medium leading-4 text-slate-700 dark:text-gray-300">
-                      <li>Your progress is auto-saved continuously</li>
-                      {cameraRequired && <li>Camera status appears during the test</li>}
-                      <li>Read every section carefully before the timer begins</li>
-                    </ul>
-                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
-            <div className="flex items-center border-t border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950 sm:px-5">
-              <div className={`text-xs font-semibold ${rulesReady ? 'text-sky-700 dark:text-sky-300' : 'text-slate-600 dark:text-slate-300'}`}>
-                {rulesReady ? 'Countdown complete. You may begin the assessment now.' : `Starting unlocks in ${rulesCountdown} seconds.`}
+            <footer className="relative border-t border-slate-200 px-5 py-4 dark:border-slate-800 sm:px-7">
+              <div className="absolute inset-x-0 top-0 h-0.5 bg-slate-100 dark:bg-slate-800" aria-hidden="true">
+                <div className="h-full bg-sky-500 transition-[width] duration-1000 ease-linear" style={{ width: `${briefingProgress}%` }} />
               </div>
-            </div>
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  {rulesReady
+                    ? 'All set. You can start the assessment now.'
+                    : `Please read the instructions. You can start in ${rulesCountdown} seconds.`}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { void startAssessment(); }}
+                  disabled={!rulesReady}
+                  className={`inline-flex min-w-[180px] items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${
+                    rulesReady
+                      ? 'bg-sky-600 text-white shadow-sm hover:bg-sky-500'
+                      : 'cursor-not-allowed bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                  }`}
+                >
+                  {rulesReady ? (
+                    <>
+                      Start assessment
+                      <ChevronRight className="h-4 w-4" />
+                    </>
+                  ) : (
+                    <>
+                      <Timer className="h-4 w-4" />
+                      <span className="tabular-nums">Start in {rulesCountdown}s</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </footer>
           </div>
         </div>
       )}
