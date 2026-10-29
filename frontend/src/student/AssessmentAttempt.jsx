@@ -4,11 +4,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { AnviMark } from '../components/AnviApproach';
+import { motion } from 'framer-motion';
 import {
   AlertCircle,
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
   BookOpen,
+  Check,
   CheckCircle2,
+  FileText,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -22,6 +27,7 @@ import {
   ShieldCheck,
   Timer,
   Video,
+  XCircle,
 } from 'lucide-react';
 import CodeEditor from './CodeEditor';
 import { COMPILER_LANGUAGES, getProblemSupportedLanguages } from '../admin/compiler/compilerUtils';
@@ -163,72 +169,185 @@ const ShortAnswerInput = memo(function ShortAnswerInput({ value, commitKey, onCo
   );
 });
 
+const RULES_COUNTDOWN_SECONDS = 15;
+
+const SETUP_STEP_COPY = {
+  environment: {
+    title: 'Browser check',
+    description: 'Confirms this is your only assessment tab and nothing in the browser can interfere with the test.',
+    action: 'Check my browser',
+    icon: Monitor,
+  },
+  camera: {
+    title: 'Camera check',
+    description: 'Your camera stays on during the test so your examiner can confirm it is you.',
+    action: 'Turn on camera',
+    icon: Video,
+  },
+  location: {
+    title: 'Location check',
+    description: 'Your location is recorded once, at the start of the test.',
+    action: 'Share my location',
+    icon: MapPin,
+  },
+  fullscreen: {
+    title: 'Fullscreen mode',
+    description: 'The test runs in fullscreen, so nothing else is on your screen.',
+    action: 'Enter fullscreen',
+    icon: Maximize,
+  },
+  final: {
+    title: 'Final check',
+    description: 'One last look at every check before the instructions open.',
+    action: 'Run final check',
+    icon: ShieldCheck,
+  },
+};
+
+/** Soft colour light behind the dark side panel of the assessment dialogs. */
+function DialogGlow() {
+  return (
+    <>
+      <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-sky-500/25 blur-3xl" aria-hidden="true" />
+      <div className="pointer-events-none absolute -bottom-28 -right-20 h-72 w-72 rounded-full bg-violet-500/20 blur-3xl" aria-hidden="true" />
+    </>
+  );
+}
+
+/** One line of a setup checklist: a status mark, a label and a short state. */
+function SetupCheckRow({ label, status, detail }) {
+  const detailTone = {
+    ok: 'text-emerald-600 dark:text-emerald-400',
+    fail: 'text-rose-600 dark:text-rose-400',
+    pending: 'text-slate-400 dark:text-slate-500',
+  }[status];
+  return (
+    <li className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+      {status === 'ok'
+        ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
+        : status === 'fail'
+          ? <XCircle className="h-5 w-5 shrink-0 text-rose-500" />
+          : <span className="h-5 w-5 shrink-0 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600" />}
+      <span className="min-w-0 flex-1 text-sm text-slate-700 dark:text-slate-200">{label}</span>
+      {detail && <span className={`shrink-0 text-xs font-medium ${detailTone}`}>{detail}</span>}
+    </li>
+  );
+}
+
 /**
- * Shown on the rules screen only when AI proctoring is enabled. It states the
- * exact policy the student will be held to, from the admin's own settings.
+ * Ring countdown on the instructions dialog. The last five seconds grow and
+ * change colour so the student sees that the Start button is about to unlock.
+ */
+function BriefingCountdown({ seconds, total, ready }) {
+  const finalSeconds = !ready && seconds <= 5;
+  const size = finalSeconds ? 156 : 124;
+  const stroke = 7;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const fraction = ready ? 1 : Math.max(0, Math.min(1, (total - seconds) / total));
+  const color = ready ? '#34d399' : finalSeconds ? '#fbbf24' : '#38bdf8';
+
+  return (
+    <motion.div
+      animate={{ width: size, height: size }}
+      transition={{ type: 'spring', stiffness: 220, damping: 22 }}
+      className="relative flex items-center justify-center"
+      role="timer"
+      aria-label={ready ? 'Ready to start' : `${seconds} seconds until you can start`}
+    >
+      {finalSeconds && (
+        <motion.span
+          className="absolute inset-0 rounded-full bg-amber-400/20"
+          animate={{ scale: [1, 1.18], opacity: [0.7, 0] }}
+          transition={{ duration: 1, repeat: Infinity, ease: 'easeOut' }}
+          aria-hidden="true"
+        />
+      )}
+      <svg width={size} height={size} className="absolute inset-0 -rotate-90" aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={stroke} />
+        <motion.circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          animate={{ strokeDashoffset: circumference * (1 - fraction) }}
+          transition={{ duration: 0.95, ease: 'linear' }}
+        />
+      </svg>
+      <div className="relative flex flex-col items-center">
+        {ready ? (
+          <motion.span initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 300, damping: 16 }}>
+            <Check className="h-12 w-12 text-emerald-400" strokeWidth={2.5} />
+          </motion.span>
+        ) : (
+          <motion.span
+            key={seconds}
+            initial={{ scale: finalSeconds ? 1.9 : 1.3, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 18 }}
+            className={`font-semibold leading-none tabular-nums ${finalSeconds ? 'text-6xl text-amber-300' : 'text-5xl text-white'}`}
+          >
+            {seconds}
+          </motion.span>
+        )}
+        <span className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+          {ready ? 'Ready' : 'Seconds'}
+        </span>
+      </div>
+    </motion.div>
+  );
+}
+
+/**
+ * Shown on the instructions dialog only when AI proctoring is enabled. It tells
+ * the student what is expected, never the detection thresholds behind it.
  */
 function AnviProctoringCard({ settings = {}, snapshotsEnabled = false }) {
-  const graceSec = Math.max(3, Math.min(60, Number(settings.faceOutOfFrameGraceSec) || 8));
-  const quickChecks = [
-    settings.detectMobile !== false && 'a mobile phone',
-    settings.detectMultiplePersons !== false && 'another person in view',
-    settings.detectNoFace !== false && 'no face in the camera',
+  const expectations = [
+    (settings.detectNoFace !== false || settings.detectFaceOutOfFrame !== false) && 'Keep your face clearly visible in the camera.',
+    settings.detectMultiplePersons !== false && 'Stay alone. No one else should be in view.',
+    settings.detectMobile !== false && 'Keep phones and other devices out of sight.',
+    'Unusual activity is recorded and reviewed by your examiner.',
+    snapshotsEnabled && 'Camera snapshots may be saved for review.',
   ].filter(Boolean);
-  const flagged = [
-    quickChecks.length > 0 && `After about 2–3 seconds: ${quickChecks.join(', ')}.`,
-    settings.detectFaceOutOfFrame !== false && `Leaving the camera frame for ${graceSec} seconds in a row.`,
-  ].filter(Boolean);
-  const notFlagged = [
-    'Eye and head movement.',
-    'Looking down to think or write.',
-  ];
 
   return (
     <section
       aria-labelledby="anvi-proctoring-title"
-      className="rounded-xl border border-violet-200/80 bg-gradient-to-br from-violet-50/80 via-white to-white p-4 dark:border-violet-900/60 dark:from-violet-950/30 dark:via-slate-900 dark:to-slate-900"
+      className="relative overflow-hidden rounded-2xl border border-violet-200/70 bg-gradient-to-br from-violet-50 via-white to-sky-50/60 p-5 dark:border-violet-900/60 dark:from-violet-950/40 dark:via-slate-900 dark:to-slate-900"
     >
-      <div className="flex items-center gap-3">
-        <AnviMark className="h-10 w-10" />
+      <div className="flex items-center gap-3.5">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-950 shadow-sm ring-1 ring-violet-300/40">
+          <AnviMark className="h-9 w-9" tone="dark" />
+        </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 id="anvi-proctoring-title" className="text-sm font-semibold text-slate-900 dark:text-white">ANVI AI Proctoring</h3>
+            <h3 id="anvi-proctoring-title" className="text-[15px] font-semibold text-slate-900 dark:text-white">ANVI AI Proctoring</h3>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:ring-emerald-800">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> On
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              </span>
+              Active
             </span>
           </div>
-          <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Runs on your device. Only confirmed events are recorded{snapshotsEnabled ? ', with periodic snapshots for the examiner' : ''}.
+          <p className="mt-0.5 text-[13px] leading-5 text-slate-500 dark:text-slate-400">
+            AI monitors your camera for the whole test.
           </p>
         </div>
       </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Flagged</div>
-          <ul className="mt-1.5 space-y-1.5">
-            {flagged.map((text) => (
-              <li key={text} className="flex items-start gap-2 text-[13px] leading-5 text-slate-700 dark:text-slate-300">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                <span>{text}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Not flagged</div>
-          <ul className="mt-1.5 space-y-1.5">
-            {notFlagged.map((text) => (
-              <li key={text} className="flex items-start gap-2 text-[13px] leading-5 text-slate-700 dark:text-slate-300">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                <span>{text}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-      <p className="mt-3 border-t border-violet-100 pt-2.5 text-xs leading-5 text-slate-500 dark:border-violet-900/50 dark:text-slate-400">
-        A small camera preview stays in the corner. Keep your face visible and the room well lit.
-      </p>
+      <ul className="mt-4 grid gap-x-6 gap-y-2.5 sm:grid-cols-2">
+        {expectations.map((text) => (
+          <li key={text} className="flex items-start gap-2.5 text-[13px] leading-5 text-slate-700 dark:text-slate-300">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-violet-500" />
+            <span>{text}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -581,7 +700,8 @@ export default function AssessmentAttempt() {
   const [environmentInterference, setEnvironmentInterference] = useState([]);
   const [faceStatus, setFaceStatus] = useState('idle');
   const [setupCheckingStep, setSetupCheckingStep] = useState('');
-  const [locationData, setLocationData] = useState(null);
+  // Coordinates are sent to the server only; the setup screen never shows them.
+  const [, setLocationData] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
   const [allowedEndTime, setAllowedEndTime] = useState(null);
   const [securityRecheckStartedAt, setSecurityRecheckStartedAt] = useState(null);
@@ -594,7 +714,7 @@ export default function AssessmentAttempt() {
   const [isSubmittingMap, setIsSubmittingMap] = useState({});
   const [runInputUsedMap, setRunInputUsedMap] = useState({});
   const [codeValueVersion, setCodeValueVersion] = useState(0);
-  const [rulesCountdown, setRulesCountdown] = useState(30);
+  const [rulesCountdown, setRulesCountdown] = useState(RULES_COUNTDOWN_SECONDS);
   const [rulesReady, setRulesReady] = useState(false);
   const [hasSeenRules, setHasSeenRules] = useState(false);
   const [cameraIndicator, setCameraIndicator] = useState('idle');
@@ -2496,7 +2616,7 @@ export default function AssessmentAttempt() {
       setRulesReady(true);
       return undefined;
     }
-    setRulesCountdown(30);
+    setRulesCountdown(RULES_COUNTDOWN_SECONDS);
     setRulesReady(false);
     const timer = setInterval(() => {
       setRulesCountdown((prev) => {
@@ -4054,7 +4174,37 @@ export default function AssessmentAttempt() {
     rulesTypeTotals.mcq > 0 && `${rulesTypeTotals.mcq} MCQ/short`,
     rulesTypeTotals.coding > 0 && `${rulesTypeTotals.coding} coding`,
   ].filter(Boolean).join(' · ');
-  const briefingProgress = rulesReady ? 100 : Math.min(100, Math.max(0, ((30 - rulesCountdown) / 30) * 100));
+  const briefingStats = [
+    { icon: Clock, label: 'Duration', value: `${assessment.duration} min` },
+    { icon: Hash, label: 'Questions', value: briefingQuestionCount, hint: briefingQuestionMix },
+    { icon: Layers, label: 'Total marks', value: assessment.totalMarks || 0 },
+    { icon: BookOpen, label: 'Sections', value: rulesSections.length },
+  ];
+  const briefingTerms = [
+    'The work you submit must be entirely your own. Do not take help from anyone during the test.',
+    'Do not copy, record, photograph or share the questions, during or after the test.',
+    'Your activity during the test is logged and may be reviewed by your institution.',
+    'Breaking these rules can lead to your attempt being cancelled.',
+  ];
+  const duplicateAssessmentTabs = detectedTabs.filter((tab) => !tab.current);
+  const setupCompletedCount = setupSteps.filter((step) => setupStepIsDone(step.key)).length;
+  const currentSetupCopy = SETUP_STEP_COPY[currentSetupStepKey] || SETUP_STEP_COPY.final;
+  const CurrentSetupIcon = currentSetupCopy.icon;
+  const currentSetupDone = setupStepIsDone(currentSetupStepKey);
+  const setupOpensSecureTab = currentSetupStepKey === 'fullscreen' && fullscreenRequired && !isSecureAssessmentTab;
+  const setupAction = {
+    environment: handleEnvironmentCheck,
+    camera: handleCameraCheck,
+    location: handleLocationCheck,
+    fullscreen: setupOpensSecureTab ? handleOpenSecureAssessmentTab : handleEnableFullscreen,
+    final: handleFinalCheck,
+  }[currentSetupStepKey];
+  const setupActionLabel = setupOpensSecureTab
+    ? 'Open secure window'
+    : currentSetupStepKey === 'final' && securityRecheckActive
+      ? 'Verify and resume'
+      : currentSetupCopy.action;
+  const setupShowsContinue = currentSetupDone && currentSetupStepKey !== 'final';
   const footerIssueItems = securityStatusItems.filter((item) => item.enabled && !item.ok);
   const footerHasIssue = Boolean(securityNotice || hasAiFooterIssue || footerIssueItems.length || (cameraStatusLine && !cameraStatusLine.ok));
   const footerNoticeText = securityNotice
@@ -4465,311 +4615,352 @@ export default function AssessmentAttempt() {
       </>
       )}
       {phase === 'validation' && !isSubmitted && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-3 py-3 backdrop-blur-sm sm:px-4">
-          <div className="flex max-h-[94vh] w-full max-w-[980px] flex-col overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-[0_28px_90px_-48px_rgba(15,23,42,0.55)] dark:border-slate-700 dark:bg-slate-950">
-            <div className="border-b border-slate-200 bg-white px-4 pb-3 pt-4 dark:border-slate-800 dark:bg-slate-950 sm:px-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                    Security Setup
-                  </div>
-                  <h2 className="mt-2 text-[1.35rem] font-bold tracking-tight text-slate-950 dark:text-white sm:text-[1.5rem]">Pre-Test Security Check</h2>
-                  <p className="mt-1 max-w-2xl text-sm leading-5 text-slate-500 dark:text-slate-400">
-                    {securityRecheckActive ? 'Your timer is paused while you complete these checks.' : 'Complete each required check to continue.'}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  {securityRecheckActive && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                      Recheck time {formatTime(securityRecheckRemainingSec * 1000)}
-                    </div>
-                  )}
-                  <div className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                    Step {validationStep} of {setupSteps.length}
-                  </div>
-                </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-labelledby="security-setup-title">
+          <motion.div
+            initial={{ opacity: 0, y: 18, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="flex h-[min(680px,calc(100dvh-1.5rem))] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/10 dark:bg-slate-950 dark:ring-white/10"
+          >
+            <aside className="relative hidden w-[290px] shrink-0 flex-col overflow-hidden bg-slate-950 p-7 text-white md:flex">
+              <DialogGlow />
+              <div className="relative flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-300">
+                <ShieldCheck className="h-4 w-4" />
+                Secure setup
               </div>
+              <h2 id="security-setup-title" className="relative mt-3 text-xl font-semibold leading-snug">
+                {assessment.title || 'Assessment'}
+              </h2>
+              <p className="relative mt-2 text-sm leading-6 text-slate-400">
+                {securityRecheckActive
+                  ? 'Your test is paused. Complete these checks to continue.'
+                  : 'Complete these quick checks. Your test timer has not started yet.'}
+              </p>
 
-              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/70">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                  <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  Required Checks
-                </div>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                  {setupSteps.map((step) => {
-                    const isActive = validationStep === step.id;
-                    const done = setupStepIsDone(step.key);
-                    const locked = step.id > validationStep && !done;
-                    const checking = setupCheckingStep === step.key;
-                    return (
-                      <div
-                        key={step.id}
-                        className={`flex min-h-[52px] items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
-                          done
-                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300'
-                            : isActive
-                              ? 'border-slate-300 bg-white text-slate-900 shadow-sm dark:border-slate-600 dark:bg-slate-950 dark:text-white'
-                              : 'border-slate-200 bg-white/70 text-slate-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-400'
-                        }`}
-                      >
-                        <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${
-                          done ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50' : isActive ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'
-                        }`}>
-                          {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : done ? <CheckCircle2 className="h-4 w-4" /> : locked ? <span className="h-2 w-2 rounded-full bg-current" /> : step.icon}
+              <ol className="relative mt-8">
+                {setupSteps.map((step, index) => {
+                  const done = setupStepIsDone(step.key);
+                  const active = step.id === validationStep;
+                  const checking = setupCheckingStep === step.key;
+                  return (
+                    <li key={step.key} className="relative flex gap-3.5 pb-6 last:pb-0">
+                      {index < setupSteps.length - 1 && (
+                        <span className={`absolute left-4 top-9 h-[calc(100%-2.5rem)] w-px transition-colors duration-500 ${done ? 'bg-emerald-400/70' : 'bg-white/10'}`} aria-hidden="true" />
+                      )}
+                      <span className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors duration-300 ${
+                        done
+                          ? 'bg-emerald-500 text-white'
+                          : active
+                            ? 'bg-sky-500 text-white'
+                            : 'bg-white/5 text-slate-400 ring-1 ring-white/15'
+                      }`}>
+                        {active && !done && (
+                          <motion.span
+                            className="absolute inset-0 rounded-full bg-sky-400/40"
+                            animate={{ scale: [1, 1.6], opacity: [0.7, 0] }}
+                            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeOut' }}
+                            aria-hidden="true"
+                          />
+                        )}
+                        <span className="relative">
+                          {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : done ? <Check className="h-4 w-4" strokeWidth={3} /> : step.id}
+                        </span>
+                      </span>
+                      <div className="pt-1">
+                        <div className={`text-sm font-medium ${active ? 'text-white' : done ? 'text-slate-200' : 'text-slate-400'}`}>
+                          {SETUP_STEP_COPY[step.key]?.title || step.title}
                         </div>
-                        <div className="min-w-0">
-                          <div className="truncate font-semibold">{step.title}</div>
-                          {isActive && !done && <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Current step</div>}
+                        <div className={`mt-0.5 text-xs ${done ? 'text-emerald-300/90' : active ? 'text-sky-300' : 'text-slate-500'}`}>
+                          {done ? 'Completed' : checking ? 'Checking…' : active ? 'In progress' : 'Up next'}
                         </div>
                       </div>
-                    );
-                  })}
+                    </li>
+                  );
+                })}
+              </ol>
+
+              <div className="relative mt-auto pt-6">
+                {securityRecheckActive && (
+                  <div className="mb-4 flex items-center justify-between rounded-xl bg-amber-400/10 px-3.5 py-2.5 text-sm ring-1 ring-amber-300/30">
+                    <span className="text-amber-200">Time left to verify</span>
+                    <span className="font-semibold tabular-nums text-amber-100">{formatTime(securityRecheckRemainingSec * 1000)}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-xs text-slate-400">
+                  <span>{setupCompletedCount} of {setupSteps.length} checks complete</span>
+                  <span className="tabular-nums">{Math.round((setupCompletedCount / Math.max(1, setupSteps.length)) * 100)}%</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <motion.div
+                    className="h-full rounded-full bg-gradient-to-r from-sky-400 to-emerald-400"
+                    initial={false}
+                    animate={{ width: `${(setupCompletedCount / Math.max(1, setupSteps.length)) * 100}%` }}
+                    transition={{ duration: 0.6, ease: 'easeOut' }}
+                  />
                 </div>
               </div>
-            </div>
+            </aside>
 
-            <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 px-4 py-4 dark:bg-slate-950 sm:px-5">
-              {currentSetupStepKey === 'environment' && (
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Clean Environment Check</div>
-                  <p className="text-sm text-slate-600 dark:text-gray-300">Keep this assessment tab open and close any other PeerPrep assessment tabs.</p>
-                  <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-                    <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-gray-300">
-                      <span>Detected PeerPrep assessment tabs</span>
-                      <span className={detectedTabs.filter((tab) => !tab.current).length === 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                        {detectedTabs.filter((tab) => !tab.current).length === 0 ? 'Clean' : 'Duplicate found'}
-                      </span>
+            <section className="flex min-w-0 flex-1 flex-col">
+              <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800 md:hidden">
+                <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
+                  <span>Secure setup · Step {validationStep} of {setupSteps.length}</span>
+                  {securityRecheckActive && <span className="font-semibold tabular-nums text-amber-600">{formatTime(securityRecheckRemainingSec * 1000)}</span>}
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                  <div className="h-full rounded-full bg-sky-500 transition-[width] duration-500" style={{ width: `${(setupCompletedCount / Math.max(1, setupSteps.length)) * 100}%` }} />
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-10 sm:py-9">
+                <motion.div
+                  key={currentSetupStepKey}
+                  initial={{ opacity: 0, x: 24 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <div className="flex items-start gap-4">
+                    <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${currentSetupDone ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-400'}`}>
+                      {currentSetupDone ? <CheckCircle2 className="h-7 w-7" /> : <CurrentSetupIcon className="h-7 w-7" />}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Step {currentSetupStepNumber} of {setupSteps.length}</p>
+                      <h3 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{currentSetupCopy.title}</h3>
+                      <p className="mt-1.5 max-w-xl text-[15px] leading-6 text-slate-500 dark:text-slate-400">{currentSetupCopy.description}</p>
                     </div>
-                    <div className="grid gap-1.5">
-                      {(detectedTabs.length ? detectedTabs : [{ id: 'current', title: assessment.title || 'Assessment tab', current: true }]).map((tab) => (
-                        <div key={tab.id} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-800">
-                          <span className="truncate text-slate-600 dark:text-gray-300">{tab.title}</span>
-                          <span className={tab.current ? 'text-emerald-600' : 'text-rose-600'}>
-                            {tab.current ? 'Current' : 'Close this tab'}
+                  </div>
+
+                  <div className="mt-7">
+                    {currentSetupStepKey === 'environment' && (
+                      <div className="space-y-4">
+                        <ul className="space-y-2.5">
+                          <SetupCheckRow label="This tab is active and in focus" status={document.hasFocus() && !document.hidden ? 'ok' : 'pending'} detail={document.hasFocus() && !document.hidden ? 'OK' : 'Click inside this page'} />
+                          <SetupCheckRow label="Assessment window is visible" status={!document.hidden ? 'ok' : 'pending'} detail={!document.hidden ? 'OK' : 'Waiting'} />
+                          <SetupCheckRow
+                            label="No other assessment tab is open"
+                            status={!preventMultipleTabs || duplicateAssessmentTabs.length === 0 ? 'ok' : 'fail'}
+                            detail={!preventMultipleTabs || duplicateAssessmentTabs.length === 0 ? 'OK' : `${duplicateAssessmentTabs.length} open`}
+                          />
+                          <SetupCheckRow
+                            label="No browser extension is interfering"
+                            status={environmentInterference.length > 0 ? 'fail' : validationState.environment ? 'ok' : 'pending'}
+                            detail={environmentInterference.length > 0 ? 'Found' : validationState.environment ? 'OK' : 'Not checked yet'}
+                          />
+                        </ul>
+                        {preventMultipleTabs && duplicateAssessmentTabs.length > 0 && (
+                          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 dark:border-rose-900 dark:bg-rose-950/30">
+                            <div className="text-sm font-semibold text-rose-800 dark:text-rose-200">Close these tabs, then check again</div>
+                            <ul className="mt-2 space-y-1 text-sm text-rose-700 dark:text-rose-300">
+                              {duplicateAssessmentTabs.map((tab) => <li key={tab.id} className="truncate">• {tab.title}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {environmentInterference.length > 0 && (
+                          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+                            {environmentInterference.map((signal) => <div key={signal}>{signal}</div>)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {currentSetupStepKey === 'camera' && (
+                      cameraRequired ? (
+                        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+                          <div className="relative overflow-hidden rounded-2xl bg-slate-950 shadow-lg ring-1 ring-slate-900/10">
+                            <div className="relative aspect-[4/3]">
+                              <video
+                                ref={(node) => {
+                                  validationVideoRef.current = node;
+                                  if (node && streamRef.current && node.srcObject !== streamRef.current) {
+                                    node.srcObject = streamRef.current;
+                                    node.play().catch(() => {});
+                                  }
+                                }}
+                                className="h-full w-full -scale-x-100 object-cover"
+                                muted
+                                playsInline
+                                autoPlay
+                              />
+                              {!streamRef.current && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400">
+                                  <Video className="h-9 w-9" />
+                                  <span className="text-sm">Camera is off</span>
+                                </div>
+                              )}
+                              <div className={`pointer-events-none absolute left-1/2 top-1/2 h-[64%] w-[42%] -translate-x-1/2 -translate-y-1/2 rounded-[50%] border-2 border-dashed transition-colors duration-500 ${faceStatus === 'detected' ? 'border-emerald-400/80' : 'border-white/45'}`} aria-hidden="true" />
+                              <div className={`absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-md ${faceStatus === 'detected' ? 'bg-emerald-500/30' : 'bg-slate-950/50'}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${faceStatus === 'detected' ? 'bg-emerald-300' : faceStatus === 'detecting' ? 'animate-pulse bg-amber-300' : 'bg-slate-300'}`} />
+                                {faceStatus === 'detected' ? 'Camera verified' : faceStatus === 'detecting' ? 'Connecting…' : 'Waiting for camera'}
+                              </div>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900 dark:text-white">Before you start</div>
+                            <ul className="mt-3 space-y-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                              {[
+                                'Click Turn on camera, then choose Allow when your browser asks.',
+                                'Sit facing the screen with your whole face inside the oval.',
+                                'Use good light. Avoid a bright window behind you.',
+                                'Close other apps that use the camera, such as Zoom or Teams.',
+                              ].map((tip, index) => (
+                                <li key={tip} className="flex gap-3">
+                                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{index + 1}</span>
+                                  <span>{tip}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">This assessment does not use the camera.</p>
+                      )
+                    )}
+
+                    {currentSetupStepKey === 'location' && (
+                      <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-center">
+                        <div className="relative flex h-28 w-28 shrink-0 items-center justify-center">
+                          <motion.span
+                            className="absolute inset-0 rounded-full bg-sky-400/15"
+                            animate={{ scale: [0.85, 1.1, 0.85] }}
+                            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                            aria-hidden="true"
+                          />
+                          <span className={`relative flex h-16 w-16 items-center justify-center rounded-full ${validationState.location ? 'bg-emerald-500' : 'bg-sky-500'} text-white shadow-lg`}>
+                            {validationState.location ? <Check className="h-8 w-8" strokeWidth={3} /> : <MapPin className="h-8 w-8" />}
                           </span>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="grid gap-1.5 text-xs text-slate-600 dark:text-gray-300">
-                    {[
-                      ['Current tab focused', document.hasFocus() && !document.hidden],
-                      ['Assessment window visible', !document.hidden],
-                      ['No duplicate assessment tabs', !preventMultipleTabs || detectedTabs.filter((tab) => !tab.current).length === 0],
-                      ['Browser environment ready', validationState.environment],
-                    ].map(([label, ok]) => (
-                      <div key={label} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-900">
-                        <span>{label}</span>
-                        <span className={ok ? 'text-emerald-600' : 'text-amber-600'}>{ok ? 'OK' : 'Pending'}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {validationState.environment && (
-                    <div className="flex items-center gap-2 text-sm text-emerald-600">
-                      <CheckCircle2 className="h-4 w-4" /> Environment confirmed.
-                    </div>
-                  )}
-                  {environmentInterference.length > 0 && (
-                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200">
-                      {environmentInterference.map((signal) => <div key={signal}>{signal}</div>)}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {currentSetupStepKey === 'camera' && (
-                <div className="space-y-4">
-                  <div>
-                    <div className="text-sm font-bold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Camera Verification</div>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
-                      {cameraRequired
-                        ? 'Your webcam feed is required for identity verification during this assessment.'
-                        : 'Camera monitoring is not required for this assessment.'}
-                    </p>
-                  </div>
-                  {cameraRequired && (
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-                      <div className="relative w-full max-w-[360px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-sm dark:border-gray-700">
-                        <div className="relative aspect-[4/3]">
-                          <video ref={validationVideoRef} className="h-full w-full object-cover" muted playsInline autoPlay />
-                          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.12)_0%,rgba(15,23,42,0.28)_100%)]" />
-                          <div className="pointer-events-none absolute inset-[12%] rounded-[22px] border border-white/35" />
-                          <div className="pointer-events-none absolute inset-x-[22%] top-[16%] bottom-[16%] rounded-[26px] border border-dashed border-sky-200/55 bg-white/5" />
-                          <div className="absolute left-3 top-3 rounded-full bg-slate-950/55 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur-sm">
-                            Camera preview
-                          </div>
-                          <div className={`absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold backdrop-blur-sm ${
-                            faceStatus === 'detected'
-                              ? 'bg-emerald-500/20 text-emerald-100'
-                              : faceStatus === 'detecting'
-                                ? 'bg-amber-500/20 text-amber-100'
-                                : 'bg-slate-900/45 text-white/90'
-                          }`}>
-                            <span className={`h-1.5 w-1.5 rounded-full ${
-                              faceStatus === 'detected'
-                                ? 'bg-emerald-300'
-                                : faceStatus === 'detecting'
-                                  ? 'bg-amber-300 animate-pulse'
-                                  : 'bg-rose-300'
-                            }`} />
-                            {faceStatus === 'detected' ? 'Feed ready' : faceStatus === 'detecting' ? 'Connecting' : 'Waiting'}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <div className="rounded-xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                          Allow camera access and confirm that the live preview is visible. Face and object monitoring starts automatically after the assessment begins.
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {[
-                            ['Camera', validationState.camera ? 'Ready' : 'Pending'],
-                            ['Feed', streamRef.current ? 'Live' : 'Off'],
-                          ].map(([label, value]) => (
-                            <div key={label} className="rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                              <span className="text-slate-400">{label}:</span> {value}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {validationState.camera && validationState.face && (
-                    <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-700 dark:text-emerald-300">
-                      <CheckCircle2 className="h-4 w-4" /> Live camera feed verified successfully.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {currentSetupStepKey === 'location' && (
-                <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Location Permission</div>
-                  <p className="text-sm text-slate-600 dark:text-gray-300">Allow location access to complete this check.</p>
-                  {locationData ? (
-                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                      <div>Latitude: {Number(locationData.latitude).toFixed(6)}</div>
-                      <div>Longitude: {Number(locationData.longitude).toFixed(6)}</div>
-                      <div>Accuracy: {Math.round(Number(locationData.accuracy || 0))} m</div>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-slate-500 dark:text-gray-400">Location is not captured yet.</div>
-                  )}
-                  {validationState.location && (
-                    <div className="flex items-center gap-2 text-sm text-emerald-600">
-                      <CheckCircle2 className="h-4 w-4" /> Location verified.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {currentSetupStepKey === 'fullscreen' && (
-                <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Fullscreen Mode Activation</div>
-                  <p className="text-sm text-slate-600 dark:text-gray-300">{isSecureAssessmentTab ? 'Enable fullscreen to continue.' : 'Open the secure assessment window to continue.'}</p>
-                  {!isSecureAssessmentTab && fullscreenRequired && (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-                      If browser extensions interfere with this assessment, open it in a private window and try again.
-                    </div>
-                  )}
-                  {(!fullscreenRequired || validationState.fullscreen) && (
-                    <div className="flex items-center gap-2 text-sm text-emerald-600">
-                      <CheckCircle2 className="h-4 w-4" /> Fullscreen check complete.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {currentSetupStepKey === 'final' && (
-                <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Final System Check</div>
-                  <div className="grid gap-2 text-sm text-slate-600 dark:text-gray-300">
-                    <div className="flex items-center justify-between">
-                      <span>Fullscreen active</span>
-                      <span className={!fullscreenRequired || validationState.fullscreen ? 'text-emerald-600' : 'text-rose-600'}>
-                        {!fullscreenRequired ? 'Not required' : validationState.fullscreen ? 'Yes' : 'No'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Camera active</span>
-                      <span className={!cameraRequired || validationState.camera ? 'text-emerald-600' : 'text-rose-600'}>
-                        {!cameraRequired ? 'Not required' : validationState.camera ? 'Yes' : 'No'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Page focused</span>
-                      <span className={validationState.environment ? 'text-emerald-600' : 'text-rose-600'}>
-                        {validationState.environment ? 'Yes' : 'No'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Duplicate assessment tabs</span>
-                      <span className={!preventMultipleTabs || detectedTabs.filter((tab) => !tab.current).length === 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                        {!preventMultipleTabs ? 'Not restricted' : detectedTabs.filter((tab) => !tab.current).length === 0 ? 'None' : 'Close duplicates'}
-                      </span>
-                    </div>
-                    {!securityRecheckActive && locationRequired && (
-                      <div className="flex items-center justify-between">
-                        <span>Location permission</span>
-                        <span className={validationState.location ? 'text-emerald-600' : 'text-rose-600'}>
-                          {validationState.location ? 'Granted' : 'Pending'}
-                        </span>
+                        <ul className="space-y-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                          <li>Click <span className="font-semibold text-slate-900 dark:text-white">Share my location</span>, then choose <span className="font-semibold text-slate-900 dark:text-white">Allow</span> when your browser asks.</li>
+                          <li>If you blocked it earlier, use the lock icon next to the address bar to allow location, then try again.</li>
+                          <li className={`font-medium ${validationState.location ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
+                            {validationState.location ? 'Location shared.' : 'Location not shared yet.'}
+                          </li>
+                        </ul>
                       </div>
                     )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    {validationState.final && (
-                      <div className="flex items-center gap-2 text-sm text-emerald-600">
-                        <CheckCircle2 className="h-4 w-4" /> All Set
+
+                    {currentSetupStepKey === 'fullscreen' && (
+                      <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-center">
+                        <div className="relative flex h-28 w-36 shrink-0 items-center justify-center rounded-xl border-2 border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900">
+                          <motion.div
+                            className="absolute rounded-md border-2 border-sky-400 bg-sky-400/10"
+                            animate={{ width: ['45%', '88%', '45%'], height: ['40%', '82%', '40%'] }}
+                            transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+                            aria-hidden="true"
+                          />
+                          <Maximize className="relative h-6 w-6 text-sky-600 dark:text-sky-400" />
+                        </div>
+                        <ul className="space-y-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                          {setupOpensSecureTab ? (
+                            <>
+                              <li>A secure assessment window opens. Continue the setup in that window.</li>
+                              <li>If nothing opens, allow pop-ups for PeerPrep and click the button again.</li>
+                            </>
+                          ) : (
+                            <>
+                              <li>Your screen switches to fullscreen when you click the button below.</li>
+                              <li>Stay in fullscreen until you submit. Leaving it is recorded.</li>
+                            </>
+                          )}
+                          {fullscreenRequired && !isSecureAssessmentTab && (
+                            <li className="text-amber-700 dark:text-amber-300">If a browser extension blocks the test, open PeerPrep in a private window and try again.</li>
+                          )}
+                          {(!fullscreenRequired || validationState.fullscreen) && (
+                            <li className="font-medium text-emerald-600 dark:text-emerald-400">Fullscreen is on.</li>
+                          )}
+                        </ul>
                       </div>
                     )}
+
+                    {currentSetupStepKey === 'final' && (
+                      <ul className="space-y-2.5">
+                        <SetupCheckRow
+                          label="Fullscreen"
+                          status={!fullscreenRequired || validationState.fullscreen ? 'ok' : 'fail'}
+                          detail={!fullscreenRequired ? 'Not required' : validationState.fullscreen ? 'On' : 'Off'}
+                        />
+                        <SetupCheckRow
+                          label="Camera"
+                          status={!cameraRequired || validationState.camera ? 'ok' : 'fail'}
+                          detail={!cameraRequired ? 'Not required' : validationState.camera ? 'On' : 'Off'}
+                        />
+                        <SetupCheckRow
+                          label="This tab in focus"
+                          status={validationState.environment ? 'ok' : 'pending'}
+                          detail={validationState.environment ? 'OK' : 'Not checked yet'}
+                        />
+                        <SetupCheckRow
+                          label="Other assessment tabs"
+                          status={!preventMultipleTabs || duplicateAssessmentTabs.length === 0 ? 'ok' : 'fail'}
+                          detail={!preventMultipleTabs ? 'Allowed' : duplicateAssessmentTabs.length === 0 ? 'None' : 'Close them'}
+                        />
+                        {!securityRecheckActive && locationRequired && (
+                          <SetupCheckRow
+                            label="Location"
+                            status={validationState.location ? 'ok' : 'fail'}
+                            detail={validationState.location ? 'Shared' : 'Not shared'}
+                          />
+                        )}
+                      </ul>
+                    )}
                   </div>
-                </div>
-              )}
 
-              {validationMessage && (
-                <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                  <AlertTriangle className="h-4 w-4" />
-                  <span>{validationMessage}</span>
-                </div>
-              )}
+                  {validationMessage && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      role="alert"
+                      className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
+                    >
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>{validationMessage}</span>
+                    </motion.div>
+                  )}
+                </motion.div>
+              </div>
 
-              <div className="sticky bottom-0 mt-5 grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-t border-slate-200 bg-slate-50 pt-4 dark:border-slate-800 dark:bg-slate-950">
-                <button
-                  type="button"
-                  onClick={() => setValidationStep((prev) => Math.max(1, prev - 1))}
-                  disabled={validationStep === 1 || Boolean(setupCheckingStep)}
-                  className="justify-self-start rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  onClick={{ environment: handleEnvironmentCheck, camera: handleCameraCheck, location: handleLocationCheck, fullscreen: fullscreenRequired && !isSecureAssessmentTab ? handleOpenSecureAssessmentTab : handleEnableFullscreen, final: handleFinalCheck }[currentSetupStepKey]}
-                  disabled={Boolean(setupCheckingStep)}
-                  className="inline-flex min-h-10 items-center justify-center gap-2 justify-self-center whitespace-nowrap rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {setupCheckingStep === currentSetupStepKey && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {{ environment: 'Run environment check', camera: 'Verify camera', location: 'Verify location', fullscreen: fullscreenRequired && !isSecureAssessmentTab ? 'Open secure tab' : 'Enable fullscreen', final: 'Run final check' }[currentSetupStepKey]}
-                </button>
-                {currentSetupStepKey !== 'final' ? (
+              <footer className="flex items-center gap-3 border-t border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-950 sm:px-10">
+                {validationStep > 1 && (
                   <button
                     type="button"
-                    onClick={() => setValidationStep((prev) => Math.min(setupSteps.length, prev + 1))}
-                    disabled={!setupStepIsDone(currentSetupStepKey) || Boolean(setupCheckingStep)}
-                    className="justify-self-end rounded-xl border border-sky-600 px-4 py-2 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 dark:disabled:border-slate-700"
+                    onClick={() => setValidationStep((prev) => Math.max(1, prev - 1))}
+                    disabled={Boolean(setupCheckingStep)}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50 dark:hover:bg-slate-800 dark:hover:text-white"
                   >
-                    Continue
+                    <ArrowLeft className="h-4 w-4" />
+                    Back
                   </button>
-                ) : (
-                  <span className="justify-self-end text-right text-xs text-slate-500 dark:text-slate-400">{isPaused ? 'Assessment resumes after verification' : 'Instructions open after verification'}</span>
                 )}
-              </div>
-            </div>
-          </div>
+                <p className="ml-auto hidden text-right text-xs text-slate-400 sm:block">
+                  {setupShowsContinue
+                    ? 'Check complete. Continue to the next step.'
+                    : currentSetupStepKey === 'final'
+                      ? (isPaused ? 'Your test resumes after this check.' : 'The instructions open after this check.')
+                      : `Click ${setupActionLabel} to run this check.`}
+                </p>
+                <motion.button
+                  type="button"
+                  whileHover={{ y: -1 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={setupShowsContinue
+                    ? () => setValidationStep((prev) => Math.min(setupSteps.length, prev + 1))
+                    : setupAction}
+                  disabled={Boolean(setupCheckingStep)}
+                  className={`ml-auto inline-flex h-11 min-w-[190px] items-center justify-center gap-2 rounded-xl px-6 text-sm font-semibold text-white shadow-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70 sm:ml-0 ${
+                    setupShowsContinue
+                      ? 'bg-emerald-600 shadow-emerald-600/25 hover:bg-emerald-500'
+                      : 'bg-sky-600 shadow-sky-600/25 hover:bg-sky-500'
+                  }`}
+                >
+                  {setupCheckingStep === currentSetupStepKey && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {setupCheckingStep === currentSetupStepKey ? 'Checking…' : setupShowsContinue ? 'Continue' : setupActionLabel}
+                  {!setupCheckingStep && <ArrowRight className="h-4 w-4" />}
+                </motion.button>
+              </footer>
+            </section>
+          </motion.div>
         </div>
       )}
-
-
 
       {showSubmitConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 px-4">
@@ -4874,116 +5065,133 @@ export default function AssessmentAttempt() {
       )}
 
       {phase === 'rules' && !isSubmitted && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-labelledby="assessment-briefing-title">
-          <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/10 dark:bg-slate-950 dark:ring-white/10 sm:max-h-[calc(100dvh-3rem)]">
-            <header className="border-b border-slate-200 px-5 pb-5 pt-5 dark:border-slate-800 sm:px-7">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-600 dark:text-sky-400">Before you begin</p>
-              <h2 id="assessment-briefing-title" className="mt-1 text-xl font-semibold text-slate-900 dark:text-white sm:text-2xl">
-                {assessment.title || 'Assessment instructions'}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-labelledby="assessment-briefing-title">
+          <motion.div
+            initial={{ opacity: 0, y: 18, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="flex h-[min(780px,calc(100dvh-1.5rem))] w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/10 dark:bg-slate-950 dark:ring-white/10"
+          >
+            <aside className="relative hidden w-[300px] shrink-0 flex-col overflow-hidden bg-slate-950 p-7 text-white lg:flex">
+              <DialogGlow />
+              <div className="relative flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-300">
+                <FileText className="h-4 w-4" />
+                Before you begin
+              </div>
+              <h2 id="assessment-briefing-title" className="relative mt-3 text-2xl font-semibold leading-tight">
+                {assessment.title || 'Assessment'}
               </h2>
-              <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-slate-200 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-800 sm:grid-cols-4">
-                {[
-                  { icon: Clock, label: 'Duration', value: `${assessment.duration} min` },
-                  { icon: Hash, label: 'Questions', value: briefingQuestionCount, hint: briefingQuestionMix },
-                  { icon: Layers, label: 'Total marks', value: assessment.totalMarks || 0 },
-                  { icon: BookOpen, label: 'Sections', value: rulesSections.length },
-                ].map(({ icon: Icon, label, value, hint }) => (
-                  <div key={label} className="bg-white px-4 py-3 dark:bg-slate-900">
-                    <dt className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+              <dl className="relative mt-6 grid grid-cols-2 gap-2.5">
+                {briefingStats.map(({ icon: Icon, label, value, hint }) => (
+                  <div key={label} className="rounded-xl bg-white/[0.06] px-3.5 py-3 ring-1 ring-white/10">
+                    <dt className="flex items-center gap-1.5 text-[11px] text-slate-400">
                       <Icon className="h-3.5 w-3.5" />
                       {label}
                     </dt>
-                    <dd className="mt-1 text-lg font-semibold tabular-nums text-slate-900 dark:text-white">{value}</dd>
-                    {hint && <dd className="truncate text-[11px] text-slate-500 dark:text-slate-400">{hint}</dd>}
+                    <dd className="mt-1 text-lg font-semibold tabular-nums">{value}</dd>
+                    {hint && <dd className="mt-0.5 text-[10px] leading-4 text-slate-400">{hint}</dd>}
                   </div>
                 ))}
               </dl>
-            </header>
+              <div className="relative mt-auto flex flex-col items-center pt-6 text-center">
+                <BriefingCountdown seconds={rulesCountdown} total={RULES_COUNTDOWN_SECONDS} ready={rulesReady} />
+                <p className="mt-4 max-w-[220px] text-sm leading-5 text-slate-300">
+                  {rulesReady ? 'You are ready. Start when you are.' : 'Read the rules carefully. Start unlocks when the timer ends.'}
+                </p>
+              </div>
+            </aside>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
-              {briefingInstructorNotes.length > 0 && (
-                <section className="mb-6 rounded-xl border border-sky-200 bg-sky-50/70 p-4 dark:border-sky-900 dark:bg-sky-950/30">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-sky-900 dark:text-sky-200">
-                    <AlertCircle className="h-4 w-4" />
-                    From your instructor
-                  </h3>
-                  <ul className="mt-2 space-y-1.5 text-[13px] leading-5 text-slate-700 dark:text-slate-300">
-                    {briefingInstructorNotes.map((text, idx) => (
-                      <li key={`note-${idx}`} className="whitespace-pre-line">{text}</li>
-                    ))}
-                  </ul>
-                </section>
-              )}
+            <section className="flex min-w-0 flex-1 flex-col">
+              <header className="border-b border-slate-200 px-5 py-4 dark:border-slate-800 lg:hidden">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-600 dark:text-sky-400">Before you begin</p>
+                <h2 className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{assessment.title || 'Assessment'}</h2>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {briefingStats.map(({ label, value }) => `${label}: ${value}`).join(' · ')}
+                </p>
+              </header>
 
-              <div className="grid gap-x-8 gap-y-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
-                <div className="space-y-6">
-                  <section>
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Sections</h3>
-                    <ol className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-                      {rulesSections.map((sec, idx) => {
-                        const summary = sectionSummaries[idx];
-                        const questionCount = sec.questionCount;
-                        const marksEach = sec.marksEach;
-                        const totalSectionMarks = sec.totalMarks || (questionCount * marksEach);
-                        const sectionType = summary?.typeLabel || formatSectionTypeLabel(sec?.type);
-                        const sectionLabel = sec?.sectionName || `Section ${idx + 1}`;
-
-                        return (
-                          <li key={`${sectionLabel}-${idx}`} className="flex items-center gap-3 px-3.5 py-3">
-                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                              {idx + 1}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium text-slate-900 dark:text-white">{sectionLabel}</div>
-                              <div className="text-xs text-slate-500 dark:text-slate-400">
-                                {sectionType} · Q{summary?.start || 1}–Q{summary?.end || questionCount}
-                              </div>
-                            </div>
-                            <div className="shrink-0 text-right">
-                              <div className="text-sm font-semibold tabular-nums text-slate-900 dark:text-white">{totalSectionMarks} {totalSectionMarks === 1 ? 'mark' : 'marks'}</div>
-                              <div className="text-xs tabular-nums text-slate-500 dark:text-slate-400">
-                                {questionCount} × {marksEach} {marksEach === 1 ? 'mark' : 'marks'}
-                              </div>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  </section>
-
-                  <section>
-                    <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-                      <Monitor className="h-4 w-4 text-slate-400" />
-                      What you need
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-8 sm:py-7">
+                {briefingInstructorNotes.length > 0 && (
+                  <motion.section
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                    className="mb-7 rounded-2xl border border-sky-200 bg-sky-50/70 p-5 dark:border-sky-900 dark:bg-sky-950/30"
+                  >
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-sky-900 dark:text-sky-200">
+                      <AlertCircle className="h-4 w-4" />
+                      From your instructor
                     </h3>
-                    <ul className="mt-2 space-y-2">
-                      {briefingRequirements.map((text) => (
-                        <li key={text} className="flex items-start gap-2 text-[13px] leading-5 text-slate-700 dark:text-slate-300">
-                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
-                          <span>{text}</span>
-                        </li>
+                    <ul className="mt-2 space-y-1.5 text-sm leading-6 text-slate-700 dark:text-slate-300">
+                      {briefingInstructorNotes.map((text, idx) => (
+                        <li key={`note-${idx}`} className="whitespace-pre-line">{text}</li>
                       ))}
                     </ul>
-                  </section>
-                </div>
+                  </motion.section>
+                )}
 
-                <div>
-                  <section>
-                    <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-                      <ShieldCheck className="h-4 w-4 text-slate-400" />
-                      Rules
-                    </h3>
-                    <div className="mt-2 grid gap-5 sm:grid-cols-2">
+                <div className="grid gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.05 }} className="space-y-8">
+                    <section>
+                      <h3 className="text-[15px] font-semibold text-slate-900 dark:text-white">Sections</h3>
+                      <ol className="mt-3 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                        {rulesSections.map((sec, idx) => {
+                          const summary = sectionSummaries[idx];
+                          const questionCount = sec.questionCount;
+                          const marksEach = sec.marksEach;
+                          const totalSectionMarks = sec.totalMarks || (questionCount * marksEach);
+                          const sectionType = summary?.typeLabel || formatSectionTypeLabel(sec?.type);
+                          const sectionLabel = sec?.sectionName || `Section ${idx + 1}`;
+
+                          return (
+                            <li key={`${sectionLabel}-${idx}`} className="flex items-center gap-3.5 px-4 py-3.5">
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sm font-semibold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
+                                {idx + 1}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-medium text-slate-900 dark:text-white">{sectionLabel}</div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400">
+                                  {sectionType} · Q{summary?.start || 1}–Q{summary?.end || questionCount}
+                                </div>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <div className="text-sm font-semibold tabular-nums text-slate-900 dark:text-white">{totalSectionMarks} {totalSectionMarks === 1 ? 'mark' : 'marks'}</div>
+                                <div className="text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                                  {questionCount} × {marksEach} {marksEach === 1 ? 'mark' : 'marks'}
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    </section>
+
+                    <section>
+                      <h3 className="text-[15px] font-semibold text-slate-900 dark:text-white">What you need</h3>
+                      <ul className="mt-3 space-y-2.5">
+                        {briefingRequirements.map((text) => (
+                          <li key={text} className="flex items-start gap-2.5 text-sm leading-5 text-slate-700 dark:text-slate-300">
+                            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
+                            <span>{text}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  </motion.div>
+
+                  <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.12 }}>
+                    <h3 className="text-[15px] font-semibold text-slate-900 dark:text-white">Rules</h3>
+                    <div className="mt-3 grid gap-6 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
                       {[
                         ['During the test', briefingConductRules],
                         ['Questions and time', briefingFlowRules],
                       ].map(([title, rules]) => (
                         <div key={title}>
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{title}</div>
-                          <ul className="mt-2 space-y-2">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{title}</div>
+                          <ul className="mt-2.5 space-y-2.5">
                             {rules.map((text) => (
-                              <li key={text} className="flex items-start gap-2.5 text-[13px] leading-5 text-slate-700 dark:text-slate-300">
-                                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
+                              <li key={text} className="flex items-start gap-2.5 text-sm leading-[1.4rem] text-slate-700 dark:text-slate-300">
+                                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
                                 <span>{text}</span>
                               </li>
                             ))}
@@ -4991,44 +5199,61 @@ export default function AssessmentAttempt() {
                         </div>
                       ))}
                     </div>
-                  </section>
+                  </motion.section>
                 </div>
+
+                {aiProctoringEnabled && (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }} className="mt-8">
+                    <AnviProctoringCard
+                      settings={aiProctoringSettings}
+                      snapshotsEnabled={cameraRequired}
+                    />
+                  </motion.div>
+                )}
+
+                <motion.section
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: 0.26 }}
+                  className="mt-8 rounded-2xl border border-slate-200 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/60"
+                >
+                  <h3 className="flex items-center gap-2 text-[15px] font-semibold text-slate-900 dark:text-white">
+                    <ShieldCheck className="h-4 w-4 text-slate-500" />
+                    Terms and conditions
+                  </h3>
+                  <ol className="mt-3 space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    {briefingTerms.map((text, index) => (
+                      <li key={text} className="flex gap-3">
+                        <span className="w-4 shrink-0 text-right font-medium tabular-nums text-slate-400">{index + 1}.</span>
+                        <span>{text}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </motion.section>
               </div>
 
-              {aiProctoringEnabled && (
-                <div className="mt-6">
-                  <AnviProctoringCard
-                    settings={aiProctoringSettings}
-                    snapshotsEnabled={cameraRequired}
-                  />
-                </div>
-              )}
-            </div>
-
-            <footer className="relative border-t border-slate-200 px-5 py-4 dark:border-slate-800 sm:px-7">
-              <div className="absolute inset-x-0 top-0 h-0.5 bg-slate-100 dark:bg-slate-800" aria-hidden="true">
-                <div className="h-full bg-sky-500 transition-[width] duration-1000 ease-linear" style={{ width: `${briefingProgress}%` }} />
-              </div>
-              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <footer className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between sm:px-8">
                 <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  {rulesReady
-                    ? 'All set. You can start the assessment now.'
-                    : `Please read the instructions. You can start in ${rulesCountdown} seconds.`}
+                  By starting, you agree to the rules and terms above.
                 </p>
-                <button
+                <motion.button
                   type="button"
+                  whileHover={rulesReady ? { y: -1 } : undefined}
+                  whileTap={rulesReady ? { scale: 0.98 } : undefined}
+                  animate={rulesReady ? { boxShadow: ['0 0 0 0 rgba(14,165,233,0.45)', '0 0 0 12px rgba(14,165,233,0)'] } : { boxShadow: '0 0 0 0 rgba(14,165,233,0)' }}
+                  transition={rulesReady ? { duration: 1.6, repeat: Infinity } : { duration: 0.2 }}
                   onClick={() => { void startAssessment(); }}
                   disabled={!rulesReady}
-                  className={`inline-flex min-w-[180px] items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${
+                  className={`inline-flex h-12 min-w-[210px] items-center justify-center gap-2 rounded-xl px-7 text-[15px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${
                     rulesReady
-                      ? 'bg-sky-600 text-white shadow-sm hover:bg-sky-500'
+                      ? 'bg-sky-600 text-white hover:bg-sky-500'
                       : 'cursor-not-allowed bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
                   }`}
                 >
                   {rulesReady ? (
                     <>
                       Start assessment
-                      <ChevronRight className="h-4 w-4" />
+                      <ArrowRight className="h-4 w-4" />
                     </>
                   ) : (
                     <>
@@ -5036,22 +5261,38 @@ export default function AssessmentAttempt() {
                       <span className="tabular-nums">Start in {rulesCountdown}s</span>
                     </>
                   )}
-                </button>
-              </div>
-            </footer>
-          </div>
+                </motion.button>
+              </footer>
+            </section>
+          </motion.div>
         </div>
       )}
 
       {phase === 'violation' && !isPaused && !isSubmitted && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
-          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-xl dark:border-rose-800 dark:bg-gray-900">
-            <div className="flex items-center gap-2 text-rose-600">
-              <AlertTriangle className="h-5 w-5" />
-              <span className="text-sm font-semibold">Violation detected</span>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">{violationMessage || 'Violation detected. Tab switching is not allowed.'}</p>
-            <div className="mt-4 flex items-center justify-end gap-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm" role="alertdialog" aria-modal="true" aria-labelledby="violation-title">
+          <motion.div
+            initial={{ opacity: 0, y: 14, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-rose-200 dark:bg-slate-900 dark:ring-rose-900/60"
+          >
+            <div className="h-1 bg-gradient-to-r from-rose-500 via-rose-400 to-amber-400" />
+            <div className="p-6 sm:p-7">
+              <motion.span
+                initial={{ rotate: -8, scale: 0.8 }}
+                animate={{ rotate: 0, scale: 1 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 14 }}
+                className="flex h-12 w-12 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300"
+              >
+                <AlertTriangle className="h-6 w-6" />
+              </motion.span>
+              <h2 id="violation-title" className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">Security check required</h2>
+              <p className="mt-1.5 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {violationMessage || 'A test rule was broken, for example switching away from this tab.'}
+              </p>
+              <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                This has been recorded. Complete the security check again to continue your test.
+              </p>
               <button
                 type="button"
                 onClick={() => {
@@ -5060,12 +5301,13 @@ export default function AssessmentAttempt() {
                   setPhase('validation');
                   setViolationMessage('');
                 }}
-                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-500"
+                className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white shadow-lg shadow-rose-600/20 transition-colors hover:bg-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
               >
-                Re-Verify Environment
+                Start security check
+                <ArrowRight className="h-4 w-4" />
               </button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
 
