@@ -4,22 +4,25 @@ import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import {
   ArrowLeft, ArrowRight, BarChart3, Clock, Download, FileSpreadsheet, Filter,
-  GraduationCap, LayoutDashboard, Megaphone, RotateCcw, Search,
-  ShieldAlert, SlidersHorizontal, Target, TrendingUp, Users, X,
+  GraduationCap, LayoutDashboard, Megaphone, Search,
+  ShieldAlert, SlidersHorizontal, TrendingUp, Users, X,
 } from 'lucide-react';
 import {
-  KpiCard, FilterChip, SortHeader,
+  FilterChip, SortHeader,
   TableEmpty, TableRow, SkeletonRow,
   formatDuration, formatDateTime,
 } from './reports/ReportComponents';
 import ReportDetailDrawer from './reports/ReportDetailDrawer';
 import ReportViolationModal from './reports/ReportViolationModal';
+import ReportOverview from './reports/ReportOverview';
+import RosterFilterSheet from './reports/RosterFilterSheet';
+import LiveRefreshControl from './reports/LiveRefreshControl';
 import { assessmentAnalysisPath } from './prepAnalysis/analysisPreset';
-import useLiveAssessmentRoster from './reports/useLiveAssessmentRoster';
+import useLiveAssessmentRoster, { DEFAULT_REFRESH_INTERVAL_MS } from './reports/useLiveAssessmentRoster';
 import {
-  DEFAULT_ROSTER_FILTERS, DISTRIBUTION_BUCKETS, ROSTER_EVALUATION_OPTIONS, ROSTER_PAGE_SIZES,
+  DEFAULT_ROSTER_FILTERS, ROSTER_EVALUATION_OPTIONS, ROSTER_PAGE_SIZES,
   ROSTER_STATUS_OPTIONS, ROSTER_TYPE_OPTIONS, computeRosterStats, filterRosterRows,
-  formatRelativeAge, hasActiveRosterFilters, paginateRows, rowHasViolations, rowViolationCount,
+  hasActiveRosterFilters, paginateRows, rowHasViolations, rowOutcome, rowViolationCount,
   sortRosterRows,
 } from './reports/rosterModel';
 
@@ -30,15 +33,52 @@ const ROSTER_COLUMN_LABELS = {
   startedAt: 'Started', submittedAt: 'Submitted', time: 'Time', violations: 'Flags',
 };
 
-const OUTCOME_SEGMENTS = [
-  { key: 'passed', label: 'Passed', bar: 'bg-lime-500', tile: 'bg-lime-50 text-lime-700 dark:bg-lime-900/15 dark:text-lime-400' },
-  { key: 'failed', label: 'Failed', bar: 'bg-rose-400', tile: 'bg-rose-50 text-rose-700 dark:bg-rose-900/15 dark:text-rose-300' },
-  { key: 'graded', label: 'Graded', bar: 'bg-sky-600', tile: 'bg-sky-50 text-sky-700 dark:bg-sky-900/15 dark:text-sky-300', optional: true },
-  { key: 'evaluating', label: 'Evaluating', bar: 'bg-slate-400', tile: 'bg-slate-50 text-slate-600 dark:bg-gray-800 dark:text-gray-300' },
-  { key: 'needs_review', label: 'Needs review', bar: 'bg-amber-400', tile: 'bg-amber-50 text-amber-700 dark:bg-amber-900/15 dark:text-amber-300', optional: true },
-  { key: 'in_progress', label: 'In progress', bar: 'bg-sky-400', tile: 'bg-sky-50 text-sky-700 dark:bg-sky-900/15 dark:text-sky-300' },
-  { key: 'not_started', label: 'Not started', bar: 'bg-slate-200 dark:bg-gray-700', tile: 'bg-slate-50 text-slate-500 dark:bg-gray-800 dark:text-gray-400' },
+// Quick views above the candidate table. Outcome views (passed, failed, ...) are
+// reached from the overview's completion breakdown.
+const QUICK_VIEWS = [
+  { key: 'all', label: 'All' },
+  { key: 'in_progress', label: 'In progress' },
+  { key: 'finished', label: 'Finished' },
+  { key: 'not_started', label: 'Not started' },
+  { key: 'flagged', label: 'Flagged' },
 ];
+const OUTCOME_VIEW_LABELS = {
+  passed: 'Passed', failed: 'Failed', graded: 'Graded', evaluating: 'Evaluating', needs_review: 'Needs review',
+};
+const matchesQuickView = (row, view, passPercentage) => {
+  if (view === 'all') return true;
+  if (view === 'in_progress') return row.status === 'in_progress';
+  if (view === 'not_started') return !row.status || row.status === 'not_started';
+  if (view === 'finished') return Boolean(row.status) && row.status !== 'in_progress' && row.status !== 'not_started';
+  if (view === 'flagged') return Boolean(row.flagged) || rowHasViolations(row);
+  return rowOutcome(row, passPercentage) === view;
+};
+
+const REFRESH_INTERVAL_KEY = 'peerprep.reports.refreshIntervalMs';
+const filtersStorageKey = (assessmentId) => `peerprep.reports.filters.${assessmentId}`;
+
+function readRefreshInterval() {
+  try {
+    const saved = window.localStorage.getItem(REFRESH_INTERVAL_KEY);
+    if (saved === null) return DEFAULT_REFRESH_INTERVAL_MS;
+    const value = Number(saved);
+    return [0, 15000, 30000, 60000].includes(value) ? value : DEFAULT_REFRESH_INTERVAL_MS;
+  } catch {
+    return DEFAULT_REFRESH_INTERVAL_MS;
+  }
+}
+
+// Filters survive a remount of the page (for example a layout re-render) for the session.
+function readSavedFilters(assessmentId) {
+  if (!assessmentId) return DEFAULT_ROSTER_FILTERS;
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(filtersStorageKey(assessmentId)) || 'null');
+    if (!saved || typeof saved !== 'object') return DEFAULT_ROSTER_FILTERS;
+    return { ...DEFAULT_ROSTER_FILTERS, ...saved, statuses: Array.isArray(saved.statuses) ? saved.statuses : [] };
+  } catch {
+    return DEFAULT_ROSTER_FILTERS;
+  }
+}
 
 /** Shape a roster row the way the detail drawer and violation modal expect. */
 const toDrawerStudent = (row) => ({
@@ -49,25 +89,6 @@ const toDrawerStudent = (row) => ({
   attemptDate: row.startedAt,
   violationCount: rowViolationCount(row),
 });
-
-function LiveIndicator({ live, lastUpdatedAt, mode, loading }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 5000);
-    return () => window.clearInterval(timer);
-  }, []);
-  const label = live ? 'Live' : mode === 'legacy' ? 'Auto-refresh' : 'Offline · retrying';
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${live ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}
-      title={live ? 'Updates arrive as candidates save answers' : 'Live updates unavailable; refreshing every 60 seconds'}
-      aria-live="polite"
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${live ? 'animate-pulse bg-emerald-500' : 'bg-slate-400'}`} />
-      {label} · {loading && !lastUpdatedAt ? 'loading…' : `updated ${formatRelativeAge(lastUpdatedAt, now)}`}
-    </span>
-  );
-}
 
 const reportAssessmentStatus = (assessment, now = Date.now()) => {
   if (assessment.isVisible === false) return 'Archived';
@@ -187,7 +208,6 @@ export default function AssessmentReports() {
   const navigate = useNavigate();
   const location = useLocation();
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
-  const searchRef = useRef(null);
   const initialAssessmentId = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('assessmentId') || ''
     : '';
@@ -197,15 +217,37 @@ export default function AssessmentReports() {
   const [selectedAssessmentId, setSelectedAssessmentId] = useState(initialAssessmentId);
 
   /* Candidate filters (all client-side, applied to the live roster) */
-  const [rosterFilters, setRosterFilters] = useState(DEFAULT_ROSTER_FILTERS);
+  const [rosterFilters, setRosterFilters] = useState(() => readSavedFilters(initialAssessmentId));
+  const filtersOwnerRef = useRef(initialAssessmentId);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [quickView, setQuickView] = useState('all');
   const [assessmentSearch, setAssessmentSearch] = useState('');
   const [statusTime, setStatusTime] = useState(() => Date.now());
+  const [refreshIntervalMs, setRefreshIntervalMs] = useState(readRefreshInterval);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setStatusTime(Date.now()), 60000);
+    // Ticks the relative times in the activity feed and the assessment status badges.
+    const timer = window.setInterval(() => setStatusTime(Date.now()), 15000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const changeRefreshInterval = useCallback((value) => {
+    setRefreshIntervalMs(value);
+    try { window.localStorage.setItem(REFRESH_INTERVAL_KEY, String(value)); } catch { /* preference only */ }
+  }, []);
+
+  /* Each assessment keeps its own filters for the session. */
+  useEffect(() => {
+    if (filtersOwnerRef.current === selectedAssessmentId) return;
+    filtersOwnerRef.current = selectedAssessmentId;
+    setRosterFilters(readSavedFilters(selectedAssessmentId));
+    setQuickView('all');
+  }, [selectedAssessmentId]);
+  useEffect(() => {
+    const id = filtersOwnerRef.current;
+    if (!id) return;
+    try { window.sessionStorage.setItem(filtersStorageKey(id), JSON.stringify(rosterFilters)); } catch { /* preference only */ }
+  }, [rosterFilters]);
 
   /* Page shell data (assessment list); loaded once, not per filter change */
   const [assessments, setAssessments] = useState([]);
@@ -248,7 +290,7 @@ export default function AssessmentReports() {
     [allAssessments, assessments, selectedAssessmentId]
   );
 
-  const roster = useLiveAssessmentRoster(selectedAssessmentId, { fallbackAssessment: selectedAssessment });
+  const roster = useLiveAssessmentRoster(selectedAssessmentId, { fallbackAssessment: selectedAssessment, intervalMs: refreshIntervalMs });
 
   /* Shell metadata merged with the roster's authoritative assessment summary. */
   const reportAssessment = useMemo(() => {
@@ -329,7 +371,7 @@ export default function AssessmentReports() {
   }, [allAssessments, assessments, selectedAssessmentId]);
 
   /* Client pagination returns to page 1 whenever the visible set changes shape. */
-  useEffect(() => { setPage(1); }, [rosterFilters, sort, selectedAssessmentId, activeTab, pageSize]);
+  useEffect(() => { setPage(1); }, [rosterFilters, sort, selectedAssessmentId, activeTab, pageSize, quickView]);
 
   /* ── Results release state for the selected assessment ── */
   useEffect(() => {
@@ -764,12 +806,15 @@ export default function AssessmentReports() {
   /* ── Clear ── */
   const clearFilters = useCallback(() => {
     setRosterFilters(DEFAULT_ROSTER_FILTERS);
+    setQuickView('all');
   }, []);
+  const closeFilterPanel = useCallback(() => setShowFilterPanel(false), []);
 
   /* ── Active chips ── */
   const activeChips = useMemo(() => {
     const chips = [];
     const f = rosterFilters;
+    if (OUTCOME_VIEW_LABELS[quickView]) chips.push({ key: 'view', label: `Outcome: ${OUTCOME_VIEW_LABELS[quickView]}`, clear: () => setQuickView('all') });
     if (f.query.trim()) chips.push({ key: 'query', label: `Search: ${f.query.trim()}`, clear: () => updateRosterFilter('query', '') });
     f.statuses.forEach((status) => {
       const label = ROSTER_STATUS_OPTIONS.find((option) => option.value === status)?.label || status;
@@ -781,7 +826,7 @@ export default function AssessmentReports() {
     if (f.flaggedOnly) chips.push({ key: 'flagged', label: 'Flagged only', clear: () => updateRosterFilter('flaggedOnly', false) });
     if (f.hasViolations) chips.push({ key: 'violations', label: 'Has violations', clear: () => updateRosterFilter('hasViolations', false) });
     return chips;
-  }, [rosterFilters, toggleStatusFilter, updateRosterFilter]);
+  }, [quickView, rosterFilters, toggleStatusFilter, updateRosterFilter]);
 
   /* ── Roster derived data (client-side, instant) ── */
   const stats = useMemo(
@@ -795,10 +840,39 @@ export default function AssessmentReports() {
     return counts;
   }, [roster.rows]);
 
-  const tabRows = useMemo(
-    () => (activeTab === 'violations' ? roster.rows.filter((row) => row.flagged || rowHasViolations(row)) : roster.rows),
-    [activeTab, roster.rows],
-  );
+  const quickViewCounts = useMemo(() => Object.fromEntries(
+    QUICK_VIEWS.map(({ key }) => [key, roster.rows.filter((row) => matchesQuickView(row, key, passPercentage)).length]),
+  ), [passPercentage, roster.rows]);
+  const tabRows = useMemo(() => {
+    const base = activeTab === 'violations' ? roster.rows.filter((row) => row.flagged || rowHasViolations(row)) : roster.rows;
+    return quickView === 'all' ? base : base.filter((row) => matchesQuickView(row, quickView, passPercentage));
+  }, [activeTab, passPercentage, quickView, roster.rows]);
+
+  /* Change of each headline number since the previous live update. */
+  const [kpiDeltas, setKpiDeltas] = useState({});
+  const statsSnapshotRef = useRef({ at: null, stats: null });
+  useEffect(() => {
+    statsSnapshotRef.current = { at: null, stats: null };
+    setKpiDeltas({});
+  }, [selectedAssessmentId]);
+  useEffect(() => {
+    const previous = statsSnapshotRef.current;
+    if (!roster.lastUpdatedAt || previous.at === roster.lastUpdatedAt) return;
+    statsSnapshotRef.current = { at: roster.lastUpdatedAt, stats };
+    if (!previous.stats) return;
+    setKpiDeltas({
+      started: stats.started - previous.stats.started,
+      inProgress: stats.inProgress - previous.stats.inProgress,
+      submitted: stats.submitted - previous.stats.submitted,
+      flagged: stats.flaggedSessions - previous.stats.flaggedSessions,
+    });
+  }, [roster.lastUpdatedAt, stats]);
+
+  /* Overview shortcuts open the candidate table on the matching view. */
+  const showCandidates = useCallback((view) => {
+    setQuickView(view === 'flagged' || QUICK_VIEWS.some((entry) => entry.key === view) || OUTCOME_VIEW_LABELS[view] ? view : 'all');
+    setActiveTab('candidates');
+  }, []);
   const visibleRows = useMemo(
     () => sortRosterRows(filterRosterRows(tabRows, rosterFilters), sort),
     [rosterFilters, sort, tabRows],
@@ -817,38 +891,33 @@ export default function AssessmentReports() {
     else if (stats.graded && passPercentage == null) passInsight = 'Pass mark not set';
     return [
       {
-        icon: Users, label: 'Candidates', value: stats.total,
+        icon: Users, label: 'Candidates', value: stats.total, delta: kpiDeltas.started,
         insight: `${stats.started} started · ${stats.notStarted} not started`, tone: 'sky',
       },
       {
-        icon: Clock, label: 'In progress', value: stats.inProgress,
-        insight: reportAssessment?.totalQuestions ? `${reportAssessment.totalQuestions} questions · ${reportAssessment.totalMarks || 0} marks` : undefined,
+        icon: Clock, label: 'In progress', value: stats.inProgress, delta: kpiDeltas.inProgress,
+        insight: reportAssessment?.totalQuestions ? `${reportAssessment.totalQuestions} questions · ${reportAssessment.totalMarks || 0} marks` : 'Writing right now',
         tone: 'sky',
       },
       {
-        icon: GraduationCap, label: 'Submitted', value: stats.submitted,
-        insight: gradedParts.join(' · '), tone: 'lime',
+        icon: GraduationCap, label: 'Submitted', value: stats.submitted, delta: kpiDeltas.submitted,
+        insight: gradedParts.join(' · '), tone: 'emerald',
       },
       {
         icon: TrendingUp, label: 'Avg Score', value: pct(stats.avgPercentage),
         insight: stats.avgPercentage == null ? 'No graded attempts yet' : `Low ${stats.minPercentage}% · High ${stats.maxPercentage}%`,
-        tone: 'lime',
+        tone: 'violet',
       },
       {
         icon: BarChart3, label: 'Pass Rate', value: pct(stats.passRate),
-        insight: passInsight, tone: 'lime',
+        insight: passInsight, tone: 'emerald',
       },
       {
-        icon: ShieldAlert, label: 'Flagged', value: stats.flaggedSessions,
-        insight: `${stats.violationEvents} integrity events`, tone: 'sky',
+        icon: ShieldAlert, label: 'Flagged', value: stats.flaggedSessions, delta: kpiDeltas.flagged,
+        insight: `${stats.violationEvents} integrity events`, tone: 'rose',
       },
     ];
-  }, [passPercentage, reportAssessment, stats]);
-
-  const distributionMaximum = Math.max(1, ...stats.distribution);
-  const outcomeSegments = OUTCOME_SEGMENTS
-    .map((segment) => ({ ...segment, count: stats.outcome[segment.key] || 0 }))
-    .filter((segment) => !segment.optional || segment.count > 0);
+  }, [kpiDeltas, passPercentage, reportAssessment, stats]);
 
   // Violation chart data, from the live roster
   const violationLabels = ['Tab Switch', 'Fullscreen Exit', 'Camera Flags', 'AI Flags'];
@@ -874,6 +943,37 @@ export default function AssessmentReports() {
 
   const totalPages = pageData.totalPages;
   const currentPage = pageData.page;
+
+  const openViolationsFor = useCallback((rowKey) => {
+    const row = roster.rows.find((entry) => entry.key === rowKey);
+    if (row?.submissionId) void openViolationReport(row.submissionId);
+  }, [openViolationReport, roster.rows]);
+
+  const releaseControl = (
+    <div className="flex flex-col items-start gap-1.5 lg:items-end">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-gray-500">Student results</span>
+      {!releaseSettings ? (
+        <div className="h-8 w-40 animate-pulse rounded-lg bg-slate-100 dark:bg-gray-800" />
+      ) : releaseSettings.showResultsAfterSubmit ? (
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" title="Students see their result after submitting, once evaluation completes. Change this in the assessment's Results settings.">Shown after submission</span>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${resultsReleasedAt ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>
+            {resultsReleasedAt ? `Released ${formatDateTime(resultsReleasedAt)}` : 'Not announced'}
+          </span>
+          <button
+            type="button"
+            disabled={releaseBusy}
+            onClick={() => setReleaseConfirm(resultsReleasedAt ? 'withdraw' : 'release')}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors disabled:opacity-60 ${resultsReleasedAt ? 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700' : 'bg-sky-600 text-white shadow-sm hover:bg-sky-500'}`}
+          >
+            <Megaphone className="h-3.5 w-3.5" />
+            {resultsReleasedAt ? 'Withdraw' : 'Release results'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 
   const assessmentRail = (
     <div className="flex h-full min-h-0 flex-col border-r border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950">
@@ -938,8 +1038,8 @@ export default function AssessmentReports() {
   );
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f5fbff] text-slate-900 dark:bg-gray-950">
-      <div data-page-header className="shrink-0 border-b border-sky-100 bg-white shadow-sm shadow-sky-950/5 dark:border-gray-800 dark:bg-gray-900">
+    <div className="h-screen overflow-hidden bg-slate-50 text-slate-900 dark:bg-gray-950">
+      <div data-page-header className="shrink-0 border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <button
@@ -964,17 +1064,6 @@ export default function AssessmentReports() {
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-3">
-              <div className={`relative hidden sm:block ${activeTab === 'analytics' || (activeTab === 'overview' && !selectedAssessment) ? 'lg:hidden' : ''}`}>
-                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                <input
-                  ref={searchRef}
-                  value={rosterFilters.query}
-                  onChange={(e) => updateRosterFilter('query', e.target.value)}
-                  placeholder="Search candidates..."
-                  className="h-9 w-56 rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs text-slate-700 outline-none ring-sky-200 transition-all placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:ring-sky-900"
-                />
-              </div>
-
               <div className="relative lg:hidden">
                 <select
                   value={selectedAssessmentId || ''}
@@ -997,17 +1086,20 @@ export default function AssessmentReports() {
               </div>
             </div>
 
-            {activeTab !== 'analytics' && (activeTab !== 'overview' || selectedAssessment) && <div className="flex items-center gap-2">
-              <button onClick={() => { void roster.refresh(); setShellVersion((value) => value + 1); }} className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" title="Refresh">
-                <RotateCcw className="h-3.5 w-3.5" />
-              </button>
-
+            {selectedAssessment && <div className="flex items-center gap-2">
+              <LiveRefreshControl
+                roster={roster}
+                intervalMs={refreshIntervalMs}
+                onIntervalChange={changeRefreshInterval}
+                onRefresh={() => { void roster.refresh(); setShellVersion((value) => value + 1); }}
+              />
               <button
+                type="button"
                 onClick={() => setShowExportModal(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-lime-200 bg-lime-50 px-3 text-xs font-semibold text-lime-700 transition-colors hover:bg-lime-100 dark:border-lime-800 dark:bg-lime-900/20 dark:text-lime-300 dark:hover:bg-lime-900/30"
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-gray-200"
               >
                 <Download className="h-3.5 w-3.5" />
-                <span>Download Excel</span>
+                <span className="hidden sm:inline">Export</span>
               </button>
             </div>}
           </div>
@@ -1064,143 +1156,29 @@ export default function AssessmentReports() {
           </div>
         )}
 
-        {activeTab === 'overview' && selectedAssessment && (
-          <section className="mb-3 flex flex-col gap-3 rounded-xl border border-sky-100 bg-white px-4 py-3 shadow-sm dark:border-sky-900/40 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="truncate text-sm font-bold text-slate-900 dark:text-white">{selectedAssessment.title || 'Untitled assessment'}</h2>
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${reportAssessmentStatusClass[reportAssessmentStatus(selectedAssessment, statusTime)]}`}>{reportAssessmentStatus(selectedAssessment, statusTime)}</span>
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-400 dark:text-gray-500">
-                <span>{selectedAssessment.assessmentType || selectedAssessment.testType || 'Mixed'}</span>
-                <span aria-hidden="true">·</span>
-                <span>ID {selectedAssessment.assessmentId || '—'}</span>
-                <LiveIndicator live={roster.live} lastUpdatedAt={roster.lastUpdatedAt} mode={roster.mode} loading={roster.loading} />
-              </div>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-5 text-xs">
-              <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Starts</div><div className="mt-0.5 font-semibold text-slate-700 dark:text-gray-200">{formatDateTime(reportAssessment?.startTime)}</div></div>
-              <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Duration</div><div className="mt-0.5 font-semibold text-slate-700 dark:text-gray-200">{reportAssessment?.duration ? `${reportAssessment.duration} min` : 'Not set'}</div></div>
-              <div className="min-w-0">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Student results</div>
-                {!releaseSettings ? (
-                  <div className="mt-0.5 h-4 w-24 animate-pulse rounded bg-slate-100 dark:bg-gray-800" />
-                ) : releaseSettings.showResultsAfterSubmit ? (
-                  <div className="mt-0.5 font-semibold text-slate-700 dark:text-gray-200" title="Students see their result after submitting, once evaluation completes. Change this in the assessment's Results settings.">Shown after submission</div>
-                ) : (
-                  <div className="mt-0.5 flex items-center gap-2">
-                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${resultsReleasedAt ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>
-                      {resultsReleasedAt ? `Released ${formatDateTime(resultsReleasedAt)}` : 'Not announced'}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={releaseBusy}
-                      onClick={() => setReleaseConfirm(resultsReleasedAt ? 'withdraw' : 'release')}
-                      className={`inline-flex h-7 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold transition-colors disabled:opacity-60 ${resultsReleasedAt ? 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700' : 'bg-sky-600 text-white hover:bg-sky-500'}`}
-                    >
-                      <Megaphone className="h-3 w-3" />
-                      {resultsReleasedAt ? 'Withdraw' : 'Release results'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
-
         {activeTab === 'overview' && selectedAssessment && roster.error && (
           <div role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
             {roster.error}{roster.rows.length ? ' Showing the last loaded data.' : ''}
           </div>
         )}
 
-        {/* ── KPI Cards ── */}
         {activeTab === 'overview' && selectedAssessment && (
-          <div className="mb-4 grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            {kpiData.map((k, i) => <KpiCard key={k.label} {...k} delay={i * 50} />)}
+          <div className="mb-4">
+            <ReportOverview
+              assessment={{ ...selectedAssessment, ...(reportAssessment || {}), passPercentage }}
+              statusLabel={reportAssessmentStatus(selectedAssessment, statusTime)}
+              statusClass={reportAssessmentStatusClass[reportAssessmentStatus(selectedAssessment, statusTime)]}
+              stats={stats}
+              kpis={kpiData}
+              release={releaseControl}
+              rows={roster.rows}
+              activity={roster.activity}
+              now={statusTime}
+              onOpenStudent={openStudentDetail}
+              onOpenViolations={openViolationsFor}
+              onShowCandidates={showCandidates}
+            />
           </div>
-        )}
-
-        {/* ── Compact performance insights ── */}
-        {activeTab === 'overview' && selectedAssessment && (
-          <section className="mb-3 grid gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 shadow-sm lg:grid-cols-3 dark:border-gray-700 dark:bg-gray-700">
-            <article className="flex min-h-44 flex-col bg-white dark:bg-gray-900">
-              <header className="flex h-11 items-center justify-between border-b border-slate-100 px-4 dark:border-gray-800">
-                <span className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
-                  <TrendingUp className="h-3.5 w-3.5 text-sky-600" />Score distribution
-                </span>
-                <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Candidates</span>
-              </header>
-              <div className="grid flex-1 grid-cols-4 items-end gap-2 px-4 pb-3 pt-4">
-                {DISTRIBUTION_BUCKETS.map((label, index) => {
-                  const count = Number(stats.distribution[index] || 0);
-                  return (
-                    <div key={label} className="flex min-w-0 flex-col items-center">
-                      <strong className="mb-1 text-xs tabular-nums text-slate-900 dark:text-white">{count}</strong>
-                      <div className="flex h-16 w-full max-w-10 items-end overflow-hidden rounded-t bg-slate-50 dark:bg-gray-800">
-                        <div
-                          className="w-full rounded-t bg-sky-500 transition-[height] duration-500"
-                          style={{ height: `${count ? Math.max(10, (count / distributionMaximum) * 100) : 0}%` }}
-                        />
-                      </div>
-                      <span className="mt-1.5 truncate text-[9px] font-medium text-slate-400">{label}%</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="px-4 pb-3 text-[10px] text-slate-400 dark:text-gray-500">
-                {stats.graded ? `${stats.graded} graded attempt${stats.graded === 1 ? '' : 's'}, by percentage` : 'Appears as attempts are graded'}
-              </p>
-            </article>
-
-            <article className="flex min-h-44 flex-col bg-white dark:bg-gray-900">
-              <header className="flex h-11 items-center border-b border-slate-100 px-4 dark:border-gray-800">
-                <span className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
-                  <BarChart3 className="h-3.5 w-3.5 text-sky-600" />Score range
-                </span>
-              </header>
-              <div className="grid flex-1 grid-cols-3 items-center divide-x divide-slate-100 px-2 dark:divide-gray-800">
-                {[
-                  ['Lowest', stats.minPercentage],
-                  ['Average', stats.avgPercentage],
-                  ['Highest', stats.maxPercentage],
-                ].map(([label, value]) => (
-                  <div key={label} className="px-2 text-center">
-                    <strong className="text-xl tabular-nums text-slate-950 dark:text-white">{value == null ? '—' : `${value}%`}</strong>
-                    <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="flex min-h-44 flex-col bg-white dark:bg-gray-900">
-              <header className="flex h-11 items-center justify-between border-b border-slate-100 px-4 dark:border-gray-800">
-                <span className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
-                  <Target className="h-3.5 w-3.5 text-lime-600" />Completion outcome
-                </span>
-                <strong className="text-xs text-lime-600 dark:text-lime-400">{stats.passRate == null ? '—' : `${stats.passRate}% pass`}</strong>
-              </header>
-              <div className="flex flex-1 flex-col justify-center px-4 py-4">
-                <div className="flex h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800" role="img" aria-label={outcomeSegments.map((segment) => `${segment.label} ${segment.count}`).join(', ')}>
-                  {stats.total > 0 ? outcomeSegments.filter((segment) => segment.count > 0).map((segment) => (
-                    <span key={segment.key} className={`h-full transition-[width] duration-500 ${segment.bar}`} style={{ width: `${(segment.count / stats.total) * 100}%` }} title={`${segment.label}: ${segment.count}`} />
-                  )) : (
-                    <span className="h-full w-full bg-slate-200 dark:bg-gray-700" />
-                  )}
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {outcomeSegments.map((segment) => (
-                    <div key={segment.key} className={`rounded-lg px-2.5 py-1.5 ${segment.tile}`}>
-                      <p className="flex items-center gap-1.5 truncate text-[9px] font-bold uppercase tracking-wide">
-                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${segment.bar}`} />{segment.label}
-                      </p>
-                      <strong className="mt-0.5 block text-base text-slate-950 dark:text-white">{segment.count}</strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </article>
-          </section>
         )}
 
         {/* ── Compact integrity summary ── */}
@@ -1279,8 +1257,7 @@ export default function AssessmentReports() {
                   <span className="text-sm font-bold text-slate-900 dark:text-white">
                     {activeTab === 'violations' ? 'Flagged Sessions' : 'Candidate Performance'}
                   </span>
-                  {selectedAssessment && <span className="text-xs text-slate-400 dark:text-gray-500">- {selectedAssessment.title}</span>}
-                  {selectedAssessment && <LiveIndicator live={roster.live} lastUpdatedAt={roster.lastUpdatedAt} mode={roster.mode} loading={roster.loading} />}
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-600 dark:bg-gray-800 dark:text-gray-300">{visibleRows.length}</span>
                   {activeTab !== 'overview' && (
                     <div className="relative w-full sm:ml-2 sm:w-64 sm:max-w-[40vw]">
                       <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -1298,7 +1275,8 @@ export default function AssessmentReports() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowFilterPanel((open) => !open)}
+                    onClick={() => setShowFilterPanel(true)}
+                    aria-haspopup="dialog"
                     aria-expanded={showFilterPanel}
                     className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors ${showFilterPanel || filtersActive ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
                   >
@@ -1332,61 +1310,25 @@ export default function AssessmentReports() {
                 </div>
               </div>
 
-              {showFilterPanel && (
-                <div className="shrink-0 space-y-3 border-b border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-gray-700 dark:bg-gray-950/40">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="mr-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Status</span>
-                    {ROSTER_STATUS_OPTIONS.map((option) => {
-                      const active = rosterFilters.statuses.includes(option.value);
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          aria-pressed={active}
-                          onClick={() => toggleStatusFilter(option.value)}
-                          className={`inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-[11px] font-semibold transition-colors ${active ? 'border-sky-400 bg-sky-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
-                        >
-                          {option.label}
-                          <span className={`tabular-nums ${active ? 'text-sky-100' : 'text-slate-400'}`}>{statusCounts[option.value] || 0}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="flex flex-wrap items-end gap-3">
-                    <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                      Evaluation
-                      <select value={rosterFilters.evaluation} onChange={(e) => updateRosterFilter('evaluation', e.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium normal-case tracking-normal text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                        {ROSTER_EVALUATION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
-                    </label>
-                    <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                      Submission
-                      <select value={rosterFilters.submissionType} onChange={(e) => updateRosterFilter('submissionType', e.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium normal-case tracking-normal text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                        {ROSTER_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
-                    </label>
-                    <fieldset className="flex flex-col gap-1">
-                      <legend className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Score %</legend>
-                      <div className="flex items-center gap-1.5">
-                        <input type="number" min={0} max={100} inputMode="decimal" placeholder="0" value={rosterFilters.scoreMin} onChange={(e) => updateRosterFilter('scoreMin', e.target.value)} aria-label="Minimum score percentage" className="h-8 w-16 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
-                        <span className="text-xs text-slate-400">to</span>
-                        <input type="number" min={0} max={100} inputMode="decimal" placeholder="100" value={rosterFilters.scoreMax} onChange={(e) => updateRosterFilter('scoreMax', e.target.value)} aria-label="Maximum score percentage" className="h-8 w-16 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
-                      </div>
-                    </fieldset>
-                    <label className="flex h-8 cursor-pointer items-center gap-2 text-xs text-slate-700 dark:text-gray-200">
-                      <input type="checkbox" checked={rosterFilters.flaggedOnly} onChange={(e) => updateRosterFilter('flaggedOnly', e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
-                      Flagged only
-                    </label>
-                    <label className="flex h-8 cursor-pointer items-center gap-2 text-xs text-slate-700 dark:text-gray-200">
-                      <input type="checkbox" checked={rosterFilters.hasViolations} onChange={(e) => updateRosterFilter('hasViolations', e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
-                      Has violations
-                    </label>
-                    {filtersActive && (
-                      <button type="button" onClick={clearFilters} className="h-8 text-[11px] font-semibold text-sky-600 hover:underline dark:text-sky-400">Clear filters</button>
-                    )}
-                  </div>
-                </div>
-              )}
+              <div role="tablist" aria-label="Candidate views" className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200 px-3 dark:border-gray-800">
+                {QUICK_VIEWS.map((view) => {
+                  const active = quickView === view.key;
+                  return (
+                    <button
+                      key={view.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setQuickView(view.key)}
+                      className={`relative flex shrink-0 items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${active ? 'text-sky-700 dark:text-sky-300' : 'text-slate-500 hover:text-slate-800 dark:text-gray-400 dark:hover:text-white'}`}
+                    >
+                      {view.label}
+                      <span className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${active ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300' : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'}`}>{quickViewCounts[view.key] || 0}</span>
+                      {active && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-sky-600" />}
+                    </button>
+                  );
+                })}
+              </div>
 
               {roster.error && activeTab !== 'overview' && (
                 <div role="alert" className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
@@ -1544,6 +1486,18 @@ export default function AssessmentReports() {
           </div>
         </div>
       )}
+
+      <RosterFilterSheet
+        open={showFilterPanel}
+        filters={rosterFilters}
+        statusCounts={statusCounts}
+        matchCount={visibleRows.length}
+        totalCount={tabRows.length}
+        onChange={updateRosterFilter}
+        onToggleStatus={toggleStatusFilter}
+        onClear={clearFilters}
+        onClose={closeFilterPanel}
+      />
 
       <ReportDetailDrawer
         student={selectedStudent ? toDrawerStudent(openRosterRow || selectedStudent) : null}

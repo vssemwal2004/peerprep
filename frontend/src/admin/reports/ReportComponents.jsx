@@ -64,11 +64,11 @@ export function TrendBadge({ change, suffix = '%', invert = false }) {
 }
 
 const statusBgMap = {
-  emerald: 'bg-lime-50 text-lime-700 border border-lime-200 dark:bg-lime-900/20 dark:text-lime-300 dark:border-lime-800',
-  rose: 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800',
+  emerald: 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800',
+  rose: 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-800',
   sky: 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800',
-  amber: 'bg-lime-50 text-lime-700 border border-lime-200 dark:bg-lime-900/20 dark:text-lime-300 dark:border-lime-800',
-  slate: 'bg-slate-50 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+  amber: 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800',
+  slate: 'bg-slate-50 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
 };
 
 export function StatusBadge({ value, type = 'student' }) {
@@ -84,27 +84,33 @@ export function StatusBadge({ value, type = 'student' }) {
 }
 
 /* ═════════════════ KPI CARD ═════════════════ */
-export function KpiCard({ icon: Icon, label, value, sub, insight, trend, tone = 'sky' }) {
-  const toneBg =
-    tone === 'lime' ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300'
-    : tone === 'emerald' ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300'
-    : tone === 'rose' ? 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300'
-    : tone === 'amber' ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300'
-    : tone === 'violet' ? 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300'
-    : 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300';
+const KPI_TONES = {
+  sky: 'bg-sky-50 text-sky-600 dark:bg-sky-900/25 dark:text-sky-300',
+  emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/25 dark:text-emerald-300',
+  lime: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/25 dark:text-emerald-300',
+  violet: 'bg-violet-50 text-violet-600 dark:bg-violet-900/25 dark:text-violet-300',
+  amber: 'bg-amber-50 text-amber-600 dark:bg-amber-900/25 dark:text-amber-300',
+  rose: 'bg-rose-50 text-rose-600 dark:bg-rose-900/25 dark:text-rose-300',
+};
+
+/** Headline number. `delta` is the change since the previous live update. */
+export function KpiCard({ icon: Icon, label, value, sub, insight, trend, delta, tone = 'sky' }) {
   return (
-    <div className="relative flex h-[116px] flex-col rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition-all hover:-translate-y-px hover:border-sky-200 hover:shadow-md dark:border-gray-700 dark:bg-gray-900">
+    <div className="flex min-h-[118px] flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${toneBg}`}><Icon className="h-4 w-4" /></div>
-          <div className="truncate text-[11px] font-semibold text-slate-500 dark:text-gray-400">{label}</div>
-        </div>
+        <span className="truncate text-xs font-medium text-slate-500 dark:text-gray-400">{label}</span>
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${KPI_TONES[tone] || KPI_TONES.sky}`}><Icon className="h-4 w-4" /></span>
+      </div>
+      <div className="mt-1.5 flex min-w-0 items-baseline gap-2">
+        <span className="truncate text-2xl font-semibold tracking-tight tabular-nums text-slate-900 dark:text-white" title={String(value ?? '')}>{value}</span>
+        {delta ? (
+          <span title="Since the previous update" className={`shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${delta > 0 ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300'}`}>
+            {delta > 0 ? `+${delta}` : `−${Math.abs(delta)}`}
+          </span>
+        ) : null}
         {trend !== undefined && <TrendBadge change={trend} />}
       </div>
-      <div className="mt-2 min-w-0">
-        <div className="truncate text-xl font-bold tracking-tight text-slate-900 dark:text-white" title={String(value ?? '')}>{value}</div>
-      </div>
-      {(insight || sub) && <div className="mt-auto truncate text-[10px] text-slate-400 dark:text-gray-500">{insight || sub}</div>}
+      {(insight || sub) && <div className="mt-auto truncate pt-1 text-xs text-slate-400 dark:text-gray-500">{insight || sub}</div>}
     </div>
   );
 }
@@ -123,7 +129,7 @@ export function FilterChip({ label, onRemove }) {
 export function SortHeader({ label, sortKey, currentSort, onSort, align = 'left' }) {
   const active = currentSort.key === sortKey;
   return (
-    <th onClick={() => onSort(sortKey)} className={`cursor-pointer select-none whitespace-nowrap px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500 transition-colors hover:text-sky-600 dark:text-gray-400 dark:hover:text-sky-400 ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'}`}>
+    <th onClick={() => onSort(sortKey)} aria-sort={active ? (currentSort.dir === 'asc' ? 'ascending' : 'descending') : undefined} className={`cursor-pointer select-none whitespace-nowrap px-4 py-3 text-[11px] font-semibold uppercase tracking-wider transition-colors hover:text-sky-600 dark:hover:text-sky-400 ${active ? 'text-slate-800 dark:text-gray-100' : 'text-slate-500 dark:text-gray-400'} ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'}`}>
       <span className="inline-flex items-center gap-1">{label}{active && (currentSort.dir === 'asc' ? <ChevronUp className="h-3 w-3 text-sky-600" /> : <ChevronDown className="h-3 w-3 text-sky-600" />)}</span>
     </th>
   );
@@ -201,7 +207,7 @@ export function TableRow({ row, visibleColumns, highlighted = false, openStudent
   const getInitials = (name) => (name || 'U').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   return (
     <tr
-      className={`group text-slate-700 transition-colors duration-700 dark:text-slate-200 ${canOpen ? 'cursor-pointer hover:bg-sky-50/40 dark:hover:bg-sky-900/10' : ''} ${highlighted ? 'bg-amber-50/70 dark:bg-amber-900/10' : ''}`}
+      className={`group text-slate-700 transition-colors duration-1000 dark:text-slate-200 ${canOpen ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-gray-800/50' : ''} ${highlighted ? 'bg-sky-50/80 dark:bg-sky-900/15' : ''}`}
       onClick={canOpen ? () => openStudentDetail(row) : undefined}
       data-row-key={row.key}
     >
@@ -266,7 +272,7 @@ export function TableRow({ row, visibleColumns, highlighted = false, openStudent
         </td>
       )}
       <td className="px-4 py-3 text-right">
-        <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="flex items-center justify-end gap-1 opacity-60 transition-opacity group-hover:opacity-100">
           {canOpen && <button type="button" onClick={(e) => { e.stopPropagation(); openStudentDetail(row); }} className="rounded-md p-1.5 text-slate-500 hover:bg-sky-50 hover:text-sky-600 dark:text-gray-400 dark:hover:bg-sky-900/20 dark:hover:text-sky-400" title="View report"><Eye className="h-3.5 w-3.5" /></button>}
           <button type="button" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(row.rollNo || row.studentId || row.key); toast.success('ID copied'); }} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" title="Copy ID"><Copy className="h-3.5 w-3.5" /></button>
         </div>

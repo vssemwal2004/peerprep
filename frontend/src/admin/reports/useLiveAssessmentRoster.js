@@ -1,38 +1,74 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../utils/api';
 import socketService from '../../utils/socket';
-import { legacyReportRowToRoster, mergeRosterRows } from './rosterModel';
+import { legacyReportRowToRoster, mergeRosterRows, rowViolationCount } from './rosterModel';
 
-const HINT_DEBOUNCE_MS = 1500;
-const SAFETY_RESYNC_MS = 60000;
+export const DEFAULT_REFRESH_INTERVAL_MS = 30000;
 const SUBSCRIBE_ACK_TIMEOUT_MS = 5000;
 const HIGHLIGHT_MS = 4000;
 const LEGACY_PAGE_LIMIT = 100;
 const LEGACY_MAX_PAGES = 50;
+const ACTIVITY_LIMIT = 40;
 
 const isNotFound = (err) => err?.response?.status === 404;
 const isAbort = (err) => err?.name === 'AbortError';
 
 /**
- * Live roster for one assessment report.
+ * Activity entries for rows that changed between two roster snapshots: a
+ * student who started, submitted, got graded or picked up new integrity flags.
+ */
+function describeChanges(previousRows, nextRows, changedKeys, at) {
+  if (!changedKeys.length) return [];
+  const before = new Map(previousRows.map((row) => [row.key, row]));
+  const byStudent = new Map(previousRows.filter((row) => row.studentId).map((row) => [String(row.studentId), row]));
+  const next = new Map(nextRows.map((row) => [row.key, row]));
+  const events = [];
+  for (const key of changedKeys) {
+    const row = next.get(key);
+    if (!row) continue;
+    const old = before.get(key) || (row.studentId ? byStudent.get(String(row.studentId)) : null);
+    const name = row.name || 'A candidate';
+    const wasStarted = old && old.status && old.status !== 'not_started';
+    if (row.status === 'in_progress' && !wasStarted) events.push({ id: `${key}:started:${at}`, key, name, type: 'started', at });
+    else if (row.status !== 'in_progress' && row.status !== 'not_started' && (!old || old.status === 'in_progress' || old.status === 'not_started')) {
+      events.push({ id: `${key}:submitted:${at}`, key, name, type: 'submitted', at, status: row.status });
+    } else if (old && old.evaluationStatus !== 'completed' && row.evaluationStatus === 'completed' && row.score != null) {
+      events.push({ id: `${key}:graded:${at}`, key, name, type: 'graded', at });
+    }
+    const flagsBefore = old ? rowViolationCount(old) : 0;
+    const flagsNow = rowViolationCount(row);
+    if (flagsNow > flagsBefore) events.push({ id: `${key}:flag:${at}`, key, name, type: 'flagged', at, count: flagsNow - flagsBefore });
+  }
+  return events;
+}
+
+/**
+ * Live roster for one assessment report, refreshed in batches.
  *
- * Request discipline: at most one roster request is in flight; a refresh asked
- * for meanwhile is coalesced into a single follow-up. Socket hints carry no data,
- * they only schedule a debounced delta fetch (`since=cursor`). While the tab is
- * hidden nothing is fetched; becoming visible triggers one delta. The 60 s safety
- * resync runs only when the socket subscription is not live.
+ * Request discipline: socket hints carry no data and never fetch on their own;
+ * they only mark that something changed. Every `intervalMs` (default 30 s) one
+ * delta request (`since=cursor`) brings every changed candidate at once, and
+ * only when a hint arrived or the socket is not live. An idle exam therefore
+ * costs no requests, and a busy one costs one request per interval per open
+ * report, however many students are saving. Nothing is fetched while the tab is
+ * hidden; returning to it fetches once if changes are waiting. `refresh()` does
+ * an immediate full reload. intervalMs 0 turns automatic updates off.
  *
  * If the roster endpoint is missing (404) the hook falls back to paging the
  * legacy reports endpoint and mapping its rows (no not-started students there).
  */
-export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessment = null } = {}) {
+export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessment = null, intervalMs = DEFAULT_REFRESH_INTERVAL_MS } = {}) {
   const [rows, setRows] = useState([]);
   const [assessment, setAssessment] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [live, setLive] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
+  const [nextRefreshAt, setNextRefreshAt] = useState(null);
+  const [pendingChanges, setPendingChanges] = useState(false);
   const [recentlyChanged, setRecentlyChanged] = useState(() => new Set());
+  const [activity, setActivity] = useState([]);
   const [mode, setMode] = useState('roster');
 
   const rowsRef = useRef([]);
@@ -43,7 +79,7 @@ export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessme
   const generationRef = useRef(0);
   const liveRef = useRef(false);
   const modeRef = useRef('roster');
-  const hintTimerRef = useRef(null);
+  const changesWaitingRef = useRef(false);
   const highlightTimerRef = useRef(null);
   const fallbackAssessmentRef = useRef(fallbackAssessment);
   const fetchRef = useRef(null);
@@ -55,14 +91,23 @@ export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessme
     setLive(value);
   }, []);
 
+  const markChangesWaiting = useCallback((value) => {
+    changesWaitingRef.current = value;
+    setPendingChanges(value);
+  }, []);
+
   const applyRows = useCallback((nextRows, changedKeys, { highlight }) => {
+    const previousRows = rowsRef.current;
     rowsRef.current = nextRows;
     setRows(nextRows);
-    setLastUpdatedAt(Date.now());
+    const now = Date.now();
+    setLastUpdatedAt(now);
     if (highlight && changedKeys.length) {
       setRecentlyChanged(new Set(changedKeys));
       window.clearTimeout(highlightTimerRef.current);
       highlightTimerRef.current = window.setTimeout(() => setRecentlyChanged(new Set()), HIGHLIGHT_MS);
+      const events = describeChanges(previousRows, nextRows, changedKeys, now);
+      if (events.length) setActivity((current) => [...events.reverse(), ...current].slice(0, ACTIVITY_LIMIT));
     }
   }, []);
 
@@ -93,6 +138,9 @@ export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessme
     controllerRef.current = controller;
     const isInitial = !cursorRef.current && !rowsRef.current.length;
     if (isInitial) setLoading(true);
+    else setRefreshing(true);
+    // Hints that arrive while this request runs are newer than its data and stay waiting.
+    markChangesWaiting(false);
 
     try {
       if (modeRef.current === 'legacy') {
@@ -122,18 +170,21 @@ export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessme
         pendingRef.current = { full: true };
         return;
       }
+      // Keep the data shown and retry on the next tick.
+      markChangesWaiting(true);
       setError(err?.message || 'Failed to load the candidate roster');
     } finally {
       if (generation === generationRef.current) {
         inFlightRef.current = false;
         controllerRef.current = null;
         setLoading(false);
+        setRefreshing(false);
         const pending = pendingRef.current;
         pendingRef.current = null;
         if (pending) void fetchRef.current?.(pending);
       }
     }
-  }, [applyRows, assessmentId, loadLegacy]);
+  }, [applyRows, assessmentId, loadLegacy, markChangesWaiting]);
 
   useEffect(() => { fetchRef.current = fetchRoster; }, [fetchRoster]);
 
@@ -149,13 +200,15 @@ export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessme
     cursorRef.current = null;
     rowsRef.current = [];
     modeRef.current = 'roster';
+    changesWaitingRef.current = false;
     setMode('roster');
     setRows([]);
     setAssessment(null);
     setError('');
     setLastUpdatedAt(null);
+    setPendingChanges(false);
+    setActivity([]);
     setRecentlyChanged(new Set());
-    window.clearTimeout(hintTimerRef.current);
     if (!assessmentId) {
       setLoading(false);
       return undefined;
@@ -164,11 +217,10 @@ export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessme
     return () => {
       generationRef.current += 1;
       controllerRef.current?.abort();
-      window.clearTimeout(hintTimerRef.current);
     };
   }, [assessmentId, fetchRoster]);
 
-  /* Socket subscription, hint handling and reconnect resync. */
+  /* Socket subscription: hints only mark that changes are waiting. */
   useEffect(() => {
     if (!assessmentId) {
       markLive(false);
@@ -191,26 +243,17 @@ export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessme
       }
     };
 
-    const scheduleDelta = () => {
-      window.clearTimeout(hintTimerRef.current);
-      hintTimerRef.current = window.setTimeout(() => {
-        if (document.hidden) return;
-        void fetchRef.current?.({ full: false });
-      }, HINT_DEBOUNCE_MS);
-    };
-
     const handleChanged = (payload) => {
       if (String(payload?.assessmentId || '') !== String(assessmentId)) return;
-      // Hidden tab: the visibility handler performs one delta when the admin returns.
-      if (document.hidden) return;
-      scheduleDelta();
+      markChangesWaiting(true);
     };
 
     const handleConnect = () => {
       subscribe();
+      // Hints sent while disconnected were missed; the next tick catches up.
       if (lostConnection) {
         lostConnection = false;
-        void fetchRef.current?.({ full: true });
+        markChangesWaiting(true);
       }
     };
 
@@ -227,31 +270,37 @@ export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessme
 
     return () => {
       disposed = true;
-      window.clearTimeout(hintTimerRef.current);
       socket.off('assessment-report:changed', handleChanged);
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       if (socket.connected) socket.emit('assessment-report:unsubscribe', { assessmentId });
       markLive(false);
     };
-  }, [assessmentId, markLive]);
+  }, [assessmentId, markChangesWaiting, markLive]);
 
-  /* Pause while hidden; one delta on return. Safety resync only when not live. */
+  /* Batched refresh: one delta per interval, only when something changed (or not live). */
   useEffect(() => {
-    if (!assessmentId) return undefined;
-    const handleVisibility = () => {
-      if (!document.hidden) void fetchRef.current?.({ full: false });
-    };
+    if (!assessmentId || !intervalMs) {
+      setNextRefreshAt(null);
+      return undefined;
+    }
+    const due = () => changesWaitingRef.current || !liveRef.current;
+    const schedule = () => setNextRefreshAt(Date.now() + intervalMs);
+    schedule();
     const timer = window.setInterval(() => {
-      if (document.hidden || liveRef.current) return;
+      schedule();
+      if (document.hidden || !due()) return;
       void fetchRef.current?.({ full: false });
-    }, SAFETY_RESYNC_MS);
+    }, intervalMs);
+    const handleVisibility = () => {
+      if (!document.hidden && changesWaitingRef.current) void fetchRef.current?.({ full: false });
+    };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [assessmentId]);
+  }, [assessmentId, intervalMs]);
 
   useEffect(() => () => window.clearTimeout(highlightTimerRef.current), []);
 
@@ -259,10 +308,14 @@ export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessme
     rows,
     assessment,
     loading,
+    refreshing,
     error,
     live: live && mode === 'roster',
     lastUpdatedAt,
+    nextRefreshAt,
+    pendingChanges,
     recentlyChanged,
+    activity,
     mode,
     refresh,
   };

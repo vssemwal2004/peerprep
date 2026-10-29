@@ -108,12 +108,12 @@ test('admin roster row shows Evaluating…, Needs review and a dash, never the o
   assert.ok(!text.includes('Evaluation pending') && !text.includes('Not available'));
 });
 
-function Harness({ id, onValue }) {
-  onValue(useLiveAssessmentRoster(id));
+function Harness({ id, options, onValue }) {
+  onValue(useLiveAssessmentRoster(id, options));
   return null;
 }
 
-test('live roster: full load, subscribe, coalesced hint -> single delta with cursor', async () => {
+test('live roster: full load, subscribe, hints batched into one delta per interval', async () => {
   const socket = fakeSocket();
   const originalConnect = socketService.connect;
   socketService.connect = () => socket;
@@ -134,7 +134,7 @@ test('live roster: full load, subscribe, coalesced hint -> single delta with cur
   };
   let latest;
   try {
-    await act(async () => root.render(h(Harness, { id: 'a1', onValue: (value) => { latest = value; } })));
+    await act(async () => root.render(h(Harness, { id: 'a1', options: { intervalMs: 250 }, onValue: (value) => { latest = value; } })));
     await flush();
     assert.deepEqual(calls, [['a1', null]]);
     assert.equal(latest.rows.length, 2);
@@ -142,17 +142,25 @@ test('live roster: full load, subscribe, coalesced hint -> single delta with cur
     assert.equal(latest.live, true);
     assert.deepEqual(socket.emitted[0], ['assessment-report:subscribe', { assessmentId: 'a1' }]);
 
+    await act(async () => { await wait(320); });
+    assert.deepEqual(calls, [['a1', null]], 'an interval with no hints costs no request while live');
+
     await act(async () => {
       socket.fire('assessment-report:changed', { assessmentId: 'other', rev: 1, kinds: ['answers'] });
       socket.fire('assessment-report:changed', { assessmentId: 'a1', rev: 2, kinds: ['answers'] });
       socket.fire('assessment-report:changed', { assessmentId: 'a1', rev: 3, kinds: ['started'] });
-      await wait(1700);
     });
+    assert.deepEqual(calls, [['a1', null]], 'hints never fetch on their own');
+    assert.equal(latest.pendingChanges, true);
+
+    await act(async () => { await wait(300); });
     await flush();
-    assert.deepEqual(calls, [['a1', null], ['a1', 'c1']], 'hints are debounced into one delta request using the cursor');
+    assert.deepEqual(calls, [['a1', null], ['a1', 'c1']], 'the next interval sends one delta request using the cursor');
+    assert.equal(latest.pendingChanges, false);
     assert.equal(latest.rows.length, 2, 'the started student replaces its placeholder');
     assert.ok(latest.rows.some((row) => row.key === 's2'));
     assert.ok(latest.recentlyChanged.has('s2'));
+    assert.deepEqual(latest.activity.map((event) => [event.name, event.type]), [['Bilal', 'started']], 'the activity feed records the start');
   } finally {
     await act(async () => root.unmount());
     root = null;
@@ -228,6 +236,65 @@ test('report page: KPIs and charts from the roster, client filter/sort, release 
     assert.deepEqual(rowKeys(), ['s2']);
     assert.ok(document.querySelector('tr[data-row-key="s2"]').textContent.includes('Evaluating…'));
     assert.deepEqual(rosterCalls, [null], 'search and sort never refetch');
+
+    await act(async () => { setValue.call(search, ''); search.dispatchEvent(new dom.window.Event('input', { bubbles: true })); });
+    const filtersButton = [...document.querySelectorAll('button')].find((entry) => entry.textContent.trim().startsWith('Filters'));
+    await act(async () => filtersButton.click());
+    const sheet = () => document.querySelector('[aria-labelledby="roster-filter-title"]');
+    assert.ok(sheet(), 'filters open in a sheet');
+    const submittedChip = [...sheet().querySelectorAll('button[aria-pressed]')].find((entry) => entry.textContent.startsWith('Submitted'));
+    await act(async () => submittedChip.click());
+    assert.ok(sheet(), 'applying a filter keeps the sheet open');
+    assert.deepEqual(rowKeys().sort(), ['s1', 's2']);
+    const done = [...sheet().querySelectorAll('button')].find((entry) => entry.textContent.trim() === 'Show 2 of 4');
+    await act(async () => done.click());
+    assert.equal(sheet(), null, 'Done closes the sheet');
+    assert.deepEqual(rowKeys().sort(), ['s1', 's2'], 'the filter stays applied after closing');
+    assert.match(dom.window.sessionStorage.getItem('peerprep.reports.filters.a9'), /"submitted"/, 'filters survive a remount for this assessment');
+    dom.window.sessionStorage.clear();
+    assert.deepEqual(rosterCalls, [null], 'filtering never refetches');
+  } finally {
+    await act(async () => root.unmount());
+    root = null;
+    socketService.connect = originalConnect;
+    dom.reconfigure({ url: 'http://localhost:5173/admin/assessment/reports' });
+  }
+});
+
+test('report page: manual refresh applies changes, logs activity and shows deltas since the last update', async () => {
+  const socket = fakeSocket();
+  const originalConnect = socketService.connect;
+  socketService.connect = () => socket;
+  dom.reconfigure({ url: 'http://localhost:5173/admin/assessment/reports?assessmentId=a7' });
+  const assessment = { _id: 'a7', title: 'Weekly Test', assessmentType: 'mixed', startTime: '2035-01-01T09:00:00Z', endTime: '2035-01-01T11:00:00Z', duration: 60 };
+  api.listAssessments = async () => ({ assessments: [assessment] });
+  api.getAssessmentReports = async () => ({ assessments: [assessment], students: [], summary: {} });
+  api.getAssessmentById = async () => ({ assessment: { ...assessment, settings: { showResultsAfterSubmit: false } } });
+  let call = 0;
+  api.getAssessmentReportRoster = async () => {
+    call += 1;
+    const asha = call === 1
+      ? { key: 'u1', submissionId: null, studentId: 'u1', name: 'Asha Rao', status: 'not_started' }
+      : { key: 's1', submissionId: 's1', studentId: 'u1', name: 'Asha Rao', status: 'in_progress', answeredCount: 1, totalQuestions: 10 };
+    return { full: true, cursor: `c${call}`, assessment: { _id: 'a7', title: 'Weekly Test', totalMarks: 20, passPercentage: 40, totalQuestions: 10 }, rows: [asha] };
+  };
+  const [{ default: AssessmentReports }, { ToastProvider }] = await Promise.all([
+    server.ssrLoadModule('/src/admin/AssessmentReports.jsx'),
+    server.ssrLoadModule('/src/components/CustomToast.jsx'),
+  ]);
+  try {
+    await act(async () => root.render(h(ToastProvider, null, h(MemoryRouter, { initialEntries: ['/admin/assessment/reports?assessmentId=a7'] }, h(AssessmentReports)))));
+    await flush();
+    await flush();
+    assert.ok(document.body.textContent.includes('Starts, submissions and flags appear here'));
+    await act(async () => document.querySelector('button[title="Refresh now"]').click());
+    await flush();
+    await flush();
+    const text = document.body.textContent;
+    assert.equal(call, 2);
+    assert.ok(text.includes('Asha Rao started the test'), 'the activity feed records the start');
+    assert.ok(!text.includes('Updating…'), 'the refresh finishes');
+    assert.ok(text.includes('+1'), 'In progress shows +1 since the previous update');
   } finally {
     await act(async () => root.unmount());
     root = null;
