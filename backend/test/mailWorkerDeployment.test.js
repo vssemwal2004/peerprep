@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import ecosystem from '../ecosystem.production.cjs';
+import ecosystem from '../ecosystem.production.config.cjs';
 
 test('production API keeps a mail queue consumer enabled', () => {
   const api = ecosystem.apps.find((app) => app.name === 'peerprep-backend');

@@ -17,8 +17,10 @@ import { createNotification } from './notificationService.js';
 import { getIo } from '../utils/io.js';
 import { personalRoom, compilerMonitorRoom } from '../utils/realtime.js';
 import {
-  serializeSubmissionForRealtime, refreshProblemStats, problemUsedInAssessment, isHiddenJudgeFailure, HIDDEN_RUNTIME_ERROR_MESSAGE,
+  serializeSubmissionForRealtime, scheduleProblemStatsRefresh, problemUsedInAssessment, isHiddenJudgeFailure, HIDDEN_RUNTIME_ERROR_MESSAGE,
 } from '../controllers/compilerHelpers.js';
+import { executionClassForJob, queuePriorityForJob, runWithExecutionClass } from './judge0Gateway.js';
+import { createCaseExecutor } from './batchExecutionService.js';
 import {
   assessmentQueue,
   compilerQueue,
@@ -734,15 +736,25 @@ async function executeRunCasesPayload({
 }) {
   const judge0Options = buildJudge0Options(problem);
   const caseResults = [];
+  const prepared = runTestCases.map((testCase, index) => {
+    const input = sanitizeExecutionText(testCase.input ?? '', MAX_STDIN_SIZE_BYTES, `Run testcase input #${index + 1}`);
+    const expectedOutput = testCase.expectedOutput !== undefined && testCase.expectedOutput !== null
+      ? sanitizeExecutionText(testCase.expectedOutput, MAX_TESTCASE_TEXT_BYTES, `Run testcase expected output #${index + 1}`)
+      : undefined;
+    return { input, expectedOutput, source: sourceCodeFactory ? sourceCodeFactory(input) : sourceCode, stdin: input };
+  });
+  const executor = createCaseExecutor({
+    languageId,
+    cases: prepared,
+    judge0Options,
+    accept: (index, judgeResult) => prepared[index].expectedOutput === undefined
+      || evaluateProblemSubmissionResult(problem, judgeResult, { input: prepared[index].input, output: prepared[index].expectedOutput }).internalStatus === 'AC',
+  });
 
   for (let index = 0; index < runTestCases.length; index += 1) {
     const testCase = runTestCases[index];
-    const input = sanitizeExecutionText(testCase.input ?? '', MAX_STDIN_SIZE_BYTES, `Run testcase input #${index + 1}`);
-    const providedExpectedOutput = testCase.expectedOutput !== undefined && testCase.expectedOutput !== null
-      ? sanitizeExecutionText(testCase.expectedOutput, MAX_TESTCASE_TEXT_BYTES, `Run testcase expected output #${index + 1}`)
-      : undefined;
-    const executableSource = sourceCodeFactory ? sourceCodeFactory(input) : sourceCode;
-    const judgeResult = await runJudge0(executableSource, languageId, input, judge0Options);
+    const { input, expectedOutput: providedExpectedOutput } = prepared[index];
+    const judgeResult = await executor.run(index);
     const resolvedExpectedOutput = await resolveRunExpectedOutput({
       providedExpectedOutput,
     });
@@ -909,13 +921,22 @@ async function executeSubmitPayload({ sourceCode, sourceCodeFactory, languageId,
   );
   const totalTestCaseMarks = Math.max(0.01, Number(problem?.totalMarks) || configuredTestCaseMarks);
   let firstFailure = null;
+  const executor = createCaseExecutor({
+    languageId,
+    cases: allTestCases.map((testCase) => ({
+      source: sourceCodeFactory ? sourceCodeFactory(testCase.input || '') : sourceCode,
+      stdin: testCase.input || '',
+      expectedOutput: testCase.output || '',
+    })),
+    judge0Options,
+    accept: (index, judgeResult) => evaluateProblemSubmissionResult(problem, judgeResult, allTestCases[index]).internalStatus === 'AC',
+  });
 
   for (let index = 0; index < allTestCases.length; index += 1) {
     const testCase = allTestCases[index];
     const configuredMarks = Math.max(0.01, Number(testCase?.marks) || 1);
     const testCaseMarks = (configuredMarks / configuredTestCaseMarks) * totalTestCaseMarks;
-    const executableSource = sourceCodeFactory ? sourceCodeFactory(testCase.input || '') : sourceCode;
-    const judgeResult = await runJudge0(executableSource, languageId, testCase.input || '', judge0Options);
+    const judgeResult = await executor.run(index);
     const evaluation = evaluateProblemSubmissionResult(problem, judgeResult, testCase);
     const executionTimeMs = secondsToMilliseconds(judgeResult.time);
     const memoryUsedKb = Math.trunc(Number(judgeResult.memory || 0));
@@ -1032,11 +1053,41 @@ async function buildCompilerQueueJob({
   }, {
     jobId: jobRecord.jobId,
     attempts: DEFAULT_ATTEMPTS,
+    priority: queuePriorityForJob(jobName),
   });
 
   return buildQueuedJobResponse(jobRecord, {
     submissionId: submission?._id || undefined,
   });
+}
+
+// A student's older run that no worker has picked up yet is replaced by the new
+// one: only the latest code's output is useful, and it frees judge capacity.
+async function supersedeWaitingRuns({ queue, userId, problemId, assessmentId, keepJobId }) {
+  if (!userId || !problemId) return;
+  try {
+    const stale = await ExecutionJob.find({
+      userId,
+      problemId,
+      assessmentId: assessmentId || null,
+      jobName: { $in: ['run', 'assessment-code-run'] },
+      status: 'queued',
+      jobId: { $ne: keepJobId },
+    }).select('jobId submissionId').sort({ createdAt: -1 }).limit(5).lean();
+    for (const entry of stale) {
+      if (!await queue.removeIfWaiting(entry.jobId)) continue;
+      await ExecutionJob.updateOne({ jobId: entry.jobId, status: 'queued' }, {
+        $set: {
+          status: 'superseded',
+          completedAt: new Date(),
+          error: { message: 'Replaced by a newer run.', code: 'SUPERSEDED', details: null },
+        },
+      });
+      if (entry.submissionId) await Submission.deleteOne({ _id: entry.submissionId, status: 'PENDING' });
+    }
+  } catch (error) {
+    console.warn('[RunCoalescing] skipped:', error?.message || error);
+  }
 }
 
 export async function enqueueCompilerRunJob({ user, body }) {
@@ -1092,7 +1143,7 @@ export async function enqueueCompilerRunJob({ user, body }) {
     }
   }
 
-  return buildCompilerQueueJob({
+  const queued = await buildCompilerQueueJob({
     queue,
     jobName,
     user,
@@ -1107,6 +1158,14 @@ export async function enqueueCompilerRunJob({ user, body }) {
     expectedOutput,
     runTestCases,
   });
+  await supersedeWaitingRuns({
+    queue,
+    userId: user?._id,
+    problemId: problem?._id,
+    assessmentId,
+    keepJobId: queued.jobId,
+  });
+  return queued;
 }
 
 export async function enqueueCompilerSubmitJob({ user, body }) {
@@ -1289,6 +1348,37 @@ async function syncAssessmentAnswerFromTrackedSubmission(trackedSubmission) {
   };
 }
 
+// Submits already judged during the attempt, keyed by id, that final evaluation may
+// reuse: same attempt, a final verdict, and no change to the problem or its test
+// data since the code was submitted.
+async function loadReusableSubmits(assessment, submission, attemptGeneration) {
+  const ids = (submission.answers || []).map((answer) => answer?.submissionId).filter(Boolean);
+  if (!ids.length || !assessment?._id) return new Map();
+  const submits = await Submission.find({
+    _id: { $in: ids },
+    mode: 'submit',
+    assessmentId: assessment._id,
+    status: { $in: ['AC', 'WA', 'TLE', 'RE', 'CE'] },
+  }).lean();
+  const reusable = new Map();
+  const changedAt = new Map();
+  for (const submit of submits) {
+    if (Number(submit.assessmentAttemptGeneration || 1) !== attemptGeneration) continue;
+    const problemKey = String(submit.problem);
+    if (!changedAt.has(problemKey)) {
+      const [problem, latestCase] = await Promise.all([
+        Problem.findById(submit.problem).select('updatedAt').lean(),
+        TestCase.findOne({ problem: submit.problem }).sort({ updatedAt: -1 }).select('updatedAt').lean(),
+      ]);
+      // A problem this database cannot see cannot be proven unchanged.
+      changedAt.set(problemKey, problem ? Math.max(new Date(problem.updatedAt).getTime(), latestCase ? new Date(latestCase.updatedAt).getTime() : 0) : Infinity);
+    }
+    if (changedAt.get(problemKey) >= new Date(submit.createdAt).getTime()) continue;
+    reusable.set(String(submit._id), submit);
+  }
+  return reusable;
+}
+
 export async function enqueueAssessmentCodingEvaluationJobs({
   assessment,
   submission,
@@ -1298,6 +1388,7 @@ export async function enqueueAssessmentCodingEvaluationJobs({
     attemptGeneration: Number(submission.attemptGeneration || 1),
     evaluationVersion: Number(submission.evaluationVersion || 0),
   };
+  const reusableSubmits = await loadReusableSubmits(assessment, submission, expectedVersion.attemptGeneration);
   const prepared = await mutateAssessmentSubmission({
     filter: { _id: submission._id },
     mutate(current) {
@@ -1316,12 +1407,26 @@ export async function enqueueAssessmentCodingEvaluationJobs({
           if (!answer || !problemId || !sourceCode.trim() || !languageId) return;
           const jobId = `${current._id}:${expectedVersion.attemptGeneration}:${expectedVersion.evaluationVersion}:${sectionIndex}:${questionIndex}`;
           if (answer.jobId !== jobId) {
+            // The final code is exactly what the student last submitted and that verdict
+            // still holds: reuse it instead of judging the same code again at the deadline.
+            const submit = answer.submissionId ? reusableSubmits.get(String(answer.submissionId)) : null;
+            const reuse = submit
+              && codingQuestionProblemIds(question).includes(String(submit.problem))
+              && assessmentSourceHash(submit.sourceCode, submit.language) === assessmentSourceHash(sourceCode, languageKey);
             answer.jobId = jobId;
-            answer.submissionId = undefined;
-            answer.executionStatus = 'queued';
-            answer.executionVerdict = 'PENDING';
-            answer.executionResult = null;
-            answer.adminExecutionResult = undefined;
+            if (reuse) {
+              answer.executionStatus = submit.status === 'RE' ? 'failed' : 'completed';
+              answer.executionVerdict = submit.status;
+              answer.executionResult = buildSubmitApiResponse(submit);
+              answer.adminExecutionResult = buildAdminSubmitResult(submit);
+              answer.lastEvaluatedAt = submit.completedAt || new Date();
+            } else {
+              answer.submissionId = undefined;
+              answer.executionStatus = 'queued';
+              answer.executionVerdict = 'PENDING';
+              answer.executionResult = null;
+              answer.adminExecutionResult = undefined;
+            }
           }
           if (['completed', 'failed'].includes(answer.executionStatus)) return;
           queuedJobs.push({
@@ -1378,6 +1483,7 @@ export async function enqueueAssessmentCodingEvaluationJobs({
     }, {
       jobId: jobRecord.jobId,
       attempts: DEFAULT_ATTEMPTS,
+      priority: queuePriorityForJob('assessment-final-code-submit'),
       retryFailed: true,
       recoveryLimit: 3,
     });
@@ -1405,7 +1511,11 @@ function buildJobResultPayload({ kind, submissionId = null, response, persisted 
   };
 }
 
-export async function processCompilerExecutionJob(job) {
+export function processCompilerExecutionJob(job) {
+  return runWithExecutionClass(executionClassForJob(job.name), () => runCompilerExecutionJob(job));
+}
+
+async function runCompilerExecutionJob(job) {
   const attemptNumber = job.attemptsMade + 1;
   const isFinalAttempt = attemptNumber >= job.maxAttempts;
   await markExecutionJobProcessing(job.id, attemptNumber);
@@ -1461,7 +1571,7 @@ export async function processCompilerExecutionJob(job) {
 
       if (submissionId) {
         await finalizeTrackedSubmission(submissionId, runResult.persisted);
-        if (problem?._id) await refreshProblemStats(problem._id);
+        if (problem?._id) scheduleProblemStatsRefresh(problem._id);
       }
 
       const resultPayload = buildJobResultPayload({
@@ -1484,7 +1594,7 @@ export async function processCompilerExecutionJob(job) {
     let finalizedSubmission = null;
     if (submissionId) {
       finalizedSubmission = await finalizeTrackedSubmission(submissionId, submitResult.persisted);
-      if (problem?._id) await refreshProblemStats(problem._id);
+      if (problem?._id) scheduleProblemStatsRefresh(problem._id);
     }
 
     if (submitResult.persisted.status === 'AC' && userId && problem?._id) {
@@ -1538,7 +1648,7 @@ export async function processCompilerExecutionJob(job) {
       }
 
       if (problemId) {
-        await refreshProblemStats(problemId);
+        scheduleProblemStatsRefresh(problemId);
       }
     }
 
@@ -1745,9 +1855,9 @@ async function processAssessmentFinalCodingJob(job) {
   }
 }
 
-export async function processAssessmentExecutionJob(job) {
+export function processAssessmentExecutionJob(job) {
   if (job.name === 'assessment-final-code-submit') {
-    return processAssessmentFinalCodingJob(job);
+    return runWithExecutionClass('critical', () => processAssessmentFinalCodingJob(job));
   }
 
   return processCompilerExecutionJob(job);

@@ -159,10 +159,10 @@ export default function AssessmentFeedbackPage() {
           </div>
 
           <div className="p-6 sm:p-10">
-            <div className="grid gap-3 sm:grid-cols-3">
+            {/* No score here: this form opens before results may be released. */}
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-gray-800 dark:bg-gray-800/70"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-gray-500">Assessment</p><p className="mt-1 line-clamp-2 text-sm font-bold text-slate-900 dark:text-white">{assessment.title || 'Assessment'}</p></div>
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-gray-800 dark:bg-gray-800/70"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-gray-500">Submitted on</p><p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">{formatDateTime(submission.submittedAt)}</p></div>
-              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-gray-800 dark:bg-gray-800/70"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-gray-500">Score</p><p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">{submission.score == null ? 'Processing' : `${submission.score}/${submission.maxMarks ?? '—'}`}</p></div>
             </div>
 
             {success ? (

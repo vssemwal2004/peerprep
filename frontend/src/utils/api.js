@@ -1872,11 +1872,12 @@ export const api = {
     request(`/results/${jobId}`, { skipCache: true }),
   waitForExecutionResult: async (
     jobId,
-    { intervalMs = 1000, timeoutMs = 120000 } = {},
+    { intervalMs = 1000, timeoutMs = 15 * 60 * 1000, onStillQueued, stillQueuedAfterMs = 8000 } = {},
   ) => {
     const startedAt = Date.now();
     const maxIntervalMs = Math.max(intervalMs, 3000);
     let polls = 0;
+    let notifiedQueued = false;
 
     while (Date.now() - startedAt <= timeoutMs) {
       let result;
@@ -1898,6 +1899,17 @@ export const api = {
 
       if (status === "failed") {
         throw new Error(result?.error?.message || "Execution failed.");
+      }
+
+      if (status === "superseded") {
+        throw new Error("This run was replaced by a newer run of the same question.");
+      }
+
+      // Jobs wait in the server queue when the judge is busy; tell the student once
+      // instead of failing a job that will still finish.
+      if (status === "queued" && !notifiedQueued && Date.now() - startedAt >= stillQueuedAfterMs) {
+        notifiedQueued = true;
+        onStillQueued?.();
       }
 
       // Fast at first (most runs finish in a few seconds), then ease off so a slow or

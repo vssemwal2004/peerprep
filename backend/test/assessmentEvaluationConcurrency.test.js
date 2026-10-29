@@ -114,6 +114,49 @@ test('a persisted finalization is recovered without Redis for MCQ and notificati
   assert.equal(await Notification.countDocuments({ userId: submission.studentId }), 1);
 });
 
+test('final evaluation reuses an unchanged submitted verdict and re-judges changed code or test data', async () => {
+  const { assessmentQueue } = await import('../src/queues/queueManager.js');
+  const { dispatchPendingAssessmentEvaluations } = await import('../src/services/assessmentEvaluationDispatchService.js');
+  const { default: Submission } = await import('../src/models/Submission.js');
+  const { default: Problem } = await import('../src/models/Problem.js');
+  const { default: TestCase } = await import('../src/models/TestCase.js');
+  await Promise.all([Submission, Problem, TestCase].map((model) => model.deleteMany({})));
+  const { assessment, submission } = await fixture({ count: 3 });
+  const problemIds = assessment.sections[0].questions.map((question) => question.problemId);
+  const past = new Date(Date.now() - 600_000);
+  await Problem.collection.insertMany(problemIds.map((_id) => ({ _id, title: 'P', createdAt: past, updatedAt: past })));
+  // Question 2's hidden tests change after the student submitted.
+  await TestCase.collection.insertOne({ problem: problemIds[2], kind: 'hidden', input: '1', output: '1', createdAt: past, updatedAt: new Date(Date.now() + 1000) });
+  const submits = await Submission.collection.insertMany([0, 1, 2].map((index) => ({
+    problem: problemIds[index], user: submission.studentId, mode: 'submit', language: 'python',
+    // Question 1 was edited after its last submit.
+    sourceCode: index === 1 ? 'print("older")' : `print(${index})`,
+    assessmentId: assessment._id, assessmentAttemptGeneration: 1, status: 'AC',
+    totalTestCases: 1, passedTestCases: 1, totalTestCaseMarks: 1, passedTestCaseMarks: 1,
+    createdAt: new Date(), completedAt: new Date(),
+  })));
+  await mutateAssessmentSubmission({ filter: { _id: submission._id }, mutate(doc) {
+    doc.answers.forEach((answer, index) => { answer.submissionId = submits.insertedIds[index]; });
+    finishAssessmentSubmission(doc);
+  } });
+  const originalAdd = assessmentQueue.add;
+  const payloads = [];
+  assessmentQueue.add = async (name, data) => { payloads.push(data); return { id: data.executionJobId }; };
+  try {
+    await dispatchPendingAssessmentEvaluations();
+    assert.deepEqual(payloads.map((payload) => payload.questionIndex).sort(), [1, 2]);
+    const stored = await AssessmentSubmission.findById(submission._id);
+    const reused = stored.answers.find((answer) => answer.questionIndex === 0);
+    assert.equal(reused.executionStatus, 'completed');
+    assert.equal(reused.executionVerdict, 'AC');
+    assert.equal(reused.executionResult.status, 'Accepted');
+    assert.equal(String(reused.submissionId), String(submits.insertedIds[0]));
+    assert.equal(stored.answers.find((answer) => answer.questionIndex === 1).executionStatus, 'queued');
+  } finally {
+    assessmentQueue.add = originalAdd;
+  }
+});
+
 test('queue publication retries preserve durable intent and reuse the same tracked coding job', async () => {
   const { assessmentQueue } = await import('../src/queues/queueManager.js');
   const { dispatchPendingAssessmentEvaluations } = await import('../src/services/assessmentEvaluationDispatchService.js');

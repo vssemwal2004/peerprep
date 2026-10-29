@@ -10,9 +10,9 @@ let workersBooted = false;
 function readConcurrency(name, fallback) {
   const parsed = Number.parseInt(process.env[name] || '', 10);
   if (!Number.isFinite(parsed)) return fallback;
-  // Keep accidental configuration values from overwhelming a small VPS.
-  // Larger installations should scale dedicated worker processes instead.
-  return Math.min(10, Math.max(1, parsed));
+  // Workers mostly wait on Judge0, whose load the Judge0 gateway caps; this bound
+  // only keeps a typo from opening hundreds of concurrent DB sessions.
+  return Math.min(32, Math.max(1, parsed));
 }
 
 export function startEmbeddedWorkers() {
