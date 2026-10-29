@@ -82,18 +82,22 @@ async function getStudentAssessmentContext(req, assessmentId) {
   if (assessment.lifecycleStatus === 'draft') throw new HttpError(403, 'Assessment is not published yet.');
   if (!isStudentAssigned(assessment, req.user)) throw new HttpError(403, 'Not assigned to this assessment.');
 
+  // The feedback form opens before results may be released, so it never carries
+  // scores; students see those on the results page, which honours the release setting.
   const submission = await AssessmentSubmission.findOne({
     assessmentId: assessment._id,
     studentId: req.user._id,
   })
-    .select('_id status score maxMarks accuracy startedAt submittedAt timeTakenSec')
+    .select('_id status startedAt submittedAt')
     .lean();
 
   if (!submission || !COMPLETED_SUBMISSION_STATUSES.has(submission.status) || !submission.submittedAt) {
     throw new HttpError(403, 'Assessment feedback is available after you finish the assessment.');
   }
 
-  return { assessment, submission };
+  // The assigned-student roster is only needed for the check above, not by the student.
+  const { assignedStudents, targetType, ...visibleAssessment } = assessment;
+  return { assessment: visibleAssessment, submission };
 }
 
 export async function getStudentAssessmentFeedback(req, res) {
