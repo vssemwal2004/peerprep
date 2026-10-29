@@ -1,5 +1,9 @@
-/* Hero: headline reveal + laptop playing the dashboard walkthrough. */
+/* Hero: a fully-open dashboard with an automatic, cursor-led product tour.
+   The tour is time based rather than scroll based, so it behaves consistently
+   with a mouse, touch, keyboard, and browsers without scroll-timeline APIs. */
 (function () {
+  'use strict';
+
   PP.ready(function () {
     var hero = document.getElementById('hero');
     if (!hero) return;
@@ -12,248 +16,231 @@
         autoplay: true,
         loop: true,
         base3d: true,
-        label: 'PeerPrep student dashboard',
+        label: 'PeerPrep student dashboard live walkthrough',
       });
     }
-    if (dev) openSequence(hero, dev);
+    if (dev) dashboardTour(hero, dev);
 
     var field = hero.querySelector('[data-hero-field]');
     if (field && field.getContext) lineField(field, hero);
+    factsReveal(hero);
 
-    if (!window.gsap || PP.reducedMotion) return;
-
-    var title = hero.querySelector('.hero__title');
-    var rest = hero.querySelectorAll('.hero__eyebrow, .hero__lead, .hero__ctas, .hero__note');
-    var tl = gsap.timeline({ defaults: { ease: 'expo.out' } });
-
-    if (window.SplitText && title) {
-      // Split on the final font's metrics (no re-wrap after the swap); the
-      // title stays hidden until then so it never flashes unsplit.
-      gsap.set(title, { autoAlpha: 0 });
-      PP.fontsReady(function () {
-        gsap.set(title, { autoAlpha: 1 });
-        SplitText.create(title, {
-          type: 'lines,words',
-          mask: 'lines',
-          autoSplit: true,
-          onSplit: function (self) {
-            return gsap.from(self.words, { yPercent: 110, duration: 1.2, stagger: 0.05, ease: 'expo.out', delay: 0.1 });
-          },
-        });
-      });
-    } else if (title) {
-      tl.from(title, { y: 40, opacity: 0, duration: 1.2 }, 0.1);
-    }
-
-    tl.from(rest, { y: 18, opacity: 0, duration: 1, stagger: 0.08 }, 0.35)
-      .from(hero.querySelector('.hero__stage'), { y: 60, opacity: 0, duration: 1.4 }, 0.55);
+    // CSS owns the entrance so the headline never depends on an animation CDN.
+    // Mark the first viewport ready in the same DOM-ready task. Waiting for a
+    // later frame briefly exposed only the dark page background on slow CPUs.
+    hero.classList.add('is-ready');
   });
 
-  /* Desktop only: pin the stage while the laptop opens from closed, powers on
-     and three dashboard areas are pointed out. Phones and reduced motion get
-     the open laptop playing normally (the CSS default). */
-  function openSequence(hero, dev) {
-    if (!window.gsap || !window.ScrollTrigger || PP.reducedMotion) return;
-    var pin = hero.querySelector('[data-hero-pin]');
-    var el = dev.el;
-    var cue = hero.querySelector('[data-hero-cue]');
-    var marks = hero.querySelectorAll('.hero__mark');
-    var notesWrap = hero.querySelector('[data-hero-notes]');
-    var notes = hero.querySelectorAll('.hero__note-item');
-    var floor = hero.querySelector('.hero__floor');
-    var intro = hero.querySelector('.hero__intro');
-    var mm = gsap.matchMedia();
+  function factsReveal(hero) {
+    var facts = hero.querySelector('[data-hero-facts]');
+    if (!facts) return;
+    var cards = [].slice.call(facts.querySelectorAll('[data-hero-fact]'));
+    var trust = hero.querySelector('.hero__trust');
+    var played = false;
 
-    /* Spotlight boxes are measured from the dashboard's real cards (layout
-       offsets ignore the laptop's 3D transforms), so they always frame the
-       card exactly; hero.css keeps fixed percentages as the fallback. */
-    var CARDS = ['.dm-dashboard__continue', '.dm-dashboard__challenge', '.dm-dashboard__prep'];
-    function placeMarks() {
-      var screen = el.querySelector('.device__screen');
-      if (!screen || !screen.offsetWidth) return;
-      var SW = screen.offsetWidth, SH = screen.offsetHeight, PAD = 6;
-      CARDS.forEach(function (sel, i) {
-        var card = el.querySelector(sel);
-        if (!card || !marks[i]) return;
-        var x = 0, y = 0, n = card;
-        while (n && n !== screen) { x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; }
-        if (n !== screen) return;
-        var pct = function (v, of) { return (v / of * 100).toFixed(3) + '%'; };
-        marks[i].style.left = pct(x - PAD, SW);
-        marks[i].style.top = pct(y - PAD, SH);
-        marks[i].style.width = pct(card.offsetWidth + PAD * 2, SW);
-        marks[i].style.height = pct(card.offsetHeight + PAD * 2, SH);
-      });
+    hero.classList.add('hero--facts-ready');
+
+    function format(value) {
+      return value.toLocaleString ? value.toLocaleString('en-US') : String(value);
     }
 
-    mm.add('(min-width: 900px)', function () {
-      hero.classList.add('is-sequenced');
-      var opened = false;
-      dev.pause();
-      placeMarks();
+    function count(el, delay) {
+      var target = parseInt(el.getAttribute('data-hero-count'), 10);
+      if (!target || PP.reducedMotion) { el.textContent = format(target || 0); return; }
+      window.setTimeout(function () {
+        var started = performance.now();
+        var duration = target > 100 ? 1150 : 900;
+        el.textContent = '0';
+        function frame(now) {
+          var progress = Math.min(1, (now - started) / duration);
+          var eased = 1 - Math.pow(1 - progress, 4);
+          el.textContent = format(Math.round(target * eased));
+          if (progress < 1) requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+      }, delay);
+    }
 
-      function setNote(i) {
-        notes.forEach(function (n, k) { n.classList.toggle('is-active', k === i); });
-      }
-
-      // The headline copy lifts away as the laptop rises into its pinned
-      // place, so nothing is left half-cut at the top edge while pinned.
-      if (intro) {
-        gsap.fromTo(intro, { autoAlpha: 1, y: 0 }, {
-          autoAlpha: 0, y: -48, ease: 'none',
-          scrollTrigger: {
-            trigger: hero, start: 'top+=120 top',
-            endTrigger: pin, end: 'top top+=96',
-            scrub: 0.6, invalidateOnRefresh: true,
-          },
-        });
-      }
-
-      var tl = gsap.timeline({
-        defaults: { ease: 'none' },
-        scrollTrigger: {
-          trigger: pin,
-          start: 'top top+=96', // clear of the header bar
-          end: '+=170%',
-          pin: true,
-          scrub: 0.8,
-          anticipatePin: 1,
-          invalidateOnRefresh: true,
-          onRefresh: placeMarks,
-          onUpdate: function (self) {
-            var p = self.progress;
-            // The dashboard only runs once the screen is on.
-            if (p > 0.52 && !opened) { opened = true; dev.play(); }
-            else if (p <= 0.52 && opened) { opened = false; dev.pause(); }
-            setNote(p < 0.58 ? -1 : p < 0.72 ? 0 : p < 0.86 ? 1 : 2);
-          },
-        },
+    function reveal() {
+      if (played) return;
+      played = true;
+      cards.forEach(function (card, i) {
+        var delay = PP.reducedMotion ? 0 : i * 95;
+        window.setTimeout(function () { card.classList.add('is-visible'); }, delay);
+        var counter = card.querySelector('[data-hero-count]');
+        if (counter) count(counter, delay + 90);
       });
+      if (trust) window.setTimeout(function () { trust.classList.add('is-visible'); }, PP.reducedMotion ? 0 : cards.length * 95 + 80);
+    }
 
-      // Closed: the machine lies on the desk, seen from above at ~38° —
-      // a foreshortened slab — then the lid lifts and the view comes level.
-      // (--lift -370px: the closed slab sits high enough in the device box
-      // that its top edge shows on the first screen, above the fold.)
-      tl.fromTo(el, { '--lid': '-90deg', '--tilt': '-38deg', '--lift': '-370px', '--dscale': 0.84, '--boot': 1, '--boot-bar': 0 },
-          { '--lid': '0deg', '--tilt': '0deg', '--lift': '0px', '--dscale': 1, ease: 'power2.inOut', duration: 0.5 }, 0)
-        .to(cue, { autoAlpha: 0, y: -12, duration: 0.08 }, 0.04)
-        // One shared rise for the row, opacity-only per caption, so the three
-        // rules never sit at different heights mid-animation.
-        .fromTo(notesWrap, { y: 16 }, { y: 0, duration: 0.1 }, 0.44)
-        .fromTo(notes, { autoAlpha: 0 }, { autoAlpha: 1, stagger: 0.02, duration: 0.08 }, 0.44)
-        // The floor only appears as the machine lands on it: the closed,
-        // lifted slab never hovers over a visible grid.
-        .fromTo(floor, { opacity: 0 }, { opacity: 0.8, duration: 0.2 }, 0.32)
-        .to(el, { '--boot-bar': 1, duration: 0.16 }, 0.3)
-        .to(el, { '--boot': 0, duration: 0.07 }, 0.47)
-        // Spotlights: one region at a time, each held briefly.
-        .to(marks[0], { opacity: 1, duration: 0.03 }, 0.58)
-        .to(marks[0], { opacity: 0, duration: 0.03 }, 0.70)
-        .to(marks[1], { opacity: 1, duration: 0.03 }, 0.72)
-        .to(marks[1], { opacity: 0, duration: 0.03 }, 0.84)
-        .to(marks[2], { opacity: 1, duration: 0.03 }, 0.86)
-        .to(marks[2], { opacity: 0, duration: 0.03 }, 0.97)
-        .to({}, { duration: 0.03 }, 0.97);
+    if (PP.reducedMotion || !('IntersectionObserver' in window)) { reveal(); return; }
+    var observer = new IntersectionObserver(function (entries) {
+      if (!entries[0].isIntersecting) return;
+      observer.disconnect();
+      reveal();
+    }, { threshold: .22, rootMargin: '0px 0px -8% 0px' });
+    observer.observe(facts);
+  }
 
-      if (document.fonts && document.fonts.ready) document.fonts.ready.then(placeMarks);
+  function dashboardTour(hero, dev) {
+    var marks = [].slice.call(hero.querySelectorAll('.hero__mark'));
+    var notes = [].slice.call(hero.querySelectorAll('.hero__note-item'));
+    var cursor = hero.querySelector('[data-hero-cursor]');
+    var selectors = ['.dm-dashboard__continue', '.dm-dashboard__challenge', '.dm-dashboard__prep'];
+    var index = -1;
+    var timer = 0;
+    var visible = true;
 
-      return function () {
-        hero.classList.remove('is-sequenced');
-        gsap.set(el, { clearProps: '--lid,--tilt,--lift,--dscale,--boot,--boot-bar' });
-        setNote(-1);
-        dev.play();
-      };
+    hero.classList.add('is-auto-tour');
+
+    function placeMarks() {
+      var screen = dev.el.querySelector('.device__screen');
+      if (!screen || !screen.offsetWidth) return;
+      var sw = screen.offsetWidth;
+      var sh = screen.offsetHeight;
+      var pad = 7;
+      selectors.forEach(function (selector, i) {
+        var card = dev.el.querySelector(selector);
+        var mark = marks[i];
+        if (!card || !mark) return;
+        var x = 0;
+        var y = 0;
+        var node = card;
+        while (node && node !== screen) {
+          x += node.offsetLeft;
+          y += node.offsetTop;
+          node = node.offsetParent;
+        }
+        if (node !== screen) return;
+        mark.style.left = ((x - pad) / sw * 100).toFixed(3) + '%';
+        mark.style.top = ((y - pad) / sh * 100).toFixed(3) + '%';
+        mark.style.width = ((card.offsetWidth + pad * 2) / sw * 100).toFixed(3) + '%';
+        mark.style.height = ((card.offsetHeight + pad * 2) / sh * 100).toFixed(3) + '%';
+      });
+      show(index < 0 ? 0 : index);
+    }
+
+    function show(next) {
+      index = next;
+      marks.forEach(function (mark, i) { mark.classList.toggle('is-active', i === index); });
+      notes.forEach(function (note, i) { note.classList.toggle('is-active', i === index); });
+      if (!cursor || !marks[index]) return;
+      var mark = marks[index];
+      var left = parseFloat(mark.style.left) || 0;
+      var top = parseFloat(mark.style.top) || 0;
+      var width = parseFloat(mark.style.width) || 0;
+      var height = parseFloat(mark.style.height) || 0;
+      cursor.style.setProperty('--cursor-x', Math.min(94, left + width * .72).toFixed(2) + '%');
+      cursor.style.setProperty('--cursor-y', Math.min(90, top + height * .62).toFixed(2) + '%');
+      cursor.classList.remove('is-clicking');
+      requestAnimationFrame(function () { cursor.classList.add('is-clicking'); });
+    }
+
+    function schedule() {
+      clearTimeout(timer);
+      if (!visible || document.hidden || PP.reducedMotion) return;
+      timer = setTimeout(function () {
+        show((index + 1) % marks.length);
+        schedule();
+      }, 3200);
+    }
+
+    notes.forEach(function (note, i) {
+      note.tabIndex = 0;
+      note.setAttribute('role', 'button');
+      note.setAttribute('aria-label', 'Show ' + note.querySelector('strong').textContent);
+      function select() { show(i); schedule(); }
+      note.addEventListener('click', select);
+      note.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); }
+      });
+    });
+
+    if ('ResizeObserver' in window) new ResizeObserver(placeMarks).observe(dev.el);
+    else addEventListener('resize', placeMarks);
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        visible = entries[0].isIntersecting;
+        if (visible) { dev.play(); schedule(); } else { dev.pause(); clearTimeout(timer); }
+      }, { threshold: .12 }).observe(hero.querySelector('[data-hero-pin]'));
+    }
+    document.addEventListener('visibilitychange', schedule);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { placeMarks(); show(0); schedule(); });
     });
   }
 
-  /* A field of flowing horizontal hairlines behind the headline (layered sine
-     displacement, every 7th line in the brand colour). Drifts very slowly and
-     yields softly around the pointer — the owner asked for a creative hero
-     background, so it moves, but calmly. Still frame for reduced motion;
-     paused offscreen and in hidden tabs. */
+  /* Calm line field behind the headline. It is capped at ~25fps and pauses
+     outside the viewport to keep the landing page light on low-end devices. */
   function lineField(canvas, hero) {
     var ctx = canvas.getContext('2d');
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     var w = 0, h = 0;
     var ink = '', brand = '';
-    var T = 2.4;
-    var mouse = { x: -9999, y: -9999, k: 0 };
+    var phase = 2.4;
+    var pointer = { x: -9999, y: -9999, amount: 0 };
     var raf = 0, last = 0, visible = true;
 
     function readColors() {
-      var cs = getComputedStyle(document.documentElement);
-      ink = cs.getPropertyValue('--ink').trim() || '#000';
-      brand = cs.getPropertyValue('--brand').trim() || '#00a1db';
+      var styles = getComputedStyle(document.documentElement);
+      ink = styles.getPropertyValue('--ink').trim() || '#000';
+      brand = styles.getPropertyValue('--brand').trim() || '#00a1db';
     }
     function resize() {
-      var r = canvas.getBoundingClientRect();
-      w = r.width; h = r.height;
-      canvas.width = Math.round(w * dpr);
-      canvas.height = Math.round(h * dpr);
+      var rect = canvas.getBoundingClientRect();
+      w = rect.width; h = rect.height;
+      canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     function draw() {
       ctx.clearRect(0, 0, w, h);
-      var lines = w < 700 ? 22 : 34;
+      var lines = w < 700 ? 18 : 28;
       var gap = h / (lines + 1);
-      var step = w < 700 ? 14 : 10;
+      var step = w < 700 ? 18 : 14;
       for (var i = 1; i <= lines; i++) {
         var y0 = i * gap;
         var accent = i % 7 === 3;
         ctx.beginPath();
         for (var x = -step; x <= w + step; x += step) {
-          var n =
-            Math.sin(x * 0.0042 + T * 0.6 + i * 0.35) * 10 +
-            Math.sin(x * 0.0093 - T * 0.45 + i * 0.8) * 6 +
-            Math.sin(x * 0.0017 + T * 0.25 - i * 0.12) * 14;
-          var dx = x - mouse.x, dy = y0 - mouse.y;
-          var bulge = mouse.k ? Math.exp(-(dx * dx + dy * dy) / 20000) * 18 * mouse.k : 0;
-          var y = y0 + n * (0.45 + i / lines) - bulge;
+          var wave = Math.sin(x * .0042 + phase * .6 + i * .35) * 10 + Math.sin(x * .0093 - phase * .45 + i * .8) * 6;
+          var dx = x - pointer.x, dy = y0 - pointer.y;
+          var lift = pointer.amount ? Math.exp(-(dx * dx + dy * dy) / 20000) * 18 * pointer.amount : 0;
+          var y = y0 + wave * (.45 + i / lines) - lift;
           if (x === -step) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
         ctx.strokeStyle = accent ? brand : ink;
-        ctx.globalAlpha = accent ? 0.28 : 0.07;
-        ctx.lineWidth = accent ? 1.1 : 1;
+        ctx.globalAlpha = accent ? .24 : .055;
+        ctx.lineWidth = 1;
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
     }
-
-    var pending = 0;
-    function redraw() {
-      if (pending) return;
-      pending = requestAnimationFrame(function () { pending = 0; resize(); draw(); });
-    }
-
     function frame(now) {
       raf = 0;
       if (!visible || document.hidden) return;
-      if (now - last > 40) { // ~25fps is plenty for slow drift
-        T += 0.01;
-        mouse.k += ((mouse.x > -9000 ? 1 : 0) - mouse.k) * 0.06;
-        draw();
-        last = now;
+      if (now - last > 40) {
+        phase += .01;
+        pointer.amount += ((pointer.x > -9000 ? 1 : 0) - pointer.amount) * .06;
+        draw(); last = now;
       }
       raf = requestAnimationFrame(frame);
     }
     function start() { if (!raf && !PP.reducedMotion) raf = requestAnimationFrame(frame); }
+    function redraw() { resize(); draw(); }
 
-    readColors();
-    resize();
-    draw();
+    readColors(); redraw();
     addEventListener('resize', redraw);
     addEventListener('pp:themechange', function () { readColors(); draw(); });
     if (PP.reducedMotion) return;
-
-    hero.addEventListener('pointermove', function (e) {
-      var r = canvas.getBoundingClientRect();
-      mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top;
+    hero.addEventListener('pointermove', function (event) {
+      var rect = canvas.getBoundingClientRect();
+      pointer.x = event.clientX - rect.left; pointer.y = event.clientY - rect.top;
     });
-    hero.addEventListener('pointerleave', function () { mouse.x = mouse.y = -9999; });
-    document.addEventListener('visibilitychange', start);
+    hero.addEventListener('pointerleave', function () { pointer.x = pointer.y = -9999; });
     if ('IntersectionObserver' in window) {
-      new IntersectionObserver(function (en) { visible = en[0].isIntersecting; start(); }).observe(canvas);
+      new IntersectionObserver(function (entries) { visible = entries[0].isIntersecting; start(); }).observe(canvas);
     }
+    document.addEventListener('visibilitychange', start);
     start();
   }
 })();

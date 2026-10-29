@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useHref } from "react-router-dom";
+import { hideGlobalLoader } from "../utils/globalLoader";
 
-const LANDING_RELEASE = "2026-10-29-1";
+// Keep the standalone landing package out of stale browser/CDN caches. The
+// release token also versions its CSS, scripts, and image references below.
+const LANDING_RELEASE = "2026-10-29-2";
 const LANDING_DOCUMENT_URL = `/landing-page/index.html?release=${LANDING_RELEASE}`;
 const LANDING_ASSET_BASE = "/landing-page/";
+const LANDING_MARKUP_READY = "peerprep:landing-markup-ready";
 
 function withTrailingSlash(value) {
   return value.endsWith("/") ? value : `${value}/`;
@@ -17,8 +21,15 @@ function prepareLandingDocument(source, appRoot, appOrigin) {
 
   return source
     .replace("<head>", `<head>\n  <base href="${LANDING_ASSET_BASE}" />`)
+    // The full page markup and blocking CSS are ready at this point, while the
+    // enhancement/animation scripts below can continue without holding the
+    // app-wide loader over an already-readable page.
     .replace(
-      /\b(href|src)="((?:assets|css|js)\/[^"?#]+)"/g,
+      '  <script src="vendor/gsap.min.js"></script>',
+      `  <script>window.parent.postMessage({ type: ${JSON.stringify(LANDING_MARKUP_READY)} }, ${JSON.stringify(appOrigin)});</script>\n  <script src="vendor/gsap.min.js"></script>`,
+    )
+    .replace(
+      /\b(href|src)="((?:assets|css|js|vendor)\/[^"?#]+)"/g,
       `$1="$2?release=${LANDING_RELEASE}"`,
     )
     .replaceAll(
@@ -77,6 +88,21 @@ export default function LandingPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleLandingReady = (event) => {
+      if (event.origin !== window.location.origin || event.data?.type !== LANDING_MARKUP_READY) return;
+      setFrameReady(true);
+    };
+    window.addEventListener("message", handleLandingReady);
+    return () => window.removeEventListener("message", handleLandingReady);
+  }, []);
+
+  // The index.html boot loader covers the page until the iframe has rendered or failed.
+  // Navigating away from "/" earlier is handled by useHideGlobalLoader in App.jsx.
+  useEffect(() => {
+    if (frameReady || loadError) hideGlobalLoader();
+  }, [frameReady, loadError]);
+
   const landingDocument = useMemo(
     () => (documentSource
       ? prepareLandingDocument(documentSource, routerRoot, window.location.origin)
@@ -93,27 +119,11 @@ export default function LandingPage() {
         height: "100svh",
         minHeight: "100vh",
         overflow: "hidden",
-        background: "#0a0a0b",
+        // Match the HTML boot screen instead of exposing a black frame while
+        // the standalone landing document is parsing its styles and scripts.
+        background: "#f8f8f6",
       }}
     >
-      {!frameReady && !loadError && (
-        <div
-          role="status"
-          aria-label="Loading PeerPrep"
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "grid",
-            placeItems: "center",
-            color: "#a9abb1",
-            fontFamily: "Manrope, system-ui, sans-serif",
-            fontSize: "0.875rem",
-          }}
-        >
-          Loading PeerPrep…
-        </div>
-      )}
-
       {loadError && (
         <div
           role="alert"
@@ -143,7 +153,10 @@ export default function LandingPage() {
             height: "100%",
             border: 0,
             display: "block",
-            opacity: frameReady ? 1 : 0,
+            // Allow the iframe to paint progressively. The branded global
+            // loader remains above it until onLoad, so this only eliminates
+            // the blank-frame failure mode if loading is unusually slow.
+            opacity: 1,
           }}
         />
       )}

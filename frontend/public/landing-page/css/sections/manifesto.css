@@ -150,7 +150,11 @@
 /* ==========================================================================
    Cinematic pinned stage (desktop, motion allowed — set by JS)
    ========================================================================== */
-.manifesto.is-cine { padding-top: 0; border-top: 0; }
+.manifesto.is-cine {
+  padding-top: 0;
+  padding-bottom: clamp(24px, 3vw, 48px);
+  border-top: 0;
+}
 
 .is-cine .manifesto__stage {
   position: relative;
@@ -225,14 +229,30 @@
   transform-origin: 50% 50%;
 }
 .is-cine .manifesto__tile { border-radius: calc(var(--tw) * 0.011); }
+/* Each screen is its own layer, which Chrome draws as a directly composited
+   image at its own resolution: zooming the plane no longer re-rasterises and
+   re-decodes nine large screenshots at every scale step (measured ~9x fewer
+   raster tiles). */
+.is-cine .manifesto__img { will-change: transform; }
+/* Dims the background tiles (manifesto.js fades it in); see the JS note. */
+.manifesto__veil {
+  position: absolute; inset: 0; z-index: 2;
+  border-radius: inherit;
+  background: var(--bg);
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity;
+}
 .is-cine .manifesto__bar { height: calc(var(--tw) * 0.028); padding: 0 calc(var(--tw) * 0.012); gap: calc(var(--tw) * 0.006); }
 .is-cine .manifesto__bar i { width: calc(var(--tw) * 0.0075); height: calc(var(--tw) * 0.0075); }
 .is-cine .manifesto__bar span { font-size: calc(var(--tw) * 0.0105); margin-left: calc(var(--tw) * 0.01); }
+/* Shadow blur is kept moderate: it is rasterised with the plane, which is
+   re-rasterised as the plane zooms. */
 :root:not([data-theme="dark"]) .is-cine .manifesto__tile {
-  box-shadow: 0 2px 4px rgba(14, 15, 18, 0.05), 0 60px 90px -50px rgba(14, 15, 18, 0.45);
+  box-shadow: 0 2px 4px rgba(14, 15, 18, 0.05), 0 44px 64px -40px rgba(14, 15, 18, 0.45);
 }
 :root[data-theme="dark"] .is-cine .manifesto__tile {
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 70px 110px -50px rgba(0, 0, 0, 0.95);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 52px 76px -40px rgba(0, 0, 0, 0.95);
 }
 
 /* The payoff sits in the gutter just below the final centre tile:

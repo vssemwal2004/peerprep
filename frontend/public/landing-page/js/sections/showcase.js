@@ -92,6 +92,12 @@
       label: 'PeerPrep student walkthrough',
     });
 
+    // Build every chapter's scene in idle time after load, while the reader is
+    // still above the showcase, so scrolling through it never builds DOM.
+    function prepareScenes() { dev.prepare(scenes.map(function (s) { return s.id; })); }
+    if (document.readyState === 'complete') prepareScenes();
+    else addEventListener('load', prepareScenes, { once: true });
+
     function onSceneEnd(id) {
       // Reduced motion seeks to the final frame on mount (which fires
       // onComplete): a replay started with Play ends here — show "Play" again.

@@ -1,197 +1,230 @@
-/* How it works — "the loop, panel by panel".
-   ≥900px with motion: adds .how--pinned, pins the stage and scrubs the five
-   panels sideways. One timeline drives a single value (pos, 0..4, with short
-   holds on each panel); render() derives every transform from it, so the
-   screen parallax, its 0.92→1 scale, the faster numeral drift, the text fade
-   and the rail all stay in lock-step with the scrubbed track.
-   <900px with motion: vertical sequence with simple reveals.
-   Reduced motion / no GSAP: nothing runs; the static layout is complete. */
+/* How it works: a scroll-controlled horizontal product story.
+   Native vertical scrolling drives the five scenes from right to left while
+   the stage remains pinned. No carousel buttons, timers, or gesture traps. */
 (function () {
   'use strict';
 
   PP.ready(function () {
-    var sec = document.getElementById('how');
-    if (!sec || !window.gsap || !window.ScrollTrigger || PP.reducedMotion) return;
+    var section = document.getElementById('how');
+    if (!section) return;
 
-    var stage = sec.querySelector('[data-how-stage]');
-    var track = sec.querySelector('[data-how-track]');
-    var panels = [].slice.call(sec.querySelectorAll('[data-how-panel]'));
-    var fill = sec.querySelector('[data-how-fill]');
-    var steps = [].slice.call(sec.querySelectorAll('[data-how-go]'));
-    var coda = sec.querySelector('[data-how-coda]');
-    if (!stage || !track || !panels.length) return;
+    var shell = section.querySelector('[data-how-scroll]');
+    var track = section.querySelector('[data-how-track]');
+    var panels = [].slice.call(section.querySelectorAll('[data-how-panel]'));
+    var steps = [].slice.call(section.querySelectorAll('[data-how-go]'));
+    var fill = section.querySelector('[data-how-fill]');
+    if (!shell || !track || !panels.length) return;
 
-    headReveal(sec);
+    var active = -1;
+    var visible = false;
+    var ticking = false;
+    var start = 0;
+    var distance = 1;
+    var lastProgress = -1;
+    var lastY = window.scrollY;
+    var direction = 1;
+    var snapTimer = null;
+    var snapping = false;
 
-    var mm = gsap.matchMedia();
-    mm.add('(min-width: 900px)', function () {
-      var cleanup = pinned();
-      revealCoda();
-      return cleanup;
-    });
-    mm.add('(max-width: 899.98px)', function () {
-      stacked();
-      revealCoda();
-    });
+    section.classList.add('how--scroll');
+    section.style.setProperty('--how-scenes', panels.length);
+    track.setAttribute('aria-live', 'polite');
 
-    /* ---------- desktop: pinned horizontal track ---------- */
-    function pinned() {
-      sec.classList.add('how--pinned');
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
 
-      var n = panels.length;
-      var HOLD = 0.4; // timeline units each panel rests at centre
-      var W = stage.clientWidth || innerWidth;
-      var state = { pos: 0 };
-      var parts = panels.map(function (p) {
-        var shot = p.querySelector('[data-how-shot]');
-        return {
-          shotX: gsap.quickSetter(shot, 'x', 'px'),
-          shotS: gsap.quickSetter(shot, 'scale'),
-          numX: gsap.quickSetter(p.querySelector('[data-how-num]'), 'x', 'px'),
-          textO: gsap.quickSetter(p.querySelector('.how__text'), 'opacity'),
-          shot: shot,
-          num: p.querySelector('[data-how-num]'),
-          text: p.querySelector('.how__text'),
-        };
+    function mount(index) {
+      var panel = panels[index];
+      var host = panel && panel.querySelector('[data-how-live]');
+      if (!host || host.dataset.mounted || !PP.device) return host && host.__howDevice;
+      var scene = host.getAttribute('data-how-live');
+      if (!scene || !PP.demos.get(scene)) return null;
+
+      host.dataset.mounted = 'true';
+      host.__howDevice = PP.device(host, {
+        scene: scene,
+        autoplay: index === active && visible,
+        loop: true,
+        base3d: false,
+        label: host.getAttribute('aria-label') || 'PeerPrep product walkthrough',
       });
-      var setTrackX = gsap.quickSetter(track, 'x', 'px');
-      var setFill = fill ? gsap.quickSetter(fill, 'scaleX') : function () {};
-      var active = -1;
+      host.closest('.how__frame').classList.add('is-live');
+      if (index !== active || !visible) host.__howDevice.pause();
+      return host.__howDevice;
+    }
 
-      function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
-      function render() {
-        var pos = state.pos;
-        setTrackX(-pos * W);
-        for (var i = 0; i < n; i++) {
-          var d = i - pos;              // >0: panel is to the right of centre
-          var ad = Math.abs(d);
-          if (ad > 1.6) continue;       // offscreen — leave it
-          var near = Math.min(ad, 1);
-          parts[i].shotX(d * W * 0.07);           // screen travels a touch faster than its text
-          parts[i].shotS(1 - 0.08 * near);        // 0.92 at the edge → 1 at centre
-          parts[i].numX(d * W * 0.24);            // the numeral drifts fastest
-          parts[i].textO(1 - 0.85 * clamp01((ad - 0.12) / 0.5));
+    function deviceAt(index) {
+      var host = panels[index] && panels[index].querySelector('[data-how-live]');
+      return host && host.__howDevice;
+    }
+
+    function activate(index) {
+      if (index === active) return;
+      var oldDevice = deviceAt(active);
+      if (oldDevice) oldDevice.pause();
+      active = index;
+
+      panels.forEach(function (panel, i) {
+        var selected = i === active;
+        panel.classList.toggle('is-active', selected);
+        panel.setAttribute('aria-hidden', String(!selected));
+        if (selected) panel.removeAttribute('inert');
+        else panel.setAttribute('inert', '');
+      });
+      steps.forEach(function (step, i) {
+        step.classList.toggle('is-active', i === active);
+        step.classList.toggle('is-past', i < active);
+        if (i === active) step.setAttribute('aria-current', 'step');
+        else step.removeAttribute('aria-current');
+      });
+
+      mount(active);
+      if (active > 0) mount(active - 1);
+      if (active < panels.length - 1) mount(active + 1);
+      var nextDevice = deviceAt(active);
+      if (nextDevice && visible) nextDevice.play();
+    }
+
+    function measure() {
+      var rect = shell.getBoundingClientRect();
+      start = rect.top + window.scrollY;
+      distance = Math.max(1, shell.offsetHeight - window.innerHeight);
+    }
+
+    function render() {
+      ticking = false;
+      // Content above this story includes responsive/lazy media. Reading the
+      // shell's live document position prevents late layout changes from
+      // offsetting the scene checkpoints.
+      start = shell.getBoundingClientRect().top + window.scrollY;
+      var progress = clamp((window.scrollY - start) / distance, 0, 1);
+      if (Math.abs(progress - lastProgress) < 0.0001) return;
+      lastProgress = progress;
+
+      var rawPosition = progress * (panels.length - 1);
+      var selected = clamp(Math.round(rawPosition), 0, panels.length - 1);
+      // Keep one complete product scene centred. Scroll chooses the scene;
+      // CSS supplies the short horizontal hand-off between those positions.
+      var position = selected;
+      activate(selected);
+
+      panels.forEach(function (panel, i) {
+        var delta = i - position;
+        var proximity = Math.abs(delta);
+        var onStage = proximity < 1.08;
+        var text = panel.querySelector('.how__text');
+        var shot = panel.querySelector('.how__shot');
+
+        panel.classList.toggle('is-scroll-visible', onStage);
+        panel.style.visibility = onStage ? 'visible' : 'hidden';
+        panel.style.opacity = String(clamp(1 - proximity, 0, 1));
+        panel.style.transform = 'translate3d(' + (delta * 100) + '%,0,0)';
+
+        if (!PP.reducedMotion) {
+          if (text) text.style.transform = 'translate3d(' + (delta * 42) + 'px,0,0)';
+          if (shot) shot.style.transform = 'translate3d(' + (delta * 86) + 'px,0,0) scale(' + (1 - Math.min(proximity, 1) * 0.035) + ')';
         }
-        setFill((pos + 1) / n);
-        var a = Math.round(pos);
-        if (a !== active) {
-          active = a;
-          steps.forEach(function (b, j) {
-            b.classList.toggle('is-active', j === a);
-            b.classList.toggle('is-past', j < a);
-            if (j === a) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
-          });
+      });
+
+      if (fill) fill.style.transform = 'scaleX(' + (selected / (panels.length - 1)) + ')';
+    }
+
+    function finishSnap() {
+      snapping = false;
+      lastY = window.scrollY;
+      lastProgress = -1;
+      requestRender();
+    }
+
+    function settleScene() {
+      snapTimer = null;
+      if (snapping || PP.reducedMotion) return;
+
+      measure();
+      var y = window.scrollY;
+      var end = start + distance;
+      var targetIndex;
+
+      // When entering from above, finish the approach so the first product
+      // is shown as a full frame instead of being cropped below the fold.
+      if (y < start) {
+        if (direction < 0 || y < start - window.innerHeight * 0.28) return;
+        targetIndex = 0;
+      } else if (y > end) {
+        return;
+      } else {
+        var raw = clamp((y - start) / distance, 0, 1) * (panels.length - 1);
+        var nearest = Math.round(raw);
+        // A deliberate scroll beyond a small dead-zone continues in the
+        // user's direction; tiny touchpad movement settles back cleanly.
+        if (Math.abs(raw - nearest) <= 0.08) targetIndex = nearest;
+        else targetIndex = direction > 0 ? Math.ceil(raw) : Math.floor(raw);
+        targetIndex = clamp(targetIndex, 0, panels.length - 1);
+      }
+
+      var targetY = start + distance * (targetIndex / (panels.length - 1));
+      if (Math.abs(targetY - y) < 3) return;
+      snapping = true;
+
+      if (PP.lenis) {
+        PP.lenis.scrollTo(targetY, {
+          duration: 0.58,
+          force: true,
+          onComplete: finishSnap,
+        });
+      } else {
+        window.scrollTo({ top: targetY, behavior: 'smooth' });
+        window.setTimeout(finishSnap, 620);
+      }
+      // Defensive release for browsers that interrupt smooth scrolling.
+      window.setTimeout(function () { if (snapping) finishSnap(); }, 850);
+    }
+
+    function requestRender() {
+      var y = window.scrollY;
+      if (Math.abs(y - lastY) > 1) direction = y > lastY ? 1 : -1;
+      lastY = y;
+      if (!snapping && !PP.reducedMotion) {
+        window.clearTimeout(snapTimer);
+        snapTimer = window.setTimeout(settleScene, 135);
+      }
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(render);
+    }
+
+    panels.forEach(function (panel, i) {
+      panel.id = 'how-panel-' + i;
+      panel.setAttribute('role', 'group');
+      panel.setAttribute('aria-label', 'Step ' + (i + 1) + ' of ' + panels.length);
+    });
+    steps.forEach(function (step) { step.setAttribute('aria-hidden', 'true'); });
+
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        visible = entries[0].isIntersecting;
+        var device = deviceAt(active);
+        if (device) {
+          if (visible) device.play();
+          else device.pause();
         }
-      }
-
-      var tl = gsap.timeline({
-        onUpdate: render,
-        scrollTrigger: {
-          trigger: stage,
-          start: 'top top',
-          end: function () { return '+=' + Math.round(track.scrollWidth); },
-          pin: true,
-          scrub: 0.8,
-          anticipatePin: 1,
-          invalidateOnRefresh: true,
-          onRefresh: function () { W = stage.clientWidth || innerWidth; render(); },
-        },
-      });
-      tl.to({}, { duration: HOLD });
-      for (var i = 1; i < n; i++) {
-        tl.to(state, { pos: i, duration: 1, ease: 'power1.inOut' }).to({}, { duration: HOLD });
-      }
-      render();
-
-      // Rail: jump to a step (time where that panel is centred, mid-hold).
-      function onGo(e) {
-        var i = parseInt(e.currentTarget.getAttribute('data-how-go'), 10) || 0;
-        var st = tl.scrollTrigger;
-        if (!st) return;
-        var t = i === 0 ? HOLD / 2 : i * (1 + HOLD) + HOLD / 2;
-        var y = st.start + (t / tl.duration()) * (st.end - st.start);
-        if (PP.lenis) PP.lenis.scrollTo(y, { duration: 1.4 });
-        else window.scrollTo({ top: y, behavior: 'smooth' });
-      }
-      steps.forEach(function (b) { b.addEventListener('click', onGo); });
-
-      // The first screen settles onto the page as the stage arrives.
-      var firstFrame = panels[0].querySelector('.how__frame');
-      gsap.fromTo(firstFrame, { scale: 0.94, y: 48 }, {
-        scale: 1, y: 0, ease: 'none',
-        scrollTrigger: { trigger: stage, start: 'top bottom', end: 'top top', scrub: 0.8 },
-      });
-
-      // Load the visible-theme screens a little before the stage arrives so
-      // panels never pop in mid-scrub.
-      ScrollTrigger.create({
-        trigger: sec, start: 'top bottom+=1200', once: true,
-        onEnter: function () {
-          sec.querySelectorAll('.how__img').forEach(function (img) {
-            if (getComputedStyle(img).display !== 'none') img.loading = 'eager';
-          });
-        },
-      });
-
-      return function () {
-        steps.forEach(function (b) {
-          b.removeEventListener('click', onGo);
-          b.classList.remove('is-active', 'is-past');
-          b.removeAttribute('aria-current');
-        });
-        sec.classList.remove('how--pinned');
-        var els = [track, fill, firstFrame];
-        parts.forEach(function (p) { els.push(p.shot, p.num, p.text); });
-        gsap.set(els.filter(Boolean), { clearProps: 'transform,opacity' });
-      };
-    }
-
-    /* ---------- phones: vertical sequence, simple reveals ---------- */
-    function stacked() {
-      panels.forEach(function (p) {
-        gsap.from(p.querySelectorAll('.how__num, .how__title, .how__copy, .how__tools'), {
-          y: 24, opacity: 0, duration: 0.9, ease: 'expo.out', stagger: 0.06,
-          scrollTrigger: { trigger: p, start: 'top 84%', once: true },
-        });
-        var shot = p.querySelector('.how__shot');
-        gsap.from(shot, {
-          y: 36, opacity: 0, scale: 0.97, duration: 1.1, ease: 'expo.out',
-          scrollTrigger: { trigger: shot, start: 'top 90%', once: true },
-        });
-      });
-    }
-
-    function revealCoda() {
-      if (!coda) return;
-      gsap.from(coda, {
-        y: 20, opacity: 0, duration: 1, ease: 'expo.out',
-        scrollTrigger: { trigger: coda, start: 'top bottom', once: true },
-      });
-    }
-  });
-
-  /* Heading: masked word rise (as the hero), then eyebrow + lead. */
-  function headReveal(sec) {
-    var title = sec.querySelector('.how__heading');
-    var rest = sec.querySelectorAll('.how__eyebrow, .how__lead');
-    var trig = function () { return { trigger: sec.querySelector('.how__head'), start: 'top 82%', once: true }; };
-    gsap.from(rest, { y: 18, opacity: 0, duration: 1, ease: 'expo.out', stagger: 0.12, scrollTrigger: trig() });
-    if (!title) return;
-    if (window.SplitText) {
-      SplitText.create(title, {
-        type: 'lines,words',
-        mask: 'lines',
-        linesClass: 'how__line',
-        autoSplit: true,
-        onSplit: function (self) {
-          return gsap.from(self.words, {
-            yPercent: 110, duration: 1.1, stagger: 0.045, ease: 'expo.out',
-            scrollTrigger: { trigger: title, start: 'top 85%', once: true },
-          });
-        },
-      });
+      }, { threshold: 0.08 }).observe(shell);
     } else {
-      gsap.from(title, { y: 32, opacity: 0, duration: 1.1, ease: 'expo.out', scrollTrigger: trig() });
+      visible = true;
     }
-  }
+
+    window.addEventListener('scroll', requestRender, { passive: true });
+    window.addEventListener('resize', function () {
+      window.clearTimeout(snapTimer);
+      measure();
+      lastProgress = -1;
+      requestRender();
+    }, { passive: true });
+
+    measure();
+    activate(0);
+    mount(1);
+    render();
+  });
 })();

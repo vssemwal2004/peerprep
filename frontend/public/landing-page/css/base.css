@@ -166,6 +166,7 @@
 
 /* ---------- Reset ---------- */
 *, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; scroll-padding-top: var(--nav-h); } /* = the Lenis offset in core.js */
 html.lenis, html.lenis body { height: auto; }
 .lenis.lenis-smooth { scroll-behavior: auto !important; }
@@ -397,7 +398,8 @@ ul, ol { padding: 0; list-style: none; }
   display: block; height: 100%; width: 100%;
   background: var(--brand);
   transform-origin: 0 50%;
-  transform: scaleX(var(--progress, 0));
+  transform: scaleX(0); /* set per frame by core.js; its own layer, so no repaint */
+  will-change: transform;
 }
 
 /* ---------- Reveal-on-scroll (driven by core.js) ---------- */

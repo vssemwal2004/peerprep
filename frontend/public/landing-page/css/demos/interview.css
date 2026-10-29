@@ -1,336 +1,194 @@
-/* ==========================================================================
-   Demo scene: AI voice mock interview room
-   Stage = 1128 x 680 fixed px. Everything scoped under .demo-interview.
-   Flat product styling: hairlines, solid fills, no glows. Tokens only, so it
-   re-resolves inside [data-force-theme="dark"] bands; the two explicit dark
-   overrides below use both selectors.
-   ========================================================================== */
+/* Student-side ANVI interview room — fixed 1128 × 680 demo stage. */
 .demo-interview {
-  --dm-btn: var(--brand-ink);
-  --dm-on-btn: #fff;
-  /* muted text that still clears 4.5:1 on panels in both themes */
-  --dm-mute: color-mix(in srgb, var(--app-ink-3) 40%, var(--app-ink-2));
-  position: relative;
+  --anvi-violet: #7c3aed;
+  --anvi-violet-2: #8b5cf6;
+  --anvi-fuchsia: #d946ef;
+  --anvi-cyan: #22d3ee;
+  --anvi-rose: #e11d48;
+  --anvi-ink: #172033;
+  /* This element is also the shared .demo-scene wrapper. Keep it pinned to
+     the 1128 × 680 device stage; a relative position collapses its height. */
+  position: absolute;
+  inset: 0;
   overflow: hidden;
+  color: var(--anvi-ink);
+  background: #f6f5fb;
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.45;
-  color: var(--app-ink);
-  background: var(--app-bg);
   -webkit-font-smoothing: antialiased;
 }
-.demo-interview svg { display: block; max-width: none; }
-.demo-interview .dm-interview__ic { width: 15px; height: 15px; flex: none; }
-
-/* ---------- header ---------- */
-.demo-interview .dm-interview__head {
-  position: absolute; left: 12px; top: 12px; width: 1104px; height: 54px;
-  display: flex; align-items: center; gap: 10px;
-  padding: 0 16px 0 10px;
-  border-radius: 12px;
-  background: var(--app-panel);
-  border: 1px solid var(--app-line);
-}
-.demo-interview .dm-interview__back {
-  width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
-  color: var(--app-ink-2); border: 1px solid var(--app-line);
-}
-.demo-interview .dm-interview__ttl { display: grid; line-height: 1.25; margin: 0 8px 0 4px; }
-.demo-interview .dm-interview__ttl b { font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
-.demo-interview .dm-interview__ttl span { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--dm-mute); }
-.demo-interview .dm-interview__live { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
-.demo-interview .dm-interview__chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 28px; padding: 0 11px; border-radius: 8px;
-  font-size: 12px; font-weight: 600; color: var(--app-ink-2);
-  background: var(--app-panel-2);
-  white-space: nowrap;
-}
-.demo-interview .dm-interview__chip .dm-interview__ic { width: 13px; height: 13px; color: var(--dm-mute); }
-.demo-interview .dm-interview__prog { margin-left: auto; display: grid; gap: 6px; justify-items: end; }
-.demo-interview .dm-interview__qof { display: flex; gap: 6px; font-size: 12.5px; white-space: nowrap; }
-.demo-interview .dm-interview__qof b { font-weight: 800; }
-.demo-interview .dm-interview__fu { color: var(--brand-ink); font-weight: 700; visibility: hidden; opacity: 0; }
-.demo-interview .dm-interview__segs { display: flex; gap: 4px; }
-.demo-interview .dm-interview__seg { width: 24px; height: 4px; border-radius: 2px; background: var(--app-line); }
-.demo-interview .dm-interview__seg.is-done { background: var(--brand); }
-.demo-interview .dm-interview__seg.is-now { background: linear-gradient(90deg, var(--brand) 0 55%, var(--app-line) 55%); }
-
-/* ---------- stage ---------- */
-.demo-interview .dm-interview__stage {
-  position: absolute; left: 12px; top: 76px; width: 744px; height: 592px;
-  border-radius: 14px;
-  overflow: hidden;
-  border: 1px solid var(--app-line);
-  background: var(--app-panel);
-}
-
-/* avatar column: the AI interviewer in a call tile */
-.demo-interview .dm-interview__avcol { position: absolute; left: 0; top: 0; width: 352px; height: 592px; }
-.demo-interview .dm-interview__tile {
-  --speak: 0;
-  position: absolute; left: 24px; top: 24px; width: 304px; height: 316px;
-  border-radius: 12px; overflow: hidden;
-  background: color-mix(in srgb, var(--indigo) 3%, var(--app-panel-2));
-  border: 1px solid var(--app-line);
-}
-.demo-interview .dm-interview__tile::after {
-  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-  box-shadow: inset 0 0 0 2px var(--brand);
-  opacity: var(--speak);
-}
-.demo-interview .dm-interview__avatar { position: absolute; left: 22px; bottom: -6px; width: 260px; height: 260px; }
-.demo-interview .dm-interview__tname {
-  position: absolute; left: 10px; top: 10px;
-  display: inline-flex; align-items: baseline; gap: 6px;
-  height: 24px; padding: 0 9px; border-radius: 6px;
-  font-size: 11px; color: var(--dm-mute); line-height: 24px;
-  background: var(--app-panel); border: 1px solid var(--app-line);
-}
-.demo-interview .dm-interview__tname b { font-size: 11.5px; font-weight: 800; color: var(--app-ink); letter-spacing: 0.02em; }
-
-/* SVG paint from tokens (product-UI illustration colours) */
-.demo-interview .dm-interview__s-f1 { stop-color: #f3d2bd; }
-.demo-interview .dm-interview__s-f2 { stop-color: #e8b99c; }
-.demo-interview .dm-interview__a-shirt { fill: color-mix(in srgb, var(--indigo) 22%, #e9edf5); }
-.demo-interview .dm-interview__a-collar { fill: #ffffff; }
-.demo-interview .dm-interview__a-tie { fill: color-mix(in srgb, var(--indigo) 70%, #1e293b); }
-.demo-interview .dm-interview__a-hairback { fill: #1e2433; }
-.demo-interview .dm-interview__a-hair { fill: #262d3f; }
-.demo-interview .dm-interview__a-brow { fill: none; stroke: #2a2430; stroke-width: 4; stroke-linecap: round; }
-.demo-interview .dm-interview__a-eyes { fill: #1e2433; transform-box: fill-box; transform-origin: 50% 50%; }
-.demo-interview .dm-interview__a-nose { fill: none; stroke: #c9937a; stroke-width: 2; stroke-linecap: round; }
-.demo-interview .dm-interview__a-mouth { fill: #8a3b45; }
-.demo-interview .dm-interview__a-smile { fill: none; stroke: #8a3b45; stroke-width: 2; stroke-linecap: round; }
-.demo-interview .dm-interview__a-ear { fill: none; stroke: #ecc3a8; stroke-width: 6; stroke-linecap: round; }
-.demo-interview .dm-interview__a-band { fill: none; stroke: #475569; stroke-width: 7; stroke-linecap: round; }
-.demo-interview .dm-interview__a-cup { fill: #334155; }
-
-.demo-interview .dm-interview__status { position: absolute; left: 24px; top: 356px; width: 304px; height: 24px; }
-.demo-interview .dm-interview__stx {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  font-size: 12.5px; font-weight: 700; white-space: nowrap;
-  color: var(--app-ink-2);
-  visibility: hidden; opacity: 0;
-}
-.demo-interview .dm-interview__stx i { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
-.demo-interview .dm-interview__stx--speak i { background: var(--brand); }
-.demo-interview .dm-interview__stx--listen i { background: var(--danger); }
-.demo-interview .dm-interview__stx--think i { background: var(--warn); }
-
-.demo-interview .dm-interview__voice {
-  position: absolute; left: 48px; top: 392px; width: 256px; height: 40px;
-  display: flex; align-items: center; justify-content: space-between;
-}
-.demo-interview .dm-interview__vb {
-  width: 2.5px; height: 100%; border-radius: 2px;
-  background: var(--brand);
-  transform: scaleY(0.08);
-}
-.demo-interview .dm-interview__play {
-  position: absolute; left: 0; width: 352px; top: 456px;
-  display: grid; justify-items: center; gap: 10px;
-}
-.demo-interview .dm-interview__pbtn {
-  display: inline-flex; align-items: center; gap: 7px;
-  height: 32px; padding: 0 14px; border-radius: 8px;
-  font-size: 12px; font-weight: 700; color: var(--app-ink-2);
-  background: var(--app-panel);
-  border: 1px solid var(--app-line);
-}
-.demo-interview .dm-interview__pbtn .dm-interview__ic { width: 13px; height: 13px; }
-.demo-interview .dm-interview__voicenote { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dm-mute); }
-
-/* question */
-.demo-interview .dm-interview__qcard {
-  position: absolute; left: 352px; top: 24px; width: 368px; height: 228px;
-  border-radius: 12px;
-  background: var(--app-panel);
-  border: 1px solid var(--app-line);
-}
-.demo-interview .dm-interview__qlayer { position: absolute; left: 22px; right: 22px; top: 20px; }
-.demo-interview .dm-interview__q2 { visibility: hidden; opacity: 0; }
-.demo-interview .dm-interview__qeb { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
-.demo-interview .dm-interview__qeb span {
-  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--brand-ink);
-}
-.demo-interview .dm-interview__qeb em { font-style: italic; font-family: var(--font-serif); font-size: 15px; color: var(--dm-mute); }
-.demo-interview .dm-interview__qtext { margin: 0; font-size: 19px; line-height: 1.4; font-weight: 700; letter-spacing: -0.02em; color: var(--app-ink); }
-.demo-interview .dm-interview__qtext--lg { font-size: 24px; line-height: 1.25; letter-spacing: -0.025em; }
-.demo-interview .dm-interview__fw,
-.demo-interview .dm-interview__aw { display: inline-block; }
-.demo-interview .dm-interview__qplay {
-  position: absolute; left: 22px; bottom: 16px;
-  display: inline-flex; align-items: center; gap: 7px;
-  font-size: 12px; font-weight: 700; color: var(--brand-ink);
-  visibility: hidden; opacity: 0;
-}
-.demo-interview .dm-interview__qplay .dm-interview__ic { width: 14px; height: 14px; }
-
-/* answer panel */
-.demo-interview .dm-interview__ans {
-  position: absolute; left: 352px; top: 268px; width: 368px; height: 300px;
-  border-radius: 12px;
-  background: var(--app-panel-2);
-  border: 1px solid var(--app-line);
-}
-.demo-interview .dm-interview__as { position: absolute; inset: 0; visibility: hidden; opacity: 0; }
-.demo-interview .dm-interview__as--ready { visibility: visible; opacity: 1; }
-.demo-interview .dm-interview__hint {
-  position: absolute; left: 28px; right: 28px; top: 196px; margin: 0;
-  text-align: center; font-size: 12.5px; color: var(--app-ink-2);
-}
-.demo-interview .dm-interview__recrow {
-  position: absolute; left: 0; right: 0; top: 16px;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: var(--danger);
-}
-.demo-interview .dm-interview__recdot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
-.demo-interview .dm-interview__timer { display: inline-flex; align-items: center; height: 20px; margin-left: 6px; color: var(--app-ink); letter-spacing: 0.02em; font-size: 12.5px; }
-.demo-interview .dm-interview__timer em { font-style: normal; color: var(--dm-mute); margin-left: 4px; }
-.demo-interview .dm-interview__tw { display: inline-block; height: 20px; overflow: hidden; }
-.demo-interview .dm-interview__ts, .demo-interview .dm-interview__cs { display: block; }
-.demo-interview .dm-interview__ts span { display: block; height: 20px; line-height: 20px; }
-.demo-interview .dm-interview__rwave {
-  position: absolute; left: 32px; right: 32px; top: 156px; height: 30px;
-  display: flex; align-items: center; justify-content: space-between;
-}
-.demo-interview .dm-interview__rb {
-  width: 2.5px; height: 100%; border-radius: 2px;
-  background: color-mix(in srgb, var(--danger) 80%, var(--dm-mute));
-  transform: scaleY(0.08);
-}
-.demo-interview .dm-interview__as--rec .dm-interview__hint { top: 214px; }
-
-.demo-interview .dm-interview__micwrap { position: absolute; left: 148px; top: 52px; width: 72px; height: 72px; opacity: 0.45; }
-.demo-interview .dm-interview__mic {
-  position: absolute; inset: 0; border-radius: 50%; overflow: hidden;
-  display: grid; place-items: center; color: var(--dm-on-btn);
-  background: var(--dm-btn);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 6px 14px -8px rgba(0, 0, 0, 0.35);
-}
-.demo-interview .dm-interview__mic-rec { position: absolute; inset: 0; border-radius: 50%; background: color-mix(in srgb, var(--danger) 88%, var(--app-ink)); visibility: hidden; opacity: 0; }
-.demo-interview .dm-interview__mic-ic { position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; }
-.demo-interview .dm-interview__mic-ic--stop { fill: currentColor; visibility: hidden; opacity: 0; }
-.demo-interview .dm-interview__miclbl {
-  position: absolute; left: 50%; top: 84px; width: 200px; margin-left: -100px;
-  text-align: center; font-size: 13px; font-weight: 800; letter-spacing: -0.01em; color: var(--app-ink);
-}
-.demo-interview .dm-interview__miclbl--stop { color: var(--danger); visibility: hidden; opacity: 0; }
-
-.demo-interview .dm-interview__as--prep { display: grid; align-content: center; gap: 10px; padding: 0 40px; }
-.demo-interview .dm-interview__shim { height: 10px; border-radius: 5px; background: var(--app-line); }
-.demo-interview .dm-interview__shim--s { width: 60%; }
-.demo-interview .dm-interview__as--prep p { margin: 6px 0 0; text-align: center; font-size: 12.5px; font-weight: 600; color: var(--app-ink-2); }
-
-.demo-interview .dm-interview__as--review { padding: 18px 18px 0; }
-.demo-interview .dm-interview__rvh { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.demo-interview .dm-interview__rvh .dm-interview__ic { color: var(--dm-mute); }
-.demo-interview .dm-interview__rvh b { font-size: 13px; font-weight: 800; }
-.demo-interview .dm-interview__rvh span { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--dm-mute); }
-.demo-interview .dm-interview__rvt {
-  margin: 0; padding: 12px 14px; border-radius: 10px;
-  font-size: 13px; line-height: 1.55; color: var(--app-ink);
-  background: var(--app-panel);
-  border: 1px solid var(--app-line);
-}
-.demo-interview .dm-interview__again,
-.demo-interview .dm-interview__use {
-  position: absolute; bottom: 16px; height: 40px;
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  border-radius: 9px; font-size: 12.5px; font-weight: 700;
-}
-.demo-interview .dm-interview__again { left: 16px; width: 150px; color: var(--app-ink-2); background: var(--app-panel); border: 1px solid var(--app-line); }
-.demo-interview .dm-interview__use { right: 16px; width: 170px; color: var(--dm-on-btn); background: var(--dm-btn); }
-
-/* ---------- transcript rail ---------- */
-.demo-interview .dm-interview__rail {
-  position: absolute; left: 768px; top: 76px; width: 348px; height: 592px;
-  display: flex; flex-direction: column;
-  border-radius: 14px;
-  background: var(--app-panel);
-  border: 1px solid var(--app-line);
-  overflow: hidden;
-}
-.demo-interview .dm-interview__rh {
-  display: flex; align-items: center; gap: 8px;
-  height: 50px; padding: 0 16px; flex: none;
-  border-bottom: 1px solid var(--app-line);
-  font-size: 13px;
-}
-.demo-interview .dm-interview__rh .dm-interview__ic { color: var(--dm-mute); }
-.demo-interview .dm-interview__rh b { font-weight: 800; }
-.demo-interview .dm-interview__cnt { margin-left: auto; display: inline-flex; align-items: center; font-size: 11.5px; color: var(--dm-mute); font-weight: 600; }
-.demo-interview .dm-interview__cw { display: inline-block; height: 18px; overflow: hidden; }
-.demo-interview .dm-interview__cs span { display: block; height: 18px; line-height: 18px; text-align: right; }
-.demo-interview .dm-interview__list {
-  flex: 1; min-height: 0;
-  display: flex; flex-direction: column; justify-content: flex-end;
-  padding: 0 16px 14px;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 60px);
-  mask-image: linear-gradient(180deg, transparent 0, #000 60px);
-}
-.demo-interview .dm-interview__li {
-  flex: none;
-  margin-top: 10px; padding: 10px 0 10px 12px;
-  font-size: 12.5px; line-height: 1.5; color: var(--app-ink-2);
-  border-left: 2px solid var(--app-line);
-  overflow: hidden;
-}
-.demo-interview .dm-interview__li b {
-  display: block; margin-bottom: 2px;
-  font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
-}
-.demo-interview .dm-interview__li--ai { border-left-color: color-mix(in srgb, var(--indigo) 55%, var(--app-line)); }
-.demo-interview .dm-interview__li--ai b { color: var(--indigo); }
-:root[data-theme="dark"] .demo-interview .dm-interview__li--ai b,
-[data-force-theme="dark"] .demo-interview .dm-interview__li--ai b { color: color-mix(in srgb, var(--indigo) 55%, white); }
-.demo-interview .dm-interview__li--you { border-left-color: color-mix(in srgb, var(--brand) 60%, var(--app-line)); }
-.demo-interview .dm-interview__li--you b { color: var(--brand-ink); }
-.demo-interview .dm-interview__div {
-  flex: none; display: flex; align-items: center; gap: 10px; margin-top: 12px;
-  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dm-mute);
-}
-.demo-interview .dm-interview__div::before,
-.demo-interview .dm-interview__div::after { content: ""; flex: 1; height: 1px; background: var(--app-line); }
-.demo-interview .dm-interview__li--new { max-height: 0; visibility: hidden; opacity: 0; margin-top: 0; padding-top: 0; padding-bottom: 0; }
-.demo-interview .dm-interview__rf {
-  flex: none; padding: 12px 16px 14px;
-  border-top: 1px solid var(--app-line);
-  display: grid; gap: 8px;
-}
-.demo-interview .dm-interview__consent {
-  justify-self: start;
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11.5px; font-weight: 700;
-  color: color-mix(in srgb, var(--success) 80%, var(--app-ink));
-}
-.demo-interview .dm-interview__consent .dm-interview__ic { width: 14px; height: 14px; }
-.demo-interview .dm-interview__rf p { margin: 0; display: flex; gap: 6px; align-items: flex-start; font-size: 11px; line-height: 1.45; color: var(--dm-mute); }
-.demo-interview .dm-interview__rf p .dm-interview__ic { width: 12px; height: 12px; margin-top: 1px; }
-
-/* ---------- fake cursor ---------- */
-.demo-interview .dm-cursor {
-  position: absolute; left: 0; top: 0; z-index: 60;
-  width: 24px; height: 24px; margin: -3px 0 0 -5px;
-  transform-origin: 5px 3px;
+.demo-interview::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(100, 90, 145, .13) .75px, transparent .75px);
+  background-size: 18px 18px;
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.7), transparent 82%);
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,.7), transparent 82%);
+  opacity: .35;
   pointer-events: none;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.3));
 }
-.demo-interview .dm-cursor__arrow { width: 24px; height: 24px; }
-.demo-interview .dm-cursor__arrow path { fill: #fff; stroke: #0f172a; stroke-width: 1.4; stroke-linejoin: round; }
-.demo-interview .dm-cursor__ripple {
-  position: absolute; left: -11px; top: -13px; width: 32px; height: 32px; border-radius: 50%;
-  border: 1.5px solid color-mix(in srgb, var(--brand) 70%, transparent);
-  visibility: hidden; opacity: 0;
-}
+.demo-interview svg { display: block; max-width: none; }
+.demo-interview .anvi-demo__icon { width: 15px; height: 15px; flex: 0 0 auto; }
+.demo-interview .anvi-demo__backdrop { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.demo-interview .anvi-demo__backdrop i { position: absolute; width: 380px; height: 380px; border-radius: 50%; filter: blur(72px); opacity: .19; }
+.demo-interview .anvi-demo__backdrop i:nth-child(1) { left: -150px; top: 30px; background: #c4b5fd; }
+.demo-interview .anvi-demo__backdrop i:nth-child(2) { right: 210px; top: -180px; background: #a5f3fc; }
+.demo-interview .anvi-demo__backdrop i:nth-child(3) { right: -170px; bottom: -190px; background: #f0abfc; }
 
-/* primary button: deep blue on paper, bright blue with dark text on dark */
-:root[data-theme="dark"] .demo-interview,
-[data-force-theme="dark"] .demo-interview { --dm-btn: var(--brand); --dm-on-btn: var(--app-bg); }
-/* dark: a deeper rose for the recording state so it does not read as neon */
-:root[data-theme="dark"] .demo-interview .dm-interview__mic-rec,
-[data-force-theme="dark"] .demo-interview .dm-interview__mic-rec { background: color-mix(in srgb, var(--danger) 78%, var(--app-bg)); }
+/* Header */
+.demo-interview .anvi-demo__header {
+  position: absolute; z-index: 4; left: 18px; right: 18px; top: 14px; height: 54px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 10px 0 12px;
+  border: 1px solid rgba(54, 44, 85, .09);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .76);
+  box-shadow: 0 14px 40px -30px rgba(38, 24, 78, .45);
+  backdrop-filter: blur(16px);
+}
+.demo-interview .anvi-demo__brand, .demo-interview .anvi-demo__session { display: flex; align-items: center; }
+.demo-interview .anvi-demo__brand { gap: 10px; }
+.demo-interview .anvi-demo__brand > span:last-child { display: grid; line-height: 1.22; }
+.demo-interview .anvi-demo__brand b { font-size: 14px; letter-spacing: -.01em; }
+.demo-interview .anvi-demo__brand small { margin-top: 2px; color: #788094; font-size: 10.5px; }
+.demo-interview .anvi-demo__session { gap: 8px; }
+.demo-interview .anvi-demo__live, .demo-interview .anvi-demo__timer, .demo-interview .anvi-demo__end { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+.demo-interview .anvi-demo__live { padding: 0 11px; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; }
+.demo-interview .anvi-demo__live i { width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 0 4px rgba(16,185,129,.12); }
+.demo-interview .anvi-demo__timer { min-width: 74px; color: #43495a; background: rgba(255,255,255,.7); border: 1px solid rgba(54,44,85,.1); }
+.demo-interview .anvi-demo__timer .anvi-demo__icon { width: 13px; height: 13px; color: #7c3aed; }
+.demo-interview .anvi-demo__end { padding: 0 14px; color: #fff; background: #e11d48; box-shadow: 0 7px 15px -9px rgba(225,29,72,.8); }
+
+/* ANVI mark and room geometry */
+.demo-interview .anvi-demo__mark { position: relative; display: inline-grid; place-items: center; width: 32px; height: 32px; flex: 0 0 auto; }
+.demo-interview .anvi-demo__mark-ring { position: absolute; inset: 3px; border: 2px solid #8b5cf6; border-radius: 50% 45% 52% 44%; transform: rotate(24deg); }
+.demo-interview .anvi-demo__mark-ring--b { inset: 7px 2px; border-color: #22d3ee; transform: rotate(-34deg); opacity: .75; }
+.demo-interview .anvi-demo__mark-core { position: relative; z-index: 1; display: grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; color: #fff; background: linear-gradient(145deg,#7c3aed,#a855f7); font-size: 10px; font-weight: 850; box-shadow: 0 3px 9px rgba(124,58,237,.27); }
+.demo-interview .anvi-demo__room { position: absolute; z-index: 2; left: 18px; right: 18px; top: 78px; bottom: 14px; display: grid; grid-template-columns: minmax(0, 1fr) 344px; gap: 12px; }
+.demo-interview .anvi-demo__main { min-width: 0; display: grid; grid-template-rows: 316px 112px 1fr; gap: 10px; }
+.demo-interview .anvi-demo__tiles { min-height: 0; display: grid; grid-template-columns: 1.65fr 1fr; gap: 10px; }
+
+/* Call tiles */
+.demo-interview .anvi-demo__tile { --talk: 0; --listen: 0; position: relative; min-width: 0; overflow: hidden; border-radius: 18px; border: 1px solid rgba(53,45,85,.10); background: rgba(255,255,255,.68); box-shadow: 0 18px 42px -34px rgba(32,20,73,.52), inset 0 1px 0 rgba(255,255,255,.7); backdrop-filter: blur(14px); }
+.demo-interview .anvi-demo__tile--anvi { box-shadow: 0 0 0 calc(var(--talk) * 2px) rgba(139,92,246,.62), 0 0 calc(var(--talk) * 48px) calc(var(--talk) * -18px) rgba(124,58,237,.45), 0 18px 42px -34px rgba(32,20,73,.52); }
+.demo-interview .anvi-demo__tile--you { box-shadow: 0 0 0 calc(var(--listen) * 2px) rgba(16,185,129,.62), 0 18px 42px -34px rgba(32,20,73,.52); }
+.demo-interview .anvi-demo__aurora { position: absolute; inset: 0; background: radial-gradient(42% 52% at 50% 48%,rgba(139,92,246,.19),transparent 72%),radial-gradient(34% 40% at 73% 72%,rgba(34,211,238,.13),transparent 72%),radial-gradient(28% 34% at 26% 24%,rgba(217,70,239,.11),transparent 75%); }
+.demo-interview .anvi-demo__orb { position: absolute; left: 50%; top: 46%; width: 168px; height: 168px; transform: translate(-50%,-50%); display: grid; place-items: center; }
+.demo-interview .anvi-demo__orbit { position: absolute; border-radius: 50%; border: 1.5px solid rgba(124,58,237,.26); }
+.demo-interview .anvi-demo__orbit--one { inset: 0; border-left-color: #8b5cf6; border-right-color: #22d3ee; transform: rotate(24deg); animation: anvi-orbit 9s linear infinite; }
+.demo-interview .anvi-demo__orbit--two { inset: 18px -10px; border-top-color: #d946ef; border-bottom-color: #8b5cf6; transform: rotate(-42deg); animation: anvi-orbit-rev 7s linear infinite; }
+.demo-interview .anvi-demo__orb::before, .demo-interview .anvi-demo__orb::after { content:""; position:absolute; border-radius:50%; }
+.demo-interview .anvi-demo__orb::before { inset: 35px; background: rgba(255,255,255,.58); box-shadow: 0 0 50px rgba(124,58,237,.18), inset 0 0 0 1px rgba(124,58,237,.13); backdrop-filter: blur(8px); }
+.demo-interview .anvi-demo__orb::after { inset: 54px; background: linear-gradient(145deg,#7c3aed,#a855f7 55%,#22d3ee); box-shadow: 0 10px 30px rgba(124,58,237,.32); }
+.demo-interview .anvi-demo__orb-core { position: relative; z-index: 2; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%; color: #fff; }
+.demo-interview .anvi-demo__orb-core .anvi-demo__icon { width: 24px; height: 24px; }
+.demo-interview .anvi-demo__plate { position: absolute; z-index: 3; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 5px; min-height: 28px; max-width: calc(100% - 24px); padding: 0 10px; border-radius: 9px; color: #667085; background: rgba(255,255,255,.83); border: 1px solid rgba(52,43,80,.09); box-shadow: 0 5px 18px -12px rgba(31,24,55,.5); backdrop-filter: blur(12px); font-size: 11px; }
+.demo-interview .anvi-demo__plate b { color: #202638; font-size: 11.5px; }
+.demo-interview .anvi-demo__plate .anvi-demo__icon { width: 13px; height: 13px; color: #059669; }
+.demo-interview .anvi-demo__levels { display: flex; align-items: center; justify-content: center; gap: 2px; width: 14px; height: 14px; }
+.demo-interview .anvi-demo__level { width: 2.5px; height: 8px; border-radius: 2px; background: #8b5cf6; transform: scaleY(.45); transform-origin: center; }
+.demo-interview .anvi-demo__phase { position: absolute; z-index: 3; right: 12px; top: 12px; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 999px; color: #5b21b6; background: rgba(245,243,255,.88); border: 1px solid rgba(167,139,250,.34); font-size: 10.5px; font-weight: 750; backdrop-filter: blur(10px); }
+.demo-interview .anvi-demo__phase i { width: 6px; height: 6px; border-radius: 50%; background: #8b5cf6; }
+.demo-interview .anvi-demo__phase--thinking, .demo-interview .anvi-demo__phase--listening { visibility: hidden; opacity: 0; }
+.demo-interview .anvi-demo__phase--listening { color: #047857; background: rgba(236,253,245,.9); border-color: rgba(52,211,153,.35); }
+.demo-interview .anvi-demo__phase--listening i { background: #10b981; }
+.demo-interview .anvi-demo__you-avatar { position: absolute; left: 50%; top: 45%; width: 106px; height: 106px; transform: translate(-50%,-50%); display: grid; place-items: center; }
+.demo-interview .anvi-demo__you-avatar::before { content:""; position:absolute; inset:-14px; border-radius:50%; background: rgba(16,185,129,.13); transform: scale(calc(.72 + var(--listen) * .28)); opacity: var(--listen); }
+.demo-interview .anvi-demo__you-avatar span { position:relative; z-index:2; display:grid; place-items:center; width:84px; height:84px; border-radius:50%; color:#fff; background:linear-gradient(145deg,#0ea5e9,#4f46e5); border:5px solid rgba(255,255,255,.87); box-shadow:0 15px 35px -17px rgba(55,48,163,.65); font-size:24px; font-weight:750; }
+.demo-interview .anvi-demo__you-wave { position:absolute; left:50%; top:67%; width:126px; height:30px; transform:translateX(-50%); display:flex; align-items:center; justify-content:center; gap:3px; opacity:var(--listen); }
+.demo-interview .anvi-demo__you-bar { width:2.5px; height:24px; border-radius:2px; background:#10b981; transform:scaleY(.13); }
+
+/* Captions and controls */
+.demo-interview .anvi-demo__captions { position:relative; overflow:hidden; padding:12px 15px; border-radius:16px; border:1px solid rgba(53,45,85,.09); background:rgba(255,255,255,.72); box-shadow:0 14px 32px -30px rgba(32,20,73,.5); backdrop-filter:blur(14px); }
+.demo-interview .anvi-demo__caption-head { display:flex; align-items:center; justify-content:space-between; color:#767d8d; font-size:10px; }
+.demo-interview .anvi-demo__caption-head span { display:flex; align-items:center; gap:6px; color:#6d28d9; font-weight:750; letter-spacing:.02em; }
+.demo-interview .anvi-demo__caption-head em { font-style:normal; }
+.demo-interview .anvi-demo__caption-lines { position:relative; height:55px; margin-top:8px; }
+.demo-interview .anvi-demo__caption { position:absolute; inset:0; margin:0; color:#293044; font-size:15px; line-height:1.45; font-weight:550; letter-spacing:-.01em; }
+.demo-interview .anvi-demo__caption--answer, .demo-interview .anvi-demo__caption--follow { visibility:hidden; opacity:0; }
+.demo-interview .anvi-demo__footer { position:relative; min-height:0; display:flex; align-items:center; justify-content:center; }
+.demo-interview .anvi-demo__status { position:absolute; left:0; display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 11px; color:#5b21b6; background:rgba(255,255,255,.68); border:1px solid rgba(53,45,85,.09); border-radius:999px; font-size:10.5px; font-weight:700; backdrop-filter:blur(10px); }
+.demo-interview .anvi-demo__status i { width:7px; height:7px; border-radius:50%; background:#8b5cf6; box-shadow:0 0 0 4px rgba(139,92,246,.12); }
+.demo-interview .anvi-demo__status--listen, .demo-interview .anvi-demo__status--think { visibility:hidden; opacity:0; }
+.demo-interview .anvi-demo__status--listen { color:#047857; }
+.demo-interview .anvi-demo__status--listen i { background:#10b981; box-shadow:0 0 0 4px rgba(16,185,129,.12); }
+.demo-interview .anvi-demo__status--think { color:#9a3412; }
+.demo-interview .anvi-demo__status--think i { background:#f59e0b; box-shadow:0 0 0 4px rgba(245,158,11,.12); }
+.demo-interview .anvi-demo__controls { display:flex; align-items:center; gap:7px; padding:7px; border:1px solid rgba(53,45,85,.10); border-radius:999px; background:rgba(255,255,255,.79); box-shadow:0 13px 32px -22px rgba(28,20,59,.52); backdrop-filter:blur(16px); }
+.demo-interview .anvi-demo__control { position:relative; display:grid; place-items:center; width:38px; height:38px; border-radius:50%; color:#4b5563; background:rgba(31,41,55,.055); }
+.demo-interview .anvi-demo__control--active { color:#fff; background:#7c3aed; box-shadow:0 6px 15px -8px rgba(124,58,237,.75); }
+.demo-interview .anvi-demo__control small { position:absolute; right:-1px; bottom:-1px; display:grid; place-items:center; min-width:13px; height:13px; padding:0 2px; color:#fff; background:#374151; border:1px solid #fff; border-radius:4px; font-size:7px; line-height:1; }
+.demo-interview .anvi-demo__divider { width:1px; height:24px; margin:0 2px; background:rgba(53,45,85,.12); }
+.demo-interview .anvi-demo__hangup { display:flex; align-items:center; gap:6px; height:38px; padding:0 15px; color:#fff; background:#e11d48; border-radius:999px; font-size:11px; font-weight:750; box-shadow:0 7px 16px -9px rgba(225,29,72,.8); }
+
+/* Docked side panel */
+.demo-interview .anvi-demo__side { position:relative; min-height:0; overflow:hidden; display:grid; grid-template-rows:50px 1fr 58px; border:1px solid rgba(53,45,85,.10); border-radius:18px; background:rgba(255,255,255,.76); box-shadow:0 18px 42px -34px rgba(32,20,73,.52); backdrop-filter:blur(16px); }
+.demo-interview .anvi-demo__tabs { display:flex; align-items:center; gap:4px; margin:9px 12px; padding:3px; border-radius:999px; background:rgba(31,41,55,.055); }
+.demo-interview .anvi-demo__tabs span { position:relative; flex:1; display:flex; align-items:center; justify-content:center; gap:5px; height:26px; border-radius:999px; color:#747b8b; font-size:11px; font-weight:650; }
+.demo-interview .anvi-demo__tabs span.is-active { color:#202638; background:#fff; box-shadow:0 2px 7px rgba(25,20,45,.08); }
+.demo-interview .anvi-demo__tabs i { display:grid; place-items:center; min-width:15px; height:15px; padding:0 4px; border-radius:999px; color:#6d28d9; background:#ede9fe; font-style:normal; font-size:8px; }
+.demo-interview .anvi-demo__panels { position:relative; min-height:0; overflow:hidden; border-top:1px solid rgba(53,45,85,.07); }
+.demo-interview .anvi-demo__panel { position:absolute; inset:0; padding:18px; }
+.demo-interview .anvi-demo__panel--transcript { visibility:hidden; opacity:0; transform:translateX(18px); padding:15px 16px; }
+.demo-interview .anvi-demo__eyebrow, .demo-interview .anvi-demo__transcript-head { display:flex; align-items:center; justify-content:space-between; color:#6d28d9; font-size:9.5px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+.demo-interview .anvi-demo__follow-chip { visibility:hidden; opacity:0; padding:3px 7px; border-radius:999px; color:#a21caf; background:#fae8ff; border:1px solid #f0abfc; font-style:normal; font-size:8.5px; letter-spacing:0; text-transform:none; }
+.demo-interview .anvi-demo__questions { position:relative; height:90px; margin-top:14px; }
+.demo-interview .anvi-demo__question { position:absolute; inset:0; margin:0; color:#202638; font-size:16px; line-height:1.5; font-weight:650; letter-spacing:-.015em; }
+.demo-interview .anvi-demo__question--follow { visibility:hidden; opacity:0; }
+.demo-interview .anvi-demo__tips { margin-top:12px; }
+.demo-interview .anvi-demo__tips h3 { margin:0 0 8px; color:#7b8190; font-size:9.5px; font-weight:800; letter-spacing:.13em; text-transform:uppercase; }
+.demo-interview .anvi-demo__tips > div { display:flex; gap:9px; padding:9px; margin-top:7px; border:1px solid rgba(53,45,85,.06); border-radius:11px; background:rgba(40,34,63,.025); }
+.demo-interview .anvi-demo__tips > div > span { display:grid; place-items:center; flex:0 0 auto; width:26px; height:26px; color:#7c3aed; background:#f1edff; border-radius:8px; }
+.demo-interview .anvi-demo__tips .anvi-demo__icon { width:13px; height:13px; }
+.demo-interview .anvi-demo__tips p { min-width:0; margin:0; display:grid; line-height:1.3; }
+.demo-interview .anvi-demo__tips b { color:#353b4c; font-size:10.5px; }
+.demo-interview .anvi-demo__tips small { margin-top:2px; color:#7a8190; font-size:9.5px; }
+.demo-interview .anvi-demo__transcript-head em { color:#059669; font-style:normal; font-size:8px; letter-spacing:.04em; text-transform:none; }
+.demo-interview .anvi-demo__panel--transcript ol { list-style:none; padding:0; margin:14px 0 0; display:grid; gap:12px; }
+.demo-interview .anvi-demo__panel--transcript li { display:flex; align-items:flex-start; gap:8px; }
+.demo-interview .anvi-demo__panel--transcript li .anvi-demo__mark { width:25px; height:25px; }
+.demo-interview .anvi-demo__panel--transcript li .anvi-demo__mark-core { width:15px; height:15px; font-size:7px; }
+.demo-interview .anvi-demo__panel--transcript li .anvi-demo__mark-ring { inset:3px; border-width:1.5px; }
+.demo-interview .anvi-demo__mini-you { display:grid; place-items:center; width:25px; height:25px; flex:0 0 auto; border-radius:50%; color:#fff; background:linear-gradient(145deg,#0ea5e9,#4f46e5); font-size:8px; font-weight:750; }
+.demo-interview .anvi-demo__panel--transcript li p { min-width:0; margin:0; display:grid; line-height:1.35; }
+.demo-interview .anvi-demo__panel--transcript li b { color:#6d28d9; font-size:9px; }
+.demo-interview .anvi-demo__panel--transcript li.is-you b { color:#0369a1; }
+.demo-interview .anvi-demo__panel--transcript li p span { margin-top:2px; color:#505769; font-size:10px; }
+.demo-interview .anvi-demo__new-line { visibility:hidden; opacity:0; }
+.demo-interview .anvi-demo__privacy { display:flex; align-items:center; gap:9px; padding:0 14px; border-top:1px solid rgba(53,45,85,.07); color:#7a8190; background:rgba(255,255,255,.28); }
+.demo-interview .anvi-demo__privacy .anvi-demo__icon { color:#7c3aed; }
+.demo-interview .anvi-demo__privacy span { display:grid; font-size:9px; line-height:1.35; }
+.demo-interview .anvi-demo__privacy b { color:#454b5c; font-size:9.5px; }
+
+@keyframes anvi-orbit { to { transform:rotate(384deg); } }
+@keyframes anvi-orbit-rev { to { transform:rotate(-402deg); } }
+@media (prefers-reduced-motion: reduce) { .demo-interview .anvi-demo__orbit { animation:none; } }
+
+[data-theme="dark"] .demo-interview,
+[data-force-theme="dark"] .demo-interview { --anvi-ink:#f4f1fb; color:#f4f1fb; background:#10121a; }
+[data-theme="dark"] .demo-interview .anvi-demo__header,
+[data-theme="dark"] .demo-interview .anvi-demo__tile,
+[data-theme="dark"] .demo-interview .anvi-demo__captions,
+[data-theme="dark"] .demo-interview .anvi-demo__controls,
+[data-theme="dark"] .demo-interview .anvi-demo__side,
+[data-force-theme="dark"] .demo-interview .anvi-demo__header,
+[data-force-theme="dark"] .demo-interview .anvi-demo__tile,
+[data-force-theme="dark"] .demo-interview .anvi-demo__captions,
+[data-force-theme="dark"] .demo-interview .anvi-demo__controls,
+[data-force-theme="dark"] .demo-interview .anvi-demo__side { background:rgba(22,24,34,.78); border-color:rgba(255,255,255,.10); }
+[data-theme="dark"] .demo-interview .anvi-demo__brand b,
+[data-theme="dark"] .demo-interview .anvi-demo__plate b,
+[data-theme="dark"] .demo-interview .anvi-demo__caption,
+[data-theme="dark"] .demo-interview .anvi-demo__question,
+[data-theme="dark"] .demo-interview .anvi-demo__tabs span.is-active,
+[data-force-theme="dark"] .demo-interview .anvi-demo__brand b,
+[data-force-theme="dark"] .demo-interview .anvi-demo__plate b,
+[data-force-theme="dark"] .demo-interview .anvi-demo__caption,
+[data-force-theme="dark"] .demo-interview .anvi-demo__question,
+[data-force-theme="dark"] .demo-interview .anvi-demo__tabs span.is-active { color:#f4f1fb; }
+[data-theme="dark"] .demo-interview .anvi-demo__plate,
+[data-theme="dark"] .demo-interview .anvi-demo__tabs span.is-active,
+[data-force-theme="dark"] .demo-interview .anvi-demo__plate,
+[data-force-theme="dark"] .demo-interview .anvi-demo__tabs span.is-active { background:rgba(255,255,255,.10); border-color:rgba(255,255,255,.08); }

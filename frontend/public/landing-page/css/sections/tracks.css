@@ -180,11 +180,11 @@
 .tracks__shot::after {            /* floor shadow on the shared baseline */
   content: "";
   position: absolute; z-index: -1;
-  left: 7%; right: 7%; bottom: -14px;
-  height: 26px;
+  left: 5%; right: 5%; bottom: -18px;
+  height: 34px;
   border-radius: 50%;
-  background: radial-gradient(50% 50% at 50% 50%, var(--tr-floor), transparent 72%);
-  filter: blur(5px);
+  /* soft from the gradient stops, not filter: blur() (a GPU pass per frame) */
+  background: radial-gradient(50% 50% at 50% 50%, var(--tr-floor), color-mix(in srgb, var(--tr-floor) 45%, transparent) 42%, color-mix(in srgb, var(--tr-floor) 12%, transparent) 66%, transparent 82%);
   transition: transform 0.6s var(--ease-out), opacity 0.6s var(--ease-out);
 }
 .tracks__shot > .tracks__bar,

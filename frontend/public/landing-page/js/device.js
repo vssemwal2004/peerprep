@@ -111,7 +111,17 @@
     var tl = null;
     var visible = false;
     var wantPlay = autoplay;
-    var api = { el: container, stage: stage, current: null };
+    var api = {
+      el: container, stage: stage, current: null,
+      // Elements that consume the scrubbed --tilt/--lift/--dscale, --lid,
+      // --boot and --boot-bar (registered non-inherited in device.css).
+      parts: {
+        body: container.querySelector('.device__body'),
+        lid: container.querySelector('.device__lid'),
+        boot: container.querySelector('.device__boot'),
+        bootBar: container.querySelector('.device__boot-bar i'),
+      },
+    };
 
     // ---- scale to container ----
     function fit() {
@@ -129,11 +139,53 @@
       return container.getAttribute('data-media-src-' + id) || null;
     }
 
+    // Each scene is built once into its own .demo-scene wrapper and kept.
+    // Rebuilding the DOM and timeline on every chapter change cost 70-150 ms
+    // of main-thread work in the middle of a scroll.
+    var built = {};   // id -> { root, tl }
+    var active = null;
+
+    function build(id) {
+      if (built[id]) return built[id];
+      var def = PP.demos.get(id);
+      var root = document.createElement('div');
+      root.className = 'demo-scene demo-' + id + ' is-idle';
+      stage.appendChild(root);
+      var scene = built[id] = { root: root, tl: null };
+      var media = mediaFor(id);
+      if (media) {
+        root.innerHTML = /\.(mp4|webm)$/i.test(media)
+          ? '<video class="demo-media" src="' + media + '" muted loop playsinline></video>'
+          : '<img class="demo-media" src="' + media + '" alt="" />';
+        return scene;
+      }
+      if (!def || !window.gsap) return scene;
+      try {
+        scene.tl = def.create(root) || null;
+      } catch (e) {
+        console.error('[PP.device] scene failed:', id, e);
+        return scene;
+      }
+      if (!scene.tl) return scene;
+      scene.tl.pause();
+      scene.tl.eventCallback('onComplete', function () {
+        if (api.current !== id) return;
+        if (opts.onComplete) opts.onComplete(id);
+        else if (opts.loop !== false) setTimeout(function () { if (api.current === id && tl) tl.restart(); }, 400);
+      });
+      return scene;
+    }
+
+    function activeVideo() { return active && active.root.querySelector('video'); }
+
     function mount(id) {
       var def = PP.demos.get(id);
-      if (tl) { tl.kill(); tl = null; }
-      stage.className = 'demo-root demo-' + id;
-      stage.innerHTML = '';
+      if (active) {
+        active.root.classList.add('is-idle');
+        if (active.tl) active.tl.pause();
+        var prev = activeVideo();
+        if (prev) prev.pause();
+      }
       api.current = id;
       if (def) {
         routeEl.textContent = def.route || '';
@@ -141,37 +193,45 @@
         navEls.forEach(function (n) { n.classList.toggle('is-active', n.getAttribute('data-nav') === def.nav); });
         container.setAttribute('aria-label', (opts.label ? opts.label + ' — ' : '') + (def.description || def.title || ''));
       }
-      var media = mediaFor(id);
-      if (media) {
-        var isVideo = /\.(mp4|webm)$/i.test(media);
-        stage.innerHTML = isVideo
-          ? '<video class="demo-media" src="' + media + '" muted loop playsinline' + (autoplay ? ' autoplay' : '') + '></video>'
-          : '<img class="demo-media" src="' + media + '" alt="" />';
-        return;
-      }
-      if (!def || !window.gsap) return;
-      try {
-        tl = def.create(stage);
-      } catch (e) {
-        console.error('[PP.device] scene failed:', id, e);
-        return;
-      }
+      active = build(id);
+      active.root.classList.remove('is-idle');
+      tl = active.tl;
+      var video = activeVideo();
+      if (video && autoplay && wantPlay && visible) video.play();
       if (!tl) return;
-      tl.eventCallback('onComplete', function () {
-        if (opts.onComplete) opts.onComplete(id);
-        else if (opts.loop !== false) setTimeout(function () { if (api.current === id && tl) tl.restart(); }, 400);
-      });
+      // Same state a freshly built scene had: time 0, playing only if wanted.
       if (PP.reducedMotion) tl.progress(1).pause();
-      else if (wantPlay && visible) tl.play();
+      else {
+        tl.restart();
+        if (!(wantPlay && visible)) tl.pause();
+      }
     }
 
     api.show = function (id) {
-      if (!stage.innerHTML || PP.reducedMotion) { mount(id); return; }
+      if (!api.current || PP.reducedMotion) { mount(id); return; }
       stage.classList.add('is-swapping');
       setTimeout(function () { mount(id); stage.classList.remove('is-swapping'); }, 250);
     };
-    api.play = function () { wantPlay = true; if (tl && visible) tl.play(); var v = stage.querySelector('video'); if (v) v.play(); };
-    api.pause = function () { wantPlay = false; if (tl) tl.pause(); var v = stage.querySelector('video'); if (v) v.pause(); };
+    api.play = function () { wantPlay = true; if (tl && visible) tl.play(); var v = activeVideo(); if (v) v.play(); };
+    api.pause = function () { wantPlay = false; if (tl) tl.pause(); var v = activeVideo(); if (v) v.pause(); };
+
+    // Builds scenes ahead of time in idle slots, and never while the page is
+    // scrolling, so the first visit to a chapter does not pay for its DOM.
+    var lastScroll = 0;
+    addEventListener('scroll', function () { lastScroll = performance.now(); }, { passive: true });
+    api.prepare = function (ids) {
+      var queue = ids.filter(function (id) { return !built[id] && PP.demos.get(id); });
+      var idle = window.requestIdleCallback
+        ? function (fn) { requestIdleCallback(fn, { timeout: 3000 }); }
+        : function (fn) { setTimeout(fn, 300); };
+      function next() {
+        if (!queue.length) return;
+        if (performance.now() - lastScroll < 400) { setTimeout(function () { idle(next); }, 400); return; }
+        build(queue.shift());
+        idle(next);
+      }
+      idle(next);
+    };
     api.isPlaying = function () { return wantPlay; };
     api.timeline = function () { return tl; };
 
@@ -190,7 +250,7 @@
     if (opts.lidOpen && window.gsap && window.ScrollTrigger && !PP.reducedMotion) {
       // The laptop leans back (screen facing up, seen from above) and settles
       // upright as it scrolls into view — like lifting a lid toward you.
-      gsap.fromTo(container,
+      gsap.fromTo(api.parts.body,
         { '--tilt': '24deg' },
         {
           '--tilt': '0deg', ease: 'none',

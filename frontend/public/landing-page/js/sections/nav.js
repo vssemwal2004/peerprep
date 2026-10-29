@@ -6,14 +6,31 @@
     var burger = nav.querySelector('[data-nav-burger]');
     var sheet = nav.querySelector('[data-nav-sheet]');
     var lastY = scrollY;
+    // Hide/show needs a sustained run in one direction. Lenis eases every
+    // scroll, so single-event deltas swing between large and tiny; comparing
+    // them to a fixed step made the bar (and logo) flicker in and out.
+    var HIDE_AFTER = 96, SHOW_AFTER = 48, TOP_ZONE = 480;
+    var run = 0;
+    var hidden = false;
+    var scrolled = null;
 
+    function setHidden(v) {
+      if (v === hidden) return;
+      hidden = v;
+      nav.classList.toggle('is-hidden', v);
+    }
     function onScroll() {
       var y = scrollY;
-      nav.classList.toggle('is-scrolled', y > 24);
-      var open = burger && burger.getAttribute('aria-expanded') === 'true';
-      nav.classList.toggle('is-hidden', !open && y > 480 && y > lastY + 4);
-      if (y < lastY - 4 || y < 480) nav.classList.remove('is-hidden');
+      var dy = y - lastY;
       lastY = y;
+      if ((y > 24) !== scrolled) { scrolled = y > 24; nav.classList.toggle('is-scrolled', scrolled); }
+      var open = burger && burger.getAttribute('aria-expanded') === 'true';
+      if (open || y < TOP_ZONE) { run = 0; setHidden(false); return; }
+      if (!dy) return;
+      if ((dy > 0) !== (run > 0)) run = 0; // direction changed: start a new run
+      run += dy;
+      if (run > HIDE_AFTER) setHidden(true);
+      else if (run < -SHOW_AFTER) setHidden(false);
     }
     addEventListener('scroll', onScroll, { passive: true });
     onScroll();

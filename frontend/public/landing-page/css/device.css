@@ -7,6 +7,17 @@
    (browser bar 44 + app topbar 52 + demo stage 680; sidebar 72 + stage 1128).
    ========================================================================== */
 
+/* Scrubbed on every scroll frame, so they are registered as non-inherited
+   and set directly on the element that uses each one (js/device.js,
+   js/sections/hero.js). An inherited custom property would restyle the whole
+   demo inside the screen on every frame. */
+@property --tilt { syntax: '<angle>'; inherits: false; initial-value: 0deg; }      /* whole-device pitch (.device__body) */
+@property --lift { syntax: '<length>'; inherits: false; initial-value: 0px; }      /* .device__body */
+@property --dscale { syntax: '<number>'; inherits: false; initial-value: 1; }      /* .device__body */
+@property --lid { syntax: '<angle>'; inherits: false; initial-value: 0deg; }       /* lid angle, negative = closing (.device__lid) */
+@property --boot { syntax: '<number>'; inherits: false; initial-value: 0; }        /* power-on overlay (.device__boot) */
+@property --boot-bar { syntax: '<number>'; inherits: false; initial-value: 0; }    /* .device__boot-bar i */
+
 .device {
   --dev-rim: #c9ccd1;
   --dev-alu-1: #eef0f2;
@@ -15,8 +26,6 @@
   --dev-notch: #9a9ea6;
   --dev-floor: rgba(14, 15, 18, 0.32);
   --dev-contact: rgba(14, 15, 18, 0.2);
-  --lid: 0deg;          /* lid angle; js animates on scroll (negative = closing) */
-  --tilt: 0deg;         /* whole-device pitch */
   position: relative;
   width: 100%;
 }
@@ -113,11 +122,12 @@
   background: var(--dev-alu-3);
   opacity: 0.8;
 }
-/* Contact + ambient shadow on the "floor" */
+/* Contact + ambient shadow on the "floor". Softness comes from the gradient
+   stops, not filter: blur() — a blur filter costs a GPU pass on every frame
+   the device moves. */
 .device__floor {
-  position: absolute; left: 40px; right: 40px; top: 826px; height: 50px;
-  background: radial-gradient(50% 50% at 50% 30%, var(--dev-floor), transparent 70%);
-  filter: blur(8px);
+  position: absolute; left: 24px; right: 24px; top: 820px; height: 62px;
+  background: radial-gradient(50% 50% at 50% 34%, var(--dev-floor), color-mix(in srgb, var(--dev-floor) 45%, transparent) 42%, color-mix(in srgb, var(--dev-floor) 12%, transparent) 66%, transparent 82%);
   z-index: -1;
 }
 
@@ -197,8 +207,7 @@
   position: absolute; left: 7.5%; right: 7.5%; top: 100%;
   height: 22px; margin-top: -4px;
   border-radius: 50%;
-  background: radial-gradient(50% 50% at 50% 30%, var(--dev-contact), transparent 75%);
-  filter: blur(5px);
+  background: radial-gradient(50% 50% at 50% 34%, var(--dev-contact), color-mix(in srgb, var(--dev-contact) 40%, transparent) 45%, transparent 85%);
   pointer-events: none;
 }
 :root[data-theme="dark"] .device--3d .device__deck,
@@ -214,8 +223,7 @@
   left: -80px; right: -80px; top: 842px; height: 900px;
   transform-origin: 50% 0;
   transform: rotateX(90deg);
-  background: radial-gradient(48% 46% at 50% 50%, var(--dev-floor), transparent 72%);
-  filter: blur(14px);
+  background: radial-gradient(50% 48% at 50% 50%, var(--dev-floor), color-mix(in srgb, var(--dev-floor) 50%, transparent) 38%, color-mix(in srgb, var(--dev-floor) 15%, transparent) 62%, transparent 80%);
 }
 
 /* Power-on overlay: dark screen with the mark and a hairline loader. */
@@ -342,6 +350,11 @@
   font-size: 13px; line-height: 1.45;
   font-family: var(--font-sans);
 }
+/* Each scene is built once into its own wrapper and kept (js/device.js), so
+   changing chapters never rebuilds DOM mid-scroll. Idle scenes stay laid out
+   (the demos measure offsets) but are not painted. */
+.demo-scene { position: absolute; inset: 0; contain: layout paint style; }
+.demo-scene.is-idle { visibility: hidden; }
 .demo-root.is-swapping { opacity: 0; transition: opacity 0.25s ease; }
 .demo-root:not(.is-swapping) { transition: opacity 0.35s ease; }
 .demo-media { width: 100%; height: 100%; object-fit: cover; object-position: top left; }

@@ -28,6 +28,10 @@
     readyQueue.splice(0).forEach(function (fn) {
       try { fn(); } catch (e) { console.error('[PP] init error', e); }
     });
+    // Keep the readable no-JS state until every critical section has had a
+    // chance to initialize. Removing it during parsing made the hero vanish
+    // while the remaining scripts downloaded, producing a black screen.
+    doc.classList.remove('no-js');
     // Sections init in file order, not page order — sort so pins above
     // push the triggers below them correctly, then measure.
     if (window.ScrollTrigger) { ScrollTrigger.sort(); ScrollTrigger.refresh(); }
@@ -157,15 +161,22 @@
   /* ---------- scroll progress bar ---------- */
   PP.ready(function () {
     var bar = document.querySelector('.scroll-progress');
-    if (!bar) return;
+    var fill = bar && bar.firstElementChild;
+    if (!fill) return;
     var ticking = false;
+    // The page height is measured only when it can change: reading it on
+    // every frame (after GSAP has written styles) forced a synchronous layout.
+    var max = 0;
+    function measure() { max = document.documentElement.scrollHeight - innerHeight; update(); }
     function update() {
-      var max = document.documentElement.scrollHeight - innerHeight;
-      bar.style.setProperty('--progress', max > 0 ? (scrollY / max).toFixed(4) : 0);
+      fill.style.transform = 'scaleX(' + (max > 0 ? Math.min(1, scrollY / max) : 0).toFixed(4) + ')';
       ticking = false;
     }
     addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
-    update();
+    addEventListener('resize', measure);
+    addEventListener('load', measure);
+    if (window.ScrollTrigger) ScrollTrigger.addEventListener('refresh', measure);
+    measure();
   });
 
   /* ---------- reveal on scroll ----------
@@ -305,6 +316,4 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   };
-
-  doc.classList.remove('no-js');
 })();

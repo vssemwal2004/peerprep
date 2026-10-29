@@ -60,13 +60,29 @@
       // The screens sit inside a clipped, pinned stage, so native lazy loading
       // would only fetch them once they are on screen. Fetch the current
       // theme's set as the section approaches (and the other set on toggle).
+      // decode() hands each screen to the compositor's decode cache ahead of
+      // time, so its first frame on screen does not wait on a WebP decode.
       var wanted = false;
       function preload() {
         wanted = true;
         var dark = document.documentElement.getAttribute('data-theme') === 'dark';
         plane.querySelectorAll(dark ? '.manifesto__img--dark' : '.manifesto__img--light')
-          .forEach(function (img) { img.loading = 'eager'; });
+          .forEach(function (img) {
+            img.loading = 'eager';
+            if (img.decode) img.decode().catch(function () {});
+          });
       }
+
+      // Background tiles dim behind a veil in the page colour: the same blend
+      // as fading the tile, but a veil is its own layer, so it changes on the
+      // compositor instead of repainting the whole plane every frame.
+      var veils = Array.prototype.map.call(others, function (tile) {
+        var v = document.createElement('span');
+        v.className = 'manifesto__veil';
+        v.setAttribute('aria-hidden', 'true');
+        tile.appendChild(v);
+        return v;
+      });
       function onTheme() { if (wanted) preload(); }
       ScrollTrigger.create({ trigger: root, start: 'top 250%', once: true, onEnter: preload });
       window.addEventListener('pp:themechange', onTheme);
@@ -91,7 +107,7 @@
           invalidateOnRefresh: true,
           onToggle: function (self) {
             animated.forEach(function (el) {
-              el.style.willChange = self.isActive ? (el === plane ? 'transform' : 'transform, opacity, filter') : '';
+              el.style.willChange = self.isActive ? (el === plane ? 'transform' : 'transform, opacity') : '';
             });
           },
         },
@@ -99,13 +115,14 @@
 
       tl.fromTo(meter, { scaleX: 0 }, { scaleX: 1, duration: 8 }, 0)
 
-        // 1 → out
-        .to(line1, { yPercent: -35, opacity: 0, filter: 'blur(12px)', duration: 1, ease: 'power2.in' }, 0.9)
+        // 1 → out (lift + fade only: a scrubbed blur filter re-renders the
+        // whole headline layer on the GPU every frame)
+        .to(line1, { yPercent: -35, opacity: 0, duration: 1, ease: 'power2.in' }, 0.9)
         .to(cap, { y: -24, opacity: 0, duration: 0.7, ease: 'power2.in' }, 0.9)
 
         // 2 → in, hold, out
         .from(w2, { yPercent: 135, duration: 0.9, stagger: 0.07, ease: 'power3.out' }, 1.6)
-        .to(line2, { yPercent: -35, opacity: 0, filter: 'blur(12px)', duration: 1, ease: 'power2.in' }, 3.7)
+        .to(line2, { yPercent: -35, opacity: 0, duration: 1, ease: 'power2.in' }, 3.7)
 
         // 3 → in, hold
         .from(w3, { yPercent: 135, duration: 0.9, stagger: 0.07, ease: 'power3.out' }, 4.4)
@@ -118,15 +135,16 @@
 
         // … then flattens and comes toward the viewer; dashboard dominates
         .to(plane, { y: function () { return -vh() * 0.03; }, scale: 1, rotationX: 0, duration: 2.6, ease: 'power1.inOut' }, 8)
-        .to(line3, { y: function () { return -vh() * 0.38; }, opacity: 0, filter: 'blur(10px)', duration: 0.8, ease: 'power1.in' }, 7.7)
+        .to(line3, { y: function () { return -vh() * 0.38; }, opacity: 0, duration: 0.8, ease: 'power1.in' }, 7.7)
         .to(head, { opacity: 0, y: -16, duration: 0.7, ease: 'power1.in' }, 7.9)
-        .to(others, { opacity: 0.4, duration: 1.4 }, 9.2)
+        .fromTo(veils, { opacity: 0 }, { opacity: 0.6, duration: 1.4 }, 9.2) // = tile at 0.4 over the page
         .fromTo(payoff, { opacity: 0, yPercent: -50, y: 18 }, { opacity: 1, y: 0, duration: 0.8, ease: 'power2.out' }, 9.9)
         .to({}, { duration: 0.4 }, 10.7);
 
       return function () {
         window.removeEventListener('pp:themechange', onTheme);
         root.classList.remove('is-cine');
+        veils.forEach(function (v) { v.remove(); });
         splits.forEach(function (s) { s.revert(); });
         animated.forEach(function (el) { el.style.willChange = ''; });
       };
