@@ -19,7 +19,7 @@ For the implemented persistence/queue protocol and staged migration, see
 
 ## Current single-VPS deployment
 
-The three-slice VPS is suitable for staged validation and hundreds of concurrent candidates, not a guaranteed 2,000-candidate event. Run the API and worker roles from `backend/ecosystem.production.cjs` and keep MongoDB/Redis bound to localhost.
+The three-slice VPS is suitable for staged validation and hundreds of concurrent candidates, not a guaranteed 2,000-candidate event. Run the API and worker roles from `backend/ecosystem.production.config.cjs` (`pm2 reload ecosystem.production.config.cjs --update-env`) and keep MongoDB/Redis bound to localhost.
 
 Required environment settings are documented in `backend/.env.example`.
 
