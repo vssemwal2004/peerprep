@@ -9,6 +9,7 @@ const DEFAULT_SUMMARY = {
   mobileDetected: 0,
   lookingAway: 0,
   cameraBlocked: 0,
+  cameraSpoofSuspected: 0,
   riskLevel: 'clean',
   lastViolationAt: null,
 };
@@ -21,6 +22,7 @@ const AI_LABELS = {
   ai_mobile_detected: 'Mobile Phone Detected',
   ai_looking_away: 'Looking Away',
   ai_camera_blocked: 'Camera Blocked',
+  ai_camera_spoof_suspected: 'Virtual / Static Camera Suspected',
 };
 
 const RISK_STYLES = {
@@ -65,6 +67,7 @@ function normalizeSummary(summary) {
     mobileDetected: Number(source.mobileDetected || 0),
     lookingAway: Number(source.lookingAway || 0),
     cameraBlocked: Number(source.cameraBlocked || 0),
+    cameraSpoofSuspected: Number(source.cameraSpoofSuspected || 0),
     riskLevel: RISK_STYLES[source.riskLevel] ? source.riskLevel : DEFAULT_SUMMARY.riskLevel,
   };
 }
@@ -106,6 +109,7 @@ export default function AIProctoringReportPanel({
     ['Face Out of Frame', summary.faceOutOfFrame],
     ['Looking Away', summary.lookingAway],
     ['Camera Blocked', summary.cameraBlocked],
+    ['Virtual / Static Camera', summary.cameraSpoofSuspected],
   ];
 
   return (

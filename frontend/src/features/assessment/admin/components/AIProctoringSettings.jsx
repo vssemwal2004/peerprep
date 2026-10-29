@@ -8,6 +8,7 @@ export const DEFAULT_AI_PROCTORING_SETTINGS = {
   detectFaceOutOfFrame: true,
   faceOutOfFrameGraceSec: 8,
   detectLookingAway: false,
+  detectVirtualCamera: true,
   detectionIntervalMs: 500,
   ignoreLimit: 5,
   violationCooldownSec: 20,
@@ -112,6 +113,9 @@ export default function AIProctoringSettings({ value, onChange, disabled = false
       </FieldRow>
       <FieldRow label="Detect face out of frame" disabled={disabled}>
         <Toggle value={Boolean(settings.detectFaceOutOfFrame)} onChange={(next) => update('detectFaceOutOfFrame', next)} disabled={disabled} />
+      </FieldRow>
+      <FieldRow label="Detect virtual or static camera" disabled={disabled}>
+        <Toggle value={settings.detectVirtualCamera !== false} onChange={(next) => update('detectVirtualCamera', next)} disabled={disabled} />
       </FieldRow>
       <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-3 dark:border-sky-900/40 dark:bg-sky-950/20">
         <div className="flex items-start justify-between gap-4">

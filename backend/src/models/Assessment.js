@@ -104,6 +104,7 @@ const aiProctoringSettingsSchema = new mongoose.Schema({
   faceOutOfFrameGraceSec: { type: Number, default: 8, min: 3, max: 60 },
   // Assessments never flag eye/head movement; normalizeAiProctoringSettings forces false.
   detectLookingAway: { type: Boolean, default: false },
+  detectVirtualCamera: { type: Boolean, default: true },
   detectionIntervalMs: { type: Number, default: 500, min: 500, max: 5000 },
   ignoreLimit: { type: Number, default: 5, min: 0, max: 50 },
   violationCooldownSec: { type: Number, default: 20, min: 5, max: 120 },

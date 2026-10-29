@@ -93,6 +93,7 @@ const assessmentSubmissionSchema = new mongoose.Schema({
     mobileDetected: { type: Number, default: 0 },
     lookingAway: { type: Number, default: 0 },
     cameraBlocked: { type: Number, default: 0 },
+    cameraSpoofSuspected: { type: Number, default: 0 },
     riskLevel: {
       type: String,
       enum: ['clean', 'low', 'medium', 'high', 'critical'],

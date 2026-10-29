@@ -796,6 +796,7 @@ function normalizeAiProctoringSettings(settings = {}) {
     // Assessment policy: eye/head movement is never flagged, whatever is stored.
     // ANVI interviews keep their own settings (services/aiInterviewDefinition.js).
     detectLookingAway: false,
+    detectVirtualCamera: source.detectVirtualCamera !== false,
     detectionIntervalMs: clampSettingNumber(source.detectionIntervalMs, 500, { min: 500, max: 5000 }),
     ignoreLimit: clampSettingNumber(source.ignoreLimit, 5, { min: 0, max: 50 }),
     violationCooldownSec: clampSettingNumber(source.violationCooldownSec, 20, { min: 5, max: 120 }),
@@ -1443,6 +1444,7 @@ const AI_PROCTORING_SUMMARY_DEFAULTS = Object.freeze({
   mobileDetected: 0,
   lookingAway: 0,
   cameraBlocked: 0,
+  cameraSpoofSuspected: 0,
   riskLevel: 'clean',
   lastViolationAt: null,
 });
@@ -1463,6 +1465,7 @@ function normalizeAiProctoringSummaryForReport(summary = {}) {
     mobileDetected: numberValue('mobileDetected'),
     lookingAway: numberValue('lookingAway'),
     cameraBlocked: numberValue('cameraBlocked'),
+    cameraSpoofSuspected: numberValue('cameraSpoofSuspected'),
     riskLevel,
     lastViolationAt: source.lastViolationAt || null,
   };
@@ -5887,6 +5890,7 @@ function violationWeight(settings = {}, type = 'other') {
     ai_mobile_detected: 'aiMobileDetected',
     ai_looking_away: 'aiLookingAway',
     ai_camera_blocked: 'aiCameraBlocked',
+    ai_camera_spoof_suspected: 'aiCameraSpoofSuspected',
     other: 'other',
   };
   const camel = camelByType[type] || type;

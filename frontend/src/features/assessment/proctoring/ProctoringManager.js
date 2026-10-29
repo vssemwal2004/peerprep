@@ -12,6 +12,7 @@ import {
 } from './rules/violationRules';
 import { ViolationBuffer } from './services/violationBuffer';
 import { attachStreamToVideo, requestCameraStream, stopCameraStream } from './utils/cameraUtils';
+import { CameraIntegrityMonitor } from './utils/cameraIntegrity';
 import { createFaceDetector } from './detectors/faceDetector';
 import { createObjectDetector } from './detectors/objectDetector';
 
@@ -61,7 +62,7 @@ function createSafeDetectionResult(overrides = {}) {
     mobileDetected: false,
     objectPersonCount: 0,
     personCount: faceCount || 0,
-    fresh: { face: false, object: false },
+    fresh: { face: false, object: false, integrity: false },
     ...overrides,
     confidence: {
       face: faceConfidence,
@@ -255,6 +256,7 @@ export class ProctoringManager {
     this.objectDetector = null;
     this.browserFaceDetector = null;
     this.fallbackCanvas = null;
+    this.cameraIntegrity = new CameraIntegrityMonitor();
     this.faceDetectorAvailable = false;
     this.objectDetectorAvailable = false;
     this.faceFallbackAvailable = false;
@@ -380,6 +382,8 @@ export class ProctoringManager {
     this.lastVideoPlaybackRetryAt = 0;
     this.lastObjectDetectionAt = 0;
     this.lastObjectResult = null;
+    // A different stream is a different device: judge it from scratch.
+    this.cameraIntegrity.reset();
     // The outage ends open episodes silently; a quick return is the same episode.
     this.violationBuffer.suspend(Date.now(), { exceptTypes: [AI_PROCTORING_EVENTS.CAMERA_BLOCKED] });
 
@@ -525,6 +529,7 @@ export class ProctoringManager {
     this.objectDetector = null;
     this.browserFaceDetector = null;
     this.fallbackCanvas = null;
+    this.cameraIntegrity.reset();
     this.faceDetectorAvailable = false;
     this.objectDetectorAvailable = false;
     this.faceFallbackAvailable = false;
@@ -623,6 +628,10 @@ export class ProctoringManager {
         }
       }
 
+      const integrity = canSample && this.settings.detectVirtualCamera !== false
+        ? this.cameraIntegrity.evaluate(this.stream, this.videoElement)
+        : null;
+
       const faceCount = Number(faceResult?.faceCount ?? 1);
       const faceConfidence = Number(faceResult?.confidence?.face ?? 0.9);
       const objectPersonCount = Number(objectResult?.personCount || 0);
@@ -636,7 +645,8 @@ export class ProctoringManager {
         mobileAvailable: !shouldUseObjectDetection(this.settings) || this.objectDetectorAvailable,
         objectPersonCount,
         personCount: Math.max(faceCount || 0, objectPersonCount),
-        fresh: { face: faceFresh, object: objectFresh },
+        cameraSpoofSuspected: Boolean(integrity?.suspected),
+        fresh: { face: faceFresh, object: objectFresh, integrity: Boolean(integrity?.fresh) },
         confidence: {
           face: faceConfidence,
           mobile: Number(objectResult?.confidence?.mobile || 0),
@@ -648,6 +658,11 @@ export class ProctoringManager {
           object: objectResult?.metadata || null,
           objectBackend: this.objectBackend,
           objectInferenceMs: this.objectDetector?.lastInferenceMs || 0,
+          cameraIntegrity: integrity?.suspected ? {
+            reason: integrity.reason,
+            deviceLabel: integrity.label,
+            ...(integrity.diff !== null ? { staticDiff: Math.round(integrity.diff * 1000) / 1000 } : {}),
+          } : null,
         },
       });
 
@@ -940,6 +955,7 @@ export class ProctoringManager {
       severity: classifyViolationSeverity(candidate, confirmed),
       confidence: candidate.confidence ?? 1,
       metadata: {
+        ...(candidate.metadata || {}),
         source: 'ai_proctoring',
         assessmentId: this.assessmentId,
         submissionId: this.submissionId,

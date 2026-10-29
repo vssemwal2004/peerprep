@@ -7,6 +7,7 @@ export const AI_PROCTORING_EVENTS = Object.freeze({
   MOBILE_DETECTED: 'ai_mobile_detected',
   LOOKING_AWAY: 'ai_looking_away',
   CAMERA_BLOCKED: 'ai_camera_blocked',
+  CAMERA_SPOOF_SUSPECTED: 'ai_camera_spoof_suspected',
 });
 
 export const DEFAULT_AI_PROCTORING_SETTINGS = Object.freeze({
@@ -17,6 +18,7 @@ export const DEFAULT_AI_PROCTORING_SETTINGS = Object.freeze({
   detectFaceOutOfFrame: true,
   faceOutOfFrameGraceSec: 10,
   detectLookingAway: true,
+  detectVirtualCamera: true,
   detectionIntervalMs: 500,
   ignoreLimit: 5,
   violationCooldownSec: 20,

@@ -34,6 +34,17 @@ test('AI proctoring risk escalates by count and critical event type', () => {
   assert.equal(calculateAiProctoringRiskLevel({ totalViolations: 1, cameraBlocked: 1 }), 'high');
 });
 
+test('a suspected virtual or static camera is accepted, counted and escalates review risk', () => {
+  assert.equal(isAiProctoringViolation('ai_camera_spoof_suspected'), true);
+
+  const summary = applyAiProctoringViolationToSummary({}, 'ai_camera_spoof_suspected', new Date('2026-01-01T00:00:00.000Z'));
+  assert.equal(summary.totalViolations, 1);
+  assert.equal(summary.cameraSpoofSuspected, 1);
+  assert.equal(summary.riskLevel, 'high');
+  assert.equal(calculateAiProctoringRiskLevel({ totalViolations: 1, cameraSpoofSuspected: 1 }), 'high');
+  assert.equal(getAiProctoringDefaultWeight('ai_camera_spoof_suspected'), 10);
+});
+
 test('AI proctoring default weights are available for scoring', () => {
   assert.equal(getAiProctoringDefaultWeight('ai_no_face'), 5);
   assert.equal(getAiProctoringDefaultWeight('ai_mobile_detected'), 15);

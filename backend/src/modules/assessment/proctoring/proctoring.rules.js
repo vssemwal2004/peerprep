@@ -6,6 +6,7 @@ export const AI_PROCTORING_VIOLATION_TYPES = Object.freeze([
   'ai_mobile_detected',
   'ai_looking_away',
   'ai_camera_blocked',
+  'ai_camera_spoof_suspected',
 ]);
 
 export const AI_PROCTORING_DEFAULT_WEIGHTS = Object.freeze({
@@ -16,6 +17,7 @@ export const AI_PROCTORING_DEFAULT_WEIGHTS = Object.freeze({
   ai_mobile_detected: 15,
   ai_looking_away: 6,
   ai_camera_blocked: 8,
+  ai_camera_spoof_suspected: 10,
 });
 
 const AI_SUMMARY_KEYS_BY_TYPE = Object.freeze({
@@ -26,6 +28,7 @@ const AI_SUMMARY_KEYS_BY_TYPE = Object.freeze({
   ai_mobile_detected: 'mobileDetected',
   ai_looking_away: 'lookingAway',
   ai_camera_blocked: 'cameraBlocked',
+  ai_camera_spoof_suspected: 'cameraSpoofSuspected',
 });
 
 const RISK_LEVELS = Object.freeze(['clean', 'low', 'medium', 'high', 'critical']);
@@ -44,6 +47,7 @@ export function createAiProctoringSummary(summary = {}) {
     mobileDetected: Number(summary.mobileDetected || 0),
     lookingAway: Number(summary.lookingAway || 0),
     cameraBlocked: Number(summary.cameraBlocked || 0),
+    cameraSpoofSuspected: Number(summary.cameraSpoofSuspected || 0),
     riskLevel: RISK_LEVELS.includes(summary.riskLevel) ? summary.riskLevel : 'clean',
     lastViolationAt: summary.lastViolationAt,
   };
@@ -62,7 +66,7 @@ export function calculateAiProctoringRiskLevel(summary = {}) {
     riskLevel = maxRiskLevel(riskLevel, 'medium');
   }
 
-  if (normalized.cameraBlocked > 0) {
+  if (normalized.cameraBlocked > 0 || normalized.cameraSpoofSuspected > 0) {
     riskLevel = maxRiskLevel(riskLevel, 'high');
   }
 

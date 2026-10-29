@@ -82,6 +82,18 @@ export const AI_PROCTORING_RULES = Object.freeze({
     clearCount: 1,
     clearAfterMs: 0,
   }),
+  // The monitor already requires ~20 s of an unchanging feed (or a virtual
+  // device label), so the episode confirms on its first positive sample.
+  [AI_PROCTORING_EVENTS.CAMERA_SPOOF_SUSPECTED]: Object.freeze({
+    message: 'Virtual or static camera suspected. Use your physical webcam showing a live view.',
+    severity: 'high',
+    source: 'integrity',
+    confirmCount: 1,
+    confirmAfterMs: 0,
+    gapToleranceMs: 0,
+    clearCount: 3,
+    clearAfterMs: 1500,
+  }),
 });
 
 const PRESENT_BY_TYPE = Object.freeze({
@@ -99,6 +111,7 @@ const PRESENT_BY_TYPE = Object.freeze({
   [AI_PROCTORING_EVENTS.LOOKING_AWAY]: (result) => result.facePresent !== false
     && result.lookingAway === true
     && shouldAcceptDetection(AI_PROCTORING_EVENTS.LOOKING_AWAY, result),
+  [AI_PROCTORING_EVENTS.CAMERA_SPOOF_SUSPECTED]: (result) => result.cameraSpoofSuspected === true,
 });
 
 export function getFaceOutOfFrameGraceMs(settings = {}) {
@@ -123,6 +136,8 @@ function isRuleEnabled(type, settings = {}) {
       return settings.detectFaceOutOfFrame !== false;
     case AI_PROCTORING_EVENTS.LOOKING_AWAY:
       return settings.detectLookingAway === true;
+    case AI_PROCTORING_EVENTS.CAMERA_SPOOF_SUSPECTED:
+      return settings.detectVirtualCamera !== false;
     default:
       return false;
   }
@@ -153,6 +168,9 @@ export function createCandidate(type, result = {}) {
     severity: rule.severity,
     confidence: getConfidenceForEvent(result, type),
     group: rule.group || null,
+    ...(type === AI_PROCTORING_EVENTS.CAMERA_SPOOF_SUSPECTED && result.metadata?.cameraIntegrity
+      ? { metadata: result.metadata.cameraIntegrity }
+      : {}),
   };
 }
 
