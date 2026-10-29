@@ -216,6 +216,10 @@ function InvitationModal({ assessment, onClose }) {
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
   const dirty = editor && (subject !== editor.subject || htmlContent !== editor.htmlContent);
+  const missingInvitationSections = [
+    !htmlContent.includes('{{credentialsSection}}') && 'the student login details',
+    assessment.passwordEnabled && !htmlContent.includes('{{passwordSection}}') && 'the assessment password',
+  ].filter(Boolean);
 
   useEffect(() => {
     let active = true;
@@ -321,7 +325,8 @@ function InvitationModal({ assessment, onClose }) {
               <input id="assessment-invitation-subject" value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={250} className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[13px] text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
               <div className="mt-3 flex items-center justify-between"><label htmlFor="assessment-invitation-html" className="text-xs font-semibold text-slate-600 dark:text-gray-300">Message HTML</label><span className="text-[10px] text-slate-400">Changes preview automatically</span></div>
               <textarea id="assessment-invitation-html" value={htmlContent} onChange={(e) => setHtmlContent(e.target.value)} spellCheck={false} className="mt-1.5 h-64 w-full resize-none rounded-lg border border-slate-300 bg-[#f8fafc] p-3 font-mono text-[12px] leading-[1.5] text-slate-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 lg:min-h-0 lg:flex-1" />
-              <p className="mt-2 truncate text-[11px] text-slate-500" title="Keep {{credentialsSection}} and {{passwordSection}} in the HTML so students receive their access details.">Required: <code>{'{{credentialsSection}}'}</code> and <code>{'{{passwordSection}}'}</code></p>
+              <p className="mt-2 truncate text-[11px] text-slate-500" title="Placeholders are optional. Use them where the student's login and assessment password should appear.">Optional placeholders: <code>{'{{credentialsSection}}'}</code> (login details), <code>{'{{passwordSection}}'}</code> (assessment password)</p>
+              {missingInvitationSections.length > 0 && <p role="status" className="mt-1.5 flex items-start gap-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] leading-4 text-amber-800 dark:bg-amber-900/25 dark:text-amber-200"><AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" /><span>This email will not include {missingInvitationSections.join(' or ')}. Add the details yourself if students need them.</span></p>}
             </div>
           </section>
 

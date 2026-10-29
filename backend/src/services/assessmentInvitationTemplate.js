@@ -36,9 +36,8 @@ export function validateAssessmentInvitationTemplate(input) {
   const source = String(input?.htmlContent || '').trim();
   if (!subject || subject.length > 250) throw new Error('Subject is required and must be under 250 characters.');
   if (!source || source.length > 50000) throw new Error('Email HTML is required and must be under 50,000 characters.');
+  // Placeholders are optional: the admin decides what the email contains. The
+  // editor warns when the login or password section is left out.
   const htmlContent = normalizeAssessmentInvitationHtml(source);
-  if (!htmlContent.includes('{{credentialsSection}}') || !htmlContent.includes('{{passwordSection}}')) {
-    throw new Error('Keep {{credentialsSection}} and {{passwordSection}} in the email so students receive required access details.');
-  }
   return { subject, htmlContent };
 }

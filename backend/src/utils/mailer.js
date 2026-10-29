@@ -212,7 +212,15 @@ export async function getAssessmentInvitationTemplate(assessment = {}) {
   const override = assessment.invitationTemplate;
   if (override?.subject && override?.htmlContent) return { subject: override.subject, htmlContent: normalizeAssessmentInvitationHtml(override.htmlContent) };
   const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.ASSESSMENT_INVITATION);
-  return { ...template, htmlContent: normalizeAssessmentInvitationHtml(template.htmlContent) };
+  const htmlContent = normalizeAssessmentInvitationHtml(template.htmlContent);
+  // Global templates stored before {{credentialsSection}} existed still need the
+  // login details; per-assessment templates are sent exactly as the admin wrote them.
+  return {
+    ...template,
+    htmlContent: htmlContent.includes('{{credentialsSection}}')
+      ? htmlContent
+      : htmlContent.replace('{{passwordSection}}', '{{credentialsSection}}{{passwordSection}}'),
+  };
 }
 
 export function renderAssessmentInvitationEmail({ to, assessment, student, password = '', accountPassword = '', assessmentOnly = false, template }) {
@@ -246,12 +254,9 @@ export function renderAssessmentInvitationEmail({ to, assessment, student, passw
     credentialsSection,
     assessmentUrl,
   };
-  const htmlTemplate = template.htmlContent.includes('{{credentialsSection}}')
-    ? template.htmlContent
-    : template.htmlContent.replace('{{passwordSection}}', '{{credentialsSection}}{{passwordSection}}');
   return {
     subject: renderTemplate(template.subject, vars),
-    html: renderTemplate(htmlTemplate, vars),
+    html: renderTemplate(template.htmlContent, vars),
   };
 }
 

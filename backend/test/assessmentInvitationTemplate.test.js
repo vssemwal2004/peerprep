@@ -28,6 +28,23 @@ test('invitation HTML remains markup and includes the rendered access sections',
   assert.equal(email.subject, 'Invitation: Coding test');
 });
 
+test('admins may leave out the access placeholders and the email is sent as written', () => {
+  const template = validateAssessmentInvitationTemplate({
+    subject: 'Reminder: {{assessmentTitle}}',
+    htmlContent: '<p>Hi {{studentName}}, your test opens soon.</p>',
+  });
+  const email = renderAssessmentInvitationEmail({
+    to: 'candidate@example.com',
+    assessment: { title: 'Weekly test', passwordEnabled: true },
+    student: { name: 'Candidate' },
+    password: 'exam-secret',
+    accountPassword: 'login-secret',
+    template,
+  });
+  assert.equal(email.html, '<p>Hi Candidate, your test opens soon.</p>');
+  assert.doesNotMatch(email.html, /login-secret|exam-secret/);
+});
+
 test('previously escaped invitation markup is restored safely', () => {
   const template = validateAssessmentInvitationTemplate({
     ...input,
