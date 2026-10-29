@@ -5,6 +5,8 @@ import jwt from 'jsonwebtoken';
 // Explicitly disable external storage. These are validation-only tests.
 process.env.SUPABASE_URL = '';
 process.env.ASSESSMENT_EVIDENCE_BUCKET = '';
+// Pinned to the (unconfigured) Supabase provider so a Cloudinary .env cannot enable storage here.
+process.env.ASSESSMENT_EVIDENCE_STORAGE = 'supabase';
 process.env.ASSESSMENT_EVIDENCE_SIGNING_SECRET = 'isolated-test-only-evidence-secret';
 const { normalizeLegacyEvidence, createAssessmentEvidenceUpload, verifyAssessmentEvidenceUpload } = await import('../src/services/assessmentEvidenceService.js');
 

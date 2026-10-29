@@ -13,6 +13,7 @@ import { sendReminders } from '../jobs/reminders.js';
 import { runDailyAnalytics } from '../jobs/analytics.js';
 import { dispatchAnviEvaluations, sweepStaleAnviAttempts } from '../modules/anviInterview/anviInterview.maintenance.js';
 import { sweepAnviScheduling } from '../modules/anviInterview/anviInterview.scheduling.maintenance.js';
+import { runEvidenceCleanup } from '../services/assessmentEvidenceCleanupService.js';
 
 // A failed score pass is retried next minute; it must not skip mail or assessment work.
 const logPrepScoreFailure = (error) => console.error(`[SharedMaintenance] Prep Score sync failed (${error?.name || 'Error'}).`);
@@ -23,6 +24,7 @@ const logAnviScheduleFailure = (error) => console.error(`[SharedMaintenance] ANV
 const logAssessmentEvalFailure = (error) => console.error(`[SharedMaintenance] Assessment evaluation dispatch failed (${error?.name || 'Error'}).`);
 const logAssessmentReportFailure = (error) => console.error(`[SharedMaintenance] Assessment report refresh failed (${error?.name || 'Error'}).`);
 const logAssessmentExpiryFailure = (error) => console.error(`[SharedMaintenance] Assessment expiry sweep failed (${error?.name || 'Error'}).`);
+const logEvidenceCleanupFailure = (error) => console.error(`[SharedMaintenance] Evidence cleanup failed (${error?.name || 'Error'}).`);
 
 export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
   let stopped = false;
@@ -66,6 +68,8 @@ export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
           }).catch(logAssessmentReportFailure);
         }
         if (due('platform', 'expiry', 60_000)) await runForPlatform(() => sweepAssessmentExpiry()).catch(logAssessmentExpiryFailure);
+        // Removes Cloudinary evidence of deleted or reset assessments.
+        if (due('platform', 'evidenceCleanup', 30_000)) await runForPlatform(() => runEvidenceCleanup()).catch(logEvidenceCleanupFailure);
       }
       // The shared PeerPrep deployment also owns users and queued mail in the
       // platform database. Drain it before tenant discovery so mail still runs
@@ -87,6 +91,7 @@ export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
             await refreshPendingAssessmentReports({ limit: 5 });
           }
           if (due(id, 'expiry', 60_000)) await sweepAssessmentExpiry();
+          if (due(id, 'evidenceCleanup', 30_000)) await runEvidenceCleanup().catch(logEvidenceCleanupFailure);
           // A rebuild (new policy or edited content) advances one batch per university per pass.
           if (due(id, 'prepScores', 60_000)) await syncPrepScores().catch(logPrepScoreFailure);
           // Settles Prep Coin charges a crash left pending (verified against this university's data).
