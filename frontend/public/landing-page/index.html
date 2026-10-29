@@ -1,0 +1,1396 @@
+<!doctype html>
+<html lang="en" data-theme="dark" class="no-js">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PeerPrep — Learn. Practice. Prove you are ready.</title>
+  <meta name="description" content="PeerPrep is an end-to-end placement preparation platform: guided learning, coding practice, secure assessments, peer and AI mock interviews, readiness analytics and a resume builder in one place." />
+  <meta name="theme-color" content="#0A0A0B" />
+  <meta property="og:title" content="PeerPrep — Learn. Practice. Prove you are ready." />
+  <meta property="og:description" content="One placement preparation platform for learning, coding, assessments, interviews and measurable improvement." />
+  <meta property="og:url" content="https://peerprep.co.in" />
+  <link rel="icon" type="image/png" href="assets/mark-light.png" />
+
+  <!-- Apply saved / system theme before first paint (no flash). -->
+  <script>
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('pp-theme'); } catch (e) {}
+      if (t !== 'light' && t !== 'dark') {
+        t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      }
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/device.css" />
+  <link rel="stylesheet" href="css/sections/faq-cta.css" />
+  <link rel="stylesheet" href="css/sections/features.css" />
+  <link rel="stylesheet" href="css/sections/footer.css" />
+  <link rel="stylesheet" href="css/sections/hero.css" />
+  <link rel="stylesheet" href="css/sections/how.css" />
+  <link rel="stylesheet" href="css/sections/manifesto.css" />
+  <link rel="stylesheet" href="css/sections/nav.css" />
+  <link rel="stylesheet" href="css/sections/showcase.css" />
+  <link rel="stylesheet" href="css/sections/tracks.css" />
+  <link rel="stylesheet" href="css/sections/universities.css" />
+  <link rel="stylesheet" href="css/demos/admin.css" />
+  <link rel="stylesheet" href="css/demos/analytics.css" />
+  <link rel="stylesheet" href="css/demos/anvi.css" />
+  <link rel="stylesheet" href="css/demos/assessment.css" />
+  <link rel="stylesheet" href="css/demos/coding.css" />
+  <link rel="stylesheet" href="css/demos/dashboard.css" />
+  <link rel="stylesheet" href="css/demos/interview.css" />
+  <link rel="stylesheet" href="css/demos/learning.css" />
+  <link rel="stylesheet" href="css/demos/resume.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="scroll-progress" aria-hidden="true"><span></span></div>
+
+<header class="nav" data-nav>
+  <div class="nav__inner glass">
+    <a class="nav__brand" href="#top" aria-label="PeerPrep home">
+      <img class="logo logo--light" src="assets/logo-light.png" alt="PeerPrep" width="160" height="49" />
+      <img class="logo logo--dark" src="assets/logo-dark.png" alt="" aria-hidden="true" width="160" height="49" />
+    </a>
+
+    <nav class="nav__links" aria-label="Primary">
+      <a href="#about">Product</a>
+      <a href="#showcase">See it live</a>
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#universities">For universities</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+
+    <div class="nav__actions">
+      <button class="theme-toggle neu" type="button" data-theme-toggle aria-label="Switch theme" aria-pressed="true">
+        <svg class="theme-toggle__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <mask id="tt-moon">
+            <rect x="0" y="0" width="24" height="24" fill="#fff" />
+            <circle class="theme-toggle__cut" cx="17" cy="7" r="6" fill="#000" />
+          </mask>
+          <circle class="theme-toggle__core" cx="12" cy="12" r="5.5" mask="url(#tt-moon)" fill="currentColor" />
+          <g class="theme-toggle__rays" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="12" y1="1.5" x2="12" y2="3.5" /><line x1="12" y1="20.5" x2="12" y2="22.5" />
+            <line x1="1.5" y1="12" x2="3.5" y2="12" /><line x1="20.5" y1="12" x2="22.5" y2="12" />
+            <line x1="4.6" y1="4.6" x2="6" y2="6" /><line x1="18" y1="18" x2="19.4" y2="19.4" />
+            <line x1="4.6" y1="19.4" x2="6" y2="18" /><line x1="18" y1="6" x2="19.4" y2="4.6" />
+          </g>
+        </svg>
+      </button>
+      <a class="nav__contact" href="https://peerprep.co.in/contact">Contact</a>
+      <a class="btn btn--primary btn--sm nav__login" href="https://peerprep.co.in/">
+        Student login
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <button class="nav__burger" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="nav-sheet" data-nav-burger>
+        <span></span><span></span>
+      </button>
+    </div>
+  </div>
+
+  <div class="nav__sheet glass-strong" id="nav-sheet" hidden data-nav-sheet>
+    <nav aria-label="Mobile">
+      <a href="#about">Product</a>
+      <a href="#showcase">See it live</a>
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#universities">For universities</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://peerprep.co.in/contact">Contact</a>
+    </nav>
+    <a class="btn btn--primary btn--lg" href="https://peerprep.co.in/">Student login</a>
+  </div>
+</header>
+<span id="top" aria-hidden="true"></span>
+
+  <main id="main">
+<section class="section hero" id="hero" aria-labelledby="hero-title">
+  <div class="studio-light" aria-hidden="true"></div>
+  <!-- Flowing line field (js/sections/hero.js) — slow drift, yields softly to the pointer. -->
+  <canvas class="hero__field" aria-hidden="true" data-hero-field></canvas>
+
+  <div class="container hero__intro">
+    <p class="eyebrow hero__eyebrow">One platform for placement preparation</p>
+    <h1 class="display hero__title" id="hero-title">
+      Learn. Practice.<br />
+      Prove you are <span class="serif hero__accent">ready.</span>
+    </h1>
+    <p class="lead hero__lead">
+      Build skills with guided learning, solve real coding problems, take secure assessments,
+      practise interviews, and see exactly where to improve.
+    </p>
+    <div class="hero__ctas">
+      <a class="btn btn--primary btn--lg" href="https://peerprep.co.in/">
+        Student login
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <a class="btn btn--ghost btn--lg" href="#about">Explore the platform</a>
+    </div>
+    <p class="hero__note">
+      For colleges and placement teams —
+      <a class="link-arrow" href="https://peerprep.co.in/contact">Contact us
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </p>
+  </div>
+
+  <!-- Pinned on desktop: the laptop starts closed and opens as you scroll,
+       powers on, then three areas of the dashboard are pointed out in turn. -->
+  <div class="hero__pin" data-hero-pin>
+    <div class="container hero__stage">
+      <div class="hero__floor" aria-hidden="true"></div>
+      <div class="hero__device" data-hero-device>
+        <noscript>
+          <div class="device-fallback">
+            <img src="assets/screens/dashboard-dark.webp" width="1692" height="1020" alt="PeerPrep student dashboard: continue where you left off, today&rsquo;s missions, and Prep Score and rank" />
+          </div>
+        </noscript>
+      </div>
+      <!-- Spotlight rings, positioned in screen coordinates (see hero.css). -->
+      <div class="hero__marks" aria-hidden="true" data-hero-marks>
+        <span class="hero__mark hero__mark--1"></span>
+        <span class="hero__mark hero__mark--2"></span>
+        <span class="hero__mark hero__mark--3"></span>
+      </div>
+    </div>
+
+    <ol class="container hero__notes" data-hero-notes>
+      <li class="hero__note-item">
+        <span class="hero__note-n">01</span>
+        <strong>Continue where you left off</strong>
+        <span>Your last problem and lesson, one click away.</span>
+      </li>
+      <li class="hero__note-item">
+        <span class="hero__note-n">02</span>
+        <strong>Today&rsquo;s missions</strong>
+        <span>A short daily plan, completed through real activity.</span>
+      </li>
+      <li class="hero__note-item">
+        <span class="hero__note-n">03</span>
+        <strong>Prep Score &amp; rank</strong>
+        <span>Your standing, visible only to you.</span>
+      </li>
+    </ol>
+    <p class="hero__cue" aria-hidden="true" data-hero-cue>
+      <span>Scroll to open</span>
+      <span class="hero__cue-line"><i></i></span>
+    </p>
+  </div>
+
+  <div class="container">
+    <!-- Two owner-approved figures, then the two AI helpers as a labelled
+         row (they are capabilities, not numbers). -->
+    <dl class="hero__facts">
+      <div class="hero__fact">
+        <dt class="hero__fact-value">4,000+</dt>
+        <dd class="hero__fact-label">Coding practice questions</dd>
+      </div>
+      <div class="hero__fact">
+        <dt class="hero__fact-value">20+</dt>
+        <dd class="hero__fact-label">Features across the placement journey</dd>
+      </div>
+      <div class="hero__fact hero__fact--caps">
+        <dt class="hero__fact-kicker">Also inside</dt>
+        <dd class="hero__fact-caps">
+          <span><b>AI mock interviews</b> Spoken questions, answered out loud</span>
+          <span><b>Anvi AI</b> A hint when you&rsquo;re stuck, not the answer</span>
+        </dd>
+      </div>
+    </dl>
+    <p class="hero__trust">Built for college students, faculty, coordinators, and placement teams.</p>
+  </div>
+</section>
+<section class="section manifesto" id="about" aria-labelledby="about-title" data-mf>
+
+  <!-- Desktop (>= 900px, motion allowed): this block is pinned and scrubbed by
+       js/sections/manifesto.js — three statements in sequence, then the wall of
+       real product screens rises on one tilted plane and flattens toward the
+       viewer. Default CSS (no JS, phones, reduced motion) stacks everything. -->
+  <div class="manifesto__pin" data-mf-pin>
+    <div class="manifesto__stage">
+
+      <div class="manifesto__head">
+        <p class="eyebrow manifesto__eyebrow">Who we are</p>
+        <span class="manifesto__meter" aria-hidden="true"><span data-mf-meter></span></span>
+      </div>
+
+      <div class="manifesto__beats">
+        <div class="manifesto__beat manifesto__beat--1" data-reveal>
+          <p class="manifesto__line" data-mf-line="1">Placement prep is scattered.</p>
+          <p class="manifesto__cap" data-mf-cap><span>Notes in one app, problems in another, tests elsewhere.</span></p>
+        </div>
+        <div class="manifesto__beat manifesto__beat--2" data-reveal>
+          <p class="manifesto__line" data-mf-line="2">Every switch between tools costs you progress.</p>
+        </div>
+        <div class="manifesto__beat manifesto__beat--3" data-reveal>
+          <h2 class="manifesto__line" id="about-title" data-mf-line="3">PeerPrep brings it into <span class="serif manifesto__accent">one</span> place.</h2>
+        </div>
+      </div>
+
+      <div class="manifesto__wall" data-reveal>
+        <ul class="manifesto__plane" data-mf-plane aria-label="PeerPrep product screens">
+          <li class="manifesto__tile" data-mf-tile>
+            <div class="manifesto__bar" aria-hidden="true"><i></i><i></i><i></i><span>peerprep.co.in/student/learning</span></div>
+            <div class="manifesto__shot">
+              <img class="manifesto__img manifesto__img--light" src="assets/screens/learning-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="Guided learning: semester-wise subjects with topic progress" />
+              <img class="manifesto__img manifesto__img--dark" src="assets/screens/learning-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+            </div>
+          </li>
+          <li class="manifesto__tile" data-mf-tile>
+            <div class="manifesto__bar" aria-hidden="true"><i></i><i></i><i></i><span>peerprep.co.in/problems</span></div>
+            <div class="manifesto__shot">
+              <img class="manifesto__img manifesto__img--light" src="assets/screens/coding-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="PrepCoding problem library with topic, company and difficulty filters" />
+              <img class="manifesto__img manifesto__img--dark" src="assets/screens/coding-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+            </div>
+          </li>
+          <li class="manifesto__tile" data-mf-tile>
+            <div class="manifesto__bar" aria-hidden="true"><i></i><i></i><i></i><span>peerprep.co.in/problems/pair-sum-to-target</span></div>
+            <div class="manifesto__shot">
+              <img class="manifesto__img manifesto__img--light" src="assets/screens/anvi-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="Coding workspace with Anvi offering a direction to try" />
+              <img class="manifesto__img manifesto__img--dark" src="assets/screens/anvi-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+            </div>
+          </li>
+          <li class="manifesto__tile" data-mf-tile>
+            <div class="manifesto__bar" aria-hidden="true"><i></i><i></i><i></i><span>peerprep.co.in/student/assessments</span></div>
+            <div class="manifesto__shot">
+              <img class="manifesto__img manifesto__img--light" src="assets/screens/assessment-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="Timed assessment with a question palette and server-enforced timer" />
+              <img class="manifesto__img manifesto__img--dark" src="assets/screens/assessment-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+            </div>
+          </li>
+          <li class="manifesto__tile manifesto__tile--center" data-mf-tile data-mf-center>
+            <div class="manifesto__bar" aria-hidden="true"><i></i><i></i><i></i><span>peerprep.co.in/student/dashboard</span></div>
+            <div class="manifesto__shot">
+              <img class="manifesto__img manifesto__img--light" src="assets/screens/dashboard-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="Student dashboard: continue where you left off, daily challenge, Prep Score and upcoming interviews" />
+              <img class="manifesto__img manifesto__img--dark" src="assets/screens/dashboard-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+            </div>
+          </li>
+          <li class="manifesto__tile" data-mf-tile>
+            <div class="manifesto__bar" aria-hidden="true"><i></i><i></i><i></i><span>peerprep.co.in/student/ai-interviews</span></div>
+            <div class="manifesto__shot">
+              <img class="manifesto__img manifesto__img--light" src="assets/screens/interview-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="AI voice mock interview room with a live transcript" />
+              <img class="manifesto__img manifesto__img--dark" src="assets/screens/interview-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+            </div>
+          </li>
+          <li class="manifesto__tile" data-mf-tile>
+            <div class="manifesto__bar" aria-hidden="true"><i></i><i></i><i></i><span>peerprep.co.in/student/analytics</span></div>
+            <div class="manifesto__shot">
+              <img class="manifesto__img manifesto__img--light" src="assets/screens/analytics-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="Readiness analytics with topic accuracy and a recommended next action" />
+              <img class="manifesto__img manifesto__img--dark" src="assets/screens/analytics-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+            </div>
+          </li>
+          <li class="manifesto__tile" data-mf-tile>
+            <div class="manifesto__bar" aria-hidden="true"><i></i><i></i><i></i><span>peerprep.co.in/student/resume</span></div>
+            <div class="manifesto__shot">
+              <img class="manifesto__img manifesto__img--light" src="assets/screens/resume-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="Resume builder with a live A4 preview" />
+              <img class="manifesto__img manifesto__img--dark" src="assets/screens/resume-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+            </div>
+          </li>
+          <li class="manifesto__tile" data-mf-tile>
+            <div class="manifesto__bar" aria-hidden="true"><i></i><i></i><i></i><span>peerprep.co.in/coordinator/reports</span></div>
+            <div class="manifesto__shot">
+              <img class="manifesto__img manifesto__img--light" src="assets/screens/admin-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="Coordinator report showing cohort readiness and assessment results" />
+              <img class="manifesto__img manifesto__img--dark" src="assets/screens/admin-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <p class="manifesto__payoff" data-mf-payoff data-reveal>One platform for every step of placement preparation.</p>
+    </div>
+  </div>
+
+  <!-- Audience row (after the pin). -->
+  <div class="container">
+    <nav class="manifesto__audience" aria-label="Who PeerPrep is for" data-reveal>
+      <p class="manifesto__audience-label">Built for</p>
+      <ul class="manifesto__audience-list">
+        <li class="manifesto__aud">
+          <a class="link-arrow" href="#showcase">Students
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <span class="manifesto__aud-line">One clear path from preparation to confidence.</span>
+        </li>
+        <li class="manifesto__aud">
+          <a class="link-arrow" href="#universities">Faculty &amp; coordinators
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <span class="manifesto__aud-line">Guide preparation without piecing tools together.</span>
+        </li>
+        <li class="manifesto__aud">
+          <a class="link-arrow" href="#universities">Placement teams
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <span class="manifesto__aud-line">See preparation across the whole student journey.</span>
+        </li>
+      </ul>
+      <p class="manifesto__access">Access is usually provided through your institution.</p>
+    </nav>
+  </div>
+
+  <noscript><style>#about [data-reveal] { opacity: 1 !important; transform: none !important; }</style></noscript>
+</section>
+<section class="section showcase" id="showcase" aria-labelledby="showcase-title">
+  <!--
+    "The theatre". Follows the site theme: a paper band in light, near-black in
+    dark. On desktop (>= 900px, motion allowed) js/sections/showcase.js pins
+    [data-showcase-pin] and scroll moves through the chapters; elsewhere the
+    chapter bar is a normal tablist.
+  -->
+  <div class="showcase__pin" data-showcase-pin>
+    <div class="showcase__light" aria-hidden="true"></div>
+
+    <div class="container showcase__grid">
+      <header class="showcase__head">
+        <p class="eyebrow">See it live</p>
+        <h2 class="h2 showcase__title" id="showcase-title">Watch the platform <span class="serif showcase__accent">work</span></h2>
+        <p class="showcase__lead"><span data-showcase-count>Seven</span> walkthroughs of the student interface, from a first lesson to a finished resume.</p>
+      </header>
+
+      <div class="showcase__stage">
+        <!--
+          The laptop is rendered by PP.device (js/device.js) and plays the PP.demos
+          scenes in chapter order. To replace a scripted scene with a real screen
+          recording, add an attribute to the [data-showcase-device] element below:
+            data-media-src-<id>="assets/demos/<id>.mp4"
+          e.g. data-media-src-coding="assets/demos/coding.mp4"  (mp4 / webm / gif / webp).
+          Recordings should be 1128 x 680 (or the same ratio) and show only the
+          page content below the app top bar. A video recording loops in place.
+        -->
+        <div class="showcase__panel" id="showcase-panel" role="tabpanel" aria-labelledby="showcase-tab-learning" aria-describedby="showcase-cap-learning">
+          <div class="showcase__device" data-showcase-device></div>
+        </div>
+      </div>
+
+      <div class="showcase__chapters" role="tablist" aria-label="Walkthrough chapters" data-showcase-tabs>
+        <button class="showcase__chapter" type="button" role="tab" id="showcase-tab-learning" data-scene="learning" aria-selected="true" aria-controls="showcase-panel">
+          <span class="showcase__line" aria-hidden="true"><i></i></span>
+          <span class="showcase__num" data-num>01</span>
+          <span class="showcase__name">Learning</span>
+        </button>
+        <button class="showcase__chapter" type="button" role="tab" id="showcase-tab-coding" data-scene="coding" aria-selected="false" aria-controls="showcase-panel" tabindex="-1">
+          <span class="showcase__line" aria-hidden="true"><i></i></span>
+          <span class="showcase__num" data-num>02</span>
+          <span class="showcase__name">PrepCoding</span>
+        </button>
+        <button class="showcase__chapter" type="button" role="tab" id="showcase-tab-anvi" data-scene="anvi" aria-selected="false" aria-controls="showcase-panel" tabindex="-1">
+          <span class="showcase__line" aria-hidden="true"><i></i></span>
+          <span class="showcase__num" data-num>03</span>
+          <span class="showcase__name">Anvi hints</span>
+        </button>
+        <button class="showcase__chapter" type="button" role="tab" id="showcase-tab-assessment" data-scene="assessment" aria-selected="false" aria-controls="showcase-panel" tabindex="-1">
+          <span class="showcase__line" aria-hidden="true"><i></i></span>
+          <span class="showcase__num" data-num>04</span>
+          <span class="showcase__name">Assessments</span>
+        </button>
+        <button class="showcase__chapter" type="button" role="tab" id="showcase-tab-interview" data-scene="interview" aria-selected="false" aria-controls="showcase-panel" tabindex="-1">
+          <span class="showcase__line" aria-hidden="true"><i></i></span>
+          <span class="showcase__num" data-num>05</span>
+          <span class="showcase__name">AI interview</span>
+        </button>
+        <button class="showcase__chapter" type="button" role="tab" id="showcase-tab-analytics" data-scene="analytics" aria-selected="false" aria-controls="showcase-panel" tabindex="-1">
+          <span class="showcase__line" aria-hidden="true"><i></i></span>
+          <span class="showcase__num" data-num>06</span>
+          <span class="showcase__name">Analytics</span>
+        </button>
+        <button class="showcase__chapter" type="button" role="tab" id="showcase-tab-resume" data-scene="resume" aria-selected="false" aria-controls="showcase-panel" tabindex="-1">
+          <span class="showcase__line" aria-hidden="true"><i></i></span>
+          <span class="showcase__num" data-num>07</span>
+          <span class="showcase__name">Resume</span>
+        </button>
+      </div>
+
+      <div class="showcase__captions" data-showcase-captions>
+        <div class="showcase__cap is-active" id="showcase-cap-learning" data-cap="learning">
+          <p class="showcase__kicker"><span data-cap-num>01</span> Guided learning</p>
+          <p class="showcase__cap-text">Follow your semester topic by topic: lessons, notes and progress in one place.</p>
+          <ul class="showcase__feats">
+            <li>Semester, subject, chapter and topic structure</li>
+            <li>Video lessons, notes and question sheets</li>
+            <li>Topic completion and video progress tracked</li>
+          </ul>
+        </div>
+        <div class="showcase__cap" id="showcase-cap-coding" data-cap="coding" hidden>
+          <p class="showcase__kicker"><span data-cap-num>02</span> PrepCoding</p>
+          <p class="showcase__cap-text">Find the right problem, write code in the browser, run the samples, then submit.</p>
+          <ul class="showcase__feats">
+            <li>Filter by topic, company and difficulty</li>
+            <li>Sample and custom test cases before you submit</li>
+            <li>Verdict with passed tests, runtime and memory</li>
+          </ul>
+        </div>
+        <div class="showcase__cap" id="showcase-cap-anvi" data-cap="anvi" hidden>
+          <p class="showcase__kicker"><span data-cap-num>03</span> Anvi AI</p>
+          <p class="showcase__cap-text">Stuck on a problem? Ask Anvi for a direction to try, then write the fix yourself.</p>
+          <ul class="showcase__feats">
+            <li>Built into every coding problem</li>
+            <li>A hint or approach, not a full solution</li>
+            <li>Back to your editor with a clear next step</li>
+          </ul>
+        </div>
+        <div class="showcase__cap" id="showcase-cap-assessment" data-cap="assessment" hidden>
+          <p class="showcase__kicker"><span data-cap-num>04</span> Assessments</p>
+          <p class="showcase__cap-text">Timed tests with coding and objective questions, in a focused and secure test window.</p>
+          <ul class="showcase__feats">
+            <li>MCQ, short-answer and coding sections</li>
+            <li>Question palette, mark for review and autosave</li>
+            <li>Server-enforced timer with institution-set monitoring</li>
+          </ul>
+        </div>
+        <div class="showcase__cap" id="showcase-cap-interview" data-cap="interview" hidden>
+          <p class="showcase__kicker"><span data-cap-num>05</span> AI mock interview</p>
+          <p class="showcase__cap-text">Answer spoken questions out loud, handle the follow-up, then review your transcript.</p>
+          <ul class="showcase__feats">
+            <li>Questions delivered by voice, with role context</li>
+            <li>Follow-up questions based on your answer</li>
+            <li>A transcript to review; re-record before you confirm</li>
+          </ul>
+        </div>
+        <div class="showcase__cap" id="showcase-cap-analytics" data-cap="analytics" hidden>
+          <p class="showcase__kicker"><span data-cap-num>06</span> Analytics</p>
+          <p class="showcase__cap-text">See your strongest area, your biggest gap and the next best step to take.</p>
+          <ul class="showcase__feats">
+            <li>Readiness trend, consistency and streak</li>
+            <li>Coding accuracy by topic</li>
+            <li>Company benchmarks as guidance, not a prediction</li>
+          </ul>
+        </div>
+        <div class="showcase__cap" id="showcase-cap-resume" data-cap="resume" hidden>
+          <p class="showcase__kicker"><span data-cap-num>07</span> Resume builder</p>
+          <p class="showcase__cap-text">Turn your work into a professional resume with a live A4 preview and quality guidance.</p>
+          <ul class="showcase__feats">
+            <li>Starts from your saved profile</li>
+            <li>Reorder or hide sections; measurable-result checks</li>
+            <li>Download a clean PDF</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="showcase__meta">
+        <button class="showcase__toggle" type="button" data-showcase-play aria-label="Pause walkthrough">Pause</button>
+        <p class="showcase__note">Walkthroughs recreated with demo data. Feature availability may vary by institution.</p>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="section how" id="how" aria-labelledby="how-title" data-how>
+  <div class="container how__head">
+    <p class="eyebrow how__eyebrow">How it works</p>
+    <h2 class="h2 how__heading" id="how-title">A preparation loop that keeps getting <span class="serif how__accent">smarter</span></h2>
+    <p class="lead how__lead">Five connected stages, one platform. Progress is based on what you actually do inside it.</p>
+  </div>
+
+  <!-- Desktop (≥900px, motion OK): this stage is pinned and the track scrolls
+       sideways, panel by panel (js/sections/how.js adds .how--pinned).
+       Everywhere else it is a plain vertical sequence. -->
+  <div class="how__stage" data-how-stage>
+    <ol class="how__track" data-how-track>
+
+      <li class="how__panel" data-how-panel>
+        <div class="how__inner">
+          <div class="how__text">
+            <span class="how__num" aria-hidden="true" data-how-num>01</span>
+            <h3 class="how__title"><span class="sr-only">Step 1: </span>Learn</h3>
+            <p class="how__copy">Semester-wise subjects, video lessons, notes and question sheets your institution opens for you.</p>
+            <ul class="how__tools" aria-label="Used in this step">
+              <li>Guided Learning</li><li>Notes &amp; PDFs</li><li>Topic progress</li>
+            </ul>
+          </div>
+          <figure class="how__shot" data-how-shot>
+            <div class="how__frame">
+              <div class="how__bar" aria-hidden="true">
+                <span class="how__dots"><i></i><i></i><i></i></span>
+                <span class="how__url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>peerprep.co.in/learning</span>
+              </div>
+              <div class="how__screen">
+                <img class="how__img how__img--light" src="assets/screens/learning-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="PeerPrep guided learning: a Data Structures subject with chapter progress, a topic table with importance and difficulty, and a video lesson on trees." />
+                <img class="how__img how__img--dark" src="assets/screens/learning-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+              </div>
+            </div>
+          </figure>
+        </div>
+      </li>
+
+      <li class="how__panel" data-how-panel>
+        <div class="how__inner">
+          <div class="how__text">
+            <span class="how__num" aria-hidden="true" data-how-num>02</span>
+            <h3 class="how__title"><span class="sr-only">Step 2: </span>Practice</h3>
+            <p class="how__copy">Topic-wise and company-wise coding problems. Stuck? Ask Anvi for a direction, not the answer.</p>
+            <ul class="how__tools" aria-label="Used in this step">
+              <li>PrepCoding</li><li>QuickPrep</li><li>Anvi AI</li>
+            </ul>
+          </div>
+          <figure class="how__shot" data-how-shot>
+            <div class="how__frame">
+              <div class="how__bar" aria-hidden="true">
+                <span class="how__dots"><i></i><i></i><i></i></span>
+                <span class="how__url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>peerprep.co.in/problems</span>
+              </div>
+              <div class="how__screen">
+                <img class="how__img how__img--light" src="assets/screens/coding-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="PeerPrep coding workspace: an accepted Python solution with 63 of 63 test cases passed, runtime and memory stats, and an Ask Anvi button." />
+                <img class="how__img how__img--dark" src="assets/screens/coding-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+              </div>
+            </div>
+          </figure>
+        </div>
+      </li>
+
+      <li class="how__panel" data-how-panel>
+        <div class="how__inner">
+          <div class="how__text">
+            <span class="how__num" aria-hidden="true" data-how-num>03</span>
+            <h3 class="how__title"><span class="sr-only">Step 3: </span>Assess</h3>
+            <p class="how__copy">Timed tests and real coding evaluations in a secure, monitored test experience.</p>
+            <ul class="how__tools" aria-label="Used in this step">
+              <li>Mock assessments</li><li>College assessments</li><li>Reports</li>
+            </ul>
+          </div>
+          <figure class="how__shot" data-how-shot>
+            <div class="how__frame">
+              <div class="how__bar" aria-hidden="true">
+                <span class="how__dots"><i></i><i></i><i></i></span>
+                <span class="how__url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>peerprep.co.in/assessments</span>
+              </div>
+              <div class="how__screen">
+                <img class="how__img how__img--light" src="assets/screens/assessment-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="PeerPrep assessment in progress: a company-based mock with a countdown timer, a question palette and institution-set monitoring status." />
+                <img class="how__img how__img--dark" src="assets/screens/assessment-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+              </div>
+            </div>
+          </figure>
+        </div>
+      </li>
+
+      <li class="how__panel" data-how-panel>
+        <div class="how__inner">
+          <div class="how__text">
+            <span class="how__num" aria-hidden="true" data-how-num>04</span>
+            <h3 class="how__title"><span class="sr-only">Step 4: </span>Interview</h3>
+            <p class="how__copy">Mock interviews with peers, and spoken practice with an AI voice interviewer.</p>
+            <ul class="how__tools" aria-label="Used in this step">
+              <li>Peer interviews</li><li>AI mock interviews</li><li>Peer feedback</li>
+            </ul>
+          </div>
+          <figure class="how__shot" data-how-shot>
+            <div class="how__frame">
+              <div class="how__bar" aria-hidden="true">
+                <span class="how__dots"><i></i><i></i><i></i></span>
+                <span class="how__url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>peerprep.co.in/interviews</span>
+              </div>
+              <div class="how__screen">
+                <img class="how__img how__img--light" src="assets/screens/interview-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="An AI voice mock interview: a spoken follow-up question, a record-answer control and the conversation transcript." />
+                <img class="how__img how__img--dark" src="assets/screens/interview-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+              </div>
+            </div>
+          </figure>
+        </div>
+      </li>
+
+      <li class="how__panel" data-how-panel>
+        <div class="how__inner">
+          <div class="how__text">
+            <span class="how__num" aria-hidden="true" data-how-num>05</span>
+            <h3 class="how__title"><span class="sr-only">Step 5: </span>Improve</h3>
+            <p class="how__copy">Analytics turn your activity into topic gaps, benchmarks and a recommended next step.</p>
+            <ul class="how__tools" aria-label="Used in this step">
+              <li>Analytics</li><li>Prep Score</li><li>Benchmarks</li>
+            </ul>
+          </div>
+          <figure class="how__shot" data-how-shot>
+            <div class="how__frame">
+              <div class="how__bar" aria-hidden="true">
+                <span class="how__dots"><i></i><i></i><i></i></span>
+                <span class="how__url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>peerprep.co.in/analytics</span>
+              </div>
+              <div class="how__screen">
+                <img class="how__img how__img--light" src="assets/screens/analytics-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="PeerPrep performance and readiness analytics: a readiness trend, coding accuracy by topic, a company benchmark with verified gaps and a recommended next step." />
+                <img class="how__img how__img--dark" src="assets/screens/analytics-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+              </div>
+            </div>
+          </figure>
+        </div>
+      </li>
+    </ol>
+
+    <!-- Progress rail (pinned mode only). -->
+    <div class="how__rail" data-how-rail>
+      <div class="how__rail-inner">
+        <span class="how__rail-line" aria-hidden="true"><span class="how__rail-fill" data-how-fill></span></span>
+        <button class="how__rail-step" type="button" data-how-go="0"><span class="how__rail-n">01</span>Learn</button>
+        <button class="how__rail-step" type="button" data-how-go="1"><span class="how__rail-n">02</span>Practice</button>
+        <button class="how__rail-step" type="button" data-how-go="2"><span class="how__rail-n">03</span>Assess</button>
+        <button class="how__rail-step" type="button" data-how-go="3"><span class="how__rail-n">04</span>Interview</button>
+        <button class="how__rail-step" type="button" data-how-go="4"><span class="how__rail-n">05</span>Improve</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <p class="how__coda" data-how-coda>
+      <svg class="how__coda-glyph" viewBox="0 0 48 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M46 2v7a6 6 0 0 1-6 6H3M3 15l5.5-5.5M3 15l5.5 5.5"/></svg>
+      <span>&hellip;then the loop starts again&nbsp;&mdash; <span class="serif">with better evidence.</span></span>
+    </p>
+  </div>
+</section>
+<section class="section section--band tracks" id="tracks" aria-labelledby="tracks-title">
+  <div class="container">
+
+    <!-- Head: heading left, one-line lead right -->
+    <header class="tracks__head">
+      <div class="tracks__head-main">
+        <p class="eyebrow tracks__eyebrow">Plan your preparation</p>
+        <h2 class="h2 tracks__title" id="tracks-title">Pick a target. See your <span class="serif tracks__accent">path.</span></h2>
+      </div>
+      <p class="lead tracks__lead">
+        One placement goal, four connected steps&nbsp;&mdash; each one a real PeerPrep screen.
+      </p>
+    </header>
+
+    <!-- Target selector: segmented tablist (js/sections/tracks.js) -->
+    <div class="tracks__seg" role="tablist" aria-label="Preparation target" data-tracks-tablist>
+      <span class="tracks__seg-thumb" aria-hidden="true" data-tracks-thumb></span>
+      <button class="tracks__tab" type="button" role="tab" id="tracks-tab-sde" aria-controls="tracks-panel" aria-selected="true" tabindex="0" data-target="sde">Product-company SDE</button>
+      <button class="tracks__tab" type="button" role="tab" id="tracks-tab-service" aria-controls="tracks-panel" aria-selected="false" tabindex="-1" data-target="service">Service-company developer</button>
+      <button class="tracks__tab" type="button" role="tab" id="tracks-tab-analyst" aria-controls="tracks-panel" aria-selected="false" tabindex="-1" data-target="analyst">Data / business analyst</button>
+      <button class="tracks__tab" type="button" role="tab" id="tracks-tab-intern" aria-controls="tracks-panel" aria-selected="false" tabindex="-1" data-target="intern">Summer internship</button>
+    </div>
+
+    <!-- The path: one panel, re-drawn per target. Static markup = Product-company SDE. -->
+    <div class="tracks__panel" role="tabpanel" id="tracks-panel" aria-labelledby="tracks-tab-sde" tabindex="0" data-tracks-panel>
+      <div class="tracks__route" data-tracks-route>
+        <svg class="tracks__curve" aria-hidden="true" focusable="false" data-tracks-curve hidden>
+          <path class="tracks__curve-track" data-tracks-track d="" />
+          <path class="tracks__curve-line" data-tracks-line d="" pathLength="1" />
+        </svg>
+
+        <ol class="tracks__stages">
+          <li class="tracks__stage" data-tracks-stage>
+            <span class="tracks__node" aria-hidden="true" data-tracks-node></span>
+            <figure class="tracks__shot">
+              <div class="tracks__bar" aria-hidden="true"><i></i><i></i><i></i><span class="tracks__url" data-tracks-url>peerprep.co.in/learning</span></div>
+              <div class="tracks__screen" data-tracks-screen>
+                <div class="tracks__layer" data-screen="learning">
+                  <img class="tracks__img tracks__img--light" src="assets/screens/learning-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="Guided Learning: a Data Structures subject with chapter progress, a topic table and a video lesson" />
+                  <img class="tracks__img tracks__img--dark" src="assets/screens/learning-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+                </div>
+              </div>
+            </figure>
+            <p class="tracks__step"><span class="tracks__num">01</span>Learn</p>
+            <p class="tracks__tool"><span class="tracks__mask"><span class="tracks__roll" data-tracks-tool>Guided Learning modules</span></span></p>
+          </li>
+          <li class="tracks__stage" data-tracks-stage>
+            <span class="tracks__node" aria-hidden="true" data-tracks-node></span>
+            <figure class="tracks__shot">
+              <div class="tracks__bar" aria-hidden="true"><i></i><i></i><i></i><span class="tracks__url" data-tracks-url>peerprep.co.in/problems</span></div>
+              <div class="tracks__screen" data-tracks-screen>
+                <div class="tracks__layer" data-screen="coding">
+                  <img class="tracks__img tracks__img--light" src="assets/screens/coding-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="PrepCoding workspace: an accepted submission with runtime, memory and every test case passed" />
+                  <img class="tracks__img tracks__img--dark" src="assets/screens/coding-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+                </div>
+              </div>
+            </figure>
+            <p class="tracks__step"><span class="tracks__num">02</span>Practice</p>
+            <p class="tracks__tool"><span class="tracks__mask"><span class="tracks__roll" data-tracks-tool>PrepCoding by topic</span></span></p>
+          </li>
+          <li class="tracks__stage" data-tracks-stage>
+            <span class="tracks__node" aria-hidden="true" data-tracks-node></span>
+            <figure class="tracks__shot">
+              <div class="tracks__bar" aria-hidden="true"><i></i><i></i><i></i><span class="tracks__url" data-tracks-url>peerprep.co.in/assessments</span></div>
+              <div class="tracks__screen" data-tracks-screen>
+                <div class="tracks__layer" data-screen="assessment">
+                  <img class="tracks__img tracks__img--light" src="assets/screens/assessment-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="A company-based mock assessment in progress with a question palette, timer and monitoring panel" />
+                  <img class="tracks__img tracks__img--dark" src="assets/screens/assessment-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+                </div>
+              </div>
+            </figure>
+            <p class="tracks__step"><span class="tracks__num">03</span>Prove</p>
+            <p class="tracks__tool"><span class="tracks__mask"><span class="tracks__roll" data-tracks-tool>Company-based mock assessment</span></span></p>
+          </li>
+          <li class="tracks__stage" data-tracks-stage>
+            <span class="tracks__node" aria-hidden="true" data-tracks-node></span>
+            <figure class="tracks__shot">
+              <div class="tracks__bar" aria-hidden="true"><i></i><i></i><i></i><span class="tracks__url" data-tracks-url>peerprep.co.in/analytics</span></div>
+              <div class="tracks__screen" data-tracks-screen>
+                <div class="tracks__layer" data-screen="analytics">
+                  <img class="tracks__img tracks__img--light" src="assets/screens/analytics-light.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="Performance and readiness analytics with topic accuracy and a company benchmark that marks verified gaps" />
+                  <img class="tracks__img tracks__img--dark" src="assets/screens/analytics-dark.webp" width="1692" height="1020" loading="lazy" decoding="async" alt="" aria-hidden="true" />
+                </div>
+              </div>
+            </figure>
+            <p class="tracks__step"><span class="tracks__num">04</span>Improve</p>
+            <p class="tracks__tool"><span class="tracks__mask"><span class="tracks__roll" data-tracks-tool>Company benchmark gaps</span></span></p>
+          </li>
+        </ol>
+      </div>
+
+      <!-- Three compact facts for the selected target -->
+      <dl class="tracks__facts">
+        <div class="tracks__fact">
+          <dt>Focus areas</dt>
+          <dd><span class="tracks__mask"><span class="tracks__roll" data-tracks-fact="focus">Arrays &middot; Graphs &middot; DP</span></span></dd>
+        </div>
+        <div class="tracks__fact">
+          <dt>Assessment format</dt>
+          <dd><span class="tracks__mask"><span class="tracks__roll" data-tracks-fact="format">Coding + MCQ, timed</span></span></dd>
+        </div>
+        <div class="tracks__fact">
+          <dt>Interview practice</dt>
+          <dd><span class="tracks__mask"><span class="tracks__roll" data-tracks-fact="interview">AI + peer mocks</span></span></dd>
+        </div>
+      </dl>
+    </div>
+
+    <!-- Footnote + actions -->
+    <div class="tracks__foot">
+      <p class="tracks__note">
+        Illustrative example. Actual tracks, assessments and benchmarks are configured by your institution.
+        Readiness is guidance, not a hiring prediction.
+      </p>
+      <div class="tracks__ctas">
+        <a class="btn btn--primary" href="https://peerprep.co.in/">
+          Student login
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+        <a class="link-arrow" href="#showcase">See the platform in action
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+      </div>
+    </div>
+
+  </div>
+</section>
+<section class="section features" id="features" aria-labelledby="features-title">
+  <div class="container">
+
+    <!-- Head: set on the spec table's own two columns (label | content) -->
+    <header class="features__head">
+      <div class="features__head-label">
+        <p class="eyebrow" data-reveal="fade">Features</p>
+        <p class="features__head-meta" data-reveal="fade" aria-hidden="true">Spec sheet &middot; 6 stages</p>
+      </div>
+      <div class="features__head-main">
+        <h2 class="h2 features__title" id="features-title">20+ features. <span class="serif features__accent">One</span> placement journey.</h2>
+        <p class="lead features__lead" data-reveal data-reveal-delay="0.15">
+          What PeerPrep includes for students, grouped by the stage of preparation each part serves&mdash;from
+          the first lesson to the final interview round.
+        </p>
+      </div>
+    </header>
+
+    <!-- Filter row -->
+    <div class="features__bar" data-features-bar>
+      <div class="features__filters" role="group" aria-label="Filter features by stage" data-features-filters>
+        <button type="button" class="features__filter" data-filter="all" aria-pressed="true">All</button>
+        <button type="button" class="features__filter" data-filter="learn" aria-pressed="false">Learn</button>
+        <button type="button" class="features__filter" data-filter="practice" aria-pressed="false">Practice</button>
+        <button type="button" class="features__filter" data-filter="assess" aria-pressed="false">Assess</button>
+        <button type="button" class="features__filter" data-filter="interview" aria-pressed="false">Interview</button>
+        <button type="button" class="features__filter" data-filter="insights" aria-pressed="false">Insights</button>
+        <button type="button" class="features__filter" data-filter="career" aria-pressed="false">Career</button>
+        <span class="features__ink" aria-hidden="true" data-features-ink></span>
+      </div>
+      <p class="features__count" data-features-count>All 6 stages</p>
+    </div>
+
+    <!-- Specification table -->
+    <div class="features__table" data-features-table>
+
+      <div class="features__group" data-group="learn" role="group" aria-labelledby="features-g-learn">
+        <div class="features__row">
+          <span class="features__rule" data-reveal="fade" aria-hidden="true"></span>
+          <div class="features__gh" data-reveal>
+            <h3 class="features__gname" id="features-g-learn">Learn <span class="features__gcount" aria-hidden="true">04</span></h3>
+            <p class="features__gnote">Semester-wise, faculty-curated.</p>
+          </div>
+          <div class="features__clip">
+            <dl class="features__list" data-reveal data-reveal-delay="0.08">
+              <div class="features__item"><dt>Guided semester learning</dt><dd>Subjects broken into chapters and topics, following paths curated by your faculty.</dd></div>
+              <div class="features__item"><dt>Video lessons &amp; notes</dt><dd>Embedded lessons, notes and PDFs, with video progress saved where you left off.</dd></div>
+              <div class="features__item"><dt>Topic question sheets</dt><dd>Practice links for every topic, marked with importance and difficulty.</dd></div>
+              <div class="features__item"><dt>Completion tracking</dt><dd>Topic, chapter and course completion, so the next thing to learn is always clear.</dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+      <div class="features__group" data-group="practice" role="group" aria-labelledby="features-g-practice">
+        <div class="features__row">
+          <span class="features__rule" data-reveal="fade" aria-hidden="true"></span>
+          <div class="features__gh" data-reveal>
+            <h3 class="features__gname" id="features-g-practice">Practice <span class="features__gcount" aria-hidden="true">04</span></h3>
+            <p class="features__gnote">Real problems, real verdicts.</p>
+          </div>
+          <div class="features__clip">
+            <dl class="features__list" data-reveal data-reveal-delay="0.08">
+              <div class="features__item"><dt>Problem library</dt><dd>Filter every question by topic, company or difficulty, or search by title and number.</dd></div>
+              <div class="features__item"><dt>Coding workspace</dt><dd>Run against sample and custom tests, then Submit for a verdict with passed tests, runtime and memory.</dd></div>
+              <div class="features__item"><dt>Anvi AI</dt><dd>Ask Anvi for a direction to try when you&rsquo;re stuck&mdash;a nudge, not the full solution.</dd></div>
+              <div class="features__item"><dt>QuickPrep tracks</dt><dd>Curated company-focused, topic-focused and intensive question sets, with progress.</dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+      <div class="features__group" data-group="assess" role="group" aria-labelledby="features-g-assess">
+        <div class="features__row">
+          <span class="features__rule" data-reveal="fade" aria-hidden="true"></span>
+          <div class="features__gh" data-reveal>
+            <h3 class="features__gname" id="features-g-assess">Assess <span class="features__gcount" aria-hidden="true">04</span></h3>
+            <p class="features__gnote">Test conditions, before the test.</p>
+          </div>
+          <div class="features__clip">
+            <dl class="features__list" data-reveal data-reveal-delay="0.08">
+              <div class="features__item"><dt>Company-based mock assessments</dt><dd>Mock tests modelled on company-style rounds, to practise before the real one.</dd></div>
+              <div class="features__item"><dt>College assessments</dt><dd>Scheduled tests published by your institution, with reminders before they open.</dd></div>
+              <div class="features__item"><dt>Timed, mixed-format tests</dt><dd>MCQ, one-line, short-answer and coding sections, with integrity monitoring where enabled.</dd></div>
+              <div class="features__item"><dt>Results &amp; question review</dt><dd>Score, rank and section-wise performance, with question review once results are released.</dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+      <div class="features__group" data-group="interview" role="group" aria-labelledby="features-g-interview">
+        <div class="features__row">
+          <span class="features__rule" data-reveal="fade" aria-hidden="true"></span>
+          <div class="features__gh" data-reveal>
+            <h3 class="features__gname" id="features-g-interview">Interview <span class="features__gcount" aria-hidden="true">04</span></h3>
+            <p class="features__gnote">Practise the conversation.</p>
+          </div>
+          <div class="features__clip">
+            <dl class="features__list" data-reveal data-reveal-delay="0.08">
+              <div class="features__item"><dt>Peer mock interviews</dt><dd>Paired as interviewer and interviewee&mdash;agree on a time slot, then practise live.</dd></div>
+              <div class="features__item"><dt>Structured feedback</dt><dd>Competency ratings, strengths and improvements, with a history of score trends.</dd></div>
+              <div class="features__item"><dt>AI voice mock interviews</dt><dd>Spoken questions with role and company context, answered through your microphone.</dd></div>
+              <div class="features__item"><dt>Follow-ups &amp; transcript</dt><dd>Follow-up questions on what you said, and a transcript of each answer. Resume questions only with consent.</dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+      <div class="features__group" data-group="insights" role="group" aria-labelledby="features-g-insights">
+        <div class="features__row">
+          <span class="features__rule" data-reveal="fade" aria-hidden="true"></span>
+          <div class="features__gh" data-reveal>
+            <h3 class="features__gname" id="features-g-insights">Insights <span class="features__gcount" aria-hidden="true">04</span></h3>
+            <p class="features__gnote">Know your next move.</p>
+          </div>
+          <div class="features__clip">
+            <dl class="features__list" data-reveal data-reveal-delay="0.08">
+              <div class="features__item"><dt>Readiness analytics</dt><dd>Readiness, trend and a recommended next action&mdash;preparation guidance, not a prediction.</dd></div>
+              <div class="features__item"><dt>Topic accuracy</dt><dd>Coding accuracy by topic, with verified strong and weak areas.</dd></div>
+              <div class="features__item"><dt>Company benchmarks</dt><dd>Compare your evidence against a company benchmark and see the verified gaps.</dd></div>
+              <div class="features__item"><dt>Prep Score &amp; private rankings</dt><dd>Your university and global position, visible only to you&mdash;no public leaderboard.</dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+      <div class="features__group" data-group="career" role="group" aria-labelledby="features-g-career">
+        <div class="features__row">
+          <span class="features__rule" data-reveal="fade" aria-hidden="true"></span>
+          <div class="features__gh" data-reveal>
+            <h3 class="features__gname" id="features-g-career">Career <span class="features__gcount" aria-hidden="true">06</span></h3>
+            <p class="features__gnote">Make progress visible.</p>
+          </div>
+          <div class="features__clip">
+            <dl class="features__list" data-reveal data-reveal-delay="0.08">
+              <div class="features__item"><dt>Resume builder</dt><dd>Start from your saved profile, write against a live A4 preview, and download a professional PDF.</dd></div>
+              <div class="features__item"><dt>Resume quality checks</dt><dd>A quality percentage, measurable-result checks and suggestions for what to improve.</dd></div>
+              <div class="features__item"><dt>Challenges, XP &amp; badges</dt><dd>Daily missions, levels and badges earned from verified activity.</dd></div>
+              <div class="features__item"><dt>Profile &amp; activity heatmap</dt><dd>Easy, Medium and Hard progress, streaks and a year of activity at a glance.</dd></div>
+              <div class="features__item"><dt>Notifications &amp; reminders</dt><dd>Assessment reminders, interview schedule updates and announcements.</dd></div>
+              <div class="features__item"><dt>Prep Coins</dt><dd>Institution-issued credits for selected features. They never affect Prep Score or rank.</dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="features__foot" data-reveal="fade">
+      <p>Feature availability and content may vary by institution and account access.</p>
+      <a class="link-arrow" href="#universities">Tools for faculty and placement teams
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+<section class="section universities" id="universities" aria-labelledby="universities-title">
+  <div class="container">
+
+    <!-- Editorial head: full-measure heading, body offset beneath it -->
+    <header class="universities__head">
+      <p class="eyebrow" data-reveal>For universities</p>
+      <h2 class="h2 universities__title" id="universities-title">
+        Give every student a structured path&#8288;&mdash;&#8288;and every team a <span class="serif universities__accent">clearer</span> view of progress
+      </h2>
+      <p class="lead universities__lead" data-reveal>
+        PeerPrep helps institutions organise preparation, deliver content and assessments, run interview
+        programmes, and understand student readiness from one role-based workspace.
+      </p>
+    </header>
+
+    <!-- Split: audiences (tabs) + the coordinator's reports screen -->
+    <div class="universities__split">
+      <div class="universities__audiences" data-reveal>
+        <div class="universities__tabs" role="tablist" aria-label="Who PeerPrep helps" data-uni-tabs>
+          <button class="universities__tab is-active" type="button" role="tab" id="uni-tab-students" aria-controls="uni-panel-students" aria-selected="true" tabindex="0">Students</button>
+          <button class="universities__tab" type="button" role="tab" id="uni-tab-faculty" aria-controls="uni-panel-faculty" aria-selected="false" tabindex="-1">Faculty &amp; coordinators</button>
+          <button class="universities__tab" type="button" role="tab" id="uni-tab-placement" aria-controls="uni-panel-placement" aria-selected="false" tabindex="-1">Placement teams</button>
+          <span class="universities__ink" aria-hidden="true" data-uni-ink></span>
+        </div>
+
+        <div class="universities__panels">
+          <div class="universities__panel is-active" role="tabpanel" id="uni-panel-students" aria-labelledby="uni-tab-students" tabindex="0">
+            <h3 class="universities__audience">One clear path from preparation to confidence</h3>
+            <ol class="universities__values">
+              <li><span class="universities__n" aria-hidden="true">01</span>Know what to learn next</li>
+              <li><span class="universities__n" aria-hidden="true">02</span>Practise relevant coding questions</li>
+              <li><span class="universities__n" aria-hidden="true">03</span>Experience real test conditions</li>
+              <li><span class="universities__n" aria-hidden="true">04</span>Improve interview communication</li>
+              <li><span class="universities__n" aria-hidden="true">05</span>Understand strengths and gaps</li>
+              <li><span class="universities__n" aria-hidden="true">06</span>Build a professional resume</li>
+            </ol>
+          </div>
+
+          <div class="universities__panel" role="tabpanel" id="uni-panel-faculty" aria-labelledby="uni-tab-faculty" tabindex="0" inert>
+            <h3 class="universities__audience">Guide preparation without piecing together multiple tools</h3>
+            <ol class="universities__values">
+              <li><span class="universities__n" aria-hidden="true">01</span>Publish learning resources and practice sets</li>
+              <li><span class="universities__n" aria-hidden="true">02</span>Schedule assessments and interview programmes</li>
+              <li><span class="universities__n" aria-hidden="true">03</span>Review progress and feedback</li>
+              <li><span class="universities__n" aria-hidden="true">04</span>Communicate through announcements</li>
+            </ol>
+          </div>
+
+          <div class="universities__panel" role="tabpanel" id="uni-panel-placement" aria-labelledby="uni-tab-placement" tabindex="0" inert>
+            <h3 class="universities__audience">See preparation across the whole student journey</h3>
+            <ol class="universities__values">
+              <li><span class="universities__n" aria-hidden="true">01</span>Standardise learning and evaluation</li>
+              <li><span class="universities__n" aria-hidden="true">02</span>Manage cohorts</li>
+              <li><span class="universities__n" aria-hidden="true">03</span>Monitor readiness and participation</li>
+              <li><span class="universities__n" aria-hidden="true">04</span>Compare evidence with company benchmarks</li>
+              <li><span class="universities__n" aria-hidden="true">05</span>Export reports</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="universities__cta">
+          <a class="btn btn--primary btn--lg" href="https://peerprep.co.in/contact">
+            Contact us
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <p class="universities__note">Module availability is configured per institution.</p>
+        </div>
+      </div>
+
+      <figure class="universities__stage" data-reveal>
+        <div class="universities__screen"><div class="universities__device" data-uni-device></div></div>
+        <figcaption class="universities__legend">
+          <p class="universities__legend-k">
+            <span>Coordinator reports</span>
+            <span class="universities__legend-meta">Fictional demo data &middot; readiness is guidance, not a hiring prediction</span>
+          </p>
+          <ol class="universities__steps" data-uni-steps>
+            <li><button class="universities__step" type="button" data-step="0">
+              <span class="sr-only">Show in the demo: </span>
+              <span class="universities__step-n" aria-hidden="true">01</span>
+              <span class="universities__step-t">Rank a cohort by readiness</span>
+              <span class="universities__step-bar" aria-hidden="true"><i></i></span>
+            </button></li>
+            <li><button class="universities__step" type="button" data-step="1">
+              <span class="sr-only">Show in the demo: </span>
+              <span class="universities__step-n" aria-hidden="true">02</span>
+              <span class="universities__step-t">Review a flagged session</span>
+              <span class="universities__step-bar" aria-hidden="true"><i></i></span>
+            </button></li>
+            <li><button class="universities__step" type="button" data-step="2">
+              <span class="sr-only">Show in the demo: </span>
+              <span class="universities__step-n" aria-hidden="true">03</span>
+              <span class="universities__step-t">Export the report as CSV</span>
+              <span class="universities__step-bar" aria-hidden="true"><i></i></span>
+            </button></li>
+          </ol>
+        </figcaption>
+      </figure>
+    </div>
+
+    <!-- Capability index: a ruled two-column spec sheet -->
+    <div class="universities__index">
+      <div class="universities__index-head" data-reveal>
+        <h3 class="universities__index-title">The institution workspace</h3>
+        <p class="universities__index-meta">One role-based workspace</p>
+      </div>
+      <ol class="universities__caps" data-reveal-stagger="0.05">
+        <li class="universities__cap" data-reveal>
+          <span class="universities__cap-n" aria-hidden="true">01</span>
+          <div class="universities__cap-body"><h4 class="universities__cap-name">Student &amp; cohort management</h4>
+          <p class="universities__cap-copy">Bulk or CSV onboarding, academic master data, and full-access or assessment-only access.</p></div>
+        </li>
+        <li class="universities__cap" data-reveal>
+          <span class="universities__cap-n" aria-hidden="true">02</span>
+          <div class="universities__cap-body"><h4 class="universities__cap-name">Student progression</h4>
+          <p class="universities__cap-copy">Semester promotion and progression controls that keep every cohort at the right stage.</p></div>
+        </li>
+        <li class="universities__cap" data-reveal>
+          <span class="universities__cap-n" aria-hidden="true">03</span>
+          <div class="universities__cap-body"><h4 class="universities__cap-name">Coordinator roles &amp; permissions</h4>
+          <p class="universities__cap-copy">Granular feature permissions, scoped to a coordinator&rsquo;s own students or the whole institution.</p></div>
+        </li>
+        <li class="universities__cap" data-reveal>
+          <span class="universities__cap-n" aria-hidden="true">04</span>
+          <div class="universities__cap-body"><h4 class="universities__cap-name">Learning content management</h4>
+          <p class="universities__cap-copy">Semesters, subjects, chapters and topics with videos, notes and practice links&mdash;updated in real time.</p></div>
+        </li>
+        <li class="universities__cap" data-reveal>
+          <span class="universities__cap-n" aria-hidden="true">05</span>
+          <div class="universities__cap-body"><h4 class="universities__cap-name">Assessment creation &amp; delivery</h4>
+          <p class="universities__cap-copy">Company-based mock and college assessments, from draft to publish, with scheduling, attempt limits, monitoring and result release.</p></div>
+        </li>
+        <li class="universities__cap" data-reveal>
+          <span class="universities__cap-n" aria-hidden="true">06</span>
+          <div class="universities__cap-body"><h4 class="universities__cap-name">Question &amp; coding library</h4>
+          <p class="universities__cap-copy">A reusable bank with CSV import, tags and difficulty, and coding problems with hidden test cases.</p></div>
+        </li>
+        <li class="universities__cap" data-reveal>
+          <span class="universities__cap-n" aria-hidden="true">07</span>
+          <div class="universities__cap-body"><h4 class="universities__cap-name">Reports &amp; analytics</h4>
+          <p class="universities__cap-copy">University, cohort and student views, flagged-session review, and CSV or Excel export.</p></div>
+        </li>
+        <li class="universities__cap" data-reveal>
+          <span class="universities__cap-n" aria-hidden="true">08</span>
+          <div class="universities__cap-body"><h4 class="universities__cap-name">Company benchmarks</h4>
+          <p class="universities__cap-copy">Compare preparation evidence with company benchmarks to see where a cohort needs focus.</p></div>
+        </li>
+        <li class="universities__cap" data-reveal>
+          <span class="universities__cap-n" aria-hidden="true">09</span>
+          <div class="universities__cap-body"><h4 class="universities__cap-name">Peer interview programmes</h4>
+          <p class="universities__cap-copy">Create interview events, pair students as interviewer and interviewee, and collect structured feedback.</p></div>
+        </li>
+        <li class="universities__cap" data-reveal>
+          <span class="universities__cap-n" aria-hidden="true">10</span>
+          <div class="universities__cap-body"><h4 class="universities__cap-name">AI interview authoring</h4>
+          <p class="universities__cap-copy">Sections, topics, manual and AI-planned questions, follow-up limits, and consent-based resume questions.</p></div>
+        </li>
+        <li class="universities__cap" data-reveal>
+          <span class="universities__cap-n" aria-hidden="true">11</span>
+          <div class="universities__cap-body"><h4 class="universities__cap-name">QuickPrep authoring</h4>
+          <p class="universities__cap-copy">Curated question sets built around a company, a topic, or a preparation goal.</p></div>
+        </li>
+        <li class="universities__cap" data-reveal>
+          <span class="universities__cap-n" aria-hidden="true">12</span>
+          <div class="universities__cap-body"><h4 class="universities__cap-name">Announcements &amp; communication</h4>
+          <p class="universities__cap-copy">Publish updates to students and cohorts from the same workspace that runs their preparation.</p></div>
+        </li>
+      </ol>
+    </div>
+
+  </div>
+</section>
+<section class="section faq" id="faq" aria-labelledby="faq-title">
+  <div class="container faq__grid">
+    <div class="faq__aside">
+      <div class="faq__aside-inner">
+        <p class="eyebrow">FAQ</p>
+        <h2 class="h2 faq__title" id="faq-title">Questions, <span class="serif faq__accent">answered</span></h2>
+        <p class="faq__lead">How PeerPrep works for students and institutions — access, practice, assessments, interviews and progress.</p>
+        <div class="faq__help">
+          <p class="faq__help-q">Can&rsquo;t find an answer?</p>
+          <a class="link-arrow" href="https://peerprep.co.in/contact">Contact us
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="faq__list" data-faq>
+      <div class="faq__item is-open">
+        <h3 class="faq__q">
+          <button type="button" class="faq__btn" id="faq-q-1" aria-expanded="true" aria-controls="faq-a-1">
+            <span class="faq__num" aria-hidden="true">01</span>
+            <span class="faq__text">What is PeerPrep?</span>
+            <span class="faq__icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="faq__a" id="faq-a-1" role="region" aria-labelledby="faq-q-1">
+          <div class="faq__a-inner"><p>An end-to-end placement preparation platform for guided learning, coding practice, assessments, mock interviews, performance analytics, challenges and career preparation — connected in one placement journey instead of spread across separate tools.</p></div>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <h3 class="faq__q">
+          <button type="button" class="faq__btn" id="faq-q-2" aria-expanded="false" aria-controls="faq-a-2">
+            <span class="faq__num" aria-hidden="true">02</span>
+            <span class="faq__text">Who is PeerPrep for?</span>
+            <span class="faq__icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="faq__a" id="faq-a-2" role="region" aria-labelledby="faq-q-2">
+          <div class="faq__a-inner"><p>College students preparing for internships and placements, and the faculty, coordinators and placement teams who guide them.</p></div>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <h3 class="faq__q">
+          <button type="button" class="faq__btn" id="faq-q-3" aria-expanded="false" aria-controls="faq-a-3">
+            <span class="faq__num" aria-hidden="true">03</span>
+            <span class="faq__text">How do students get access?</span>
+            <span class="faq__icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="faq__a" id="faq-a-3" role="region" aria-labelledby="faq-q-3">
+          <div class="faq__a-inner"><p>Usually through their institution. Institutions control which modules are available, so what you see can vary according to your institution&rsquo;s PeerPrep setup and your account access.</p></div>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <h3 class="faq__q">
+          <button type="button" class="faq__btn" id="faq-q-4" aria-expanded="false" aria-controls="faq-a-4">
+            <span class="faq__num" aria-hidden="true">04</span>
+            <span class="faq__text">Can I practise DSA and coding questions?</span>
+            <span class="faq__icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="faq__a" id="faq-a-4" role="region" aria-labelledby="faq-q-4">
+          <div class="faq__a-inner"><p>Yes. PrepCoding has 4,000+ questions with topic-, company- and difficulty-based discovery, a coding workspace with sample and custom test cases, submission history, editorials where available, and Anvi for a hint when you are stuck.</p></div>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <h3 class="faq__q">
+          <button type="button" class="faq__btn" id="faq-q-5" aria-expanded="false" aria-controls="faq-a-5">
+            <span class="faq__num" aria-hidden="true">05</span>
+            <span class="faq__text">What is Anvi?</span>
+            <span class="faq__icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="faq__a" id="faq-a-5" role="region" aria-labelledby="faq-q-5">
+          <div class="faq__a-inner"><p>Anvi is the AI helper inside every coding problem. Press Ask Anvi for a direction to try when you are stuck — it nudges your thinking instead of handing over a full solution.</p></div>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <h3 class="faq__q">
+          <button type="button" class="faq__btn" id="faq-q-6" aria-expanded="false" aria-controls="faq-a-6">
+            <span class="faq__num" aria-hidden="true">06</span>
+            <span class="faq__text">What kinds of assessments are supported?</span>
+            <span class="faq__icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="faq__a" id="faq-a-6" role="region" aria-labelledby="faq-q-6">
+          <div class="faq__a-inner"><p>MCQ, one-line, short-answer, coding or mixed sections, with schedules, timers, secure setup, monitoring controls and result reports — including company-based mock assessments and college assessments.</p></div>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <h3 class="faq__q">
+          <button type="button" class="faq__btn" id="faq-q-7" aria-expanded="false" aria-controls="faq-a-7">
+            <span class="faq__num" aria-hidden="true">07</span>
+            <span class="faq__text">Does PeerPrep include proctoring?</span>
+            <span class="faq__icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="faq__a" id="faq-a-7" role="region" aria-labelledby="faq-q-7">
+          <div class="faq__a-inner"><p>Institutions can enable browser, camera, audio-event and AI-assisted monitoring. These support review and integrity policies, but no browser-based system can prevent every possible violation.</p></div>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <h3 class="faq__q">
+          <button type="button" class="faq__btn" id="faq-q-8" aria-expanded="false" aria-controls="faq-a-8">
+            <span class="faq__num" aria-hidden="true">08</span>
+            <span class="faq__text">How do peer mock interviews work?</span>
+            <span class="faq__icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="faq__a" id="faq-a-8" role="region" aria-labelledby="faq-q-8">
+          <div class="faq__a-inner"><p>Students are paired as interviewer and interviewee, agree on a time, complete the mock interview, and submit structured feedback with competency ratings, strengths and improvements.</p></div>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <h3 class="faq__q">
+          <button type="button" class="faq__btn" id="faq-q-9" aria-expanded="false" aria-controls="faq-a-9">
+            <span class="faq__num" aria-hidden="true">09</span>
+            <span class="faq__text">How do AI mock interviews work?</span>
+            <span class="faq__icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="faq__a" id="faq-a-9" role="region" aria-labelledby="faq-q-9">
+          <div class="faq__a-inner"><p>The AI interviewer asks structured questions out loud and you answer through your microphone. Your spoken answer is transcribed so you can review it, re-record if needed, and continue; follow-up questions build on what you said. Resume-based questions are used only when that interview requires them and you explicitly consent.</p></div>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <h3 class="faq__q">
+          <button type="button" class="faq__btn" id="faq-q-10" aria-expanded="false" aria-controls="faq-a-10">
+            <span class="faq__num" aria-hidden="true">10</span>
+            <span class="faq__text">Are Prep Score and rankings public?</span>
+            <span class="faq__icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="faq__a" id="faq-a-10" role="region" aria-labelledby="faq-q-10">
+          <div class="faq__a-inner"><p>No. Prep Score is a verified progress signal, and a signed-in student sees only their own university and global position. There is no public leaderboard and no student lookup.</p></div>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <h3 class="faq__q">
+          <button type="button" class="faq__btn" id="faq-q-11" aria-expanded="false" aria-controls="faq-a-11">
+            <span class="faq__num" aria-hidden="true">11</span>
+            <span class="faq__text">Does a readiness score guarantee placement?</span>
+            <span class="faq__icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="faq__a" id="faq-a-11" role="region" aria-labelledby="faq-q-11">
+          <div class="faq__a-inner"><p>No. Readiness and company benchmarks are preparation guidance — they show where to focus next. They are not a prediction or guarantee of selection.</p></div>
+        </div>
+      </div>
+
+      <div class="faq__item">
+        <h3 class="faq__q">
+          <button type="button" class="faq__btn" id="faq-q-12" aria-expanded="false" aria-controls="faq-a-12">
+            <span class="faq__num" aria-hidden="true">12</span>
+            <span class="faq__text">Can I build a resume in PeerPrep?</span>
+            <span class="faq__icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="faq__a" id="faq-a-12" role="region" aria-labelledby="faq-q-12">
+          <div class="faq__a-inner"><p>Yes. Start from your saved profile, then use flexible sections, a live A4 preview, quality guidance, reordering and visibility controls, and download a professional PDF.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section cta" id="cta" aria-labelledby="cta-title">
+  <div class="container cta__inner">
+    <p class="eyebrow cta__eyebrow">One placement journey</p>
+
+
+    <h2 class="cta__title" id="cta-title">Bring the complete placement journey into <span class="serif cta__accent">one platform</span></h2>
+
+    <p class="lead cta__lead">
+      Whether you are preparing for your next coding round or guiding an entire student cohort,
+      PeerPrep connects the work with the insight needed to improve it.
+    </p>
+
+    <div class="cta__actions">
+      <a class="btn btn--primary btn--lg" href="https://peerprep.co.in/">
+        Student login
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <a class="btn btn--ghost btn--lg" href="https://peerprep.co.in/contact">Contact us</a>
+    </div>
+    <a class="link-arrow cta__more" href="#features">Explore all features
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </a>
+  </div>
+</section>
+  </main>
+
+<footer class="footer" aria-labelledby="footer-title">
+  <h2 class="sr-only" id="footer-title">PeerPrep site footer</h2>
+  <div class="container footer__inner">
+    <div class="footer__top">
+      <div class="footer__brand">
+        <a class="footer__logo" href="#top" aria-label="PeerPrep — back to top">
+          <img class="footer__logo-img footer__logo-img--light" src="assets/logo-light.png" alt="PeerPrep" width="160" height="49" loading="lazy" />
+          <img class="footer__logo-img footer__logo-img--dark" src="assets/logo-dark.png" alt="" aria-hidden="true" width="160" height="49" loading="lazy" />
+        </a>
+        <p class="footer__summary">
+          PeerPrep is an end-to-end placement preparation platform for guided learning, coding practice,
+          assessments, peer and AI interviews, performance insights, and career readiness.
+        </p>
+        <a class="btn btn--ghost btn--sm footer__login" href="https://peerprep.co.in/">
+          Student login
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+      </div>
+
+      <nav class="footer__cols" aria-label="Footer">
+        <div class="footer__col">
+          <h3 class="footer__heading">Product</h3>
+          <ul class="footer__links" data-footer-anchors>
+            <li><a href="#features-g-learn">Guided Learning</a></li>
+            <li><a href="#features-g-practice">PrepCoding</a></li>
+            <li><a href="#features-g-practice">QuickPrep</a></li>
+            <li><a href="#features-g-assess">Assessments</a></li>
+            <li><a href="#features-g-interview">Peer Interviews</a></li>
+            <li><a href="#features-g-interview">AI Mock Interviews</a></li>
+            <li><a href="#features-g-practice">Anvi AI</a></li>
+            <li><a href="#features-g-insights">Analytics</a></li>
+            <li><a href="#features-g-career">Resume Builder</a></li>
+          </ul>
+        </div>
+        <div class="footer__col">
+          <h3 class="footer__heading">Audience</h3>
+          <ul class="footer__links" data-footer-anchors>
+            <li><a href="#showcase">For Students</a></li>
+            <li><a href="#universities">For Faculty &amp; Coordinators</a></li>
+            <li><a href="#universities">For Universities</a></li>
+          </ul>
+        </div>
+        <div class="footer__col">
+          <h3 class="footer__heading">Support</h3>
+          <ul class="footer__links">
+            <li><a href="https://peerprep.co.in/contact">Contact Us</a></li>
+            <li><a href="#faq">FAQ</a></li>
+            <li><a href="https://peerprep.co.in/">Student Login</a></li>
+          </ul>
+        </div>
+        <div class="footer__col">
+          <h3 class="footer__heading">Legal</h3>
+          <ul class="footer__links">
+            <li><a href="https://peerprep.co.in/privacy">Privacy Policy</a></li>
+            <li><a href="https://peerprep.co.in/terms">Terms &amp; Conditions</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+
+    <div class="footer__base">
+      <p class="footer__note">Feature availability and content may vary by institution and account access.</p>
+      <div class="footer__legal">
+        <p class="footer__copy">&copy; 2026 PeerPrep. All rights reserved.</p>
+        <a class="footer__top-link" href="#top">Back to top
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/ScrollTrigger.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/SplitText.min.js"></script>
+  <script src="https://unpkg.com/lenis@1.1.13/dist/lenis.min.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/device.js"></script>
+  <script defer src="js/demos/admin.js"></script>
+  <script defer src="js/demos/analytics.js"></script>
+  <script defer src="js/demos/anvi.js"></script>
+  <script defer src="js/demos/assessment.js"></script>
+  <script defer src="js/demos/coding.js"></script>
+  <script defer src="js/demos/dashboard.js"></script>
+  <script defer src="js/demos/interview.js"></script>
+  <script defer src="js/demos/learning.js"></script>
+  <script defer src="js/demos/resume.js"></script>
+  <script defer src="js/sections/faq-cta.js"></script>
+  <script defer src="js/sections/features.js"></script>
+  <script defer src="js/sections/hero.js"></script>
+  <script defer src="js/sections/how.js"></script>
+  <script defer src="js/sections/manifesto.js"></script>
+  <script defer src="js/sections/nav.js"></script>
+  <script defer src="js/sections/showcase.js"></script>
+  <script defer src="js/sections/tracks.js"></script>
+  <script defer src="js/sections/universities.js"></script>
+</body>
+</html>

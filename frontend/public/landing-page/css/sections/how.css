@@ -1,0 +1,325 @@
+/* ---------- How it works: "the loop, panel by panel" ----------
+   Default (no JS, phones, reduced motion): a vertical ruled sequence of five
+   steps, each with its framed product screen.
+   .how--pinned (added by js/sections/how.js at ≥900px with motion allowed):
+   the stage pins and the five panels travel sideways; a rail at the foot of
+   the stage tracks progress. Motion is transform/opacity only. */
+
+.how {
+  --how-shadow:
+    0 1px 2px rgba(14, 15, 18, 0.05),
+    0 22px 44px -26px rgba(14, 15, 18, 0.32),
+    0 60px 100px -60px rgba(14, 15, 18, 0.28);
+  --how-contact: rgba(14, 15, 18, 0.22);
+  --how-num-stroke: color-mix(in srgb, var(--ink) 26%, transparent);
+  --how-bar: color-mix(in srgb, var(--bg-elev) 55%, var(--bg));
+  padding-bottom: clamp(80px, 10vw, 144px);
+}
+:root[data-theme="dark"] .how,
+[data-force-theme="dark"] .how {
+  --how-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 22px 44px -26px rgba(0, 0, 0, 0.9),
+    0 60px 100px -50px rgba(0, 0, 0, 0.85);
+  --how-contact: rgba(0, 0, 0, 0.7);
+  --how-num-stroke: color-mix(in srgb, var(--ink) 22%, transparent);
+  --how-bar: color-mix(in srgb, var(--bg-elev) 70%, var(--bg));
+}
+
+/* ---------- Header ---------- */
+.how__head {
+  display: grid;
+  gap: 20px;
+  justify-items: start;
+  margin-bottom: clamp(48px, 6vw, 88px);
+}
+.how__heading { max-width: 15ch; text-wrap: balance; }
+.how__accent { color: var(--brand-ink); padding-right: 0.04em; }
+.how__lead { max-width: 46ch; }
+@media (min-width: 900px) {
+  .how__head {
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    column-gap: clamp(40px, 6vw, 96px);
+    align-items: end;
+  }
+  .how__eyebrow { grid-column: 1 / -1; }
+  .how__heading { max-width: 13ch; }
+  .how__lead { max-width: 34ch; justify-self: end; padding-bottom: 0.25em; }
+}
+/* SplitText line masks: room for descenders (p, g) */
+.how__heading .how__line { padding-bottom: 0.08em; margin-bottom: -0.08em; }
+
+/* ---------- Steps (default: vertical sequence) ---------- */
+.how__track {
+  width: 100%;
+  max-width: calc(var(--container) + var(--gutter) * 2);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+.how__panel {
+  border-top: 1px solid var(--line);
+  padding-block: clamp(40px, 6vw, 72px);
+}
+.how__panel:last-child { border-bottom: 1px solid var(--line); }
+.how__inner {
+  display: grid;
+  gap: 28px;
+  align-items: center;
+}
+
+.how__text { position: relative; display: grid; justify-items: start; align-content: center; }
+.how__num {
+  display: block;
+  font-weight: 800;
+  font-size: clamp(76px, 20vw, 120px);
+  line-height: 0.8;
+  letter-spacing: -0.06em;
+  color: transparent;
+  -webkit-text-stroke: 1.25px var(--how-num-stroke);
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 18px -0.04em;
+  user-select: none;
+}
+.how__title {
+  font-weight: 700;
+  font-size: clamp(36px, 4.4vw, 64px);
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+.how__copy {
+  margin-top: 16px;
+  max-width: 32ch;
+  font-size: clamp(16.5px, 1.25vw, 18.5px);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.how__tools {
+  margin-top: 24px;
+  width: 100%;
+  max-width: 300px;
+  border-top: 1px solid var(--line);
+}
+.how__tools li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ---------- Framed product screen ---------- */
+.how__shot {
+  position: relative;
+  margin: 0;
+  width: 100%;
+  transform-origin: 50% 60%;
+}
+/* Contact shadow: the screen sits on the page, it does not float. */
+.how__shot::after {
+  content: "";
+  position: absolute; z-index: -1;
+  left: 8%; right: 8%; bottom: -26px; height: 44px;
+  background: radial-gradient(50% 50% at 50% 50%, var(--how-contact), transparent 72%);
+  filter: blur(6px);
+  pointer-events: none;
+}
+.how__frame {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elev);
+  overflow: hidden;
+  box-shadow: var(--how-shadow);
+  transform-origin: 50% 100%;
+}
+.how__bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: 36px;
+  padding-inline: 14px;
+  background: var(--how-bar);
+  border-bottom: 1px solid var(--line);
+}
+.how__dots { display: inline-flex; gap: 7px; }
+.how__dots i {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: color-mix(in srgb, var(--ink) 16%, transparent);
+}
+.how__url {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-width: min(300px, 46vw);
+  height: 22px;
+  padding: 0 14px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.how__url svg { width: 11px; height: 11px; flex: none; opacity: 0.8; }
+.how__screen {
+  position: relative;
+  aspect-ratio: 1692 / 1020;
+  overflow: hidden;
+  background: var(--app-bg);
+}
+.how__img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  transform: scale(1.012);   /* crops the capture's own 1px edge */
+}
+.how__img--dark { display: none; }
+:root[data-theme="dark"] .how__img--light,
+[data-force-theme="dark"] .how__img--light { display: none; }
+:root[data-theme="dark"] .how__img--dark,
+[data-force-theme="dark"] .how__img--dark { display: block; }
+
+/* ---------- Rail + coda ---------- */
+.how__rail { display: none; }
+
+.how__coda {
+  margin-top: clamp(48px, 6vw, 80px);
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  text-align: center;
+  font-size: clamp(19px, 1.9vw, 26px);
+  line-height: 1.35;
+  letter-spacing: -0.015em;
+  color: var(--ink-2);
+}
+.how__coda .serif { color: var(--ink); }
+.how__coda-glyph { width: 44px; height: 20px; flex: none; color: var(--brand-ink); }
+
+/* Wide screens without the pin (reduced motion / no JS): two columns. */
+@media (min-width: 900px) {
+  .how__inner {
+    grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+    gap: clamp(40px, 5vw, 88px);
+  }
+  .how__num { font-size: clamp(120px, 12vw, 200px); }
+}
+
+/* ======================================================================
+   Pinned horizontal mode (desktop, motion allowed)
+   ====================================================================== */
+.how--pinned .how__head { margin-bottom: clamp(24px, 3vw, 40px); }
+
+.how--pinned .how__stage {
+  position: relative;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding-top: calc(var(--nav-h) + 12px);
+  overflow: hidden;
+  overflow: clip;
+}
+.how--pinned .how__track {
+  display: flex;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  will-change: transform;
+}
+.how--pinned .how__panel {
+  flex: 0 0 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+}
+.how--pinned .how__inner {
+  width: 100%;
+  max-width: calc(var(--container) + var(--gutter) * 2);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+.how--pinned .how__text { will-change: opacity; }
+.how--pinned .how__num { will-change: transform; }
+.how--pinned .how__inner {
+  grid-template-columns: minmax(0, 0.6fr) minmax(0, 1.4fr);
+  gap: clamp(40px, 4.5vw, 72px);
+}
+.how--pinned .how__shot {
+  /* the screen leans past the column only into spare margin (wide screens) */
+  --bleed: max(0px, min(48px, (100vw - 1300px) / 2));
+  justify-self: end;
+  width: calc(100% + var(--bleed));
+  margin-right: calc(var(--bleed) * -1);
+  /* keep the whole frame inside the stage on short viewports */
+  max-width: calc((100vh - var(--nav-h) - 210px) * 1.62);
+  will-change: transform;
+}
+
+.how--pinned .how__rail {
+  display: block;
+  padding: 0 var(--gutter) clamp(20px, 3vh, 32px);
+}
+.how__rail-inner {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  max-width: var(--container);
+  margin-inline: auto;
+}
+.how__rail-line {
+  position: absolute; inset: 0 0 auto; height: 1px;
+  background: var(--line-strong);
+  overflow: hidden;
+}
+.how__rail-fill {
+  position: absolute; inset: 0;
+  background: var(--brand);
+  transform-origin: 0 50%;
+  transform: scaleX(0.2);
+}
+.how__rail-step {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 14px 12px 4px 0;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink-3);
+  transition: color 0.5s var(--ease-out);
+}
+.how__rail-n {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+}
+.how__rail-step.is-past { color: var(--ink-2); }
+.how__rail-step.is-active { color: var(--ink); }
+.how__rail-step.is-active .how__rail-n { color: var(--brand-ink); }
+.how__rail-step:hover { color: var(--ink); }
+
+@media (max-height: 760px) {
+  .how--pinned .how__num { font-size: clamp(100px, 10vw, 150px); margin-bottom: 12px; }
+  .how--pinned .how__tools { margin-top: 18px; }
+}
+
+/* ---------- Phones ---------- */
+@media (max-width: 899.98px) {
+  .how__inner { gap: 32px; }
+  .how__shot::after { bottom: -18px; height: 30px; }
+}
+@media (max-width: 600px) {
+  .how__num { font-size: 76px; margin-bottom: 14px; }
+  .how__frame { border-radius: 10px; }
+  .how__bar { height: 26px; padding-inline: 10px; }
+  .how__dots { gap: 5px; }
+  .how__dots i { width: 7px; height: 7px; }
+  .how__url { height: 17px; min-width: 0; padding: 0 10px; font-size: 9.5px; gap: 4px; }
+  .how__url svg { width: 9px; height: 9px; }
+  .how__tools { max-width: none; }
+  .how__coda { flex-direction: column; gap: 12px; }
+}

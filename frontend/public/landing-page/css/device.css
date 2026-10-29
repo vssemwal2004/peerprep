@@ -1,0 +1,347 @@
+/* ==========================================================================
+   Realistic laptop device (shared). Built at a fixed logical size and scaled
+   to its container by js/device.js. Grounded: hinge, deck and contact
+   shadow — it never floats.
+
+   Logical sizes: device 1360 wide; lid 1240 x 816; screen 1200 x 776
+   (browser bar 44 + app topbar 52 + demo stage 680; sidebar 72 + stage 1128).
+   ========================================================================== */
+
+.device {
+  --dev-rim: #c9ccd1;
+  --dev-alu-1: #eef0f2;
+  --dev-alu-2: #d4d7dc;
+  --dev-alu-3: #a8acb3;
+  --dev-notch: #9a9ea6;
+  --dev-floor: rgba(14, 15, 18, 0.32);
+  --dev-contact: rgba(14, 15, 18, 0.2);
+  --lid: 0deg;          /* lid angle; js animates on scroll (negative = closing) */
+  --tilt: 0deg;         /* whole-device pitch */
+  position: relative;
+  width: 100%;
+}
+:root[data-theme="dark"] .device, [data-force-theme="dark"] .device {
+  /* Space grey, lifted enough to separate from the near-black page. */
+  --dev-rim: #4a4d54;
+  --dev-alu-1: #62666e;
+  --dev-alu-2: #41444b;
+  --dev-alu-3: #2b2d33;
+  --dev-notch: #1d1e22;
+  --dev-floor: rgba(0, 0, 0, 0.75);
+  --dev-contact: rgba(0, 0, 0, 0.55);
+}
+
+.device__scaler {
+  position: absolute; left: 0; top: 0;
+  width: 1360px; height: 880px;
+  transform-origin: 0 0;
+  perspective: 3200px;
+  perspective-origin: 50% 30%;
+}
+.device__body {
+  position: absolute; inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--tilt));
+  transform-origin: 50% 96%;
+}
+
+/* ---------- Lid ---------- */
+.device__lid {
+  position: absolute; left: 60px; top: 0;
+  width: 1240px; height: 816px;
+  transform-origin: 50% 100%;
+  transform: rotateX(var(--lid));
+  transform-style: preserve-3d;
+}
+/* Bezel + display: the lid's front face. */
+.device__lid-front {
+  position: absolute; inset: 0;
+  padding: 22px 20px 18px;
+  border-radius: 24px 24px 10px 10px;
+  background: #0b0b0c;
+  box-shadow:
+    0 0 0 1.5px var(--dev-rim),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    inset 0 2px 1px rgba(255, 255, 255, 0.08);
+  backface-visibility: hidden;
+}
+.device__camera {
+  position: absolute; left: 50%; top: 8px;
+  width: 7px; height: 7px; margin-left: -3.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #2a3240, #07080a 70%);
+  box-shadow: 0 0 0 1.5px #151619;
+}
+.device__screen {
+  position: relative;
+  width: 1200px; height: 776px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--app-bg);
+  color: var(--app-ink);
+}
+/* Glass glare — very faint diagonal sheen like a real display. */
+.device__screen::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 50;
+  background: linear-gradient(118deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 28%, transparent 42%);
+}
+
+/* ---------- Hinge + deck ---------- */
+.device__hinge {
+  position: absolute; left: 150px; top: 812px;
+  width: 1060px; height: 10px;
+  border-radius: 0 0 6px 6px;
+  background: linear-gradient(180deg, #050505, #2a2b2e 70%, #0d0d0e);
+}
+.device__deck {
+  position: absolute; left: 0; top: 816px;
+  width: 1360px; height: 24px;
+  border-radius: 3px 3px 22px 22px / 3px 3px 20px 20px;
+  background: linear-gradient(180deg, var(--dev-alu-1) 0%, var(--dev-alu-2) 38%, var(--dev-alu-3) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -2px 3px rgba(0, 0, 0, 0.18);
+}
+:root[data-theme="dark"] .device__deck, [data-force-theme="dark"] .device__deck { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -2px 3px rgba(0, 0, 0, 0.5); }
+.device__notch {
+  position: absolute; left: 50%; top: 0;
+  width: 210px; height: 8px; margin-left: -105px;
+  border-radius: 0 0 10px 10px;
+  background: linear-gradient(180deg, var(--dev-notch), var(--dev-alu-2));
+}
+.device__feet {
+  position: absolute; left: 70px; right: 70px; top: 838px; height: 4px;
+  border-radius: 0 0 8px 8px;
+  background: var(--dev-alu-3);
+  opacity: 0.8;
+}
+/* Contact + ambient shadow on the "floor" */
+.device__floor {
+  position: absolute; left: 40px; right: 40px; top: 826px; height: 50px;
+  background: radial-gradient(50% 50% at 50% 30%, var(--dev-floor), transparent 70%);
+  filter: blur(8px);
+  z-index: -1;
+}
+
+/* ---------- Full 3D laptop (opt-in: PP.device(el, { base3d: true })) ----------
+   The base is a real horizontal slab (keyboard deck) extending toward the
+   viewer from the hinge, so the lid can close onto it (--lid: -90deg) and
+   the whole machine can be seen from above (--tilt) while it opens. */
+.device--3d .device__scaler {
+  height: 940px;
+  perspective: 7000px;
+  perspective-origin: 50% 26%;
+}
+.device--3d .device__body {
+  transform: translateY(var(--lift, 0px)) scale(var(--dscale, 1)) rotateX(var(--tilt));
+  transform-origin: 680px 816px 400px; /* centre of the slab */
+}
+/* Like a real notebook, lid and base share one footprint (1240 wide), so
+   the closed machine reads as a single aluminium slab. */
+.device--3d .device__feet,
+.device--3d .device__hinge { display: none; }
+.device--3d .device__deck-top,
+.device--3d .device__deck { left: 60px; width: 1240px; }
+.device--3d .device__keys { left: 96px; right: 96px; }
+
+/* Lid back: anodised aluminium with the PeerPrep mark. */
+.device__lid-back {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  border-radius: 24px 24px 10px 10px;
+  background:
+    radial-gradient(70% 60% at 50% 45%, rgba(255, 255, 255, 0.18), transparent 70%),
+    linear-gradient(180deg, var(--dev-alu-1) 0%, var(--dev-alu-2) 55%, var(--dev-alu-3) 100%);
+  box-shadow: 0 0 0 1.5px var(--dev-rim), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transform: rotateX(180deg);
+  backface-visibility: hidden;
+}
+.device__logo { width: 132px; height: 132px; }
+.device__lid-back .device__logo { opacity: 0.55; filter: grayscale(1) contrast(1.1); mix-blend-mode: multiply; }
+:root[data-theme="dark"] .device__lid-back .device__logo,
+[data-force-theme="dark"] .device__lid-back .device__logo { mix-blend-mode: screen; opacity: 0.45; }
+.device__logo--dark { display: none; }
+:root[data-theme="dark"] .device__logo--light, [data-force-theme="dark"] .device__logo--light { display: none; }
+:root[data-theme="dark"] .device__logo--dark, [data-force-theme="dark"] .device__logo--dark { display: block; }
+
+/* Keyboard deck: the top of the base, lying flat toward the viewer. */
+.device__deck-top {
+  position: absolute; left: 0; top: 818px; /* 2px under the closed lid: no z-fighting */
+  width: 1360px; height: 800px;
+  border-radius: 0 0 28px 28px;
+  background: linear-gradient(180deg, var(--dev-alu-2) 0%, var(--dev-alu-1) 18%, var(--dev-alu-1) 70%, var(--dev-alu-2) 100%);
+  box-shadow: inset 0 0 0 1.5px var(--dev-rim);
+  transform-origin: 50% 0;
+  transform: rotateX(90deg);
+}
+.device__keys {
+  position: absolute; left: 150px; right: 150px; top: 46px; height: 330px;
+  border-radius: 12px;
+  background:
+    linear-gradient(90deg, transparent 0 58px, var(--dev-well, #0d0e10) 58px 66px) 0 0 / 66px 100%,
+    linear-gradient(180deg, transparent 0 56px, var(--dev-well, #0d0e10) 56px 66px) 0 0 / 100% 66px,
+    #24252a;
+  box-shadow: inset 0 0 0 8px var(--dev-well, #0d0e10), inset 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.device__pad {
+  position: absolute; left: 50%; top: 420px;
+  width: 560px; height: 330px; margin-left: -280px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--dev-alu-1), var(--dev-alu-2));
+  box-shadow: inset 0 0 0 1.5px var(--dev-rim), inset 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+/* Front lip of the base sits at the far edge of the deck. */
+.device--3d .device__deck { transform: translateZ(800px); }
+/* Contact shadow right under the front lip: the floor plane below is seen
+   edge-on once the laptop is level, so this is what grounds it there. */
+.device--3d .device__deck::after {
+  content: "";
+  position: absolute; left: 7.5%; right: 7.5%; top: 100%;
+  height: 22px; margin-top: -4px;
+  border-radius: 50%;
+  background: radial-gradient(50% 50% at 50% 30%, var(--dev-contact), transparent 75%);
+  filter: blur(5px);
+  pointer-events: none;
+}
+:root[data-theme="dark"] .device--3d .device__deck,
+[data-force-theme="dark"] .device--3d .device__deck {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), inset 0 -2px 3px rgba(0, 0, 0, 0.5);
+}
+:root[data-theme="dark"] .device--3d .device__deck-top,
+[data-force-theme="dark"] .device--3d .device__deck-top {
+  box-shadow: inset 0 0 0 1.5px var(--dev-rim), inset 0 2px 0 rgba(255, 255, 255, 0.1);
+}
+/* Floor contact shadow as a real plane under the slab. */
+.device--3d .device__floor {
+  left: -80px; right: -80px; top: 842px; height: 900px;
+  transform-origin: 50% 0;
+  transform: rotateX(90deg);
+  background: radial-gradient(48% 46% at 50% 50%, var(--dev-floor), transparent 72%);
+  filter: blur(14px);
+}
+
+/* Power-on overlay: dark screen with the mark and a hairline loader. */
+.device__boot {
+  position: absolute; inset: 0; z-index: 40;
+  display: grid; place-content: center; justify-items: center; gap: 28px;
+  background: #050506;
+  opacity: var(--boot, 0);
+  pointer-events: none;
+}
+.device__boot .device__logo { width: 96px; height: 96px; opacity: 0.95; }
+.device__boot .device__logo--light { display: none; }
+.device__boot .device__logo--dark { display: block !important; }
+.device__boot-bar { width: 180px; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.device__boot-bar i { display: block; height: 100%; width: 100%; background: #fff; transform-origin: 0 50%; transform: scaleX(var(--boot-bar, 0)); }
+
+/* ---------- Browser bar ---------- */
+.app-browser {
+  height: 44px;
+  display: grid; grid-template-columns: 120px 1fr 120px; align-items: center;
+  padding: 0 16px;
+  background: var(--app-panel);
+  border-bottom: 1px solid var(--app-line);
+  font-family: var(--font-sans);
+}
+.app-browser__lights { display: flex; gap: 8px; }
+.app-browser__lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+.app-browser__lights i:nth-child(2) { background: #febc2e; }
+.app-browser__lights i:nth-child(3) { background: #28c840; }
+.app-browser__url {
+  justify-self: center;
+  display: flex; align-items: center; gap: 8px;
+  width: 460px; height: 28px; padding: 0 14px;
+  border-radius: 8px;
+  background: var(--app-panel-2);
+  font-size: 12.5px; color: var(--app-ink-2);
+  white-space: nowrap; overflow: hidden;
+}
+.app-browser__url svg { width: 12px; height: 12px; flex: none; color: var(--app-ink-3); }
+.app-browser__url b { font-weight: 600; color: var(--app-ink); }
+.app-browser__url span { color: var(--app-ink-3); }
+
+/* ---------- App chrome ---------- */
+.app {
+  display: grid;
+  grid-template-columns: 72px 1128px;
+  grid-template-rows: 52px 680px;
+  height: 732px;
+  font-family: var(--font-sans);
+}
+.app__side {
+  grid-row: 1 / span 2;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 12px 0;
+  background: var(--app-sidebar);
+  border-right: 1px solid var(--app-line);
+}
+.app__mark { width: 32px; height: 32px; margin-bottom: 14px; }
+.app__mark--dark { display: none; }
+:root[data-theme="dark"] .app__mark--light, [data-force-theme="dark"] .app__mark--light { display: none; }
+:root[data-theme="dark"] .app__mark--dark, [data-force-theme="dark"] .app__mark--dark { display: block; }
+.app__nav {
+  position: relative;
+  width: 42px; height: 42px; border-radius: 10px;
+  display: grid; place-items: center;
+  color: var(--app-ink-3);
+  transition: color 0.3s, background-color 0.3s;
+}
+.app__nav svg { width: 20px; height: 20px; }
+.app__nav.is-active { color: var(--brand); background: var(--brand-soft); }
+.app__avatar {
+  margin-top: auto;
+  width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; color: var(--app-ink);
+  background: var(--app-panel-2); border: 1px solid var(--app-line);
+}
+.app__top {
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 22px;
+  background: var(--app-panel);
+  border-bottom: 1px solid var(--app-line);
+}
+.app__title { font-size: 15px; font-weight: 700; color: var(--app-ink); letter-spacing: -0.01em; }
+.app__search {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 8px;
+  width: 300px; height: 32px; padding: 0 12px;
+  border-radius: 8px; border: 1px solid var(--app-line);
+  background: var(--app-bg);
+  font-size: 12.5px; color: var(--app-ink-3);
+}
+.app__search svg, .app__bell svg { width: 15px; height: 15px; }
+.app__bell { position: relative; color: var(--app-ink-2); }
+.app__bell::after {
+  content: ""; position: absolute; right: -1px; top: -1px;
+  width: 7px; height: 7px; border-radius: 50%; background: var(--danger);
+  box-shadow: 0 0 0 2px var(--app-panel);
+}
+.app__me {
+  width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; color: #fff;
+  background: linear-gradient(135deg, #0ea5e9, #4f46e5);
+}
+
+/* No-JS fallback inside a device slot: a framed still of the same screen. */
+.device-fallback {
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  background: var(--app-bg);
+  box-shadow: var(--shadow-md);
+}
+.device-fallback img { width: 100%; height: auto; }
+
+/* The stage every demo scene renders into */
+.demo-root {
+  position: relative;
+  width: 1128px; height: 680px;
+  overflow: hidden;
+  background: var(--app-bg);
+  color: var(--app-ink);
+  font-size: 13px; line-height: 1.45;
+  font-family: var(--font-sans);
+}
+.demo-root.is-swapping { opacity: 0; transition: opacity 0.25s ease; }
+.demo-root:not(.is-swapping) { transition: opacity 0.35s ease; }
+.demo-media { width: 100%; height: 100%; object-fit: cover; object-position: top left; }
