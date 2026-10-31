@@ -317,7 +317,7 @@ export function ruleText(rule, fieldMap, lookup = () => undefined, { max = 3 } =
   const unit = unitOf(field);
   if (Array.isArray(rule.value) && rule.operator !== "between") {
     const names = rule.value.map((value) => compactOption(rule.labels?.[value] ?? lookup(field, value) ?? value, field));
-    const shown = names.length > max ? `${names.slice(0, max).join(", ")} +${names.length - max} more` : names.length > 1 ? `${names.slice(0, -1).join(", ")} or ${names.at(-1)}` : names[0];
+    const shown = names.length > max ? `${names.slice(0, max).join(", ")} +${names.length - max} more` : names.length > 1 ? `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}` : names[0];
     if (rule.operator === "noneOf") return `${field.label}: not ${names.length > max ? shown : names.join(", ")}`;
     if (rule.operator === "allOf") return `${field.label}: all of ${names.join(", ")}`;
     return `${field.label}: ${shown}`;

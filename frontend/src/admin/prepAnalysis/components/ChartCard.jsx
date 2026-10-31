@@ -279,6 +279,11 @@ export default function ChartCard({ chart, entry, analysis, index = 0, compareSi
         <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${style.chip}`}><SectionIcon className="h-3.5 w-3.5" /></span>
         <h3 className="min-w-0 truncate text-[13.5px] font-bold text-slate-900 group-hover:text-sky-700 dark:text-white dark:group-hover:text-sky-300">{chart.title}</h3>
         <span className="shrink-0 text-slate-300 hover:text-slate-500 dark:text-slate-600" title={chart.question} aria-label={chart.question} data-own-clicks><Info className="h-3.5 w-3.5" /></span>
+        {chart.filterError && (
+          <button type="button" onClick={onSettings} className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-rose-50 px-1.5 py-0.5 text-[9.5px] font-bold text-rose-700 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-300" title={`This chart's own filter no longer works and was ignored: ${chart.filterError} Click to set it again.`}>
+            <Filter className="h-2.5 w-2.5" />Filter ignored
+          </button>
+        )}
         {chart.filtered && (
           <button type="button" onClick={onSettings} className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[9.5px] font-bold text-amber-700 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300" title="This chart has its own filter. Click to change.">
             <Filter className="h-2.5 w-2.5" />Filtered

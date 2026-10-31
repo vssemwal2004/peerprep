@@ -164,7 +164,8 @@ export default function PrepAnalysisPage() {
         {error && (
           <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>{data ? "Could not refresh; showing the last result. " : ""}{error.message}</span>
+            <span className="flex-1">{data ? "Could not refresh; showing the last result. " : ""}{error.message}</span>
+            <button type="button" onClick={() => { resetLayout(); setFocus(null); setCompare(null); }} className="shrink-0 font-semibold underline-offset-2 hover:underline">Reset charts</button>
           </div>
         )}
 

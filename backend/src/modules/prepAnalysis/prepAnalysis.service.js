@@ -27,7 +27,7 @@ import { attachStoredScores, buildStudentRows } from './studentRows.js';
 export const QUERY_LIMITS = Object.freeze({
   // A large university's first load takes seconds, so loaded data is reused for five minutes
   // across filter changes, popups and downloads; the page's refresh button reloads it.
-  maxCharts: 24, maxTableLimit: 100, maxRangeDays: 366 * 3, cacheTtlMs: 5 * 60_000, cacheEntries: 6, maxPage: 10_000, maxDrillLimit: 200, maxKeyLength: 200,
+  maxCharts: 24, maxTableLimit: 100, maxRangeDays: 366 * 3, cacheTtlMs: 5 * 60_000, cacheEntries: 6, maxChartLimit: 100, maxPage: 10_000, maxDrillLimit: 200, maxKeyLength: 200,
 });
 const RANGE_PRESETS = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, '365d': 365, all: null };
 const TABLE_SORTS = {
@@ -78,28 +78,29 @@ export function normalizeRange(input = {}) {
   return { preset: 'custom', from, to };
 }
 
+const clampInt = (value, min, max) => {
+  const number = Number.parseInt(value, 10);
+  return Number.isInteger(number) ? Math.min(max, Math.max(min, number)) : null;
+};
+
+/**
+ * A chart's own settings, as saved in a browser. A setting that is out of range or no longer
+ * valid is corrected or dropped, never an error: one old saved setting must not blank the page.
+ */
 function normalizeChartOptions(chart, options = {}) {
   const result = { ...(chart.options || {}) };
-  if (options.groupBy !== undefined) {
-    if (!GROUP_BY[options.groupBy]) throw new HttpError(400, 'Unknown group-by.');
-    result.groupBy = options.groupBy;
-  }
-  if (options.limit !== undefined) {
-    const limit = Number.parseInt(options.limit, 10);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new HttpError(400, 'A chart limit must be 1-100.');
-    result.limit = limit;
-  }
+  if (!options || typeof options !== 'object') return result;
+  if (GROUP_BY[options.groupBy]) result.groupBy = options.groupBy;
+  const limit = options.limit === undefined || options.limit === '' ? null : clampInt(options.limit, 1, QUERY_LIMITS.maxChartLimit);
+  if (limit !== null) result.limit = limit;
   if (options.studentId !== undefined) {
     const studentId = String(options.studentId || '');
-    if (studentId && !/^[a-f0-9]{24}$/i.test(studentId)) throw new HttpError(400, 'Unknown student.');
-    result.studentId = studentId;
+    result.studentId = /^[a-f0-9]{24}$/i.test(studentId) ? studentId : '';
   }
   // The chart's full page: every item, a page at a time.
   if (options.full === true) {
     result.full = true;
-    const page = Number.parseInt(options.page ?? 1, 10);
-    if (!Number.isInteger(page) || page < 1 || page > QUERY_LIMITS.maxPage) throw new HttpError(400, 'Unknown page.');
-    result.page = page;
+    result.page = clampInt(options.page ?? 1, 1, QUERY_LIMITS.maxPage) || 1;
   }
   return result;
 }
@@ -141,20 +142,25 @@ export function validatePrepAnalysisQuery(body = {}, permissions) {
   const filter = normalizeFilterTree(body.filter, { allowedModules: modules });
   const rank = normalizeRankCuts(body.rank, { allowedModules: modules });
 
+  // A saved layout can name charts that no longer exist, charts of an unlicensed area, or more
+  // charts than fit: those are skipped, never an error.
   const requested = Array.isArray(body.charts) ? body.charts : (DEFAULT_LAYOUT[area] || []).map((id) => ({ id }));
-  if (requested.length > QUERY_LIMITS.maxCharts) throw new HttpError(400, `Up to ${QUERY_LIMITS.maxCharts} charts can be shown at once.`);
   const charts = requested
     .map((entry) => ({ entry, chart: CHART_BY_ID.get(String(entry?.id || '')) }))
-    .filter(({ entry, chart }) => {
-      if (!chart) throw new HttpError(400, `Unknown chart: ${entry?.id}`);
-      // A default layout can name charts of an unlicensed area; they are skipped, never shown.
-      return modules.has(chart.module) && (area === 'all' || chart.module === area);
-    })
-    .map(({ entry, chart }) => ({
-      id: chart.id,
-      filter: normalizeFilterTree(entry.filter, { allowedModules: modules }),
-      options: normalizeChartOptions(chart, entry.options),
-    }));
+    .filter(({ chart }) => chart && modules.has(chart.module) && (area === 'all' || chart.module === area))
+    .slice(0, QUERY_LIMITS.maxCharts)
+    .map(({ entry, chart }) => {
+      // A chart's own filter saved before a field changed is dropped (and reported), not fatal.
+      let filter;
+      let filterError = null;
+      try {
+        filter = normalizeFilterTree(entry.filter, { allowedModules: modules });
+      } catch (error) {
+        filter = normalizeFilterTree(null, { allowedModules: modules });
+        filterError = error.message;
+      }
+      return { id: chart.id, filter, filterError, options: normalizeChartOptions(chart, entry.options) };
+    });
 
   const table = body.table || {};
   const sort = (TABLE_SORTS[table.sort] || table.sort === 'name') ? table.sort : DEFAULT_SORT[area];
@@ -461,13 +467,13 @@ export async function runPrepAnalysis({ user, query }) {
   const { selected, ids } = selectStudents(context, query);
   const previous = await previousKpis({ user, query, ids });
   const kpiGroups = buildKpiGroups(query.module, query.modules, selected);
-  const charts = query.charts.map(({ id, filter, options }) => {
+  const charts = query.charts.map(({ id, filter, filterError, options }) => {
     const chart = CHART_BY_ID.get(id);
     const rows = chartRows(selected, filter);
     const data = buildChart(chart, rows, options, query.range, context);
     return {
       id, module: chart.module, section: chart.section, type: chart.type, size: chart.size, title: chart.title, question: chart.question,
-      options, filtered: filter.children.length > 0, studentCount: rows.length, data,
+      options, filtered: filter.children.length > 0, filterError, studentCount: rows.length, data,
       summary: chartSummary(id, rows, data), drillable: Boolean(drillFor(id)),
     };
   });

@@ -21,7 +21,12 @@ export function ChartSettingsDialog({ open, entry, definition, catalog, fields, 
       footer={<>
         <Button tone="ghost" onClick={() => setDraft({ filter: newGroup(), options: { ...(definition.options || {}) }, labels: {} })}><RotateCcw className="h-3.5 w-3.5" />Reset</Button>
         <Button onClick={onClose}>Cancel</Button>
-        <Button tone="primary" onClick={() => onSave(draft)}>Save</Button>
+        <Button tone="primary" onClick={() => {
+          // "How many" stays within 1–100 whatever was typed.
+          const limit = Number.parseInt(draft.options.limit, 10);
+          const options = draft.options.limit === undefined ? draft.options : { ...draft.options, limit: Number.isInteger(limit) ? Math.min(100, Math.max(1, limit)) : definition.options?.limit };
+          onSave({ ...draft, options });
+        }}>Save</Button>
       </>}>
       <div className="space-y-5 p-4">
         {(has("groupBy") || has("limit") || has("studentId")) && (

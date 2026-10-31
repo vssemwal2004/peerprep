@@ -12,10 +12,16 @@ const QUERY_DELAY_MS = 180;
 // Every visit opens on all students: only the chart layout (sizes, views, hidden charts, limits) is
 // remembered per browser. Per-chart student filters and picked students are choices about WHICH
 // students, so they are dropped like the page filters.
+// Older versions could save a "how many" outside 1–100; it is brought back into range here.
+const cleanLimit = (value) => {
+  const number = Number.parseInt(value, 10);
+  return Number.isInteger(number) ? Math.min(100, Math.max(1, number)) : undefined;
+};
 const layoutOnly = (layouts) => Object.fromEntries(Object.entries(layouts || {}).map(([area, list]) => [area,
-  Array.isArray(list) ? list.map(({ filter: _filter, ...entry }) => {
-    const { studentId: _studentId, ...options } = entry.options || {};
-    return { ...entry, options };
+  Array.isArray(list) ? list.filter((entry) => entry && typeof entry.id === "string").map(({ filter: _filter, ...entry }) => {
+    const { studentId: _studentId, limit, ...options } = entry.options || {};
+    const kept = cleanLimit(limit);
+    return { ...entry, options: kept ? { ...options, limit: kept } : options };
   }) : []]));
 
 function readStored() {

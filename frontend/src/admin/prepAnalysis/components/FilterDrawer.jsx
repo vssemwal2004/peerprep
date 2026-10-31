@@ -87,7 +87,7 @@ export function FilterDrawer({ open, state, catalog, fieldMap, matched, onApply,
   const removeGroup = (id) => setDraft((current) => ({ ...current, groups: current.groups.filter((group) => group.id !== id) }));
   const changes = countActive(draft, fieldMap) + (draft.range.preset !== "all" ? 1 : 0);
   const several = draft.groups.length > 1;
-  const lastIsEmpty = !countRules(draft.groups.at(-1), fieldMap);
+  const lastIsEmpty = !countRules(draft.groups[draft.groups.length - 1], fieldMap);
   const filters = (group, flat) => (
     <GroupFilters key={group.id} group={group} featureFields={features} studentFields={students} areaLabel={areaLabel} area={draft.area} catalog={catalog} fieldMap={fieldMap} flat={flat} onChange={setGroup} />
   );

@@ -16,9 +16,9 @@ function weekChange(data) {
   const values = data.series?.[0]?.values || [];
   const name = (data.series?.[0]?.name || "").toLowerCase();
   if (!values.length) return null;
-  const last = values.at(-1);
+  const last = values[values.length - 1];
   if (values.length < 2) return `${number(last)} ${name} in the latest week.`;
-  const before = values.at(-2);
+  const before = values[values.length - 2];
   if (!before) return last ? `${number(last)} ${name} in the latest week, up from none the week before.` : null;
   const change = Math.round(((last - before) / before) * 100);
   if (change === 0) return `${number(last)} ${name} in the latest week, the same as the week before.`;

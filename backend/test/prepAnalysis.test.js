@@ -221,7 +221,19 @@ test('a university without the questions module gets no Prep Coding or Quick Pre
   const query = validatePrepAnalysisQuery({}, undefined);
   assert.equal(query.module, 'coding');
   assert.ok(query.charts.length >= 10, 'the default layout is used');
-  assert.throws(() => validatePrepAnalysisQuery({ charts: [{ id: 'not-a-chart' }] }, undefined), /Unknown chart/);
+  // Settings saved in a browser by an older version never blank the page.
+  const saved = validatePrepAnalysisQuery({ charts: [
+    { id: 'not-a-chart' },
+    { id: 'topic-strength', options: { limit: 250 } },
+    { id: 'top-students', options: { limit: 'lots', studentId: 'nope', groupBy: 'planet' } },
+    { id: 'tough-problems', filter: { type: 'group', join: 'and', children: [{ type: 'rule', field: 'no.such.field', operator: 'is', value: 1 }] } },
+  ] }, undefined);
+  assert.deepEqual(saved.charts.map((chart) => chart.id), ['topic-strength', 'top-students', 'tough-problems'], 'a chart that no longer exists is skipped');
+  assert.equal(saved.charts[0].options.limit, 100, 'a limit above 100 shows 100');
+  assert.equal(saved.charts[1].options.limit, 10, 'a limit that is not a number keeps the default');
+  assert.ok(saved.charts[2].filterError, 'a chart filter on a field that changed is dropped and reported');
+  assert.equal(saved.charts[2].filter.children.length, 0);
+  assert.equal(validatePrepAnalysisQuery({ charts: Array.from({ length: 40 }, () => ({ id: 'top-students' })) }, undefined).charts.length, 24, 'extra charts are skipped');
   assert.throws(() => validatePrepAnalysisQuery({ range: { preset: 'custom', from: '2026-10-10', to: '2026-01-01' } }, undefined), /before the end/);
 });
 
