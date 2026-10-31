@@ -95,7 +95,7 @@ export const EXPORT_COLUMNS = [
   { key: 'daysSinceTest', label: 'Days since last test', group: 'Prep Assessment', module: 'assessment', kind: 'number', width: 11, get: (row) => row.assessment?.daysSinceActive ?? null },
 ];
 
-const COLUMN_BY_KEY = new Map(EXPORT_COLUMNS.map((column) => [column.key, column]));
+export const COLUMN_BY_KEY = new Map(EXPORT_COLUMNS.map((column) => [column.key, column]));
 
 // Ticked when the download popup opens; the admin can add or remove any column.
 export const DEFAULT_EXPORT_COLUMNS = Object.freeze({
@@ -115,6 +115,9 @@ export function publicExportColumns(permissions) {
 const AREA_LABELS = { all: 'All features', coding: 'Prep Coding', learning: 'Prep Learning', interview: 'Prep Interview', assessment: 'Prep Assessment' };
 const PERIOD_LABELS = { '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days', '180d': 'Last 6 months', '365d': 'Last year', all: 'All time' };
 const cleanText = (value, max = 240) => String(value ?? '').replace(/[\u0000-\u001f]+/g, ' ').trim().slice(0, max);
+export const periodText = (range) => (range.preset === 'custom'
+  ? `${range.from ? range.from.toISOString().slice(0, 10) : 'start'} to ${range.to ? range.to.toISOString().slice(0, 10) : 'today'}`
+  : PERIOD_LABELS[range.preset] || range.preset);
 
 /** format, columns and the plain-language filter lines shown at the top of the file. */
 export function validateExportOptions(body = {}, permissions, area) {
@@ -144,10 +147,7 @@ export function buildReport({ rows, columns, summary, query, cohortSize, positio
   const context = { positions };
   const limit = EXPORT_LIMITS.maxRows;
   const included = rows.slice(0, limit);
-  const range = query.range;
-  const period = range.preset === 'custom'
-    ? `${range.from ? range.from.toISOString().slice(0, 10) : 'start'} to ${range.to ? range.to.toISOString().slice(0, 10) : 'today'}`
-    : PERIOD_LABELS[range.preset] || range.preset;
+  const period = periodText(query.range);
   return {
     title: `Prep Analysis · ${AREA_LABELS[query.module] || query.module}`,
     generatedAt,
@@ -332,6 +332,192 @@ export function renderPdf(report) {
   doc.end();
   return done;
 }
+
+// ---------------------------------------------------------------- one chart's detailed file
+
+const percentShare = (part, whole) => (whole ? Math.round((part / whole) * 1000) / 10 : 0);
+const textCol = (label, width = 18) => ({ label, kind: 'text', width });
+const numCol = (label, kind = 'number', width = 12) => ({ label, kind, width });
+
+/** Every figure a chart was drawn from, as { columns, rows } (the "Chart data" sheet). */
+export function chartDataTable(type, data = {}) {
+  switch (type) {
+    case 'rankedStackedBar':
+      return {
+        columns: [numCol('#', 'number', 6), textCol('Student', 24), numCol('Prep Score', 'decimal'), numCol('Score from Easy', 'decimal'), numCol('Score from Medium', 'decimal'), numCol('Score from Hard', 'decimal'), numCol('Easy solved (all time)'), numCol('Medium solved (all time)'), numCol('Hard solved (all time)')],
+        rows: (data.items || []).map((item) => [item.position, item.name, item.score, item.segments?.Easy ?? 0, item.segments?.Medium ?? 0, item.segments?.Hard ?? 0, item.counts?.Easy ?? 0, item.counts?.Medium ?? 0, item.counts?.Hard ?? 0]),
+      };
+    case 'barList': {
+      const items = data.items || [];
+      const has = (field) => items.some((item) => item[field] !== undefined && item[field] !== null);
+      const label = data.valueLabel ? data.valueLabel[0].toUpperCase() + data.valueLabel.slice(1) : 'Value';
+      return {
+        columns: [textCol('Name', 28), ...(has('difficulty') ? [textCol('Difficulty', 10)] : []), numCol(data.unit === '%' ? `${label} %` : label, data.unit === '%' ? 'percent' : 'decimal'),
+          ...(has('pct') ? [numCol('Of students in view %', 'percent')] : []), ...(has('students') && !has('pct') ? [numCol('Students')] : []), ...(has('solvers') ? [numCol('Students who solved it')] : []),
+          ...(has('accuracy') ? [numCol('Accuracy %', 'percent')] : []), ...(has('note') ? [textCol('Note', 36)] : [])],
+        rows: items.map((item) => [item.name, ...(has('difficulty') ? [item.difficulty || ''] : []), item.value,
+          ...(has('pct') ? [item.pct] : []), ...(has('students') && !has('pct') ? [item.students] : []), ...(has('solvers') ? [item.solvers] : []),
+          ...(has('accuracy') ? [item.accuracy] : []), ...(has('note') ? [item.note || ''] : [])]),
+      };
+    }
+    case 'donut': {
+      const items = (data.items || []).filter((item) => item.value > 0);
+      const total = items.reduce((sum, item) => sum + item.value, 0);
+      const students = items.some((item) => item.students !== undefined);
+      return {
+        columns: [textCol('Name'), numCol(data.centerLabel ? data.centerLabel[0].toUpperCase() + data.centerLabel.slice(1) : 'Count'), numCol('Share %', 'percent'), ...(students ? [numCol('Students')] : [])],
+        rows: items.map((item) => [LANGUAGE_LABELS[item.name] || item.name, item.value, percentShare(item.value, total), ...(students ? [item.students ?? null] : [])]),
+      };
+    }
+    case 'trend':
+      return { columns: [textCol('Week of', 12), ...(data.series || []).map((series) => numCol(series.name))], rows: (data.labels || []).map((label, index) => [label, ...(data.series || []).map((series) => series.values[index] ?? 0)]) };
+    case 'funnel': {
+      const stages = data.stages || [];
+      const top = stages[0]?.value || 0;
+      return { columns: [textCol('Step', 20), numCol('Students'), numCol('% of first step', 'percent'), numCol('% of step before', 'percent')], rows: stages.map((stage, index) => [stage.name, stage.value, percentShare(stage.value, top), index ? percentShare(stage.value, stages[index - 1].value) : 100]) };
+    }
+    case 'histogram':
+      return { columns: [textCol(data.label || 'Band', 14), numCol('Students')], rows: (data.bins || []).map((bin) => [bin.label, bin.count]) };
+    case 'stackedBar': {
+      const series = data.series || [];
+      return { columns: [textCol('Group'), numCol('Students'), ...series.map((key) => numCol(key)), numCol('Total')], rows: (data.groups || []).map((group) => [group.label, group.students ?? null, ...series.map((key) => group.values[key] || 0), series.reduce((sum, key) => sum + (group.values[key] || 0), 0)]) };
+    }
+    case 'heatmap': {
+      const columns = data.columns || data.topics || [];
+      const cells = new Map((data.cells || []).map(([x, y, value]) => [`${x}:${y}`, value]));
+      return { columns: [textCol('Student', 24), ...columns.map((column) => numCol(column))], rows: (data.students || []).map((name, y) => [name, ...columns.map((_, x) => cells.get(`${x}:${y}`) ?? 0)]) };
+    }
+    case 'calendar':
+      return { columns: [textCol('Day', 12), numCol(data.unit ? data.unit[0].toUpperCase() + data.unit.slice(1) : 'Total')], rows: [...(data.days || [])].sort(([left], [right]) => right.localeCompare(left)) };
+    case 'radar':
+      if (data.mode === 'student' && data.student) {
+        return { columns: [textCol('Topic', 24), numCol(`${data.student.name}: solved`), numCol('Average solved (students in view)', 'decimal'), numCol('Accuracy, students in view %', 'percent')], rows: (data.topics || []).map((topic) => [topic.name, topic.studentSolved, topic.avgSolved, topic.accuracy]) };
+      }
+      return { columns: [textCol('Topic', 24), numCol('Students who solved'), numCol('Of students in view %', 'percent'), numCol('Average solved per student', 'decimal'), numCol('Accuracy %', 'percent')], rows: (data.topics || []).map((topic) => [topic.name, topic.students, topic.pct, topic.avgSolved, topic.accuracy]) };
+    default:
+      return { columns: [], rows: [] };
+  }
+}
+
+export const CHART_EXPORT_LIMITS = Object.freeze({ maxStudents: EXPORT_LIMITS.maxRows, maxDetailRows: 200000 });
+
+/** A chart download is Excel (every sheet) or CSV (the students); `summary` lines describe the filters. */
+export function validateChartExportOptions(body = {}) {
+  const format = ['csv', 'xlsx'].includes(body.format) ? body.format : null;
+  if (!format) throw new HttpError(400, 'Choose Excel or CSV.');
+  const summary = (Array.isArray(body.summary) ? body.summary : []).map((line) => cleanText(line)).filter(Boolean).slice(0, EXPORT_LIMITS.maxSummaryLines);
+  return { format, summary };
+}
+const tableRows = (table, limit) => ({
+  columns: table.columns,
+  rows: table.items.slice(0, limit).map((item) => table.columns.map((column) => {
+    const value = item.values[column.key];
+    return value === undefined || value === '' ? null : value;
+  })),
+  truncated: table.items.length > limit,
+});
+
+/**
+ * The model behind one chart's download: details, figures, the chart's own numbers, the
+ * students behind it and (for some charts) one row per student and problem.
+ */
+export function buildChartBook({ chart, partLabel, data, summary, students, detail, query, filters, cohortSize, generatedAt = new Date() }) {
+  const figures = [
+    ['Students in view', `${summary.cohort.toLocaleString('en-IN')} of ${cohortSize.toLocaleString('en-IN')} match the filters`],
+    [`Students who ${summary.studentsLabel}`, `${summary.students.toLocaleString('en-IN')} of ${summary.cohort.toLocaleString('en-IN')} (${summary.pct}%)`],
+    ...(summary.total !== undefined ? [[summary.totalLabel ? summary.totalLabel[0].toUpperCase() + summary.totalLabel.slice(1) : 'Total', summary.total.toLocaleString('en-IN')]] : []),
+    ...(summary.average !== undefined ? [[summary.averageLabel ? summary.averageLabel[0].toUpperCase() + summary.averageLabel.slice(1) : 'Average', String(summary.average)]] : []),
+  ];
+  return {
+    title: `${chart.title}${partLabel ? ` · ${partLabel}` : ''}`,
+    generatedAt,
+    details: [
+      ['Chart', chart.title],
+      ['Question', chart.question],
+      ...(partLabel ? [['Part of the chart', partLabel]] : []),
+      ['Area', AREA_LABELS[query.module] || query.module],
+      ['Period', periodText(query.range)],
+      ['Generated', generatedAt.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })],
+    ],
+    filters: filters.length ? filters : ['No filters: every student is included'],
+    figures,
+    chartData: chartDataTable(chart.type, data),
+    students: { title: partLabel ? `Students · ${partLabel}` : 'Students', ...tableRows(students, CHART_EXPORT_LIMITS.maxStudents) },
+    detail: detail ? { title: detail.title, ...tableRows(detail, CHART_EXPORT_LIMITS.maxDetailRows) } : null,
+  };
+}
+
+function addTableSheet(workbook, name, table, note) {
+  const sheet = workbook.addWorksheet(name.replace(/[*?:\\/[\]]/g, ' ').slice(0, 31), { properties: { defaultRowHeight: 18 } });
+  const width = Math.max(1, table.columns.length);
+  sheet.columns = table.columns.map((column) => ({ width: Math.max(column.width || 12, Math.min(40, column.label.length + 2)) }));
+  if (note) sheet.addRow([note]).getCell(1).font = { italic: true, color: { argb: MUTED } };
+  const header = sheet.addRow(table.columns.map((column) => column.label));
+  header.height = 22;
+  header.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INDIGO } };
+    cell.alignment = { vertical: 'middle', wrapText: true };
+  });
+  for (const values of table.rows) sheet.addRow(values);
+  table.columns.forEach((column, index) => {
+    const format = column.kind === 'percent' ? '0.0"%"' : column.kind === 'decimal' ? '0.0#' : column.kind === 'number' ? '0' : null;
+    if (format) sheet.getColumn(index + 1).numFmt = format;
+  });
+  sheet.views = [{ state: 'frozen', ySplit: header.number, xSplit: Math.min(1, width) }];
+  if (table.rows.length) sheet.autoFilter = { from: { row: header.number, column: 1 }, to: { row: header.number + table.rows.length, column: width } };
+  return sheet;
+}
+
+export async function renderChartXlsx(book) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'PeerPrep Prep Analysis';
+  workbook.created = book.generatedAt;
+  const summary = workbook.addWorksheet('Summary');
+  summary.columns = [{ width: 30 }, { width: 80 }];
+  summary.addRow([book.title]).getCell(1).font = { bold: true, size: 15, color: { argb: SLATE } };
+  summary.addRow([]);
+  const block = (label, lines, tone) => {
+    lines.forEach(([key, value], index) => {
+      // A labelled block puts the label on its first line only; otherwise each line is [name, value].
+      const row = summary.addRow(label ? [index === 0 ? label : '', key] : [key, value]);
+      row.getCell(1).font = { bold: true, color: { argb: MUTED } };
+      if (tone) row.getCell(2).font = { color: { argb: tone } };
+    });
+  };
+  block(null, book.details);
+  summary.addRow([]);
+  block('Filters', book.filters.map((line) => [line]), INDIGO);
+  summary.addRow([]);
+  block(null, book.figures);
+  summary.addRow([]);
+  summary.addRow(['Sheets', `Chart data · ${book.students.title}${book.detail ? ` · ${book.detail.title}` : ''}`]).getCell(1).font = { bold: true, color: { argb: MUTED } };
+
+  if (book.chartData.columns.length) addTableSheet(workbook, 'Chart data', book.chartData);
+  addTableSheet(workbook, 'Students', book.students, book.students.truncated ? `Only the first ${CHART_EXPORT_LIMITS.maxStudents.toLocaleString('en-IN')} students are included.` : null);
+  if (book.detail) addTableSheet(workbook, 'Detail', book.detail, book.detail.truncated ? `Only the first ${CHART_EXPORT_LIMITS.maxDetailRows.toLocaleString('en-IN')} rows are included.` : book.detail.title);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+/** CSV holds one table: the students, under the same details block. */
+export function renderChartCsv(book) {
+  const lines = [
+    [book.title],
+    ...book.details,
+    ...book.filters.map((line, index) => [index === 0 ? 'Filters' : '', line]),
+    ...book.figures,
+    ...(book.students.truncated ? [['Note', `Only the first ${CHART_EXPORT_LIMITS.maxStudents.toLocaleString('en-IN')} students are included`]] : []),
+    [],
+    book.students.columns.map((column) => column.label),
+    ...book.students.rows,
+  ];
+  return Buffer.from(`﻿${lines.map((line) => line.map(csvCell).join(',')).join('\r\n')}\r\n`, 'utf8');
+}
+
+export const CHART_EXPORT_TYPES = Object.freeze({
+  csv: { contentType: 'text/csv; charset=utf-8', extension: 'csv', render: async (book) => renderChartCsv(book) },
+  xlsx: { contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', extension: 'xlsx', render: renderChartXlsx },
+});
 
 export const EXPORT_TYPES = Object.freeze({
   csv: { contentType: 'text/csv; charset=utf-8', extension: 'csv', render: async (report) => renderCsv(report) },

@@ -1,19 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock3, Loader2, RefreshCw, Radio, Timer } from "lucide-react";
 import { api } from "../../../../utils/api";
-import { Toggle } from "../../ui";
 import { Alert, Card, SelectField, buttonGhost, buttonSecondary } from "../controls";
-import { isSimple } from "../structure";
-import {
-  DURATIONS,
-  audioReadiness,
-  durationGuidance,
-  readDuration,
-  readHybrid,
-  toggleConversational,
-  writeDuration,
-  writeHybrid,
-} from "./hybrid";
+import { DURATIONS, audioReadiness, durationGuidance, readDuration, writeDuration } from "./hybrid";
 
 const DURATION_OPTIONS = [
   { value: "", label: "Not set (no fixed length)" },
@@ -27,7 +16,7 @@ export function DurationCard({ data, onChange, summary }) {
   // The server's own range wins when the last check returned one for this duration.
   const range = summary?.durationMinutes === minutes && summary?.durationQuestionRange ? summary.durationQuestionRange : guidance;
   return (
-    <Card data-field="duration" icon={Timer} title="Interview length" description="Sets how many questions a cost-saving interview plans and when it wraps up.">
+    <Card data-field="duration" icon={Timer} title="Interview length" description="Sets how many questions each student is asked, when the interview wraps up and the AI budget per student.">
       <div className="space-y-4">
         <div className="max-w-xs">
           <SelectField
@@ -51,63 +40,6 @@ export function DurationCard({ data, onChange, summary }) {
             {guidance.warning}
           </p>
         )}
-      </div>
-    </Card>
-  );
-}
-
-/** anvi.hybrid: the parts of a cost-saving interview that may use Live minutes. */
-export function LiveMinutesCard({ data, onChange, readOnly }) {
-  const hybrid = readHybrid(data);
-  const set = (patch) => onChange(writeHybrid(data, patch));
-  const sections = data.sections || [];
-  const simple = isSimple(data);
-  return (
-    <Card data-field="hybrid" icon={Radio} title="Live conversation" description="Cost-saving interviews play recorded questions. These options switch parts of an interview to a live conversation.">
-      <div className="space-y-6">
-        <Toggle
-          label="Live warm-up"
-          description="The warm-up chat runs live. It uses the interview's limited Live minutes."
-          checked={hybrid.allowLiveWarmup}
-          onChange={(allowLiveWarmup) => set({ allowLiveWarmup })}
-          disabled={readOnly}
-        />
-        {sections.length > 0 && (
-          <div className="space-y-4" role="group" aria-label="Conversational sections">
-            {simple ? (
-              <Toggle
-                label="Conversational questions"
-                description="All questions run as a live conversation. Uses limited Live minutes; when they run out, ANVI continues with recorded questions."
-                checked={hybrid.conversationalSectionIds.includes(sections[0].id)}
-                onChange={() => onChange(toggleConversational(data, sections[0].id))}
-                disabled={readOnly}
-              />
-            ) : (
-              <>
-                <p className="text-sm font-medium text-slate-800 dark:text-gray-100">Conversational sections</p>
-                <p className="-mt-3 text-xs text-slate-500 dark:text-gray-400">
-                  These sections run as a live conversation. They use limited Live minutes; when they run out, ANVI continues with recorded questions.
-                </p>
-                {sections.map((section) => (
-                  <Toggle
-                    key={section.id}
-                    label={section.name || "Untitled section"}
-                    checked={hybrid.conversationalSectionIds.includes(section.id)}
-                    onChange={() => onChange(toggleConversational(data, section.id))}
-                    disabled={readOnly}
-                  />
-                ))}
-              </>
-            )}
-          </div>
-        )}
-        <Toggle
-          label="Let students talk freely"
-          description="Students may switch to a live conversation for an answer. It uses limited Live minutes."
-          checked={hybrid.allowStudentLiveMode}
-          onChange={(allowStudentLiveMode) => set({ allowStudentLiveMode })}
-          disabled={readOnly}
-        />
       </div>
     </Card>
   );
@@ -176,8 +108,8 @@ export function AudioCard({ interviewId, published, readOnly, audioApi = default
     <Card
       data-field="audio"
       icon={RefreshCw}
-      title="Cost-saving mode and question audio"
-      description="With cost-saving mode on, ANVI plays recorded questions instead of a full live call. English only."
+      title="Question audio"
+      description="ANVI's voice for every question and prepared follow-up is made once, after you publish, and played to every student."
     >
       <div className="space-y-4" aria-live="polite">
         {!active ? (
@@ -193,9 +125,9 @@ export function AudioCard({ interviewId, published, readOnly, audioApi = default
           status && (
             <dl className="grid gap-3 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400">Cost-saving mode</dt>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400">ANVI audio</dt>
                 <dd data-hybrid-status className="mt-0.5 font-medium text-slate-900 dark:text-white">
-                  {status.enabled ? "On for this server" : "Off: interviews run in Live mode"}
+                  {status.enabled ? "On for this server" : "Off on this server"}
                 </dd>
               </div>
               {status.enabled && (

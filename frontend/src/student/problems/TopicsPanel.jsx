@@ -3,10 +3,10 @@ import { Maximize2, Search, Shapes } from 'lucide-react';
 import TopicBrowser from './TopicBrowser';
 import { card, fieldBase, focusRing } from './problemsUi';
 
-const INITIAL = 10;
+const INITIAL = 20;
 const SEARCH_LIMIT = 30;
 
-/** The most common topics at a glance; the full catalogue opens in the topic browser. */
+/** The most common topics in a scrolling list that fills its column; the full catalogue opens in the topic browser. */
 export default function TopicsPanel({ topics, selected, onSelect, totalProblems }) {
   const [query, setQuery] = useState('');
   const [browsing, setBrowsing] = useState(false);
@@ -33,7 +33,7 @@ export default function TopicsPanel({ topics, selected, onSelect, totalProblems 
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search topics" className={`w-full pl-9 pr-3 ${fieldBase}`} />
     </label>
-    <ul className="mt-2 max-h-[360px] space-y-0.5 overflow-y-auto">
+    <ul className="mt-2 max-h-[360px] space-y-0.5 overflow-y-auto [scrollbar-width:thin] xl:max-h-[calc(100vh-14rem)]">
       {!deferred && <li><button type="button" aria-pressed={!selected} onClick={() => onSelect('')} className={`${row(!selected)} !flex-row !items-center !gap-3`}>
         <span className={`min-w-0 flex-1 truncate text-[13.5px] font-medium ${!selected ? 'text-sky-700 dark:text-sky-300' : 'text-slate-700 dark:text-zinc-200'}`}>All topics</span>
         <span className="text-[12px] tabular-nums text-slate-400 dark:text-zinc-500">{Number(totalProblems || 0).toLocaleString()}</span>
@@ -53,9 +53,9 @@ export default function TopicsPanel({ topics, selected, onSelect, totalProblems 
       {deferred && !matches.length && <li className="px-2.5 py-4 text-[12.5px] text-slate-500 dark:text-zinc-400">No topic matches “{query}”.</li>}
       {deferred && matches.length > SEARCH_LIMIT && <li className="px-2.5 py-2 text-[12px] text-slate-400 dark:text-zinc-500">{matches.length - SEARCH_LIMIT} more in the topic browser</li>}
     </ul>
-    {topics.length > INITIAL && <button type="button" onClick={() => setBrowsing(true)} aria-haspopup="dialog"
+    {topics.length > 0 && <button type="button" onClick={() => setBrowsing(true)} aria-haspopup="dialog"
       className={`mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-[#e4e7ec] py-2 text-[12.5px] font-medium text-slate-700 transition-colors hover:border-violet-200 hover:bg-violet-50/50 hover:text-violet-700 dark:border-white/10 dark:text-zinc-200 dark:hover:bg-white/[0.04] ${focusRing}`}>
-      <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />Browse all {topics.length.toLocaleString()} topics
+      <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />View all {topics.length.toLocaleString()} topics
     </button>}
     {browsing && <TopicBrowser topics={topics} selected={selected} totalProblems={totalProblems} onSelect={onSelect} onClose={closeBrowser} />}
   </section>;

@@ -7,7 +7,9 @@ const schema = new Schema(
     creationKey: { type: String, required: true },
     revision: { type: Number, default: 1 },
     schemaVersion: { type: Number, default: 1 },
-    lifecycle: { type: String, enum: ["draft", "archived"], default: "draft" },
+    // completed: the admin marked it done. It keeps its published snapshot and reports, but students can no
+    // longer see or start it and it is read-only until reopened.
+    lifecycle: { type: String, enum: ["draft", "completed", "archived"], default: "draft" },
     title: { type: String, required: true },
     companyName: String,
     role: String,
@@ -22,6 +24,7 @@ const schema = new Schema(
     publishedRevision: Number,
     requiresResume: Boolean,
     archivedAt: Date,
+    completedAt: Date,
     // Publish-time question audio outbox (ANVI hybrid). Written in the publish CAS; a background pass
     // and the maintenance tick voice the revision's static lines. Holds counts only, never text.
     audioPregen: {

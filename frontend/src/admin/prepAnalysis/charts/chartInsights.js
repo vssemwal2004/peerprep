@@ -2,6 +2,7 @@
 // have to read the chart to get the point. Only counts and individual students:
 // never an average across students.
 
+import { formatScore } from "../../../student/prepScore/formatScore.js";
 import { LANGUAGE_LABELS } from "./chartOptions.js";
 
 const INACTIVE_AFTER_DAYS = 14;
@@ -69,7 +70,7 @@ const BY_ID = {
     const first = items?.[0];
     if (!first) return null;
     const hard = first.solved?.Hard || 0;
-    return `${first.name} leads with a Prep Score of ${first.score}${hard ? `, with ${plural(hard, "Hard problem")} solved` : ""}.`;
+    return `${first.name} leads with a Prep Score of ${formatScore(first.score)}${hard ? `, with ${plural(hard, "Hard problem")} solved` : ""}.`;
   },
   "difficulty-split": ({ items }) => {
     const total = (items || []).reduce((sum, item) => sum + item.value, 0);
@@ -82,13 +83,20 @@ const BY_ID = {
   "practice-funnel": ({ stages }) => biggestDrop(stages),
   "learning-funnel": ({ stages }) => biggestDrop(stages),
   "quickprep-funnel": ({ stages }) => biggestDrop(stages),
-  "topic-strength": ({ items }) => (items?.[0] ? `${items[0].name} has the most students solving problems (${number(items[0].value)}).` : null),
+  "topic-strength": ({ items, cohort }) => (items?.[0] ? `${items[0].name} has the most students solving problems: ${number(items[0].value)}${cohort ? ` of ${number(cohort)} (${items[0].pct}%)` : ""}.` : null),
   "needs-attention": ({ items }) => attentionLine(items, "practised"),
   "learning-needs-attention": ({ items }) => attentionLine(items, "studied"),
   "quickprep-needs-attention": ({ items }) => attentionLine(items, "opened a sheet"),
   "activity-calendar": (data) => calendarLine(data),
   "learning-calendar": (data) => calendarLine(data),
-  "student-profile": ({ student, indicators, values }) => {
+  "student-profile": ({ mode, student, missing, indicators, values, topics, cohort }) => {
+    if (missing) return "The chosen student is not in the current filter. Clear the student or change the filter.";
+    if (mode === "cohort") {
+      if (!topics?.length) return null;
+      const top = topics[0];
+      const low = topics.reduce((least, topic) => (topic.pct < least.pct ? topic : least), topics[0]);
+      return `${top.pct}% of these students (${number(top.students)} of ${number(cohort)}) have solved ${top.name}; ${low.name} is the least covered here (${low.pct}%).`;
+    }
     if (!student || !indicators?.length) return null;
     const pairs = indicators.map((indicator, index) => ({ name: indicator.name, value: values[index] || 0 }));
     const strongest = maxBy(pairs, (pair) => pair.value);
@@ -192,10 +200,21 @@ function calendarLine({ days, unit }) {
   return `Active on ${plural(days.length, "day")} in the last year. Busiest: ${dayText(busiest[0])} (${number(busiest[1])} ${unit || ""}).`.replace(" )", ")");
 }
 
+/** "Needs attention" lists: how many are listed and how many never started, in the chips' words. */
+function attentionChips({ chips, items, valueLabel }) {
+  if (!chips?.length) return null;
+  const [listed, never] = chips;
+  const lead = `${number(listed.value)} ${listed.label.toLowerCase()}; ${number(never.value)} ${never.label.toLowerCase()}.`;
+  // Only the practice list is ordered by time away.
+  const longest = valueLabel?.startsWith("days") ? items?.[0] : null;
+  return longest ? `${lead} Longest away: ${longest.name} (${number(longest.value)} days).` : lead;
+}
+
 /** What stands out in a chart, in one sentence, or null when nothing does. */
 export function chartInsight(chart) {
   if (!chart?.data) return null;
   try {
+    if (chart.data.chips?.length) return attentionChips(chart.data);
     return BY_ID[chart.id]?.(chart.data) || null;
   } catch {
     return null;

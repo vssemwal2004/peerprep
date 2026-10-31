@@ -22,18 +22,6 @@ export const LANGUAGES = [
   { value: "Hindi", label: "Hindi" },
   { value: "Hinglish", label: "Hinglish" },
 ];
-export const MODES = [
-  {
-    value: "guided",
-    label: "Practice",
-    detail: "Feedback and a report right after the interview.",
-  },
-  {
-    value: "mock",
-    label: "Mock interview",
-    detail: "Realistic, with no hints during the interview.",
-  },
-];
 export const TONES = [
   { value: "warm", label: "Warm" },
   { value: "formal", label: "Formal" },
@@ -84,8 +72,9 @@ export const rubricTotal = (rubric = []) =>
 export function stepErrors(step, data) {
   const errors = {};
   if (step === "basics") {
-    if (!filled(data.title)) errors.title = "Give this interview a name.";
-    if (!filled(data.role)) errors.role = "Enter the job role this interview is for.";
+    if (!filled(data.title)) errors.title = "Choose or add the interview name.";
+    if (!filled(data.role)) errors.role = "Choose or add the job role this interview is for.";
+    if (!filled(data.companyName)) errors.company = "Choose or add the company this interview is for.";
     if (!data.experience) errors.experience = "Choose an experience level.";
     if (!data.difficulty) errors.difficulty = "Choose a difficulty.";
   }
@@ -94,7 +83,7 @@ export function stepErrors(step, data) {
     const live = primaryLive(data);
     if (!entries.length && !live && isSimple(data))
       errors.questions =
-        "Add a topic for ANVI, or add at least one question.";
+        "Add at least one question: write it yourself or generate questions with ANVI.";
     for (const entry of entries)
       if (entry.question.kind !== "resume" && !filled(entry.question.prompt))
         errors[`question:${entry.groupId}:${entry.index}`] =
@@ -143,7 +132,7 @@ export function describeIssue(issue, data) {
     return {
       step: "anvi",
       field: "interviewer",
-      message: "Choose who conducts the interview: pick an interviewer profile.",
+      message: "ANVI isn't set up for this interview yet. Open Advanced and try again.",
     };
   if (path === "rules") {
     if (TIMING.test(message))
@@ -228,10 +217,17 @@ export function describeIssue(issue, data) {
   return advanced(message);
 }
 
-// Header/directory status: Draft, Ready to publish, Published (possibly with unpublished edits) or Archived.
+// What "Mark complete" and "Reopen" do (the wizard menu and the directory share these).
+export const COMPLETE_TEXT =
+  "Students can no longer start this interview. Interviews in progress end now and are scored from the answers given, open schedules are closed (one that has not opened yet is cancelled), and every report is kept. You can reopen it later.";
+export const REOPEN_TEXT =
+  "Students can see and start this interview again. Closed schedules stay closed; assign it again to schedule new students.";
+
+// Header/directory status: Draft, Ready to publish, Published (possibly with unpublished edits), Completed or Archived.
 export function interviewStatus(doc, dirty = false) {
   if (!doc) return { label: "New draft", tone: "slate" };
   if (doc.lifecycle === "archived") return { label: "Archived", tone: "amber" };
+  if (doc.lifecycle === "completed") return { label: "Completed", tone: "indigo" };
   if (doc.publishedAt)
     return doc.publishedRevision === doc.revision && !dirty
       ? { label: "Published", tone: "emerald" }

@@ -48,6 +48,23 @@ function submissionMatch({ studentIds, range }) {
   return match;
 }
 
+/**
+ * When one student first tried, first solved and last tried each problem in the period:
+ * Map(problemId -> { firstAt, firstAcceptedAt, lastAt }). One student's submissions only.
+ */
+export async function loadProblemTimes({ studentId, range }) {
+  const rows = await Submission.aggregate([
+    { $match: submissionMatch({ studentIds: [studentId], range }) },
+    { $group: {
+      _id: '$problem',
+      firstAt: { $min: '$createdAt' },
+      lastAt: { $max: '$createdAt' },
+      firstAcceptedAt: { $min: { $cond: [{ $eq: ['$status', 'AC'] }, '$createdAt', null] } },
+    } },
+  ]).option({ maxTimeMS: FACT_LIMITS.maxQueryMs });
+  return new Map(rows.map((row) => [String(row._id), { firstAt: row.firstAt, firstAcceptedAt: row.firstAcceptedAt, lastAt: row.lastAt }]));
+}
+
 const countStatus = (status) => ({ $sum: { $cond: [{ $eq: ['$status', status] }, 1, 0] } });
 
 export async function loadCodingFacts({ studentIds, range }) {

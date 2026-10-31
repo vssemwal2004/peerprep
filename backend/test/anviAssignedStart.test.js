@@ -152,7 +152,9 @@ test("the assigned start route lives in the ANVI student router and nothing moun
   assert.match(read("../src/modules/anviInterview/anviInterview.routes.js"), /router\.post\("\/assignments\/:aid\/start"/);
   assert.doesNotMatch(read("../src/modules/anviInterview/anviInterview.scheduling.routes.js"), /\/start"/, "the scheduling router defines no start route");
   const index = read("../src/routes/index.js");
-  assert.ok(index.indexOf("createAnviSchedulingStudentRouter()") < index.indexOf("router.use('/student/ai-interviews', aiInterviewStudentRoutes)"));
+  const mount = (router) => index.search(new RegExp(`router\\.use\\('/student/ai-interviews',[^\\n]*\\b${router}\\b`));
+  assert.ok(mount("createAnviSchedulingStudentRouter") > 0);
+  assert.ok(mount("createAnviSchedulingStudentRouter") < mount("aiInterviewStudentRoutes"));
 });
 
 test("an allowed assigned start is free, uses the pinned snapshot, the mode and the capped deadline", async (t) => {
@@ -566,6 +568,47 @@ test("unpublish and archive are refused while a schedule is active", async (t) =
     assert.ok(guard.mock.calls.length >= 3);
   } finally {
     guard.mock.restore();
+  }
+});
+
+test("mark complete hides the interview from students, closes its schedules, and reopen brings it back", async (t) => {
+  if (skip(t)) return;
+  const interview = await publish("Finished drive", { revision: 4 });
+  const closing = mock.method(assignmentGuard, "completeInterview", async () => ({ ended: 1, closed: 2, cancelled: 0 }));
+  try {
+    const completed = await call(`/ai-interviews/${interview._id}/complete`, "POST", { revision: 4 });
+    assert.equal(completed.status, 200, JSON.stringify(completed.body));
+    assert.equal(completed.body.lifecycle, "completed");
+    assert.deepEqual(completed.body.closing, { ended: 1, closed: 2, cancelled: 0 });
+    assert.deepEqual(closing.mock.calls.map((row) => String(row.arguments[1])), [String(interview._id)]);
+    const stored = await AIInterview.findById(interview._id).lean();
+    assert.ok(stored.completedAt && stored.publishedSnapshot, "the published snapshot and its reports are kept");
+
+    // Students no longer see or start it; the admin still lists it under All and Completed.
+    assert.deepEqual((await call("/student/ai-interviews")).body.map((row) => row.title), []);
+    assert.equal((await call(`/student/ai-interviews/${interview._id}/start`, "POST", {})).status, 404);
+    assert.deepEqual((await call("/ai-interviews")).body.items.map((row) => row.lifecycle), ["completed"]);
+    assert.equal((await call("/ai-interviews?status=completed")).body.items.length, 1);
+    assert.equal((await call("/ai-interviews?status=complete")).body.items.length, 0, "the draft filters list drafts only");
+    assert.equal((await call("/ai-interviews?published=true")).body.items.length, 0, "it cannot be scheduled again");
+    // Read-only until reopened; repeating complete only retries the closing.
+    const edit = await call(`/ai-interviews/${interview._id}/validate`, "POST", { revision: 5 });
+    assert.equal(edit.status, 409);
+    assert.match(edit.body.error, /Reopen/);
+    assert.equal((await call(`/ai-interviews/${interview._id}/complete`, "POST", { revision: 5 })).status, 200);
+    assert.equal(closing.mock.calls.length, 2);
+    assert.equal((await call(`/ai-interviews/${interview._id}/restore`, "POST", { revision: 5 })).status, 409);
+
+    const reopened = await call(`/ai-interviews/${interview._id}/reopen`, "POST", { revision: 5 });
+    assert.equal(reopened.status, 200, JSON.stringify(reopened.body));
+    assert.equal(reopened.body.lifecycle, "draft");
+    assert.deepEqual((await call("/student/ai-interviews")).body.map((row) => row.title), ["Finished drive"]);
+    assert.equal(closing.mock.calls.length, 2, "reopening closes nothing");
+    // A draft that was never published cannot be marked complete.
+    const unpublished = await AIInterview.create({ ownerId: admin, creationKey: crypto.randomUUID(), title: "Unpublished", data: definition("Unpublished") });
+    assert.equal((await call(`/ai-interviews/${unpublished._id}/complete`, "POST", { revision: 1 })).body.code, "INTERVIEW_NOT_PUBLISHED");
+  } finally {
+    closing.mock.restore();
   }
 });
 

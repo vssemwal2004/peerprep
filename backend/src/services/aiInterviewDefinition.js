@@ -7,9 +7,11 @@ export const LIMITS = Object.freeze({
   subquestions: 10,
   plannedQuestionsPerGroup: 50,
   followUps: 5,
+  // Follow-ups ANVI may ask on one question (question.followUpLimit); prepared ones are used first.
+  followUpLimit: 3,
   marks: 100,
   competency: 60,
-  generateQuestions: 20,
+  generateQuestions: 50,
   text: 12000,
   payload: 750000,
 });
@@ -20,6 +22,9 @@ export const ANVI_DEFAULTS = Object.freeze({
     acknowledgements: true,
     introduction: "",
     closing: "",
+    // ANVI's speaking speed: the student's browser time-stretches the cached audio (pitch kept), so no
+    // audio is generated again for a different speed.
+    speechRate: 1,
   }),
   turns: Object.freeze({
     silenceSeconds: 2,
@@ -47,6 +52,8 @@ export const ANVI_DEFAULTS = Object.freeze({
     mode: "none",
     sources: Object.freeze(["builder", "upload"]),
     questionCount: 2,
+    // Follow-ups ANVI may ask on each resume question (written from the answer: these cost per student).
+    followUps: 1,
   }),
   // primary defaults to rules.language (older definitions). studentChoice: other languages a student may pick
   // in the lobby (empty: fixed). strict: ANVI never changes language. onOtherLanguage: what ANVI does when the
@@ -106,6 +113,8 @@ export const INTERVIEW_LANGUAGES = Object.freeze(["English", "Hindi", "Hinglish"
 export const ANVI_LANGUAGE = "English";
 // Optional interview length (anvi.durationMinutes) and the questions a hybrid attempt of that length plans.
 export const ANVI_DURATIONS = Object.freeze([10, 15, 30, 45, 60]);
+// ANVI's speaking speed (persona.speechRate), as a playback rate of the cached audio.
+export const SPEECH_RATE = Object.freeze({ min: 0.85, max: 1.2, step: 0.05 });
 export const DURATION_MAX_QUESTIONS = Object.freeze({ 10: 4, 15: 5, 30: 8, 45: 12, 60: 15 });
 export const OTHER_LANGUAGE_ACTIONS = Object.freeze(["remind", "remind_and_flag", "ignore"]);
 // Live (ANVI-generated) topics share an interview's live question pool by priority: High 3 : Medium 2 : Low 1.
@@ -275,6 +284,9 @@ const clamped = (value, min, max, fallback, step = 1) => {
   return Math.min(max, Math.max(min, Math.round(value / step) * step));
 };
 const difficulty = (v) => choice(v, ["", "easy", "medium", "hard"], "");
+export const QUESTION_CATEGORIES = Object.freeze(["Technical", "Behavioral", "Communication"]);
+// null (the default) keeps an older question's budget: its cross-questions plus maxFollowUps.
+const optionalInteger = (value, min, max) => (value === undefined || value === null ? null : integer(value, min, max, min));
 const weight = (v) => {
   if (!Number.isFinite(v) || v < 0 || v > 100)
     fail("Weights must be between 0 and 100.");
@@ -413,6 +425,7 @@ export function normalizeAnvi(input = {}, { resumeMode = ANVI_DEFAULTS.resume.mo
       acknowledgements: bool(persona.acknowledgements, p.acknowledgements),
       introduction: text(persona.introduction, 2000),
       closing: text(persona.closing, 2000),
+      speechRate: Math.round(clamped(persona.speechRate, SPEECH_RATE.min, SPEECH_RATE.max, p.speechRate, SPEECH_RATE.step) * 100) / 100,
     },
     turns: {
       silenceSeconds: clamped(turns.silenceSeconds, 1.5, 4, t.silenceSeconds, 0.5),
@@ -437,6 +450,7 @@ export function normalizeAnvi(input = {}, { resumeMode = ANVI_DEFAULTS.resume.mo
       mode: choice(resume.mode, RESUME_MODES, RESUME_MODES.includes(resumeMode) ? resumeMode : r.mode),
       sources,
       questionCount: clamped(resume.questionCount, 0, 5, r.questionCount),
+      followUps: clamped(resume.followUps, 0, LIMITS.followUpLimit, r.followUps),
     },
     language: englishOnlyLanguage(),
     voice: {
@@ -521,6 +535,8 @@ export function normalizeDefinition(input) {
         prompt: text(q.prompt),
         resumeCount: integer(q.resumeCount, 1, LIMITS.plannedQuestionsPerGroup, 1),
         maxFollowUps: integer(q.maxFollowUps, 0, LIMITS.followUps, 0),
+        followUpLimit: optionalInteger(q.followUpLimit, 0, LIMITS.followUpLimit),
+        category: choice(q.category, ["", ...QUESTION_CATEGORIES], ""),
         context: text(q.context),
         difficulty: difficulty(q.difficulty),
         expectedAnswer: text(q.expectedAnswer),
@@ -589,8 +605,15 @@ export function normalizeDefinition(input) {
           shuffle: Boolean(g.shuffle),
           ruleOverrides: normalizeRules(g.ruleOverrides, true),
         };
+        // pick: questions each student gets from this group's pool (null = all of them); byTopic: with
+        // shuffle, ask topic by topic in a per-student topic order.
         if (source === "manual")
-          return { ...base, questions: questions(g.questions) };
+          return {
+            ...base,
+            pick: optionalInteger(g.pick, 1, LIMITS.questions),
+            byTopic: bool(g.byTopic, false),
+            questions: questions(g.questions),
+          };
         const a = object(g.annu ?? {});
         // Without its own count, a topic shares the interview's live pool by priority (when there is one).
         const pooled = livePool !== null && (a.targetCount === undefined || a.targetCount === null);
@@ -720,7 +743,11 @@ export function inspectDefinition(d) {
         budget(rules, planned + followups);
       } else {
         if (!g.questions.length) add(gp, "Add at least one question.");
-        summary.manualCount += g.questions.reduce((n, q) => n + (q.kind === "resume" ? q.resumeCount : 1), 0);
+        // A pool (g.pick) asks each student `pick` of its non-resume questions, so their totals are scaled
+        // by pick / pool size: the counts, marks and time one student gets on average.
+        const poolSize = g.questions.filter((q) => q.kind !== "resume").length;
+        const share = g.pick !== null && g.pick !== undefined && poolSize > g.pick ? g.pick / poolSize : 1;
+        summary.manualCount += g.questions.reduce((n, q) => n + (q.kind === "resume" ? q.resumeCount : share), 0);
         for (const [questionIndex, q] of g.questions.entries()) {
           const label = `Question ${questionIndex + 1}`;
           if (!q.prompt && q.kind !== "resume") add(gp, `${label}: Add the main question.`);
@@ -740,20 +767,29 @@ export function inspectDefinition(d) {
             );
           const qr = { ...rules, ...q.ruleOverrides };
           timing(qr, gp, label);
-          const mainCount = q.kind === "resume" ? q.resumeCount : 1;
+          const mainCount = q.kind === "resume" ? q.resumeCount : share;
           summary.totalMarks += (q.marks ?? 10) * mainCount;
           budget(qr, mainCount);
-          summary.followUpCount += (q.followUps.length + q.maxFollowUps) * mainCount;
-          budget(qr, q.maxFollowUps * mainCount);
-          for (const [followUpIndex, f] of q.followUps.entries()) {
-            const fr = { ...qr, ...f.ruleOverrides };
-            timing(fr, gp, `${label}, cross-question ${followUpIndex + 1}`);
-            budget(fr, mainCount);
+          if (q.followUpLimit !== null && q.followUpLimit !== undefined) {
+            // At most followUpLimit follow-ups, prepared ones first.
+            summary.followUpCount += q.followUpLimit * mainCount;
+            budget(qr, q.followUpLimit * mainCount);
+            q.followUps.forEach((f, followUpIndex) => timing({ ...qr, ...f.ruleOverrides }, gp, `${label}, cross-question ${followUpIndex + 1}`));
+          } else {
+            summary.followUpCount += (q.followUps.length + q.maxFollowUps) * mainCount;
+            budget(qr, q.maxFollowUps * mainCount);
+            for (const [followUpIndex, f] of q.followUps.entries()) {
+              const fr = { ...qr, ...f.ruleOverrides };
+              timing(fr, gp, `${label}, cross-question ${followUpIndex + 1}`);
+              budget(fr, mainCount);
+            }
           }
         }
       }
     }
   }
+  // Pools give fractional per-student averages; the summary shows whole numbers.
+  for (const key of ["manualCount", "totalMarks", "followUpCount", "budgetSeconds"]) summary[key] = Math.round(summary[key]);
   const anvi = d.anvi || {};
   if (anvi.resume?.mode === "none" && hasResumeKind(d.sections))
     add(

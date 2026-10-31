@@ -207,12 +207,14 @@ test("join → prompt → play → ack → segment → commit → next question"
   assert.equal(emittedOf(socket, "anvi:prompt-played").length, 0, "not acknowledged while it plays");
   await endClips(from);
   assert.deepEqual(emittedOf(socket, "anvi:prompt-played"), [{ turnId: TURN1, ok: true }]);
-  assert.match(document.body.textContent, /Listening — pause 0\.8 s when you finish/, "the listening hint follows the server's hangover");
+  assert.match(document.body.textContent, /Your turn — just speak, then pause 0\.8 s/, "the listening hint follows the server's hangover");
   await tick(300);
 
   // 3 s of speech, then the hangover: one final segment.
   await act(async () => { for (let i = 0; i < 3; i += 1) frame(0.002); for (let i = 0; i < 4; i += 1) frame(0.08); });
   assert.ok(document.querySelector('[data-testid="anvi-recording"]'), "the recording dot shows after onset");
+  assert.ok(document.querySelector('[data-testid="anvi-pause-meter"]'), "the pause meter shows how close the answer is to being sent");
+  assert.match(document.body.textContent, /Listening… ANVI replies after you pause/);
   await act(async () => { for (let i = 0; i < 28; i += 1) frame(0.08); for (let i = 0; i < 9; i += 1) frame(0.002); });
   const chunks = acksOf(socket, "anvi:seg-chunk");
   const [commit] = acksOf(socket, "anvi:seg-commit");
@@ -224,7 +226,7 @@ test("join → prompt → play → ack → segment → commit → next question"
   assert.ok(commit.payload.durationMs >= 3000);
   assert.ok(chunks.length >= 2 && chunks.every((chunk) => chunk.payload.segmentId === commit.payload.segmentId && chunk.payload.pcm.byteLength <= 32 * 1024));
   assert.equal(chunks.reduce((sum, chunk) => sum + chunk.payload.pcm.byteLength, 0), commit.payload.totalBytes);
-  assert.match(document.body.textContent, /Processing your answer…/);
+  assert.match(document.body.textContent, /Got it\. ANVI is thinking…/);
 
   // The commit ack plays a cached acknowledgement clip, without any fetch.
   const beforeAck = playback().sources.length;
@@ -318,7 +320,7 @@ test("without audio the question is shown as text and listening starts at once (
   await tick();
   assert.deepEqual(emittedOf(socket, "anvi:prompt-played"), [{ turnId: TURN1, ok: false }]);
   assert.match(document.body.textContent, /Tell me about a bug you fixed\./);
-  assert.match(document.body.textContent, /Listening — pause 0\.8 s/);
+  assert.match(document.body.textContent, /Your turn — just speak, then pause 0\.8 s/);
 
   // A clip that never arrived and cannot be fetched: the proxy is tried once, then the text.
   await act(async () => socket.fire("anvi:prompt", prompt(TURN2, "What would you change?", ["gone"])));
@@ -418,33 +420,68 @@ test("the room's own fullscreen pause stops capture and the turn loop, and repla
   assert.equal(fetches, 0);
 });
 
-test("push-to-talk: one tap from the noise suggestion, Space holds a segment, and the server hears the mode", async () => {
+test("missing audio: the browser voice says the line (never silence), then ANVI listens; acks too", async () => {
+  const spoken = [];
+  window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+  window.speechSynthesis = {
+    getVoices: () => [{ name: "Microsoft Ravi - English (India)", lang: "en-IN" }, { name: "Microsoft Heera - English (India)", lang: "en-IN" }],
+    addEventListener() {}, cancel() {}, speak(utterance) { spoken.push(utterance); },
+  };
+  try {
+    const socket = await openHybrid({ ack: joinAck({ hybrid: { vad: VAD, inputMode: "vad", ackAssetIds: [], acknowledgements: true } }) });
+    await act(async () => socket.fire("anvi:prompt", prompt(TURN1, "Tell me about a bug you fixed.", [])));
+    await tick();
+    assert.equal(spoken.at(-1)?.text, "Tell me about a bug you fixed.");
+    assert.equal(spoken.at(-1).voice?.name, "Microsoft Heera - English (India)", "an Indian English female voice");
+    assert.equal(emittedOf(socket, "anvi:prompt-played").length, 0, "not played until the voice finishes");
+    await act(async () => spoken.at(-1).onend());
+    assert.deepEqual(emittedOf(socket, "anvi:prompt-played"), [{ turnId: TURN1, ok: false }]);
+    await tick(300);
+    // A 3 s answer with no ack clip: the browser voice says a short acknowledgement.
+    await act(async () => { for (let i = 0; i < 3; i += 1) frame(0.002); for (let i = 0; i < 32; i += 1) frame(0.08); for (let i = 0; i < 9; i += 1) frame(0.002); });
+    const chunks = acksOf(socket, "anvi:seg-chunk");
+    const [commit] = acksOf(socket, "anvi:seg-commit");
+    await act(async () => { chunks.forEach((chunk) => chunk.ack(null, { ok: true })); commit.ack(null, { ok: true }); });
+    assert.ok(["Okay.", "Right.", "Thank you.", "Got it.", "Alright."].includes(spoken.at(-1)?.text), "an acknowledgement after the answer");
+  } finally {
+    delete window.speechSynthesis;
+    delete window.SpeechSynthesisUtterance;
+  }
+});
+
+test("a noisy room gets a hint, never a talk button; Space does nothing", async () => {
   const socket = await openHybrid();
   await askQuestion(socket, TURN1, "Why this role?", "q1");
   await act(async () => socket.fire("anvi:turn", { turnId: TURN1, state: "listening", suggestPtt: true }));
-  assert.ok(document.querySelector('[data-testid="anvi-ptt-suggestion"]'));
-  await click(buttonNamed(/Use push-to-talk/));
-  assert.deepEqual(emittedOf(socket, "anvi:input-mode"), [{ mode: "ptt" }]);
-  assert.equal(document.querySelector('[data-testid="anvi-ptt-suggestion"]'), null);
-  assert.ok(buttonNamed(/Hold to talk/));
-  assert.match(document.body.textContent, /Hold Space or the talk button/);
-
+  assert.ok(document.querySelector('[data-testid="anvi-noisy-room"]'));
+  assert.equal(buttonNamed(/push-to-talk|Hold to talk|Done answering/), undefined);
+  await click(document.querySelector('[data-testid="anvi-noisy-room"] button[aria-label="Dismiss"]'));
+  assert.equal(document.querySelector('[data-testid="anvi-noisy-room"]'), null);
   const key = (type) => act(async () => { window.dispatchEvent(new dom.window.KeyboardEvent(type, { key: " ", code: "Space", bubbles: true })); });
   await key("keydown");
   await act(async () => { for (let i = 0; i < 6; i += 1) frame(0.01); });
   await key("keyup");
-  const [commit] = acksOf(socket, "anvi:seg-commit");
-  assert.ok(commit, "the held span is one segment, quiet or not");
-  assert.equal(commit.payload.final, true);
+  assert.equal(acksOf(socket, "anvi:seg-commit").length, 0, "quiet audio is not an answer, Space or not");
+  assert.deepEqual(emittedOf(socket, "anvi:input-mode"), []);
 });
 
-test("Done answering closes the answer at once", async () => {
+test("the answer goes on its own after the pause, even when room noise rises after it", async () => {
   const socket = await openHybrid();
   await askQuestion(socket, TURN1, "Why this role?", "q1");
-  await act(async () => { for (let i = 0; i < 3; i += 1) frame(0.002); for (let i = 0; i < 8; i += 1) frame(0.08); });
-  await click(buttonNamed(/^Done answering$/));
+  // Speech, then auto gain lifts the room to 0.014 RMS (over the old 0.012 release floor) for the hangover.
+  await act(async () => { for (let i = 0; i < 3; i += 1) frame(0.002); for (let i = 0; i < 20; i += 1) frame(0.08); for (let i = 0; i < 9; i += 1) frame(0.014); });
+  const [commit] = acksOf(socket, "anvi:seg-commit");
+  assert.ok(commit, "committed without any press");
+  assert.equal(commit.payload.final, true);
+  assert.deepEqual(emittedOf(socket, "anvi:done"), []);
+});
+
+test("an attempt left in push-to-talk by an older room goes back to hands-free", async () => {
+  const socket = await openHybrid({ ack: joinAck({ hybrid: { vad: VAD, inputMode: "ptt", ackAssetIds: [] } }) });
+  assert.deepEqual(emittedOf(socket, "anvi:input-mode"), [{ mode: "vad" }]);
+  await askQuestion(socket, TURN1, "Why this role?", "q1");
+  await speak();
   assert.equal(acksOf(socket, "anvi:seg-commit").length, 1);
-  assert.deepEqual(emittedOf(socket, "anvi:done"), [{ turnId: TURN1 }]);
 });
 
 test("taken over releases the microphone; ending is sticky and falls back to REST", async () => {
@@ -503,6 +540,6 @@ test("the hybrid room shows no price, model, token or budget data", async () => 
   const text = document.body.textContent;
   assert.doesNotMatch(text, /₹|INR|USD|\$\d|tokens?\b|budget|price|cost|gemini|flash|model\b|economical/i);
   const labels = [...document.querySelectorAll('[role="toolbar"] button')].map((button) => button.getAttribute("aria-label"));
-  assert.deepEqual(labels, ["Mute microphone (M)", "Repeat question", "Done answering", "Turn off live captions (C)", "Hide question panel", "End and leave the interview"]);
+  assert.deepEqual(labels, ["Mute microphone (M)", "Repeat question", "Turn off live captions (C)", "Hide question panel", "End and leave the interview"]);
   assert.match(text, /Pause for 0\.8 seconds/, "the tips follow the server's hangover");
 });

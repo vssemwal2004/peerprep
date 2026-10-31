@@ -405,8 +405,9 @@ export function createAnviService({
     const definitionId = objectId(interviewId, "interview");
     if (await AnviAttempt.exists({ studentId: student._id, interviewId: definitionId, status: "in_progress" })) return;
     const interview = await AIInterview.findOne({ _id: definitionId, lifecycle: "draft", publishedAt: { $ne: null } }).select("publishedSnapshot.data").lean();
-    // A missing interview is left to the handler's 404.
-    if (interview?.publishedSnapshot?.data) await startRequirements(student, interview.publishedSnapshot.data, { interviewId: definitionId, termsAccepted, resumeConsent, language });
+    // Missing, unpublished, completed or archived: refused here, before any Prep Coin charge.
+    if (!interview?.publishedSnapshot?.data) fail(404, "INTERVIEW_NOT_FOUND", "This interview is not available.");
+    await startRequirements(student, interview.publishedSnapshot.data, { interviewId: definitionId, termsAccepted, resumeConsent, language });
   }
 
   /** 403 PRACTICE_BLOCKED while a scheduled or open assignment of this interview blocks practice. */

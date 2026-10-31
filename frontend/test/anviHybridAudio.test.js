@@ -168,6 +168,43 @@ test("cancel drops the open segment and the next answer starts clean", () => {
   assert.equal(segmentsOf([...feed(segmenter, SPEECH, 6), ...segmenter.end()]).length, 1);
 });
 
+test("room noise lifted by auto gain after the answer still ends it after the pause", () => {
+  // Quiet room, 3 s of speech, then the gain brings the room up to 0.015 RMS (over the 0.012 release floor).
+  const segmenter = vad();
+  const events = [...feed(segmenter, 0.08, 30), ...feed(segmenter, 0.015, 21)];
+  const segments = segmentsOf(events);
+  assert.equal(segments.length, 1, "the answer closes on its own, no Done press");
+  assert.equal(segments[0].final, true);
+  assert.equal(segments[0].speechMs, 3000);
+});
+
+test("steady noise just under a quiet speaker's level ends the answer by flatness", () => {
+  // A quiet speaker (0.04) over a hum near 0.017: louder than a fifth of the voice, but flat for 2 s.
+  const segmenter = vad();
+  const events = [...feed(segmenter, 0.04, 20), ...feed(segmenter, 0.016, 10), ...feed(segmenter, 0.019, 10)];
+  const [segment] = segmentsOf(events);
+  assert.equal(segment?.final, true);
+  // The steady stretch is trimmed off: pre-roll + 2 s of speech + one frame of tail.
+  assert.ok(segment.durationMs <= 2400, `trimmed to ${segment.durationMs} ms`);
+});
+
+test("speech that rises and falls is never taken for steady noise", () => {
+  const segmenter = vad();
+  const talk = [];
+  for (let i = 0; i < 60; i += 1) talk.push(...segmenter.push(frame(i % 3 === 0 ? 0.02 : 0.12)));
+  assert.deepEqual(segmentsOf(talk), []);
+  assert.equal(segmenter.speaking(), true);
+  assert.equal(segmenter.pauseMs(), 0);
+  feed(segmenter, QUIET, 10);
+  assert.equal(segmenter.pauseMs(), 1000, "the room can show the pause filling up");
+});
+
+test("a student who starts talking at once does not become the noise floor", () => {
+  const segmenter = segmenterModule.createAnviSegmenter({ hangoverMs: 2000 });
+  const events = [...feed(segmenter, QUIET, 1), ...feed(segmenter, SPEECH, 12), ...feed(segmenter, QUIET, 25)];
+  assert.equal(segmentsOf(events).length, 1);
+});
+
 test("repeated short noises flag the room as noisy", () => {
   const segmenter = vad();
   for (let i = 0; i < 3; i += 1) { feed(segmenter, SPEECH, 2); feed(segmenter, QUIET, 25); }

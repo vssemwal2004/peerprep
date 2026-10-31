@@ -18,7 +18,7 @@ const AREA_GROUPS = {
   all: ["Student details", "Prep Coding", "Prep Learning", "Prep Interview", "Prep Assessment"],
 };
 
-function ExportDialog({ open, initialFormat, onClose, catalog, area, areaLabel, state, fieldMap, matched, table }) {
+function ExportDialog({ open, initialFormat, onClose, catalog, area, areaLabel, state, fieldMap, matched, table, focus }) {
   const groups = AREA_GROUPS[area] || AREA_GROUPS.all;
   const columns = useMemo(() => (catalog.exportColumns || []).filter((column) => groups.includes(column.group)), [catalog, groups]);
   const recommended = useMemo(() => (catalog.exportDefaults?.[area] || []).filter((key) => columns.some((column) => column.key === key)), [area, catalog, columns]);
@@ -41,7 +41,7 @@ function ExportDialog({ open, initialFormat, onClose, catalog, area, areaLabel, 
   const download = async () => {
     setStatus({ busy: true, error: "", done: "" });
     try {
-      const body = { ...toQueryRequest({ state, layout: [], table }, fieldMap), format, columns: ordered, summary: lines };
+      const body = { ...toQueryRequest({ state, layout: [], table }, fieldMap), ...(focus ? { focus } : {}), format, columns: ordered, summary: focus ? [...lines, `Only: ${focus.label}`] : lines };
       const result = await prepAnalysisApi.download(body);
       setStatus({ busy: false, error: "", done: `${result.filename} downloaded${result.rowCount != null ? ` · ${result.rowCount.toLocaleString()} students` : ""}` });
     } catch (error) {

@@ -5,21 +5,82 @@ import {
   BookOpen,
   ChevronDown,
   Copy,
+  CornerDownRight,
   PenLine,
+  Plus,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
-import { FOLLOW_UP_LIMIT, MARKS_LIMIT } from "../definition";
+import { FOLLOW_UP_ASK_LIMIT, FOLLOW_UP_LIMIT, MARKS_LIMIT, QUESTION_CATEGORIES, uid } from "../definition";
 import { Toggle } from "../ui";
-import { ANSWER_TIMES, answerTimeLabel } from "./steps";
+import { ANSWER_TIMES, DIFFICULTY, answerTimeLabel, labelOf } from "./steps";
+import { followUpsOf } from "./structure";
 import {
   Chip,
+  FieldLabel,
   NumberField,
   SelectField,
   TextField,
+  buttonGhost,
   buttonSecondary,
   iconButton,
+  inputBase,
 } from "./controls";
+
+const DIFFICULTY_TONES = { easy: "emerald", medium: "amber", hard: "rose" };
+const DIFFICULTY_OPTIONS = [{ value: "", label: "Not set" }, ...DIFFICULTY];
+const CATEGORY_OPTIONS = [{ value: "", label: "Not set" }, ...QUESTION_CATEGORIES.map((value) => ({ value, label: value }))];
+
+// Prepared follow-ups: the same for every student, so their audio is made once. ANVI picks the one that
+// fits the answer and only writes its own when none is left.
+function PreparedFollowUps({ question, onChange }) {
+  const list = question.followUps || [];
+  const set = (followUps) => onChange({ ...question, followUps });
+  return (
+    <div data-field="followUps" className="min-w-0">
+      <FieldLabel optional>Prepared follow-ups</FieldLabel>
+      {list.length > 0 && (
+        <ol className="space-y-2">
+          {list.map((followUp, index) => (
+            <li key={followUp.id} className="flex items-start gap-2">
+              <CornerDownRight size={15} aria-hidden="true" className="mt-3 shrink-0 text-slate-400" />
+              <input
+                aria-label={`Prepared follow-up ${index + 1}`}
+                maxLength={600}
+                value={followUp.prompt}
+                placeholder="e.g. Why did you choose that approach?"
+                onChange={(event) => set(list.map((f) => (f.id === followUp.id ? { ...f, prompt: event.target.value } : f)))}
+                className={`${inputBase} h-10 border-slate-300 dark:border-gray-700`}
+              />
+              <button
+                type="button"
+                className={`${iconButton} mt-1`}
+                aria-label={`Remove prepared follow-up ${index + 1}`}
+                onClick={() => set(list.filter((f) => f.id !== followUp.id))}
+              >
+                <X size={15} aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+      <button
+        type="button"
+        className={`${buttonGhost} ${list.length ? "mt-2" : ""} -ml-2.5`}
+        disabled={list.length >= FOLLOW_UP_LIMIT}
+        onClick={() => set([...list, { id: uid(), prompt: "", expectedAnswer: "", ruleOverrides: {} }])}
+      >
+        <Plus size={15} aria-hidden="true" />
+        Add follow-up
+      </button>
+      <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-gray-400">
+        ANVI picks the one that fits the answer. These cost nothing per student; when none is left, ANVI writes
+        its own from the answer.
+      </p>
+    </div>
+  );
+}
 
 const sourceOf = (question) =>
   question.provenance?.generated
@@ -65,9 +126,7 @@ export default function QuestionCard({
   const set = (patch) => onChange({ ...question, ...patch });
   const overrides = question.ruleOverrides || {};
   const override = overrides.responseSeconds;
-  const authored = (question.followUps || []).length;
-  const followUpMax = Math.max(0, FOLLOW_UP_LIMIT - authored);
-  const followUps = authored + (question.maxFollowUps || 0);
+  const followUps = followUpsOf(question);
   const resume = question.kind === "resume";
   const setAnswerTime = (value) => {
     const next = { ...overrides };
@@ -78,7 +137,6 @@ export default function QuestionCard({
   const extras = [
     question.subquestions?.length &&
       `${question.subquestions.length} sub-question${question.subquestions.length === 1 ? "" : "s"}`,
-    authored && `${authored} written cross-question${authored === 1 ? "" : "s"}`,
     question.context && "background context",
   ].filter(Boolean);
   return (
@@ -119,6 +177,10 @@ export default function QuestionCard({
               <source.Icon size={11} aria-hidden="true" />
               {source.label}
             </Chip>
+            {question.difficulty && (
+              <Chip tone={DIFFICULTY_TONES[question.difficulty]}>{labelOf(DIFFICULTY, question.difficulty)}</Chip>
+            )}
+            {question.category && <Chip>{question.category}</Chip>}
             <Chip>{question.marks ?? 10} marks</Chip>
             {followUps > 0 && (
               <Chip>
@@ -222,6 +284,44 @@ export default function QuestionCard({
               hint="ANVI uses this to score answers; one point per line. Students never see it."
               onChange={(expectedAnswer) => set({ expectedAnswer })}
             />
+            <div className="grid gap-5 sm:grid-cols-3">
+              <TextField
+                label="Topic"
+                optional
+                maxLength={60}
+                value={question.competency}
+                placeholder="e.g. DBMS"
+                hint="Students get a balanced share of each topic."
+                onChange={(competency) => set({ competency })}
+              />
+              <SelectField
+                label="Difficulty"
+                value={question.difficulty || ""}
+                options={DIFFICULTY_OPTIONS}
+                onChange={(difficulty) => set({ difficulty })}
+              />
+              <SelectField
+                label="Type"
+                value={question.category || ""}
+                options={CATEGORY_OPTIONS}
+                onChange={(category) => set({ category })}
+              />
+            </div>
+            {!resume && (
+              <div className="grid gap-5 rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-gray-800 dark:bg-gray-950/40 sm:grid-cols-[180px_minmax(0,1fr)]">
+                <NumberField
+                  label="Follow-ups"
+                  stepper
+                  min={0}
+                  max={FOLLOW_UP_ASK_LIMIT}
+                  value={Math.min(followUps, FOLLOW_UP_ASK_LIMIT)}
+                  // A limit replaces an older question's separate AI follow-up count.
+                  onChange={(followUpLimit) => set({ followUpLimit, maxFollowUps: 0 })}
+                  hint="At most, and only when the answer needs one."
+                />
+                <PreparedFollowUps question={question} onChange={onChange} />
+              </div>
+            )}
             <div className="grid gap-5 sm:grid-cols-2">
               <NumberField
                 label="Marks"
@@ -230,15 +330,6 @@ export default function QuestionCard({
                 value={question.marks ?? 10}
                 onChange={(marks) => set({ marks })}
                 hint={`1–${MARKS_LIMIT}. Used for the score in the report.`}
-              />
-              <NumberField
-                label="Follow-ups"
-                stepper
-                min={0}
-                max={followUpMax}
-                value={Math.min(question.maxFollowUps || 0, followUpMax)}
-                onChange={(maxFollowUps) => set({ maxFollowUps })}
-                hint="ANVI asks up to this many follow-ups based on the answer."
               />
               <SelectField
                 label="Max answer time"
@@ -252,15 +343,6 @@ export default function QuestionCard({
                 options={answerTimeOptions(override, defaultSeconds)}
                 onChange={setAnswerTime}
               />
-              <TextField
-                label="Competency"
-                optional
-                maxLength={60}
-                value={question.competency}
-                placeholder="e.g. API design"
-                hint="Groups scores in the report."
-                onChange={(competency) => set({ competency })}
-              />
             </div>
             <Toggle
               label="Students can skip this question"
@@ -271,7 +353,7 @@ export default function QuestionCard({
             />
             {extras.length > 0 && (
               <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-gray-800/60 dark:text-gray-400">
-                Also includes {extras.join(", ")}. Edit these under Advanced → Organize into sections.
+                Also includes {extras.join(" and ")} from the older section editor.
               </p>
             )}
             <div className="flex justify-end">

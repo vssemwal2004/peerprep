@@ -139,13 +139,15 @@ async function mount(initial, props = {}) {
   return state;
 }
 
-test("Advanced tab: duration, Live options and the planned-count guidance write the payload", async () => {
+test("Advanced tab: duration and the planned-count guidance write the payload; no Live options", async () => {
   const calls = [];
   const audioApi = { status: async (id) => (calls.push(id), null), regenerate: async () => null };
   const state = await mount(withQuestions(3), { audioApi });
   assert.equal(document.querySelector('[data-settings-panel="advanced"]') !== null, true);
   assert.ok(document.querySelector('[data-field="duration"]'), "Interview length card is on Advanced");
-  assert.ok(document.querySelector('[data-field="interviewer"]'), "the existing Advanced cards are kept");
+  assert.ok(document.querySelector('[data-field="answerTime"]'), "the default answer time is kept");
+  assert.equal(document.querySelector('[data-field="interviewer"]'), null, "no interviewer profile picker: ANVI is the interviewer");
+  assert.equal(document.querySelector('[data-field="hybrid"]'), null, "no Live options: interviews never open a Live call");
   assert.equal(document.querySelector('[data-field="language"]'), null, "English only: no language control");
   assert.match(document.querySelector('[data-audio-status="unpublished"]').textContent, /after you publish/);
   assert.deepEqual(calls, [], "an unpublished interview never asks for audio status");
@@ -157,17 +159,8 @@ test("Advanced tab: duration, Live options and the planned-count guidance write 
   await choose(selectFor("Duration"), "10");
   assert.equal(document.querySelector("[data-duration-warning]"), null, "3 questions suit 10 minutes");
 
-  for (const label of ["Live warm-up", "Conversational questions", "Let students talk freely"]) {
-    assert.match(switchFor(label).getAttribute("aria-checked"), /false/);
-    const help = document.getElementById(switchFor(label).getAttribute("aria-describedby")).textContent;
-    assert.match(help, /limited Live minutes/, `${label} says it uses limited Live minutes`);
-    await click(switchFor(label));
-  }
-  assert.deepEqual(state.data.anvi.hybrid, {
-    allowLiveWarmup: true,
-    conversationalSectionIds: [state.data.sections[0].id],
-    allowStudentLiveMode: true,
-  });
+  for (const label of ["Live warm-up", "Conversational questions", "Let students talk freely"])
+    assert.equal(switchFor(label), null, `${label} is gone`);
   await choose(selectFor("Duration"), "");
   assert.equal("durationMinutes" in state.data.anvi, false);
 });
@@ -207,6 +200,6 @@ test("Advanced tab: a rate-limited regenerate and hybrid off are shown plainly",
   await act(async () => root.unmount());
   root = createRoot(document.getElementById("app"));
   await mount(withQuestions(1), { interviewId: "i1", published: true, audioApi: { status: async () => ({ enabled: false }), regenerate: async () => null } });
-  assert.match(document.querySelector("[data-hybrid-status]").textContent, /Off: interviews run in Live mode/);
-  assert.equal(document.querySelector("[data-audio-regenerate]"), null, "nothing to regenerate while cost-saving mode is off");
+  assert.match(document.querySelector("[data-hybrid-status]").textContent, /Off on this server/);
+  assert.equal(document.querySelector("[data-audio-regenerate]"), null, "nothing to regenerate while ANVI audio is off");
 });

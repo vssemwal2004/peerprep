@@ -85,9 +85,10 @@ test("resume sources keep at least one, and the mode mirrors rules.resume", () =
   assert.deepEqual(toggleSource(["upload"], "upload"), ["upload"], "the last source cannot be removed");
   assert.deepEqual(toggleSource(["upload"], "builder"), ["builder", "upload"]);
   let data = newDefinition();
-  assert.deepEqual(readResume(data), { mode: "none", sources: ["builder", "upload"], questionCount: 2 });
-  data = writeResume(data, { mode: "required", sources: ["upload"], questionCount: 4 });
-  assert.deepEqual(data.anvi.resume, { mode: "required", sources: ["upload"], questionCount: 4 });
+  assert.deepEqual(readResume(data), { mode: "none", sources: ["builder", "upload"], questionCount: 2, followUps: 1 });
+  data = writeResume(data, { mode: "required", sources: ["upload"], questionCount: 4, followUps: 2 });
+  assert.deepEqual(data.anvi.resume, { mode: "required", sources: ["upload"], questionCount: 4, followUps: 2 });
+  assert.equal(readResume({ ...data, anvi: { ...data.anvi, resume: { ...data.anvi.resume, followUps: 9 } } }).followUps, 1, "out of range reads as the default");
   assert.equal(data.rules.resume, "required");
   assert.deepEqual(writeResume(data, { sources: [] }).anvi.resume.sources, ["upload"], "an empty list is refused");
   const withResumeQuestion = {
@@ -223,7 +224,7 @@ async function type(element, value) {
 }
 const settle = (ms = 20) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
 
-async function mountSettings(initial = newDefinition(), { path = "/admin/ai-interviews/i1/anvi" } = {}) {
+async function mountSettings(initial = newDefinition(), { path = "/admin/ai-interviews/i1/anvi", props = {} } = {}) {
   const state = { data: initial };
   function Harness() {
     const [data, setData] = useState(initial);
@@ -231,7 +232,7 @@ async function mountSettings(initial = newDefinition(), { path = "/admin/ai-inte
     state.data = data;
     state.reveal = (fields) => setReveal({ fields, nonce: Math.random(), focus: true });
     state.location = useLocation();
-    return h(StepAnviSettings, { data, onChange: setData, reveal, errors: {} });
+    return h(StepAnviSettings, { data, onChange: setData, reveal, errors: {}, ...props });
   }
   await act(async () => root.render(h(MemoryRouter, { initialEntries: [path] }, h(Harness))));
   return state;
@@ -242,33 +243,26 @@ const chipOf = (id) => tab(id).querySelector("[data-tab-status]")?.textContent;
 const summaryOf = (id) => tab(id).title;
 const cardTitles = () => [...document.querySelectorAll("h3")].map((el) => el.textContent);
 
-test("settings cards write the expected payload paths", async () => {
+test("settings cards write the expected payload paths; fixed conversation settings are not shown", async () => {
   const state = await mountSettings();
   assert.equal(selectedTab(), "voice");
-  for (const title of ["ANVI's voice", "Personality", "What ANVI says"])
-    assert.ok(cardTitles().includes(title), `${title} card is on Voice & personality`);
+  assert.equal(document.querySelector("[data-settings-panel-title]").textContent, "Voice & speed");
+  assert.ok(cardTitles().includes("ANVI's voice"));
+  for (const title of ["Personality", "What ANVI says", "Video avatar", "Turn-taking", "Warm-up", "Interview conduct", "Interviewer profile", "Live conversation"])
+    assert.ok(!cardTitles().includes(title), `${title} is gone`);
+  assert.equal(document.querySelector('[role="radiogroup"]'), null, "no voice picker: one voice for every interview");
+  assert.equal(tab("conversation"), null, "no Conversation tab");
   assert.equal(document.querySelector('[data-field="language"]'), null, "English only: no Language card");
-  assert.equal(document.querySelector('[data-field="voiceLanguage"]'), null, "and no accent picker");
-  assert.equal(document.querySelector("[data-settings-panel-title]").textContent, "Voice & personality");
 
-  await click(tab("conversation"));
-  for (const title of ["Turn-taking", "Warm-up", "Interview conduct"])
-    assert.ok(cardTitles().includes(title), `${title} card is on Conversation`);
-  assert.ok(!cardTitles().includes("Personality"), "only the selected tab is rendered");
-  assert.equal(summaryOf("conversation"), "2 conduct rules on · warm-up on");
-  assert.equal(chipOf("conversation"), undefined, "only Proctoring shows a badge");
-  await click(switchFor("Allow ending by voice"));
-  assert.equal(summaryOf("conversation"), "3 conduct rules on · warm-up on");
-  await click(switchFor("No personal questions"));
-  assert.equal(state.data.anvi.conduct.endByVoice, true);
-  assert.equal(state.data.anvi.conduct.noPersonalQuestions, false);
-
-  await click(document.querySelector('[aria-label="Increase icebreaker questions"]'));
-  await click(switchFor("Count it in the score"));
-  assert.deepEqual(state.data.anvi.warmup, { enabled: true, icebreakers: 3, tellMeAboutYourself: true, scored: true });
-  await click(switchFor("Start with a warm-up"));
-  assert.equal(state.data.anvi.warmup.enabled, false);
-  assert.equal(switchFor("Count it in the score"), null, "warm-up options hide when it is off");
+  const slider = document.getElementById("anvi-speech-rate");
+  assert.deepEqual([slider.min, slider.max, slider.step, slider.value], ["0.85", "1.2", "0.05", "1"]);
+  assert.equal(document.querySelector("[data-speech-rate]").textContent, "Normal speed");
+  await type(slider, "1.1");
+  assert.equal(state.data.anvi.persona.speechRate, 1.1);
+  assert.equal(document.querySelector("[data-speech-rate]").textContent, "1.10× speed");
+  assert.equal(summaryOf("voice"), "ANVI's voice · 1.10× speed");
+  await click(switchFor("Short acknowledgements"));
+  assert.equal(state.data.anvi.persona.acknowledgements, false);
 
   await click(tab("candidate"));
   assert.deepEqual(cardTitles().filter((t) => ["Resume", "Terms & conditions"].includes(t)), ["Resume", "Terms & conditions"]);
@@ -276,8 +270,45 @@ test("settings cards write the expected payload paths", async () => {
   await click(radio("Ask for the student's resume", "Required"));
   assert.equal(state.data.anvi.resume.mode, "required");
   assert.equal(summaryOf("candidate"), "Resume required · no terms");
+  await click(document.querySelector('[aria-label="Increase follow-ups per resume question"]'));
+  assert.equal(state.data.anvi.resume.followUps, 2);
+});
 
-  assert.equal(state.data.anvi.persona.tone, "warm", "persona settings are untouched");
+test("the speed preview plays ANVI's sample time-stretched to the chosen speed", async () => {
+  const pcm = new Int16Array(24000);
+  for (let i = 0; i < pcm.length; i += 1) pcm[i] = Math.round(8000 * Math.sin((2 * Math.PI * 220 * i) / 24000));
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)));
+  const loads = [];
+  const played = [];
+  const original = window.AudioContext;
+  window.AudioContext = class {
+    destination = {};
+    createBuffer(channels, length, sampleRate) {
+      const data = new Float32Array(length);
+      played.push({ length, sampleRate });
+      return { getChannelData: () => data, duration: length / sampleRate };
+    }
+    createBufferSource() {
+      return { connect() {}, start() { played.at(-1).started = true; }, stop() {}, onended: null };
+    }
+    close() { return Promise.resolve(); }
+  };
+  try {
+    const sampleApi = { load: async () => (loads.push(1), { pcm: base64, sampleRate: 24000, text: "Before we begin, how are you feeling today?" }) };
+    const data = { ...newDefinition(), anvi: { ...newDefinition().anvi, persona: { speechRate: 0.9 } } };
+    await mountSettings(data, { props: { voiceSampleApi: sampleApi } });
+    await click(document.querySelector("[data-voice-preview]"));
+    await settle();
+    assert.equal(loads.length, 1);
+    assert.equal(played.length, 1);
+    assert.ok(played[0].started);
+    // 1 s of audio at 0.9x lasts about 1.11 s.
+    assert.ok(Math.abs(played[0].length / 24000 - 1 / 0.9) < 0.05, `stretched to ${played[0].length / 24000} s`);
+    assert.equal(document.querySelector("[data-voice-preview]").textContent, "Stop");
+    assert.ok(document.body.textContent.includes("“Before we begin, how are you feeling today?”"));
+  } finally {
+    window.AudioContext = original;
+  }
 });
 
 test("settings sub-tabs: URL, keyboard, status chips, red dots and reveal focus", async () => {
@@ -288,14 +319,14 @@ test("settings sub-tabs: URL, keyboard, status chips, red dots and reveal focus"
   assert.equal(selectedTab(), "scoring", "?tab= picks the tab");
   assert.ok(cardTitles().includes("Scoring rubric"));
   const tabs = [...document.querySelectorAll('[role="tab"][data-settings-tab]')];
-  assert.deepEqual(tabs.map((el) => el.dataset.settingsTab), ["voice", "conversation", "candidate", "proctoring", "scoring", "advanced"]);
+  assert.deepEqual(tabs.map((el) => el.dataset.settingsTab), ["voice", "candidate", "proctoring", "scoring", "advanced"]);
   assert.ok(tabs.every((el) => el.getAttribute("aria-controls")), "tabs control a panel");
   assert.equal(document.querySelector('[role="tabpanel"]').getAttribute("aria-labelledby"), tab("scoring").id);
   assert.deepEqual(tabs.filter((el) => el.tabIndex === 0).map((el) => el.dataset.settingsTab), ["scoring"], "roving tab index");
   assert.equal(chipOf("proctoring"), undefined, "no badge while proctoring is off");
   assert.equal(summaryOf("proctoring"), "AI proctoring off");
-  assert.equal(summaryOf("voice"), "Aoede voice · warm tone");
-  assert.equal(summaryOf("advanced"), "No interviewer profile yet");
+  assert.equal(summaryOf("voice"), "ANVI's voice · Normal speed");
+  assert.equal(summaryOf("advanced"), "No fixed length");
   assert.ok(tab("candidate").querySelector("[data-tab-error]"), "resume questions without a resume mark Candidate setup");
   assert.equal(tab("scoring").querySelector("[data-tab-error]"), null);
 
@@ -315,7 +346,7 @@ test("settings sub-tabs: URL, keyboard, status chips, red dots and reveal focus"
   assert.equal(selectedTab(), "voice");
 
   // A Fix link or Continue reveals fields: the tab that holds them opens and the field is there to focus.
-  for (const [field, id] of [["persona", "voice"], ["resume", "candidate"], ["interviewer", "advanced"], ["answerTime", "advanced"], ["rubric", "scoring"], ["voice", "voice"], ["proctoring", "proctoring"]]) {
+  for (const [field, id] of [["speechRate", "voice"], ["resume", "candidate"], ["duration", "advanced"], ["answerTime", "advanced"], ["rubric", "scoring"], ["proctoring", "proctoring"]]) {
     await act(async () => state.reveal([field]));
     await settle();
     assert.equal(selectedTab(), id, `${field} opens ${id}`);

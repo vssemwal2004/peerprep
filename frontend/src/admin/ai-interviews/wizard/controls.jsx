@@ -402,7 +402,7 @@ export function NumberField({
 }
 
 // Free-text chips (skills). Enter or comma adds; Backspace on an empty input removes the last.
-export function ChipInput({ label, values = [], onChange, placeholder, hint, field, max = 30 }) {
+export function ChipInput({ label, values = [], onChange, placeholder, hint, error, field, max = 30, required = false }) {
   const id = useId(),
     hintId = useId();
   const [text, setText] = useState("");
@@ -419,10 +419,10 @@ export function ChipInput({ label, values = [], onChange, placeholder, hint, fie
   };
   return (
     <div data-field={field} className="min-w-0">
-      <FieldLabel htmlFor={id} optional>
+      <FieldLabel htmlFor={id} optional={!required} required={required}>
         {label}
       </FieldLabel>
-      <div className="flex min-h-10 flex-wrap items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1.5 shadow-sm focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/20 dark:border-gray-700 dark:bg-gray-950">
+      <div className={`flex min-h-10 flex-wrap items-center gap-1.5 rounded-lg border bg-white px-2 py-1.5 shadow-sm focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/20 dark:bg-gray-950 ${error ? "border-rose-400 dark:border-rose-500/70" : "border-slate-300 dark:border-gray-700"}`}>
         {values.map((value) => (
           <span
             key={value}
@@ -456,7 +456,7 @@ export function ChipInput({ label, values = [], onChange, placeholder, hint, fie
           className="h-7 min-w-32 flex-1 bg-transparent px-1 text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-gray-100"
         />
       </div>
-      <FieldMessage hint={hint} hintId={hintId} />
+      <FieldMessage hint={hint} error={error} hintId={hintId} />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { summarize } from "../../definition.js";
+import { estimate } from "../structure.js";
 
 // Mirrors backend ANVI_DURATIONS and DURATION_MAX_QUESTIONS (aiInterviewDefinition.js).
 export const DURATIONS = Object.freeze([10, 15, 30, 45, 60]);
@@ -27,8 +27,8 @@ export function durationGuidance(data, minutes = readDuration(data)) {
   const max = DURATION_MAX_QUESTIONS[minutes];
   const shorter = DURATIONS.filter((value) => value < minutes).at(-1);
   const min = shorter ? DURATION_MAX_QUESTIONS[shorter] + 1 : 1;
-  const { manual, planned: live } = summarize({ sections: [], ...data });
-  const planned = manual + live;
+  // What one student is asked: a bank's random set counts as its size, not the whole bank.
+  const planned = estimate({ sections: [], ...data }).total;
   const warning =
     planned > max
       ? `${planned} questions are planned, but a ${minutes}-minute interview asks at most ${max}. The later questions will be left out.`
@@ -73,7 +73,7 @@ const STATUS_TEXT = {
 export function audioReadiness(status) {
   if (!status) return { tone: "none", label: "Not generated yet", detail: "Question audio is generated after you publish." };
   if (!status.enabled)
-    return { tone: "off", label: "Cost-saving mode is off", detail: "Interviews run in Live mode, so no question audio is needed." };
+    return { tone: "off", label: "Question audio is off on this server", detail: "Ask your server administrator to turn on ANVI audio (ANVI_HYBRID_ENABLED)." };
   const assets = status.assets || {};
   const ready = Number(assets.ready ?? status.counts?.ready) || 0;
   const failed = Number(assets.failed ?? status.counts?.failed) || 0;

@@ -113,6 +113,68 @@ test("companies persist, normalize duplicates and are owner scoped", async () =>
   });
   assert.equal(other.body.items.length, 0);
 });
+test("job names and roles typed by one admin are listed for every admin of the tenant", async () => {
+  assert.equal((await call("/resources/jobNames", "POST", { name: "Quantum Engineer" })).status, 201);
+  assert.equal((await call("/resources/jobRoles", "POST", { name: "Qiskit Developer" }, { "X-Test-Owner": adminB })).status, 201);
+  const names = await call("/resources/jobNames?active=true&search=quantum", "GET", undefined, { "X-Test-Owner": adminB });
+  assert.deepEqual(names.body.items.map((item) => item.name), ["Quantum Engineer"]);
+  const roles = await call("/resources/jobRoles?active=true");
+  assert.deepEqual(roles.body.items.map((item) => item.name), ["Qiskit Developer"]);
+  assert.equal((await call("/resources/unknown")).status, 404);
+});
+test("company catalog returns PeerPrep's companies once each, sorted", async () => {
+  const { companyCatalogSource } = await import("../src/controllers/aiInterviewController.js");
+  const original = companyCatalogSource.names;
+  companyCatalogSource.names = async () => ["TCS", "Infosys", "  infosys ", "", "X", 42, "Accenture"];
+  try {
+    const result = await call("/catalog/companies");
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body.companies, ["Accenture", "Infosys", "TCS"]);
+  } finally {
+    companyCatalogSource.names = original;
+  }
+});
+test("capabilities say whether students can start, naming missing settings only", async () => {
+  const { runtimeReadiness } = await import("../src/controllers/aiInterviewController.js");
+  const { anviConfig } = await import("../src/modules/anviInterview/anviInterview.config.js");
+  // Hybrid is off unless ANVI_HYBRID_ENABLED is set: the default server runs Live and needs only the key.
+  const caps = await withGeminiKey(undefined, () => call("/capabilities"));
+  assert.deepEqual(caps.body.runtime, { mode: "live", ready: false, missing: ["GEMINI_API_KEY"] });
+  const missing = await withGeminiKey(undefined, () => runtimeReadiness(anviConfig({ ANVI_HYBRID_ENABLED: "true" }), {}));
+  // Hybrid settings missing: attempts fall back to Live, and nothing can start without the key.
+  assert.equal(missing.mode, "live");
+  assert.equal(missing.ready, false);
+  for (const name of ["GEMINI_API_KEY", "ANVI_USD_INR_RATE"]) assert.ok(missing.missing.includes(name), name);
+  assert.ok(missing.missing.some((entry) => entry.startsWith("R2 audio storage")));
+  const env = {
+    ANVI_HYBRID_ENABLED: "true", ANVI_USD_INR_RATE: "88", R2_ACCOUNT_ID: "acct", R2_ACCESS_KEY_ID: "key", R2_SECRET_ACCESS_KEY: "secret", R2_BUCKET_NAME: "media",
+    ...Object.fromEntries(["TRANSCRIBE", "GENERATE", "DECISION", "EVALUATE"].flatMap((kind) => [[`ANVI_PRICE_${kind}_INPUT`, "0.3"], [`ANVI_PRICE_${kind}_OUTPUT`, "2.5"]])),
+    ANVI_PRICE_TRANSCRIBE_ACCURATE_AUDIO_MINUTE: "0.005", ANVI_PRICE_TTS_TEXT_INPUT: "0.5", ANVI_PRICE_TTS_AUDIO_OUTPUT: "9",
+  };
+  const ready = await withGeminiKey("test-gemini-key", () => runtimeReadiness(anviConfig(env), env));
+  assert.deepEqual(ready, { mode: "hybrid", ready: true, missing: [] });
+  assert.deepEqual(await withGeminiKey("test-gemini-key", () => runtimeReadiness(anviConfig({ ANVI_HYBRID_ENABLED: "false" }), {})), { mode: "live", ready: true, missing: [] });
+  assert.doesNotMatch(JSON.stringify(caps.body.runtime), /secret|acct/);
+});
+test("voice sample returns ANVI's cached clip as base64 PCM, or 503 when audio is not set up", async () => {
+  const { voiceSampleSource } = await import("../src/controllers/aiInterviewController.js");
+  const original = voiceSampleSource.load;
+  try {
+    voiceSampleSource.load = async () => ({ pcm: Buffer.from([1, 0, 2, 0]), sampleRate: 24000, text: "Before we begin, how are you?" });
+    const ok = await call("/voice-sample");
+    assert.equal(ok.status, 200);
+    assert.deepEqual(ok.body, { sampleRate: 24000, text: "Before we begin, how are you?", pcm: Buffer.from([1, 0, 2, 0]).toString("base64") });
+    assert.equal((await call("/voice-sample", "GET", undefined, { "X-Test-Role": "student" })).status, 403);
+    voiceSampleSource.load = async () => null;
+    assert.equal((await call("/voice-sample")).status, 503);
+    voiceSampleSource.load = async () => { throw new Error("R2 down"); };
+    const failed = await call("/voice-sample");
+    assert.equal(failed.status, 503);
+    assert.equal(failed.body.code, "VOICE_SAMPLE_UNAVAILABLE");
+  } finally {
+    voiceSampleSource.load = original;
+  }
+});
 test("creation retries are idempotent and save uses atomic parent revision", async () => {
   const headers = { "Idempotency-Key": crypto.randomUUID() };
   const a = await call(
@@ -447,11 +509,11 @@ test("new question fields and anvi settings round-trip through save with default
   assert.equal(doc.data.sections[0].groups[0].questions[0].maxFollowUps, 5);
   assert.deepEqual(doc.data.anvi, {
     liveQuestionCount: null,
-    persona: { tone: "friendly", pace: "normal", acknowledgements: true, introduction: "Hi {name}", closing: "" },
+    persona: { tone: "friendly", pace: "normal", acknowledgements: true, introduction: "Hi {name}", closing: "", speechRate: 1 },
     turns: { silenceSeconds: 3, nudgeSeconds: 45, maxNudges: 3, voiceCommands: true },
     conduct: { endByVoice: false, finishAllQuestions: true, noPersonalQuestions: true, termsText: "", requireTermsAcceptance: false },
     warmup: { enabled: true, icebreakers: 2, tellMeAboutYourself: true, scored: false },
-    resume: { mode: "none", sources: ["builder", "upload"], questionCount: 2 },
+    resume: { mode: "none", sources: ["builder", "upload"], questionCount: 2, followUps: 1 },
     language: { primary: "English", studentChoice: [], strict: true, onOtherLanguage: "remind_and_flag" },
     voice: { name: "", languageCode: "" },
     avatar: { enabled: false, avatarId: "" },
@@ -498,7 +560,7 @@ test("new question fields and anvi settings round-trip through save with default
   assert.equal(bad.status, 422);
   const cap = await call("/capabilities");
   assert.equal(cap.body.limits.followUps, 5);
-  assert.equal(cap.body.limits.generateQuestions, 20);
+  assert.equal(cap.body.limits.generateQuestions, 50);
 });
 
 const generationDraft = (owner) =>
@@ -564,7 +626,7 @@ test("generate-questions drafts reviewable questions with a fake Gemini and save
   for (const body of [
     { count: 2 },
     { groupId: "g1", count: 0 },
-    { groupId: "g1", count: 21 },
+    { groupId: "g1", count: 51 },
     { groupId: "bad id!", count: 1 },
     { groupId: "missing", count: 1 },
     { groupId: "g1", count: 1, difficulty: "extreme" },
@@ -586,6 +648,66 @@ test("generate-questions drafts reviewable questions with a fake Gemini and save
   assert.equal(foreign.status, 404);
   const student = await generate({ groupId: "g1", count: 1 }, { ...headers, "X-Test-Role": "student" });
   assert.equal(student.status, 403);
+});
+
+test("Generate with ANVI (pool) shares the count across topics, keeps follow-ups and saves nothing", async () => {
+  const owner = new mongoose.Types.ObjectId().toString();
+  const doc = (await generationDraft(owner)).body;
+  const generate = (body) =>
+    withGeminiKey("test-gemini-key", () => call(`/${doc._id}/generate-questions`, "POST", body, { "X-Test-Owner": owner }));
+  geminiCalls.length = 0;
+  geminiReply = async (request) => {
+    const context = JSON.parse(request.parts[0].text.match(/<context>(.*)<\/context>/)[1]);
+    return {
+      questions: Array.from({ length: context.count + 1 }, (_, i) => ({
+        text: `${context.topic} question ${i + 1}: explain it?`,
+        keyPoints: ["point a", "point b"],
+        difficulty: ["easy", "medium", "hard", "extreme"][i % 4],
+        followUps: ["Why does that work?", "Can you give an example?", "And the trade-off?"],
+      })),
+    };
+  };
+  const result = await generate({
+    mode: "pool", topics: ["DBMS", " dbms ", "OOP"], count: 5, category: "Technical", difficulty: "mixed", followUps: 2,
+    requirements: "Placement level.",
+  });
+  assert.equal(result.status, 200);
+  assert.equal(geminiCalls.length, 2, "one call per topic (duplicates merged)");
+  const topics = result.body.questions.map((q) => q.topic);
+  assert.deepEqual(topics, ["DBMS", "DBMS", "DBMS", "OOP", "OOP"], "5 split 3 + 2, extra model output dropped");
+  const first = result.body.questions[0];
+  assert.equal(first.prompt, "DBMS question 1: explain it?");
+  assert.deepEqual(first.followUps, ["Why does that work?", "Can you give an example?"]);
+  assert.equal(first.followUpLimit, 2);
+  assert.equal(first.category, "Technical");
+  assert.deepEqual(result.body.questions.map((q) => q.difficulty).slice(0, 3), ["easy", "medium", "hard"]);
+  assert.equal(result.body.questions[3].difficulty, "easy");
+  assert.equal(result.body.questions[2].difficulty, "hard");
+  assert.match(geminiCalls[0].systemText, /exactly 2 short spoken follow-up questions/);
+  assert.match(geminiCalls[0].parts[0].text, /Placement level\./);
+  const stored = await AIInterview.findById(doc._id).lean();
+  assert.equal(stored.revision, doc.revision, "Generation never saves the draft");
+
+  // A large share is split into calls of at most 15.
+  geminiCalls.length = 0;
+  assert.equal((await generate({ mode: "pool", topics: ["DSA"], count: 40, followUps: 0 })).status, 200);
+  assert.deepEqual(geminiCalls.map((c) => JSON.parse(c.parts[0].text.match(/<context>(.*)<\/context>/)[1]).count), [15, 15, 10]);
+
+  geminiCalls.length = 0;
+  for (const body of [
+    { mode: "pool", topics: [], count: 5 },
+    { mode: "pool", topics: ["A", "B", "C"], count: 2 },
+    { mode: "pool", topics: ["A"], count: 51 },
+    { mode: "pool", topics: Array.from({ length: 13 }, (_, i) => `T${i}`), count: 20 },
+  ]) {
+    const invalid = await generate(body);
+    assert.equal(invalid.status, 422, JSON.stringify(body));
+  }
+  assert.equal(geminiCalls.length, 0, "Invalid requests never reach Gemini");
+  geminiReply = async () => { throw new Error("upstream unavailable"); };
+  const failed = await generate({ mode: "pool", topics: ["DSA"], count: 3 });
+  assert.equal(failed.status, 502);
+  assert.equal(failed.body.code, "GENERATION_FAILED");
 });
 
 test("generate-questions returns 503 without GEMINI_API_KEY and never calls Gemini", async () => {

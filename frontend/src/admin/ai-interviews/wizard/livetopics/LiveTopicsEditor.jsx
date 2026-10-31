@@ -243,7 +243,7 @@ export default function LiveTopicsEditor({
 }) {
   const plan = livePlan(data, summary);
   const counts = estimate(data);
-  const room = Math.max(0, limits.questions - counts.total);
+  const room = Math.max(0, limits.questions - counts.stored);
   const poolInUse = plan.pooled && plan.pool ? plan.pool : 0;
   const poolMax = Math.max(1, Math.min(POOL_LIMIT, room + poolInUse));
   const section = liveTopicSection(data);

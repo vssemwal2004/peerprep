@@ -221,6 +221,85 @@ test("resetting a completed interview clears its attempt and reopens the origina
   await rejectsWith(scheduling.resetTarget(admin, assignment.id, String(asha._id)), "ATTEMPT_NOT_FOUND");
 });
 
+test("an interview in progress is reset or removed only when the admin confirms stopping it", async (t) => {
+  if (skip(t)) return;
+  const interview = await published();
+  const [asha, ravi] = await students(2);
+  const { assignment } = await create(interview, [asha, ravi], { slotPolicy: { mode: "window" } });
+  const running = async (student) => {
+    const row = await AnviAttempt.collection.insertOne({
+      studentId: student._id, interviewId: interview._id, assignmentId: new mongoose.Types.ObjectId(assignment.id),
+      snapshotRevision: 1, status: "in_progress", hardDeadline: new Date(clock.t + 30 * 60_000), startedAt: new Date(clock.t - 60_000),
+    });
+    await AnviAssignmentTarget.updateOne({ assignmentId: assignment.id, studentId: student._id }, { $set: { outcome: "in_progress", attemptsUsed: 1, lastAttemptId: row.insertedId } });
+    return row.insertedId;
+  };
+  const ashaAttempt = await running(asha);
+
+  // Without the confirmation nothing changes.
+  const refused = await call(`/${assignment.id}/targets/${asha._id}/reset`, { method: "POST", body: {} });
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.code, "ATTEMPT_IN_PROGRESS");
+  assert.equal((await AnviAttempt.findById(ashaAttempt).lean()).status, "in_progress");
+
+  // Confirmed: the real stop path ends it (no evaluation is queued) and the reset clears it.
+  const reset = await call(`/${assignment.id}/targets/${asha._id}/reset`, { method: "POST", body: { endInProgress: true } });
+  assert.equal(reset.status, 200, JSON.stringify(reset.body));
+  assert.equal(await AnviAttempt.countDocuments({ studentId: asha._id }), 0);
+  const target = await AnviAssignmentTarget.findOne({ assignmentId: assignment.id, studentId: asha._id }).lean();
+  assert.deepEqual([target.outcome, target.attemptsUsed, target.lastAttemptId], ["pending", 0, null]);
+
+  // Removal with the confirmation stops the interview first and keeps it (scored as partial).
+  const ended = [];
+  const withStop = createAnviScheduling({
+    clock, notifier, log: { warn() {} },
+    endInProgress: async (attempt, options) => {
+      ended.push([String(attempt._id), options.endReason, options.evaluate]);
+      return (await AnviAttempt.updateOne({ _id: attempt._id, status: "in_progress" }, { $set: { status: "abandoned", endReason: options.endReason } })).modifiedCount > 0;
+    },
+  });
+  const raviAttempt = await running(ravi);
+  await withStop.removeTargets(admin, assignment.id, [String(ravi._id)]);
+  assert.equal((await AnviAttempt.findById(raviAttempt).lean()).status, "in_progress", "a plain removal leaves a running interview alone");
+  await AnviAssignmentTarget.updateOne({ assignmentId: assignment.id, studentId: ravi._id }, { $set: { status: "assigned", removedAt: null } });
+  const removed = await withStop.removeTargets(admin, assignment.id, [String(ravi._id)], { endInProgress: true });
+  assert.equal(removed.removed, 1);
+  assert.deepEqual(ended, [[String(raviAttempt), "removed_by_admin", undefined]]);
+  const kept = await AnviAttempt.findById(raviAttempt).lean();
+  assert.deepEqual([kept.status, kept.endReason], ["abandoned", "removed_by_admin"], "the attempt is kept, not deleted");
+  assert.equal((await AnviAssignmentTarget.findOne({ assignmentId: assignment.id, studentId: ravi._id }).lean()).status, "removed");
+});
+
+test("completing an interview ends running attempts, closes open schedules and cancels ones not yet open", async (t) => {
+  if (skip(t)) return;
+  const interview = await published();
+  const [asha, ravi] = await students(2);
+  const ended = [];
+  const withStop = createAnviScheduling({
+    clock, notifier, log: { warn() {} },
+    endInProgress: async (attempt, options) => {
+      ended.push([String(attempt._id), options.endReason]);
+      return (await AnviAttempt.updateOne({ _id: attempt._id, status: "in_progress" }, { $set: { status: "abandoned", endReason: options.endReason } })).modifiedCount > 0;
+    },
+  });
+  const open = (await withStop.createAssignment(admin, { interviewId: String(interview._id), audience: { source: "selected", studentIds: ids([asha]) }, window: WINDOW, slotPolicy: { mode: "window" } })).assignment;
+  const later = (await withStop.createAssignment(admin, { interviewId: String(interview._id), audience: { source: "selected", studentIds: ids([ravi]) },
+    window: { opensAt: "2026-11-03T09:00:00+05:30", closesAt: "2026-11-04T18:00:00+05:30" }, slotPolicy: { mode: "window" } })).assignment;
+  clock.t = Date.parse("2026-11-02T12:00:00+05:30");
+  const running = await AnviAttempt.collection.insertOne({
+    studentId: asha._id, interviewId: interview._id, assignmentId: new mongoose.Types.ObjectId(open.id),
+    snapshotRevision: 1, status: "in_progress", hardDeadline: new Date(clock.t + 30 * 60_000), startedAt: new Date(clock.t - 60_000),
+  });
+
+  assert.deepEqual(await withStop.completeInterview(admin, String(interview._id)), { ended: 1, closed: 1, cancelled: 1 });
+  assert.deepEqual(ended, [[String(running.insertedId), "interview_completed"]]);
+  assert.equal((await AnviAssignment.findById(open.id).lean()).status, "closed");
+  assert.equal((await AnviAssignment.findById(later.id).lean()).status, "cancelled");
+  // Repeating it changes nothing; another admin's interview schedules are never touched.
+  assert.deepEqual(await withStop.completeInterview(admin, String(interview._id)), { ended: 0, closed: 0, cancelled: 0 });
+  assert.deepEqual(await withStop.completeInterview(otherAdmin, String(interview._id)), { ended: 0, closed: 0, cancelled: 0 });
+});
+
 test("the assigned-students list joins student, booking and attempt, and searches, filters, sorts and pages", async (t) => {
   if (skip(t)) return;
   const interview = await published();

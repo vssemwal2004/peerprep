@@ -42,7 +42,8 @@ for (const voiceName of ["", "Kore"]) {
     const data = dataWith(voiceName);
     const built = await buildPlan(data, { runtimeMode: "hybrid", durationMinutes: 30 });
     const published = new Set(pregenSpecs(data, { interviewId: INTERVIEW_ID, revision: REVISION, config }).map((spec) => assets.hashFor(spec)));
-    assert.equal(pregenVoiceOf(data, config), voiceName || config.ttsVoice);
+    // One voice for every interview: an older interview's own voice choice is ignored.
+    assert.equal(pregenVoiceOf(data, config), config.ttsVoice);
 
     const shared = [];
     for (const item of built.plan) {

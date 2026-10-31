@@ -21,6 +21,8 @@ const COLUMNS = [
   ["slot", "Slot (IST)"], ["status", "Booking"], ["attempt", "Attempt"], ["score", "Score"],
 ];
 const plural = (count, word) => `${Number(count).toLocaleString("en-IN")} ${word}${count === 1 ? "" : "s"}`;
+// The student is taking (or left mid-way, not yet closed) this interview right now.
+const isRunning = (row) => row.attempt?.status === "in_progress" || row.outcome === "in_progress";
 const remindable = (row, schedule) => row.status === "assigned" && ["pending", "booked"].includes(row.outcome) && ACTIVE.includes(schedule?.status);
 
 function SortHeader({ column, label, sort, onSort, className = "" }) {
@@ -89,13 +91,14 @@ export default function AssignedStudents({ navigation = null }) {
     }
     return { sent, recent };
   }, ({ sent, recent }) => `${plural(sent, "reminder")} sent.${recent ? ` ${plural(recent, "student")} were notified in the last 10 minutes and were skipped.` : ""}`, "The reminders could not be sent.");
-  const remove = (list) => run(async () => {
+  // `endInProgress` (single row only, after the dialog said so) also stops an interview under way.
+  const remove = (list, { endInProgress = false } = {}) => run(async () => {
     let removed = 0;
-    for (const [assignmentId, studentIds] of byAssignment(list)) removed += Number((await scheduleApi.removeTargets(assignmentId, studentIds))?.removed || 0);
+    for (const [assignmentId, studentIds] of byAssignment(list)) removed += Number((await scheduleApi.removeTargets(assignmentId, studentIds, { endInProgress }))?.removed || 0);
     return removed;
-  }, (removed) => `${plural(removed, "student")} removed. Their future bookings were cancelled and they are notified.`, "The students could not be removed.");
+  }, (removed) => `${plural(removed, "student")} removed.${endInProgress ? " Their interview in progress was stopped and kept as a partial attempt." : " Their future bookings were cancelled and they are notified."}`, "The students could not be removed.");
   const resetAttempt = (row) => run(
-    () => scheduleApi.resetTarget(row.assignmentId, row.studentId),
+    () => scheduleApi.resetTarget(row.assignmentId, row.studentId, { endInProgress: isRunning(row) }),
     "Interview reset. The previous attempt and report were cleared, and the student can take it again.",
     "The interview could not be reset.",
   );
@@ -145,7 +148,7 @@ export default function AssignedStudents({ navigation = null }) {
     const active = ACTIVE.includes(schedule.status);
     const slots = schedule.slotMode === "slots";
     const live = isLiveBooking(row.booking) && !row.attempt;
-    const resettable = active && row.status === "assigned" && Boolean(row.attempt) && row.attempt.status !== "in_progress";
+    const resettable = active && row.status === "assigned" && Boolean(row.attempt);
     return [
       { id: "student", label: "View student details", icon: UserRound, onSelect: () => navigate(`/admin/students/${row.studentId}`) },
       { id: "report", label: row.attempt?.reportReady ? "View report" : "View attempt", icon: FileBarChart, disabled: !row.attempt, hint: row.attempt ? undefined : "No attempt yet",
@@ -156,7 +159,7 @@ export default function AssignedStudents({ navigation = null }) {
         onSelect: () => { setDialogError(""); setDialog({ kind: "remind", rows: [row] }); } },
       { id: "copy", label: "Copy email", icon: ClipboardCopy, disabled: !row.student.email, onSelect: () => copyEmail(row) },
       ...(resettable ? [{ separator: true }, { id: "reset", label: "Reset interview", icon: RotateCcw, danger: true, onSelect: () => { setDialogError(""); setDialog({ kind: "reset", row }); } }] : []),
-      ...(active && row.status !== "removed" && row.outcome !== "in_progress"
+      ...(active && row.status !== "removed"
         ? [...(!resettable ? [{ separator: true }] : []), { id: "remove", label: "Remove student", icon: Trash2, danger: true, onSelect: () => { setDialogError(""); setDialog({ kind: "remove", rows: [row] }); } }]
         : []),
     ];
@@ -270,11 +273,15 @@ export default function AssignedStudents({ navigation = null }) {
       {dialog?.kind === "remove" && <ConfirmDialog danger title={dialog.rows.length === 1 ? "Remove from schedule" : `Remove ${dialog.rows.length} students`} busy={busy} error={dialogError} onClose={close}
         confirmLabel={dialog.rows.length === 1 ? "Remove student" : `Remove ${dialog.rows.length} students`}
         message={dialog.rows.length === 1
-          ? `Remove ${dialog.rows[0].student.name || "this student"} from “${scheduleById.get(dialog.rows[0].assignmentId)?.title || "this schedule"}”?${dialog.rows[0].booking && isLiveBooking(dialog.rows[0].booking) ? ` Their booking on ${formatIst(dialog.rows[0].booking.startsAt)} is cancelled.` : ""} They are notified and can no longer take this interview as scheduled.`
+          ? isRunning(dialog.rows[0])
+            ? `${dialog.rows[0].student.name || "This student"} has an interview in progress. Removing them stops it now; the answers given so far are kept as a partial attempt. They can no longer take this interview as scheduled.`
+            : `Remove ${dialog.rows[0].student.name || "this student"} from “${scheduleById.get(dialog.rows[0].assignmentId)?.title || "this schedule"}”?${dialog.rows[0].booking && isLiveBooking(dialog.rows[0].booking) ? ` Their booking on ${formatIst(dialog.rows[0].booking.startsAt)} is cancelled.` : ""} They are notified and can no longer take this interview as scheduled.`
           : `Remove ${dialog.rows.length} students? Their future bookings are cancelled and they are notified. Their history is kept.`}
-        onConfirm={() => remove(dialog.rows)} />}
-      {dialog?.kind === "reset" && <ConfirmDialog danger title="Reset completed interview" confirmLabel="Reset interview" busy={busy} error={dialogError} onClose={close}
-        message={`Reset ${dialog.row.student.name || "this student"}'s completed interview? Their previous attempt and report are permanently cleared. They can then take this scheduled interview again.`}
+        onConfirm={() => remove(dialog.rows, { endInProgress: dialog.rows.length === 1 && isRunning(dialog.rows[0]) })} />}
+      {dialog?.kind === "reset" && <ConfirmDialog danger title={isRunning(dialog.row) ? "Stop and reset interview" : "Reset completed interview"} confirmLabel={isRunning(dialog.row) ? "Stop and reset" : "Reset interview"} busy={busy} error={dialogError} onClose={close}
+        message={isRunning(dialog.row)
+          ? `${dialog.row.student.name || "This student"}'s interview is in progress. Resetting stops it now and permanently clears the attempt, with no report. They can then take this scheduled interview again from the start.`
+          : `Reset ${dialog.row.student.name || "this student"}'s completed interview? Their previous attempt and report are permanently cleared. They can then take this scheduled interview again.`}
         onConfirm={() => resetAttempt(dialog.row)} />}
       {dialog?.kind === "remind" && <ConfirmDialog title={dialog.rows.length === 1 ? "Resend invite" : `Resend invite to ${dialog.rows.length} students`} confirmLabel="Send reminder" busy={busy} error={dialogError} onClose={close}
         message={dialog.rows.length === 1

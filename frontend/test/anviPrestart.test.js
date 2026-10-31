@@ -238,6 +238,97 @@ test("flow: the System check needs a working microphone", async () => {
   assert.equal(nextButton().disabled, false);
 });
 
+// A Web Audio level meter driven by hand: `level` is the microphone's sample value, `pump(ms)` advances
+// the clock and runs the queued animation frames.
+function fakeMeter() {
+  const meter = { level: 0, clock: 1000, frames: [] };
+  dom.window.AudioContext = class {
+    constructor() { this.state = "running"; }
+    resume() { return Promise.resolve(); }
+    close() { this.state = "closed"; return Promise.resolve(); }
+    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createAnalyser() { return { fftSize: 1024, getFloatTimeDomainData: (array) => array.fill(meter.level) }; }
+  };
+  const raf = dom.window.requestAnimationFrame;
+  const caf = dom.window.cancelAnimationFrame;
+  const now = Object.getOwnPropertyDescriptor(performance, "now");
+  dom.window.requestAnimationFrame = (fn) => { meter.frames.push(fn); return meter.frames.length; };
+  dom.window.cancelAnimationFrame = () => {};
+  performance.now = () => meter.clock;
+  meter.pump = (ms, step = 50) => act(async () => {
+    for (let at = 0; at < ms; at += step) {
+      meter.clock += step;
+      meter.frames.splice(0).forEach((fn) => fn());
+    }
+  });
+  meter.restore = () => {
+    delete dom.window.AudioContext;
+    dom.window.requestAnimationFrame = raf;
+    dom.window.cancelAnimationFrame = caf;
+    if (now) Object.defineProperty(performance, "now", now); else delete performance.now;
+  };
+  return meter;
+}
+
+test("model: the read-aloud verdict needs enough voice for the sentence, then a pause", async () => {
+  const { readingVerdict, READ_SENTENCES } = await server.ssrLoadModule("/src/student/anvi/prestart/useMicCheck.js");
+  assert.equal(READ_SENTENCES.length, 6);
+  assert.equal(readingVerdict({ words: 10, voicedMs: 0, elapsedMs: 3000, quietMs: 0 }), null, "still waiting for the student");
+  assert.equal(readingVerdict({ words: 10, voicedMs: 0, elapsedMs: 8000, quietMs: 0 }), "none");
+  assert.equal(readingVerdict({ words: 10, voicedMs: 2000, elapsedMs: 4000, quietMs: 600 }), null, "a short breath mid-sentence");
+  assert.equal(readingVerdict({ words: 10, voicedMs: 2000, elapsedMs: 4500, quietMs: 1500 }), "pass");
+  assert.equal(readingVerdict({ words: 10, voicedMs: 400, elapsedMs: 3000, quietMs: 1500 }), "short", "a cough is not the sentence");
+  assert.equal(readingVerdict({ words: 10, voicedMs: 2000, elapsedMs: 15000, quietMs: 0 }), "pass", "talking on and on still ends");
+  assert.equal(model.phaseBlockerOf("system", setupOf(), { support: OK, online: true, micReady: true, micVerified: false }), "Read the sentence aloud to verify your microphone.");
+  assert.equal(model.phaseBlockerOf("system", setupOf(), { support: OK, online: true, micReady: true, micVerified: false, micReading: "failed" }), "ANVI couldn't hear the sentence clearly. Try again.");
+  assert.equal(model.phaseBlockerOf("system", setupOf(), { support: OK, online: true, micReady: true, micSilent: true }), "Your microphone sends no sound. Unmute it or choose another one.");
+});
+
+test("flow: the System check needs a random sentence read aloud; a muted microphone is named and blocks", async () => {
+  const meter = fakeMeter();
+  try {
+    await render(flowOf(setupOf()));
+    await next();
+    await tick();
+    assert.equal(phaseNow(), "system");
+    const sentence = document.querySelector("[data-read-sentence]").textContent;
+    assert.ok(sentence.length > 20, "a sentence to read is shown");
+    assert.equal(nextButton().disabled, true);
+    assert.equal(hint(), "Read the sentence aloud to verify your microphone.");
+
+    // Nothing said: the check fails and offers another sentence.
+    await click(document.querySelector("[data-read-start]"));
+    meter.level = 0.002;
+    await meter.pump(8200);
+    assert.equal(document.querySelector("[data-read-aloud]").dataset.readAloud, "failed");
+    assert.equal(nextButton().disabled, true);
+    await click(buttonNamed(/Try another sentence/));
+    assert.notEqual(document.querySelector("[data-read-sentence]").textContent, sentence, "a different sentence");
+
+    // Read aloud for 3 s, then a pause: verified, Next opens.
+    await click(document.querySelector("[data-read-start]"));
+    meter.level = 0.12;
+    await meter.pump(3000);
+    meter.level = 0.002;
+    await meter.pump(1700);
+    assert.equal(document.querySelector("[data-read-aloud]").dataset.readAloud, "passed");
+    assert.equal(nextButton().disabled, false);
+    await act(async () => root.unmount());
+
+    // A microphone that sends pure silence is named, and Next stays closed.
+    meter.level = 0;
+    await render(flowOf(setupOf()));
+    await next();
+    await tick();
+    await meter.pump(4500);
+    assert.ok(document.querySelector("[data-mic-silent]"), "the muted microphone is explained");
+    assert.equal(hint(), "Your microphone sends no sound. Unmute it or choose another one.");
+    assert.equal(document.querySelector("[data-read-start]").disabled, true);
+  } finally {
+    meter.restore();
+  }
+});
+
 test("flow: the Proctoring phase explains each rule, needs the acknowledgement and never asks for fullscreen", async () => {
   await render(flowOf(setupOf({ proctoring: PROCTORED })));
   await next();

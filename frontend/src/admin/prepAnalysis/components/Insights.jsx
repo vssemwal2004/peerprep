@@ -1,5 +1,6 @@
+import { AnimatedNumber } from "./Motion";
 import {
-  Activity, ArrowDown, ArrowUp, BadgeCheck, Bot, BookOpenCheck, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, CircleDashed, ClipboardList,
+  Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Bot, BookOpenCheck, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, CircleDashed, ClipboardList,
   Flag, Flame, ListChecks, MessagesSquare, PauseCircle, PlayCircle, Target, Trophy, Users, XCircle,
 } from "lucide-react";
 import { DIFFICULTY_COLORS } from "../charts/chartTheme";
@@ -20,10 +21,31 @@ const BLANK = String.fromCharCode(160);
 const formatKpi = (kpi) => (kpi.format === "percent" ? `${kpi.value}%` : Number(kpi.value).toLocaleString());
 
 /**
+ * Change against the previous period of the same length: { previous, change, label }.
+ * Up is green and down is red, except for "warning" numbers, where up is the bad news.
+ */
+export function DeltaBadge({ delta, format, warning = false }) {
+  if (!delta || delta.previous === null || delta.previous === undefined) return null;
+  const change = delta.change;
+  const flat = !change;
+  const good = warning ? change < 0 : change > 0;
+  const Icon = flat ? null : change > 0 ? ArrowUpRight : ArrowDownRight;
+  const text = flat ? "no change" : format === "percent" ? `${Math.abs(change)} pts` : delta.pct === null ? `${change > 0 ? "+" : "−"}${Math.abs(change).toLocaleString()}` : `${Math.abs(delta.pct)}%`;
+  return (
+    <span title={`${delta.label}: ${format === "percent" ? `${delta.previous}%` : Number(delta.previous).toLocaleString()}`}
+      className={`inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10.5px] font-bold tracking-normal ${flat ? "bg-slate-100 text-slate-500 dark:bg-white/[0.06]" : good ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"}`}>
+      {Icon && <Icon className="h-3 w-3" />}{text}
+    </span>
+  );
+}
+
+/**
  * Headline numbers for one section. A number with a matching filter is a button:
  * click it to show just those students, click again to undo.
  */
-export function KpiStrip({ section = "coding", kpis, loading, state, fieldMap, onToggle }) {
+export function KpiStrip({ section = "coding", kpis, loading, state, fieldMap, onToggle, compare = null }) {
+  // With compare: each tile also shows both groups' own value.
+  const sideValue = (side, id) => side.kpis.find((entry) => entry.id === id);
   const style = sectionStyle(section);
   if (!kpis?.length) {
     return <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">{Array.from({ length: 6 }, (_, index) => <div key={index} className="h-[84px] animate-pulse rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900" />)}</div>;
@@ -41,7 +63,23 @@ export function KpiStrip({ section = "coding", kpis, loading, state, fieldMap, o
               <p className="truncate text-[11.5px] font-semibold text-slate-500 dark:text-slate-400">{kpi.label}</p>
               <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${warn ? "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300" : style.chip}`}><Icon className="h-3.5 w-3.5" /></span>
             </div>
-            <p className={`text-[22px] font-extrabold leading-7 tracking-tight tabular-nums ${warn ? "text-amber-600 dark:text-amber-400" : "text-slate-900 dark:text-white"}`}>{formatKpi(kpi)}</p>
+            <p className={`flex items-baseline gap-2 text-[22px] font-extrabold leading-7 tracking-tight tabular-nums ${warn ? "text-amber-600 dark:text-amber-400" : "text-slate-900 dark:text-white"}`}>
+              <AnimatedNumber value={kpi.value} format={(number) => formatKpi({ ...kpi, value: kpi.format === "percent" ? Math.round(number * 10) / 10 : Math.round(number) })} />
+              <DeltaBadge delta={kpi.delta} format={kpi.format} warning={kpi.tone === "warning"} />
+            </p>
+            {compare && (
+              <p className="flex items-center gap-2 text-[11px] font-semibold tabular-nums text-slate-600 dark:text-slate-300">
+                {compare.map((side, index) => {
+                  const value = sideValue(side, kpi.id);
+                  return (
+                    <span key={side.label} className="inline-flex min-w-0 items-center gap-1" title={side.label}>
+                      <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded text-[8.5px] font-bold text-white ${index ? "bg-amber-500" : "bg-sky-600"}`}>{index ? "B" : "A"}</span>
+                      {value ? formatKpi(value) : "—"}
+                    </span>
+                  );
+                })}
+              </p>
+            )}
             <p className="truncate text-[10.5px] text-slate-400">
               {on
                 ? <span className="font-semibold text-sky-600 dark:text-sky-300">Showing only these · click to undo</span>
@@ -156,7 +194,11 @@ COLUMNS.all = [
 ];
 const POSITION_HINT = { coding: "Prep Score", learning: "course completed", interview: "Prep Score", assessment: "Prep Score", all: "overall Prep Score" };
 
-export function StudentTable({ table, area, loading, onChange, onOpen }) {
+/**
+ * The students on the page, sorted and paged on the server. `title` and `actions` (e.g. a
+ * download button) let it lead the page when a headline number picked these students.
+ */
+export function StudentTable({ table, area, loading, onChange, onOpen, title = "Students", actions = null }) {
   if (!table) return null;
   const columns = COLUMNS[area] || COLUMNS.coding;
   const pages = Math.max(1, Math.ceil(table.total / table.limit));
@@ -177,10 +219,13 @@ export function StudentTable({ table, area, loading, onChange, onOpen }) {
     <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-800 dark:bg-gray-900" aria-labelledby="students-title">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 dark:border-white/[0.06]">
         <div>
-          <h2 id="students-title" className="flex items-center gap-2 text-[13.5px] font-bold text-slate-900 dark:text-white"><Users className="h-4 w-4 text-sky-500" />Students</h2>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">Click a student to see everything about their prep. # is the place by {POSITION_HINT[area] || "Prep Score"} among the students shown.</p>
+          <h2 id="students-title" className="flex items-center gap-2 text-[13.5px] font-bold text-slate-900 dark:text-white"><Users className="h-4 w-4 text-sky-500" />{title}</h2>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400"># is the place by {POSITION_HINT[area] || "Prep Score"}. Click a student for their full profile.</p>
         </div>
-        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-slate-600 dark:bg-white/[0.06] dark:text-slate-300">{table.total.toLocaleString()} students</span>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-slate-600 dark:bg-white/[0.06] dark:text-slate-300">{table.total.toLocaleString()} students</span>
+          {actions}
+        </div>
       </header>
       <div className={`overflow-x-auto ${loading ? "opacity-60" : ""}`}>
         <table data-no-serial className="min-w-full text-[12px] text-slate-700 dark:text-slate-200">

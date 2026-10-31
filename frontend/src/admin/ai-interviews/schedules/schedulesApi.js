@@ -54,8 +54,8 @@ export const scheduleApi = {
   }),
   removeTarget: (assignmentId, studentId) => send(`/schedules/${id(assignmentId)}/targets/${id(studentId)}`, "DELETE"),
   // Removing cancels each student's future booking; their rows and booking history are kept.
-  removeTargets: (assignmentId, studentIds) => sendLong(`/schedules/${id(assignmentId)}/targets/remove`, "POST", { studentIds }),
-  resetTarget: (assignmentId, studentId) => send(`/schedules/${id(assignmentId)}/targets/${id(studentId)}/reset`, "POST", {}),
+  removeTargets: (assignmentId, studentIds, { endInProgress = false } = {}) => sendLong(`/schedules/${id(assignmentId)}/targets/remove`, "POST", { studentIds, ...(endInProgress ? { endInProgress: true } : {}) }),
+  resetTarget: (assignmentId, studentId, { endInProgress = false } = {}) => send(`/schedules/${id(assignmentId)}/targets/${id(studentId)}/reset`, "POST", endInProgress ? { endInProgress: true } : {}),
   notifyTargets: (assignmentId, studentIds) => sendLong(`/schedules/${id(assignmentId)}/targets/notify`, "POST", { studentIds }),
   // Assigned students with booking and attempt: { rows, counts, pagination, schedules, sort }.
   targets: (assignmentId, values = {}) => api.aiInterviewRequest(`/schedules/${id(assignmentId)}/targets${query(values)}`),

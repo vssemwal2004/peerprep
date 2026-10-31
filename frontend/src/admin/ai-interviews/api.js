@@ -14,12 +14,13 @@ export const interviewApi = {
   create: (data, key) => send("", "POST", { data }, { "Idempotency-Key": key }),
   save: (id, revision, data) => send(`/${id}`, "PUT", { revision, data }),
   validate: (id, revision) => send(`/${id}/validate`, "POST", { revision }),
-  // Drafts questions for review only; the server never saves them.
+  // Drafts questions for review only; the server never saves them. A full bank (up to 50, several model
+  // calls) can take a while.
   generateQuestions: (id, body) =>
     api.aiInterviewRequest(`/${id}/generate-questions`, {
       method: "POST",
       body,
-      timeoutMs: 60000,
+      timeoutMs: body?.mode === "pool" ? 150000 : 60000,
       skipQueue: true,
     }),
   action: (id, action, revision, extra = {}, key) =>
@@ -37,6 +38,7 @@ export const interviewApi = {
       data._id ? "PUT" : "POST",
       data,
     ),
+  companyCatalog: () => api.aiInterviewRequest("/catalog/companies"),
   library: (values) => api.aiInterviewRequest(`/library?${query(values)}`),
   capabilities: () => api.aiInterviewRequest("/capabilities"),
 };

@@ -26,10 +26,14 @@ export const DEFAULT_LIMITS = Object.freeze({
   followUps: 5,
   marks: 100,
   competency: 60,
-  generateQuestions: 20,
+  generateQuestions: 50,
+  followUpLimit: 3,
 });
 // Mirrors backend LIMITS: authored cross-questions plus AI follow-ups per question.
 export const FOLLOW_UP_LIMIT = 5;
+// Mirrors backend LIMITS.followUpLimit: follow-ups ANVI may ask on one question (prepared ones first).
+export const FOLLOW_UP_ASK_LIMIT = 3;
+export const QUESTION_CATEGORIES = Object.freeze(["Technical", "Behavioral", "Communication"]);
 export const MARKS_LIMIT = 100;
 export const ANVI_DEFAULTS = Object.freeze({
   persona: Object.freeze({
@@ -38,6 +42,8 @@ export const ANVI_DEFAULTS = Object.freeze({
     acknowledgements: true,
     introduction: "",
     closing: "",
+    // Mirrors the backend: ANVI's speaking speed (a playback rate; the pitch is kept).
+    speechRate: 1,
   }),
   turns: Object.freeze({
     silenceSeconds: 2,
@@ -90,6 +96,9 @@ export const newQuestion = () => ({
   prompt: "",
   resumeCount: 1,
   maxFollowUps: 0,
+  // Follow-ups ANVI may ask (0-3); null on older questions (cross-questions plus maxFollowUps).
+  followUpLimit: null,
+  category: "",
   context: "",
   expectedAnswer: "",
   marks: 10,
@@ -108,6 +117,9 @@ export const newGroup = () => ({
   weight: 100,
   difficulty: "",
   shuffle: false,
+  // Questions each student gets from this group (null = all) and whether they come topic by topic.
+  pick: null,
+  byTopic: false,
   questions: [],
   ruleOverrides: {},
 });

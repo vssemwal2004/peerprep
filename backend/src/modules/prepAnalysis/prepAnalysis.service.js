@@ -6,20 +6,29 @@ import { HttpError } from '../../utils/errors.js';
 import {
   buildKpiGroups, calendarPayload, CHART_BY_ID, CHARTS, DEFAULT_LAYOUT, GROUP_BY,
 } from './charts.js';
-import { loadCodingFacts, loadCohort } from './codingFacts.js';
+import { loadCodingFacts, loadCohort, loadProblemTimes } from './codingFacts.js';
+import { buildStudentReport, STUDENT_REPORT_TYPES } from './studentReport.js';
 import { allowedModules, FIELDS, MODULES, STATIC_OPTIONS } from './fields.js';
 import { applyRankCuts, evaluateFilterTree, normalizeFilterTree, normalizeRankCuts } from './filterEngine.js';
 import { loadLearningFacts } from './learningFacts.js';
 import { competitionRanks } from './ranking.js';
 import { getPrepScorePolicyVersion } from '../../services/prepScore/policy.js';
 import { storedScoresFor } from '../../services/prepScore/sync.js';
-import { buildReport, EXPORT_TYPES } from './prepAnalysis.export.js';
+import {
+  buildChartBook, buildReport, CHART_EXPORT_TYPES, COLUMN_BY_KEY, DEFAULT_EXPORT_COLUMNS, EXPORT_TYPES,
+} from './prepAnalysis.export.js';
+import { detailLabel, drillDetail, drillFor, drillStudents, sortItems } from './drill.js';
+import { chartSummary } from './summaries.js';
 import { loadAssessmentFacts, PASS_PERCENT } from './assessmentFacts.js';
 import { loadInterviewFacts, RATINGS } from './interviewFacts.js';
 import { loadQuickPrepFacts, sheetVisibleTo } from './quickPrepFacts.js';
 import { attachStoredScores, buildStudentRows } from './studentRows.js';
 
-export const QUERY_LIMITS = Object.freeze({ maxCharts: 24, maxTableLimit: 100, maxRangeDays: 366 * 3, cacheTtlMs: 60_000, cacheEntries: 6 });
+export const QUERY_LIMITS = Object.freeze({
+  // A large university's first load takes seconds, so loaded data is reused for five minutes
+  // across filter changes, popups and downloads; the page's refresh button reloads it.
+  maxCharts: 24, maxTableLimit: 100, maxRangeDays: 366 * 3, cacheTtlMs: 5 * 60_000, cacheEntries: 6, maxPage: 10_000, maxDrillLimit: 200, maxKeyLength: 200,
+});
 const RANGE_PRESETS = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, '365d': 365, all: null };
 const TABLE_SORTS = {
   prepScore: (row) => row.coding.prepScore,
@@ -85,7 +94,42 @@ function normalizeChartOptions(chart, options = {}) {
     if (studentId && !/^[a-f0-9]{24}$/i.test(studentId)) throw new HttpError(400, 'Unknown student.');
     result.studentId = studentId;
   }
+  // The chart's full page: every item, a page at a time.
+  if (options.full === true) {
+    result.full = true;
+    const page = Number.parseInt(options.page ?? 1, 10);
+    if (!Number.isInteger(page) || page < 1 || page > QUERY_LIMITS.maxPage) throw new HttpError(400, 'Unknown page.');
+    result.page = page;
+  }
   return result;
+}
+
+/**
+ * "Only these students": the students behind one part of one chart ({ chartId, key, label,
+ * filter, options }, the chart's own filter and options as sent with it), or null.
+ */
+function normalizeFocus(input, modules) {
+  if (!input) return null;
+  const chart = CHART_BY_ID.get(String(input.chartId || ''));
+  if (!chart || !modules.has(chart.module)) throw new HttpError(400, 'Unknown chart to focus on.');
+  const key = String(input.key ?? '');
+  if (key.length > QUERY_LIMITS.maxKeyLength) throw new HttpError(400, 'Unknown part of the chart.');
+  return {
+    chartId: chart.id, key,
+    label: String(input.label || chart.title).replace(/[\u0000-\u001f]+/g, ' ').trim().slice(0, 160),
+    filter: normalizeFilterTree(input.filter, { allowedModules: modules }),
+    options: normalizeChartOptions(chart, input.options),
+  };
+}
+
+/** Two named groups of students to show side by side, or null. */
+function normalizeCompare(input, modules) {
+  if (!Array.isArray(input) || !input.length) return null;
+  if (input.length !== 2) throw new HttpError(400, 'Compare exactly two groups of students.');
+  return input.map((group, index) => ({
+    label: String(group?.label || '').replace(/[\u0000-\u001f]+/g, ' ').trim().slice(0, 40) || `Group ${index ? 'B' : 'A'}`,
+    filter: normalizeFilterTree(group?.filter, { allowedModules: modules }),
+  }));
 }
 
 /** `module` is the analysis area: 'all' or one licensed module. */
@@ -121,6 +165,12 @@ export function validatePrepAnalysisQuery(body = {}, permissions) {
     range: normalizeRange(body.range),
     filter,
     rank,
+    focus: normalizeFocus(body.focus, modules),
+    compare: normalizeCompare(body.compare, modules),
+    // With compare: which side a drill or download is about (0 or 1).
+    group: [0, 1].includes(body.group) ? body.group : null,
+    // KPI changes against the previous period of the same length (presets other than "all").
+    previous: body.previous !== false,
     charts,
     table: {
       sort,
@@ -188,6 +238,133 @@ function selectRows(rows, filter, rank) {
   return applyRankCuts(rows.filter((row) => evaluateFilterTree(filter, row)), rank);
 }
 
+/** The page's students narrowed by a chart's own filter. */
+const chartRows = (selected, filter) => (filter.children.length ? selected.filter((row) => evaluateFilterTree(filter, row)) : selected);
+const buildChart = (chart, rows, options, range, context) => chart.build({ rows, options, range, topics: context.topics, sheets: context.sheets, tests: context.tests });
+
+/** The ids of the students behind the focused part, among the page's students. */
+function focusIds(context, selected, focus) {
+  const chart = CHART_BY_ID.get(focus.chartId);
+  const rows = chartRows(selected, focus.filter);
+  return new Set(drillStudents(chart, rows, focus.key, focus.options, [], { sheets: context.sheets, tests: context.tests }).items.map((item) => item.id));
+}
+
+/**
+ * The page's students: filters, then top/bottom cuts, then "only these students" (focus).
+ * `ids` (from the current period) pins the focus to the same students in another period.
+ */
+function selectStudents(context, query, ids = null) {
+  const all = selectRows(context.rows, query.filter, query.rank);
+  const keep = query.focus ? ids || focusIds(context, all, query.focus) : null;
+  const focused = keep ? all.filter((row) => keep.has(row.id)) : all;
+  // A drill or download from one side of a comparison is about that group only.
+  const group = query.compare && query.group !== null ? query.compare[query.group] : null;
+  return { selected: group ? focused.filter((row) => evaluateFilterTree(group.filter, row)) : focused, ids: keep };
+}
+
+/** Each compared group's own KPIs and charts, built on the page's students. */
+export function compareGroups(query, selected, context) {
+  return query.compare.map((group) => {
+    const rows = selected.filter((row) => evaluateFilterTree(group.filter, row));
+    return {
+      label: group.label,
+      matched: rows.length,
+      kpiGroups: buildKpiGroups(query.module, query.modules, rows),
+      charts: query.charts.map(({ id, filter, options }) => {
+        const members = chartRows(rows, filter);
+        const data = buildChart(CHART_BY_ID.get(id), members, options, query.range, context);
+        return { id, studentCount: members.length, data, summary: chartSummary(id, members, data) };
+      }),
+    };
+  });
+}
+
+/** The area's download columns that are not already in the drill's student columns. */
+const genericColumns = (module) => (DEFAULT_EXPORT_COLUMNS[module] || DEFAULT_EXPORT_COLUMNS.coding)
+  .filter((key) => !['position', 'name', 'studentId', 'semester', 'branch', 'group', 'prepScore'].includes(key))
+  .map((key) => COLUMN_BY_KEY.get(key)).filter(Boolean);
+
+/** The one chart a drill or chart download is about, with the students it was drawn from. */
+async function chartContext({ user, query, chartId }) {
+  const entry = query.charts.find((chart) => chart.id === chartId);
+  if (!entry) throw new HttpError(400, 'Choose a chart that is on the page.');
+  const context = await getAnalysisContext(user, query.range, { modules: query.modules, parts: query.parts });
+  const { selected } = selectStudents(context, query);
+  return { context, entry, chart: CHART_BY_ID.get(chartId), selected, rows: chartRows(selected, entry.filter) };
+}
+
+/** `drill`: { chartId, key, search, sort, direction, page, limit } from the request body. */
+export function validateDrill(body = {}) {
+  const drill = body.drill || {};
+  const key = drill.key === undefined || drill.key === null ? '' : String(drill.key);
+  if (key.length > QUERY_LIMITS.maxKeyLength) throw new HttpError(400, 'Unknown part of the chart.');
+  return {
+    chartId: String(drill.chartId || ''),
+    // "students": one row per student; "detail": one row per student and problem (or topic, week…).
+    view: drill.view === 'detail' ? 'detail' : 'students',
+    key,
+    search: String(drill.search || '').trim().toLowerCase().slice(0, 100),
+    sort: typeof drill.sort === 'string' ? drill.sort.slice(0, 60) : '',
+    direction: drill.direction === 'asc' ? 'asc' : drill.direction === 'desc' ? 'desc' : '',
+    page: Math.min(QUERY_LIMITS.maxPage, Math.max(1, Number.parseInt(drill.page, 10) || 1)),
+    limit: Math.min(QUERY_LIMITS.maxDrillLimit, Math.max(1, Number.parseInt(drill.limit, 10) || 50)),
+  };
+}
+
+/** The students behind a chart or one part of it, searched, sorted and a page at a time. */
+export async function drillPrepAnalysis({ user, query, drill }) {
+  const { context, entry, chart, rows } = await chartContext({ user, query, chartId: drill.chartId });
+  const catalogues = { sheets: context.sheets, tests: context.tests };
+  const students = drillStudents(chart, rows, drill.key, entry.options, genericColumns(chart.module), catalogues);
+  const detail = drill.view === 'detail' ? drillDetail(chart, rows, drill.key, entry.options, catalogues) : null;
+  if (drill.view === 'detail' && !detail) throw new HttpError(400, 'This chart has no detail table.');
+  const table = detail
+    ? { ...detail, label: students.label, sort: 'name', direction: 'asc', items: detail.items }
+    : students;
+  const searchable = (item) => (detail ? Object.values(item.values).filter((value) => typeof value === 'string').join(' ') : `${item.row.name} ${item.row.studentId} ${item.row.email}`);
+  const items = drill.search ? table.items.filter((item) => searchable(item).toLowerCase().includes(drill.search)) : table.items;
+  const sort = table.columns.some((column) => column.key === drill.sort) ? drill.sort : table.sort;
+  sortItems(items, table.columns, sort, drill.direction || (sort === table.sort ? table.direction : 'desc'));
+  const pages = Math.max(1, Math.ceil(items.length / drill.limit));
+  const page = Math.min(pages, drill.page);
+  const start = (page - 1) * drill.limit;
+  return {
+    chart: { id: chart.id, title: chart.title, question: chart.question },
+    key: drill.key,
+    view: drill.view,
+    label: table.label,
+    // The detail tab exists when the chart's drill has one; its title names the rows.
+    detail: detailLabel(chart.id, drill.key) ? { title: detailLabel(chart.id, drill.key) } : null,
+    columns: table.columns,
+    total: items.length, rowsTotal: table.items.length, students: students.items.length, cohort: rows.length, cohortSize: context.rows.length,
+    page, pages, limit: drill.limit,
+    sort, direction: drill.direction || (sort === table.sort ? table.direction : 'desc'),
+    rows: items.slice(start, start + drill.limit).map((item) => ({ id: item.id, cells: table.columns.map((column) => item.values[column.key] ?? null) })),
+  };
+}
+
+/** One chart's detailed Excel (summary, chart data, students, detail) or CSV (students). */
+export async function exportPrepAnalysisChart({ user, query, drill, options }) {
+  const { context, entry, chart, rows } = await chartContext({ user, query, chartId: drill.chartId });
+  const data = buildChart(chart, rows, { ...entry.options, everything: true }, query.range, context);
+  const catalogues = { sheets: context.sheets, tests: context.tests };
+  const students = drillStudents(chart, rows, drill.key, entry.options, genericColumns(chart.module), catalogues);
+  sortItems(students.items, students.columns, students.sort, students.direction);
+  const detail = options.format === 'xlsx' ? drillDetail(chart, rows, drill.key, entry.options, catalogues) : null;
+  const book = buildChartBook({
+    chart, partLabel: drill.key ? students.label : '', data, summary: chartSummary(chart.id, rows, data), students, detail,
+    query, filters: options.summary, cohortSize: context.rows.length,
+  });
+  const type = CHART_EXPORT_TYPES[options.format];
+  const slug = `${chart.id}${drill.key ? `-${drill.key}` : ''}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  return {
+    buffer: await type.render(book),
+    contentType: type.contentType,
+    filename: `prep-analysis-${slug}-${new Date().toISOString().slice(0, 10)}.${type.extension}`,
+    rowCount: book.students.rows.length,
+  };
+}
+
 function tableRow(row, position) {
   return {
     id: row.id, name: row.name, studentId: row.studentId, email: row.email,
@@ -235,16 +412,63 @@ function studentTable(rows, table, area) {
   };
 }
 
+const PERIOD_NAMES = { '7d': '7 days', '30d': '30 days', '90d': '90 days', '180d': '6 months', '365d': 'year' };
+
+/** The period of the same length just before `range`, or null for "all time". */
+export function previousRange(range, now = new Date()) {
+  if (!range.from) return null;
+  const to = range.to || now;
+  const length = to.getTime() - range.from.getTime();
+  if (!(length > 0)) return null;
+  const name = PERIOD_NAMES[range.preset];
+  return {
+    preset: range.preset === 'custom' ? 'custom' : `previous-${range.preset}`,
+    from: new Date(range.from.getTime() - length), to: new Date(range.from.getTime() - 1),
+    label: name ? `vs the previous ${name}` : 'vs the period before',
+  };
+}
+
+/** Each KPI with { delta: { previous, change, pct, label } } against the same KPIs for `previous` students. */
+export function withDeltas(groups, previousGroups, label) {
+  const before = new Map(previousGroups.flatMap((group) => group.kpis.map((kpi) => [`${group.key}:${kpi.id}`, kpi.value])));
+  return groups.map((group) => ({
+    ...group,
+    kpis: group.kpis.map((kpi) => {
+      const previous = before.get(`${group.key}:${kpi.id}`);
+      if (typeof previous !== 'number' || typeof kpi.value !== 'number') return kpi;
+      const change = Math.round((kpi.value - previous) * 10) / 10;
+      return { ...kpi, delta: { previous, change, pct: previous ? Math.round((change / previous) * 100) : null, label } };
+    }),
+  }));
+}
+
+async function previousKpis({ user, query, ids }) {
+  const range = previousRange(query.range);
+  if (!query.previous || !range) return null;
+  try {
+    const context = await getAnalysisContext(user, range, { modules: query.modules, parts: query.parts });
+    const { selected } = selectStudents(context, query, ids);
+    return { groups: buildKpiGroups(query.module, query.modules, selected), label: range.label };
+  } catch (error) {
+    // The comparison is extra; the page still answers without it.
+    console.warn('[prep-analysis] previous period unavailable:', error.message);
+    return null;
+  }
+}
+
 export async function runPrepAnalysis({ user, query }) {
   const context = await getAnalysisContext(user, query.range, { refresh: query.refresh, modules: query.modules, parts: query.parts });
-  const selected = selectRows(context.rows, query.filter, query.rank);
+  const { selected, ids } = selectStudents(context, query);
+  const previous = await previousKpis({ user, query, ids });
+  const kpiGroups = buildKpiGroups(query.module, query.modules, selected);
   const charts = query.charts.map(({ id, filter, options }) => {
     const chart = CHART_BY_ID.get(id);
-    const rows = filter.children.length ? selected.filter((row) => evaluateFilterTree(filter, row)) : selected;
-    const data = chart.build({ rows, options, range: query.range, topics: context.topics, sheets: context.sheets, tests: context.tests });
+    const rows = chartRows(selected, filter);
+    const data = buildChart(chart, rows, options, query.range, context);
     return {
       id, module: chart.module, section: chart.section, type: chart.type, size: chart.size, title: chart.title, question: chart.question,
       options, filtered: filter.children.length > 0, studentCount: rows.length, data,
+      summary: chartSummary(id, rows, data), drillable: Boolean(drillFor(id)),
     };
   });
   return {
@@ -257,9 +481,12 @@ export async function runPrepAnalysis({ user, query }) {
       cohortSize: context.rows.length,
       matched: selected.length,
       truncated: context.truncated,
+      focus: query.focus ? { chartId: query.focus.chartId, key: query.focus.key, label: query.focus.label, students: selected.length } : null,
+      previous: previous ? { label: previous.label } : null,
     },
-    kpiGroups: buildKpiGroups(query.module, query.modules, selected),
+    kpiGroups: previous ? withDeltas(kpiGroups, previous.groups, previous.label) : kpiGroups,
     charts,
+    compare: query.compare ? compareGroups(query, selected, context) : null,
     students: studentTable(selected, query.table, query.module),
   };
 }
@@ -267,7 +494,7 @@ export async function runPrepAnalysis({ user, query }) {
 /** A CSV / Excel / PDF file of every student matching the filters, in the table's order. */
 export async function exportPrepAnalysis({ user, query, options }) {
   const context = await getAnalysisContext(user, query.range, { modules: query.modules, parts: query.parts });
-  const selected = selectRows(context.rows, query.filter, query.rank);
+  const { selected } = selectStudents(context, query);
   const sortKey = TABLE_SORTS[query.table.sort] ? query.table.sort : DEFAULT_SORT[query.module];
   const direction = query.table.direction === 'asc' ? 1 : -1;
   const ordered = [...selected].sort((left, right) => direction * (TABLE_SORTS[sortKey](left, query.module) - TABLE_SORTS[sortKey](right, query.module)) || left.name.localeCompare(right.name));
@@ -287,7 +514,7 @@ export async function exportPrepAnalysis({ user, query, options }) {
 
 export async function countPrepAnalysis({ user, query }) {
   const context = await getAnalysisContext(user, query.range, { modules: query.modules, parts: query.parts });
-  return { cohortSize: context.rows.length, matched: selectRows(context.rows, query.filter, query.rank).length };
+  return { cohortSize: context.rows.length, matched: selectStudents(context, query).selected.length };
 }
 
 // ---------------------------------------------------------------- one student's profile
@@ -339,7 +566,7 @@ function codingProfile(row, range) {
   const daily = new Map([...row.days.entries()].map(([day, value]) => [day, value.attempts]));
   const { coding } = row;
   return {
-    prepScore: coding.prepScore, points: coding.points,
+    prepScore: coding.prepScore, points: coding.points, scoredCounts: coding.scoredCounts,
     solved: coding.solved, accuracy: coding.accuracy,
     submissions: coding.submissions, accepted: coding.accepted, attempted: coding.attempted,
     activeDays: coding.activeDays, daysSinceActive: coding.daysSinceActive, practiceStatus: coding.practiceStatus,
@@ -422,15 +649,37 @@ export function buildStudentProfile(row, { range, modules, sheets = new Map(), t
   };
 }
 
-/** Everything Prep Analysis knows about one student in the admin's own scope, for the period. */
-export async function getStudentProfile({ user, permissions, studentId, range: rangeInput }) {
+/** One student's row in the admin's own scope, for the period. */
+async function studentInScope({ user, permissions, studentId, range: rangeInput }) {
   if (!/^[a-f0-9]{24}$/i.test(String(studentId || ''))) throw new HttpError(400, 'Unknown student.');
   const modules = new Set(allowedModules(permissions));
   const range = normalizeRange(rangeInput);
   const context = await getAnalysisContext(user, range, { modules, parts: interviewParts(permissions) });
   const row = context.rows.find((entry) => entry.id === String(studentId));
   if (!row) throw new HttpError(404, 'This student is not in your list.');
+  return { row, range, modules, context };
+}
+
+/** Everything Prep Analysis knows about one student in the admin's own scope, for the period. */
+export async function getStudentProfile(input) {
+  const { row, range, modules, context } = await studentInScope(input);
   return buildStudentProfile(row, { range, modules, sheets: context.sheets, tests: context.tests });
+}
+
+/** One student's full report (every topic, problem and day) as Excel or PDF. */
+export async function exportStudentReport({ format, ...input }) {
+  const type = STUDENT_REPORT_TYPES[format];
+  if (!type) throw new HttpError(400, 'Choose Excel or PDF.');
+  const { row, range, modules, context } = await studentInScope(input);
+  const profile = buildStudentProfile(row, { range, modules, sheets: context.sheets, tests: context.tests });
+  const times = modules.has('coding') ? await loadProblemTimes({ studentId: row.id, range }) : new Map();
+  const report = buildStudentReport({ row, profile, times, range });
+  const slug = `${row.name}-${row.studentId || row.id}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  return {
+    buffer: await type.render(report),
+    contentType: type.contentType,
+    filename: `prep-report-${slug}-${new Date().toISOString().slice(0, 10)}.${type.extension}`,
+  };
 }
 
 // ---------------------------------------------------------------- option lists

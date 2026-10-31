@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { chartInsight } from '../src/admin/prepAnalysis/charts/chartInsights.js';
 import {
-  buildChartOption, CHART_TYPES, chartCsv, chartHeight, chartTable, viewsFor,
+  buildChartOption, CHART_TYPES, chartHeight, chartTable, viewsFor,
 } from '../src/admin/prepAnalysis/charts/chartOptions.js';
+import { chartPartAt, chartTableKeys, fullPageHeight, legendParts, trendPart } from '../src/admin/prepAnalysis/charts/chartParts.js';
 import { alpha, chartTheme } from '../src/admin/prepAnalysis/charts/chartTheme.js';
 import {
   compactOption, countActive, defaultFilterState, featureFields, groupName, groupText, isKpiActive, isMainField, kpiRule, listRule, newGroup,
@@ -46,7 +47,7 @@ const groupOf = (...rules) => rules.reduce((group, rule) => setRule(group, rule.
 test('assessment reports open Prep Analysis with the selected assessment already filtered', () => {
   const path = assessmentAnalysisPath({ _id: 'test-42', title: 'Third Year' });
   assert.equal(path, '/admin/analysis?source=assessment&assessmentId=test-42&assessmentTitle=Third+Year');
-  const state = prepAnalysisStateFromSearch(path.split('?')[1], defaultFilterState('coding'));
+  const state = prepAnalysisStateFromSearch(path.split('?')[1]);
   assert.equal(state.area, 'assessment');
   assert.deepEqual(state.groups[0].rules[0], {
     id: state.groups[0].rules[0].id,
@@ -58,12 +59,15 @@ test('assessment reports open Prep Analysis with the selected assessment already
   });
 });
 
-test('direct Prep Analysis visits keep saved filters and feature links start in that feature', () => {
-  const saved = { ...defaultFilterState('learning'), range: { preset: '90d' } };
-  assert.equal(prepAnalysisStateFromSearch('', saved).range.preset, '90d');
-  const coding = prepAnalysisStateFromSearch('?source=coding', saved);
-  assert.equal(coding.area, 'coding');
-  assert.equal(coding.groups[0].rules.length, 0);
+test('direct Prep Analysis visits start on all students and feature links start in that feature', () => {
+  const plain = prepAnalysisStateFromSearch('');
+  assert.equal(plain.area, 'coding');
+  assert.equal(plain.range.preset, 'all');
+  assert.equal(plain.groups[0].rules.length, 0);
+  assert.equal(plain.rank.rules.length, 0);
+  const learning = prepAnalysisStateFromSearch('?source=learning');
+  assert.equal(learning.area, 'learning');
+  assert.equal(learning.groups[0].rules.length, 0);
 });
 
 // ---------------------------------------------------------------- what to analyse
@@ -258,7 +262,7 @@ test('views change how a chart reads: steps with %, 100% bars, weekly lines', ()
   assert.equal(alpha('rgba(79,70,229,0.5)', 0.5), 'rgba(79,70,229,0.25)');
 });
 
-test('every chart can be read as a table and downloaded as safe CSV', () => {
+test('every chart can be read as a table', () => {
   for (const [type, data] of Object.entries(SAMPLES)) {
     const table = chartTable({ type, data });
     assert.ok(table.columns.length >= 2, `${type} has columns`);
@@ -267,9 +271,55 @@ test('every chart can be read as a table and downloaded as safe CSV', () => {
   assert.deepEqual(chartTable({ type: 'funnel', data: SAMPLES.funnel }).rows[1], ['Started a sheet', 30, 75, 75]);
   assert.deepEqual(chartTable({ type: 'heatmap', data: SAMPLES.heatmap }).rows[0], ['Asha', 100, 25]);
   assert.deepEqual(chartTable({ type: 'barList', data: SAMPLES.barList }).ids, ['d'], 'rows know their student');
-  const csv = chartCsv({ type: 'barList', data: { valueLabel: 'failed attempts', items: [{ name: '=cmd()', value: -1 }] } });
-  assert.ok(csv.startsWith('\uFEFFName,Failed attempts'));
-  assert.match(csv, /'=cmd\(\),-1/, 'formula-looking text is neutralised, numbers are not');
+});
+
+test('a click on a chart points at the part whose students can be listed', () => {
+  const at = (type, data, params, view = 'chart') => chartPartAt({ type, data, drillable: true }, view, params);
+  assert.deepEqual(at('donut', { centerLabel: 'problems solved', items: [{ key: 'Easy', name: 'Easy', value: 0 }, { key: 'Hard', name: 'Hard', value: 2, students: 1 }] }, { dataIndex: 0 }),
+    { key: 'Hard', label: 'Hard', color: '#f43f5e', value: 2, unit: 'problems solved', students: 1 }, 'empty slices are not drawn, so indexes skip them');
+  const top = { items: [{ id: 's1', name: 'Asha', score: 5, solved: { Easy: 1, Medium: 2, Hard: 3 } }] };
+  assert.deepEqual(at('rankedStackedBar', top, { dataIndex: 0, seriesName: 'Hard' }),
+    { key: 's1|Hard', label: 'Asha · Hard', color: '#f43f5e', value: 3, unit: 'Hard solved', students: 1, studentId: 's1' }, 'a bar colour is that student\'s work at that difficulty');
+  assert.equal(at('radar', SAMPLES.radar, { componentType: 'radar', name: 'Graphs' }).key, 'Graphs', 'a topic name on the radar');
+  assert.equal(at('stackedBar', SAMPLES.stackedBar, { dataIndex: 0, seriesName: 'Finished' }).key, 'Placement essentials|Finished');
+  assert.deepEqual(legendParts({ type: 'donut', data: SAMPLES.donut }).map((part) => [part.key, part.share]), [['Easy', 75], ['cpp', 25]], 'legend chips are parts with their share');
+  assert.deepEqual(legendParts({ type: 'rankedStackedBar', data: top }).map((part) => part.key), ['*|Easy', '*|Medium', '*|Hard']);
+  assert.equal(trendPart({ type: 'trend', data: SAMPLES.trend }, 0).key, '2026-09-28', 'anywhere in a week\'s column');
+  assert.equal(at('donut', SAMPLES.donut, { dataIndex: 1 }).label, 'C++', 'languages read as names');
+  assert.equal(at('barList', { valueLabel: 'students solving', items: [{ key: 'Graphs', name: 'Graphs', value: 4 }] }, { dataIndex: 0 }).students, 4);
+  assert.equal(at('barList', SAMPLES.barList, { dataIndex: 0 }), null, 'a student row has no part (it opens the student)');
+  assert.equal(at('funnel', SAMPLES.funnel, { dataIndex: 2 }).key, '2');
+  assert.equal(at('trend', SAMPLES.trend, { dataIndex: 1 }).students, 5, 'the students-per-week line');
+  assert.equal(at('calendar', SAMPLES.calendar, { value: ['2026-10-01', 4] }).key, '2026-10-01');
+  assert.equal(at('calendar', SAMPLES.calendar, { dataIndex: 0 }, 'weekly'), null, 'a week is not one day');
+  assert.equal(at('radar', SAMPLES.radar, { dataIndex: 1 }), null, 'the radar shape is one series');
+  assert.equal(at('radar', SAMPLES.radar, { dataIndex: 1 }, 'bars').key, 'Graphs');
+  assert.deepEqual(chartTableKeys({ type: 'histogram', data: { bins: [{ key: '0', label: 'a', count: 1 }, { label: 'b', count: 2 }] } }), ['0', '1']);
+  assert.ok(fullPageHeight({ type: 'barList', data: { items: new Array(150).fill({}) } }) > 150 * 25, 'every topic gets room on the full page');
+});
+
+test('the skill profile shows every student in view, or one student next to the average', () => {
+  const cohort = {
+    mode: 'cohort', cohort: 241, student: null, unit: '%', indicators: [{ name: 'String', max: 100 }, { name: 'Array', max: 100 }, { name: 'Math', max: 100 }], values: [41.9, 29, 14.5],
+    topics: [{ name: 'String', students: 101, pct: 41.9, avgSolved: 0.8, accuracy: 70 }, { name: 'Array', students: 70, pct: 29, avgSolved: 0.6, accuracy: 65 }, { name: 'Math', students: 35, pct: 14.5, avgSolved: 0.2, accuracy: 50 }],
+  };
+  const option = buildChartOption({ type: 'radar', data: cohort }, chartTheme(false));
+  assert.equal(option.title.text, 'All students in view');
+  assert.equal(option.series[0].data.length, 1);
+  assert.deepEqual(chartTable({ type: 'radar', data: cohort }).rows[0], ['String', 101, 41.9, 0.8, 70]);
+  assert.equal(chartInsight({ id: 'student-profile', type: 'radar', data: cohort }), '41.9% of these students (101 of 241) have solved String; Math is the least covered here (14.5%).');
+  const student = { ...SAMPLES.radar, mode: 'student', average: [1, 0.5, 0.2], topics: [{ name: 'Arrays', accuracy: 50 }, { name: 'Graphs', accuracy: 40 }, { name: 'DP', accuracy: 30 }] };
+  assert.equal(buildChartOption({ type: 'radar', data: student }, chartTheme(false)).series[0].data.length, 2, 'the student next to the average');
+  assert.match(chartInsight({ id: 'student-profile', type: 'radar', data: { mode: 'student', missing: true } }), /not in the current filter/);
+});
+
+test('top-student bars are as long as the score and the label is the score', () => {
+  const data = { items: [{ id: 'a', name: 'Depth', position: 1, score: 13.4, segments: { Easy: 0.4, Medium: 3.6, Hard: 9.4 }, counts: { Easy: 2, Medium: 6, Hard: 6 }, solved: { Easy: 1, Medium: 0, Hard: 0 } }] };
+  const option = buildChartOption({ type: 'rankedStackedBar', data }, chartTheme(false));
+  const length = option.series.reduce((sum, series) => sum + series.data[0], 0);
+  assert.equal(Math.round(length * 10) / 10, 13.4);
+  assert.equal(option.series.at(-1).label.formatter({ dataIndex: 0 }), '13.4');
+  assert.deepEqual(chartTable({ type: 'rankedStackedBar', data }).rows[0], [1, 'Depth', 13.4, 1, 0, 0], 'the table shows problems solved in the period, like the drawer');
 });
 
 test('each chart says what stands out in one sentence, with no averages', () => {
@@ -296,11 +346,14 @@ test('charts speak the area\'s own units and colours, and escape names', () => {
   const matrix = buildChartOption({ type: 'heatmap', data: SAMPLES.heatmap }, chartTheme(false));
   assert.match(matrix.tooltip.formatter({ value: [0, 0, 100] }), /100%<\/b> solved/);
   const behind = buildChartOption({ type: 'barList', data: SAMPLES.barList }, chartTheme(false));
-  assert.equal(behind.series[0].label.formatter({ value: 40 }), '40%');
+  assert.equal(behind.series[0].label.formatter({ dataIndex: 0 }), '0%');
+  const topics = buildChartOption({ type: 'barList', data: { valueLabel: 'students solving', cohort: 3000, items: [{ key: 'Graphs', name: 'Graphs', value: 1175, pct: 39.2 }] } }, chartTheme(false));
+  assert.equal(topics.series[0].label.formatter({ dataIndex: 0 }), '1,175 · 39.2%', 'counts of students say how many of everyone in view');
+  assert.equal(topics.yAxis.axisLabel.formatter('0'), 'Graphs', 'rows are indexes, labels are names');
   const histogram = buildChartOption({ type: 'histogram', data: SAMPLES.histogram }, chartTheme(false));
   assert.equal(histogram.xAxis.name, 'Course completed');
   const leaderboard = buildChartOption({ type: 'rankedStackedBar', data: { items: [{ ...SAMPLES.rankedStackedBar.items[0], name: '<img src=x>' }] } }, chartTheme(false));
-  assert.ok(!leaderboard.tooltip.formatter([{ dataIndex: 0 }]).includes('<img'), 'student names are escaped');
+  assert.ok(!leaderboard.tooltip.formatter({ dataIndex: 0, seriesName: 'Hard' }).includes('<img'), 'student names are escaped');
 });
 
 // ---------------------------------------------------------------- one student

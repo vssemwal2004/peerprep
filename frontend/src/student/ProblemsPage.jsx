@@ -219,10 +219,12 @@ export default function ProblemsPage() {
       <CompanyStrip companies={companyCounts} loading={companiesLoading} selected={selectedCompany} onSelect={selectCompany} />
 
       <div className="grid gap-5 xl:grid-cols-[232px_minmax(0,1fr)_312px] xl:gap-6">
-        <aside aria-label="Library" className="order-2 xl:order-1">
-          <div className="xl:sticky xl:top-5">
+        <aside aria-label="Library and practice calendar" className="order-2 xl:order-1">
+          {/* Capped to the viewport so the month view never hangs below the sticky column. */}
+          <div className="space-y-4 xl:sticky xl:top-5 xl:-mx-1 xl:max-h-[calc(100vh-2.5rem)] xl:overflow-y-auto xl:px-1 xl:pb-1 xl:[scrollbar-width:thin]">
             <LibrarySidebar view={view} totalProblems={totalProblems} favoritesCount={favorites.length} lists={lists} busyListId={busyListId}
               onView={selectView} onCreateList={() => setCreateListOpen(true)} onDeleteList={deleteList} />
+            <PracticeCalendar />
           </div>
         </aside>
 
@@ -286,9 +288,10 @@ export default function ProblemsPage() {
           </div>
         </section>
 
-        <aside aria-label="Practice calendar and topics" className="order-3 space-y-4">
-          <PracticeCalendar />
-          <TopicsPanel topics={topicCounts} selected={selectedTopic} onSelect={selectTopic} totalProblems={totalProblems} />
+        <aside aria-label="Topics" className="order-3">
+          <div className="xl:sticky xl:top-5">
+            <TopicsPanel topics={topicCounts} selected={selectedTopic} onSelect={selectTopic} totalProblems={totalProblems} />
+          </div>
         </aside>
       </div>
 

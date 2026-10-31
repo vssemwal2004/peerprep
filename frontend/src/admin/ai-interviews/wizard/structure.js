@@ -69,10 +69,13 @@ const simpleSection = () => ({
   name: SIMPLE_SECTION_NAME,
   weight: 100,
 });
+// The question bank: every student is asked topic by topic, in an order of their own.
 const simpleGroup = () => ({
   ...newGroup(),
   name: SIMPLE_GROUP_NAME,
   weight: 100,
+  shuffle: true,
+  byTopic: true,
 });
 
 const withSection = (data, sectionId, update) => ({
@@ -128,6 +131,41 @@ export const targetGroupId = (data) =>
   sectionsOf(data)
     .flatMap((section) => section.groups)
     .find((group) => !isLive(group))?.id || null;
+
+// ---- Question bank ----------------------------------------------------------
+// The bank is the interview's (first) manual group. `pick` is how many of its questions each student
+// gets (null = all), `shuffle` + `byTopic` ask them topic by topic in a per-student order.
+export const bankGroup = (data) =>
+  sectionsOf(data).flatMap((section) => section.groups).find((group) => !isLive(group)) || null;
+
+export const updateBank = (data, patch) => {
+  const target = ensureTargetGroup(data);
+  return withGroup(target.data, target.groupId, (group) => ({ ...group, ...patch }));
+};
+
+const topicLabel = (question) => question.competency?.trim() || "";
+// The bank's questions by topic, in first-appearance order: [{ topic, entries }] ("" = no topic).
+export function topicGroups(entries) {
+  const groups = new Map();
+  for (const entry of entries) {
+    const label = topicLabel(entry.question);
+    const key = label.toLowerCase();
+    if (!groups.has(key)) groups.set(key, { topic: label, entries: [] });
+    groups.get(key).entries.push(entry);
+  }
+  return [...groups.values()];
+}
+
+// Questions one student gets from a group: its non-resume questions, or `pick` of them.
+const pickedShare = (group) => {
+  const pool = (group.questions || []).filter((q) => q.kind !== "resume").length;
+  return Number.isInteger(group.pick) && pool > group.pick ? group.pick / pool : 1;
+};
+// Follow-ups a question may lead to: its limit, or (older questions) cross-questions plus AI ones.
+export const followUpsOf = (question) =>
+  Number.isInteger(question.followUpLimit)
+    ? question.followUpLimit
+    : (question.followUps || []).length + (question.maxFollowUps || 0);
 
 export function addQuestions(data, questions) {
   const target = ensureTargetGroup(data);
@@ -226,7 +264,7 @@ export function duplicateQuestion(data, groupId, questionId) {
 export const NEW_POOL_SIZE = 5;
 
 export const newLiveTopic = ({ annu, ...extra } = {}) => {
-  const { questions: _questions, ...base } = newGroup();
+  const { questions: _questions, pick: _pick, byTopic: _byTopic, ...base } = newGroup();
   return {
     ...base,
     name: "",
@@ -318,9 +356,11 @@ export function topicIssues(group) {
   return issues;
 }
 
-// Mirrors the server summary: counts, marks and the maximum time budget.
+// Mirrors the server summary: counts, marks and the maximum time budget one student gets. `stored`
+// counts every question in the interview (a bank's whole pool), which the question limit applies to.
 export function estimate(data) {
   const result = {
+    stored: 0,
     questions: 0,
     live: 0,
     total: 0,
@@ -348,25 +388,32 @@ export function estimate(data) {
         const count = liveCounts[group.id] || 0;
         const followUps = count * (group.annu?.maxFollowUps || 0);
         result.live += count;
+        result.stored += count;
         result.marks += count * 10;
         result.followUps += followUps;
         budget(groupRules, count + followUps);
         continue;
       }
+      const share = pickedShare(group);
       for (const question of group.questions || []) {
-        const slots = questionSlots(question);
+        result.stored += questionSlots(question);
+        const slots = question.kind === "resume" ? questionSlots(question) : share;
         const questionRules = { ...groupRules, ...question.ruleOverrides };
         result.questions += slots;
         result.marks += (Number(question.marks) || 10) * slots;
-        result.followUps +=
-          ((question.followUps || []).length + (question.maxFollowUps || 0)) *
-          slots;
+        result.followUps += followUpsOf(question) * slots;
+        if (Number.isInteger(question.followUpLimit)) {
+          budget(questionRules, slots * (1 + question.followUpLimit));
+          continue;
+        }
         budget(questionRules, slots * (1 + (question.maxFollowUps || 0)));
         for (const followUp of question.followUps || [])
           budget({ ...questionRules, ...followUp.ruleOverrides }, slots);
       }
     }
   }
+  // A bank with a pick gives per-student averages; show whole numbers.
+  for (const key of ["questions", "marks", "followUps", "seconds"]) result[key] = Math.round(result[key]);
   result.total = result.questions + result.live;
   result.minutes = Math.ceil(result.seconds / 60);
   return result;

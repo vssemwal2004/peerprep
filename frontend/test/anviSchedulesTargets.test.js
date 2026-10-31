@@ -331,7 +331,7 @@ test("the assigned-students page searches, filters, sorts and runs row actions",
   await click(menuItem("Remove student"));
   assert.match(document.querySelector("dialog[open]").textContent, /Their booking on .* is cancelled/);
   await click(button(/^Remove student$/, document.querySelector("dialog[open]")));
-  assert.deepEqual(calls.find(([name]) => name === "removeTargets").slice(1), ["a1", ["s1"]]);
+  assert.deepEqual(calls.find(([name]) => name === "removeTargets").slice(1), ["a1", ["s1"], { endInProgress: false }]);
   await waitFor(() => /1 student removed/.test(text()), "removed notice");
 
   await click(button(/^Actions for Chen Li$/));
@@ -345,7 +345,7 @@ test("the assigned-students page searches, filters, sorts and runs row actions",
   await click(menuItem("Reset interview"));
   assert.match(document.querySelector("dialog[open]").textContent, /previous attempt and report are permanently cleared/i);
   await click(button(/^Reset interview$/, document.querySelector("dialog[open]")));
-  assert.deepEqual(calls.find(([name]) => name === "resetTarget").slice(1), ["a1", "s2"]);
+  assert.deepEqual(calls.find(([name]) => name === "resetTarget").slice(1), ["a1", "s2", { endInProgress: false }]);
   await click(button(/^Actions for Bilal Khan$/));
   await click(menuItem("View report"));
   assert.match(document.getElementById("location").textContent, /\/admin\/ai-interviews\/reports\?assignmentId=a1&attemptId=t2/);
@@ -358,7 +358,7 @@ test("bulk selection reminds and removes across the page", async () => {
   assert.match(document.querySelector('[aria-label="Bulk actions"]').textContent, /3 students selected/);
   await click(button(/^Remove$/));
   await click(button(/^Remove 3 students$/, document.querySelector("dialog[open]")));
-  assert.deepEqual(calls.find(([name]) => name === "removeTargets").slice(1), ["a1", ["s1", "s2", "s3"]], "completed students can be removed too");
+  assert.deepEqual(calls.find(([name]) => name === "removeTargets").slice(1), ["a1", ["s1", "s2", "s3"], { endInProgress: false }], "completed students can be removed too");
 });
 
 test("the interview's assigned students span its schedules, with a schedule column and filter", async () => {

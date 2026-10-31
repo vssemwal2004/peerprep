@@ -49,7 +49,7 @@ export const SETTINGS_DEFAULTS = Object.freeze({
     requireTermsAcceptance: false,
   }),
   warmup: Object.freeze({ enabled: true, icebreakers: 2, tellMeAboutYourself: true, scored: false }),
-  resume: Object.freeze({ mode: "none", sources: Object.freeze(["builder", "upload"]), questionCount: 2 }),
+  resume: Object.freeze({ mode: "none", sources: Object.freeze(["builder", "upload"]), questionCount: 2, followUps: 1 }),
   language: Object.freeze({ studentChoice: Object.freeze([]), strict: true, onOtherLanguage: "remind_and_flag" }),
   proctoring: Object.freeze({
     enabled: false,
@@ -240,6 +240,7 @@ export function readResume(data = {}) {
     mode: RESUME_MODES.includes(raw.mode) ? raw.mode : derivedMode(data),
     sources: sources.length ? sources : [...d.sources],
     questionCount: whole(raw.questionCount, 0, 5, d.questionCount),
+    followUps: whole(raw.followUps, 0, 3, d.followUps),
   };
 }
 

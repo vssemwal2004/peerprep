@@ -7,7 +7,7 @@
 /** Bump when any template text changes: it is part of every template audio hash and R2 path. */
 export const TEMPLATE_SCHEMA_VERSION = 1;
 
-export const TEMPLATE_KINDS = Object.freeze(["clarify", "nudge", "intro", "closing", "ack", "transition", "move_on", "number", "decline", "wellbeing"]);
+export const TEMPLATE_KINDS = Object.freeze(["clarify", "nudge", "intro", "closing", "ack", "transition", "move_on", "number", "decline", "wellbeing", "small_talk"]);
 export const MAX_NUMBER_CLIP = 40;
 
 const NUMBER_WORDS = [
@@ -45,7 +45,17 @@ const FIXED = [
   entry("ack.thank_you", "ack", "Thank you."),
   entry("ack.got_it", "ack", "Got it."),
   entry("ack.alright", "ack", "Alright."),
-  entry("intro.default", "intro", "Hello, and welcome. I am ANVI, and I will be your interviewer today. I will ask you a few questions, one at a time. Take your time, and answer in your own words. Let's begin."),
+  entry("intro.default", "intro", "Hello, and welcome. I am ANVI, and I will be your interviewer today. I will ask you a few questions, one at a time. Take your time, and answer in your own words."),
+  // One fixed, unscored opening question after the intro. The reply is transcribed only to catch a
+  // wellbeing concern before Question 1; it is never scored, stored as an answer or sent to a model.
+  entry("small_talk.how_are_you", "small_talk", "Before we begin, how are you feeling today, and how has your preparation been going?"),
+  // The warm-up after it: "tell me about yourself", also unscored and never sent to a model.
+  entry("small_talk.about_yourself", "small_talk", "Thank you for sharing. To start, could you tell me a little about yourself?"),
+  // After the student's introduction: ANVI checks they are ready, then waits for a "yes" (or a pause).
+  entry("small_talk.ready", "small_talk", "Thank you for the introduction, that was nice to hear. Shall we start the interview?"),
+  entry("small_talk.not_ready", "small_talk", "No problem, take a moment. Just say yes when you're ready to start."),
+  entry("small_talk.thanks", "small_talk", "Thank you for sharing. Let's begin with the first question."),
+  entry("small_talk.begin", "small_talk", "Alright, let's begin with the first question."),
   entry("closing.default", "closing", "That brings us to the end of the interview. Thank you for your time. Your detailed report will be ready shortly. All the best."),
   entry("closing.time", "closing", "We have reached the end of our time, so let's stop here. Thank you for your time. Your detailed report will be ready shortly. All the best."),
 ];

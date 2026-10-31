@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, RotateCcw } from "lucide-react";
 import { newGroup } from "../filterModel";
-import { ChartBody } from "./ChartCard";
 import { GroupFilters } from "./GroupEditor";
 import { sectionStyle } from "./sectionStyles";
 import { Button, Dialog, Drawer, IconButton, OptionPicker, focusRing, inputClass, selectClass } from "./ui";
@@ -30,7 +29,7 @@ export function ChartSettingsDialog({ open, entry, definition, catalog, fields, 
             {has("studentId") && (
               <label className="block sm:col-span-2">
                 <span className="mb-1 block text-[12px] font-semibold text-slate-700 dark:text-slate-200">Student</span>
-                <OptionPicker list="students" multiple={false} value={draft.options.studentId || ""} labels={draft.labels} placeholder="Top student in view"
+                <OptionPicker list="students" multiple={false} value={draft.options.studentId || ""} labels={draft.labels} placeholder="All students in view"
                   onChange={(studentId, labels) => setDraft((current) => ({ ...current, options: { ...current.options, studentId }, labels }))} />
               </label>
             )}
@@ -45,7 +44,7 @@ export function ChartSettingsDialog({ open, entry, definition, catalog, fields, 
             {has("limit") && (
               <label className="block">
                 <span className="mb-1 block text-[12px] font-semibold text-slate-700 dark:text-slate-200">How many to show</span>
-                <input type="number" min={1} max={50} className={inputClass} value={draft.options.limit} onChange={(event) => setOption("limit", event.target.value)} />
+                <input type="number" min={1} max={100} className={inputClass} value={draft.options.limit} onChange={(event) => setOption("limit", event.target.value)} />
               </label>
             )}
           </div>
@@ -57,15 +56,6 @@ export function ChartSettingsDialog({ open, entry, definition, catalog, fields, 
             catalog={catalog} onChange={(filter) => setDraft((current) => ({ ...current, filter }))} />
         </section>
       </div>
-    </Dialog>
-  );
-}
-
-export function ChartExpandDialog({ chart, view = "chart", onClose, onStudent }) {
-  if (!chart) return null;
-  return (
-    <Dialog open onClose={onClose} size="max-w-6xl" title={chart.title} subtitle={chart.question}>
-      <div className="p-4"><ChartBody chart={chart} view={view} onStudent={onStudent} height={Math.min(620, Math.max(440, typeof window !== "undefined" ? window.innerHeight * 0.6 : 520))} /></div>
     </Dialog>
   );
 }

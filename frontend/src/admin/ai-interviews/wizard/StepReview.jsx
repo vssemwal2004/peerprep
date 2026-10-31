@@ -18,27 +18,25 @@ import {
   Trophy,
   UserPlus,
   Briefcase,
-  MessageSquareMore,
+  IndianRupee,
 } from "lucide-react";
 import { ROOT, anviSettings } from "../definition";
 import { AnviTile, ToneChip, surfaceClass } from "../ui";
 import { ICON_TONES } from "../theme";
-import { renderScript } from "./defaults";
-import { estimate, isSimple, questionEntries } from "./structure";
+import { ABOUT_YOURSELF_LINE, BEGIN_LINE, CLOSING_LINE, INTRO_LINE, READY_LINE, SMALL_TALK_LINE, budgetCapInr } from "./anviRuntime";
+import { bankGroup, estimate, followUpsOf, isSimple, questionEntries, topicGroups } from "./structure";
+import { durationGuidance, readDuration } from "./settings/hybrid";
 import { livePlan, priorityLabel } from "./livetopics/counts";
 import LiveTopicsSummary from "./livetopics/LiveTopicsSummary";
-import { readConduct, readProctoring, readResume, readWarmup, RESUME_SOURCES } from "./settings/model";
+import { readConduct, readProctoring, readResume, RESUME_SOURCES } from "./settings/model";
+import { speechRateLabel } from "./settings/tabs";
 import {
   DIFFICULTY,
   EXPERIENCE,
-  MODES,
-  PACES,
   STEPS,
-  TONES,
   answerTimeLabel,
   labelOf,
   rubricTotal,
-  voiceSummary,
 } from "./steps";
 import { Alert, buttonGhost, buttonPrimary, buttonSecondary } from "./controls";
 
@@ -134,16 +132,31 @@ function LiveTopicLine({ topic }) {
   );
 }
 
+// One line ANVI says, as a chat bubble.
+function AnviLine({ children }) {
+  return (
+    <div className="flex gap-3">
+      <AnviTile size="sm" />
+      <p className="rounded-2xl rounded-tl-sm bg-violet-50 px-4 py-2.5 text-sm text-violet-950 dark:bg-violet-500/10 dark:text-violet-100">
+        {children}
+      </p>
+    </div>
+  );
+}
+
 function StudentPreview({ data, plan }) {
-  const persona = anviSettings(data.anvi).persona;
   const grouped = !isSimple(data);
   const entries = questionEntries(data);
+  const bank = bankGroup(data);
+  const pool = (bank?.questions || []).filter((q) => q.kind !== "resume").length;
+  const picking = !grouped && Number.isInteger(bank?.pick) && bank.pick < pool;
+  const byTopic = !grouped && Boolean(bank?.shuffle && bank?.byTopic);
   let number = 0;
   const defaultTime = data.rules?.responseSeconds;
   const meta = (question) => {
     const time = question.ruleOverrides?.responseSeconds ?? defaultTime;
     const parts = [time === null ? "No time limit" : `Up to ${answerTimeLabel(time ?? 120)} to answer`];
-    const followUps = (question.followUps || []).length + (question.maxFollowUps || 0);
+    const followUps = followUpsOf(question);
     if (followUps) parts.push(`ANVI may ask up to ${followUps} follow-up${followUps === 1 ? "" : "s"}`);
     if (question.skippable === false) parts.push("Can't be skipped");
     return parts.join(" · ");
@@ -163,14 +176,20 @@ function StudentPreview({ data, plan }) {
         <span className="text-xs text-slate-500 dark:text-gray-400">Expected answers stay hidden from students.</span>
       </header>
       <div className="space-y-5 p-5">
-        <div className="flex gap-3">
-          <AnviTile size="sm" />
-          <p className="rounded-2xl rounded-tl-sm bg-violet-50 px-4 py-2.5 text-sm text-violet-950 dark:bg-violet-500/10 dark:text-violet-100">
-            {persona.introduction.trim()
-              ? renderScript(persona.introduction, data)
-              : `Hi Priya, I'm ANVI. Let's begin your ${data.role || "practice"} interview.`}
+        <AnviLine>{INTRO_LINE}</AnviLine>
+        <AnviLine>{SMALL_TALK_LINE}</AnviLine>
+        <AnviLine>{ABOUT_YOURSELF_LINE}</AnviLine>
+        <AnviLine>{READY_LINE}</AnviLine>
+        <p className="pl-11 text-xs text-slate-500 dark:text-gray-400">
+          The student replies to each; none of it is scored. If they say they are unwell, ANVI suggests ending and rescheduling; a "not yet" gets a moment.
+        </p>
+        <AnviLine>{BEGIN_LINE}</AnviLine>
+        {(picking || byTopic) && (
+          <p data-preview-selection className="rounded-xl bg-sky-50 px-4 py-2.5 text-sm text-sky-900 dark:bg-sky-500/10 dark:text-sky-100">
+            {picking ? `Each student is asked ${bank.pick} of these ${pool} questions, balanced by topic and difficulty` : `Each student is asked all ${pool} questions`}
+            {byTopic ? ", topic by topic in their own order." : "."}
           </p>
-        </div>
+        )}
         {data.sections.map((section) => (
           <div key={section.id} className="space-y-3">
             {grouped && (
@@ -215,14 +234,7 @@ function StudentPreview({ data, plan }) {
         {!entries.length && !data.sections.some((s) => s.groups.some((g) => g.source === "annu")) && (
           <p className="text-sm text-slate-500">No questions yet.</p>
         )}
-        <div className="flex gap-3">
-          <AnviTile size="sm" />
-          <p className="rounded-2xl rounded-tl-sm bg-violet-50 px-4 py-2.5 text-sm text-violet-950 dark:bg-violet-500/10 dark:text-violet-100">
-            {persona.closing.trim()
-              ? renderScript(persona.closing, data)
-              : "Thank you, Priya. Your report will be ready shortly."}
-          </p>
-        </div>
+        <AnviLine>{CLOSING_LINE}</AnviLine>
       </div>
     </section>
   );
@@ -256,7 +268,6 @@ export default function StepReview({
   const anvi = anviSettings(data.anvi);
   const ready = checked && !issues.length;
   const conduct = readConduct(data);
-  const warmup = readWarmup(data);
   const resume = readResume(data);
   const proctoring = readProctoring(data);
   const rubric = data.rubric || [];
@@ -281,11 +292,22 @@ export default function StepReview({
           ? `${issues.length} thing${issues.length === 1 ? "" : "s"} to fix before you can publish.`
           : "The setup is checked on the server when you publish.";
 
+  // The question bank: its size, topics, what one student gets and in which order.
+  const bank = bankGroup(data);
+  const bankEntries = questionEntries(data).filter((entry) => entry.groupId === bank?.id && entry.question.kind !== "resume");
+  const pool = bankEntries.length;
+  const topics = topicGroups(bankEntries).filter((group) => group.topic).length;
+  const picking = isSimple(data) && Number.isInteger(bank?.pick) && bank.pick < pool;
+  const order = !isSimple(data) ? "As in each section" : bank?.shuffle ? (bank.byTopic ? "Topic by topic, a different order for each student" : "Shuffled for each student") : "As listed";
   const perStudent = live
     ? counts.questions
-      ? `${counts.questions + live} (${counts.questions} fixed + ${live} by ANVI)`
-      : `${live}, all different per student`
-    : String(counts.questions);
+      ? `${counts.questions + live} (${counts.questions} from the bank + ${live} written by ANVI per student)`
+      : `${live}, written by ANVI per student`
+    : picking
+      ? `${counts.questions} of ${pool}, balanced by topic and difficulty`
+      : String(counts.questions);
+  const minutes = readDuration(data);
+  const guidance = durationGuidance(data, minutes);
   const limitText = proctoring.maxViolations
     ? `${proctoring.onLimit === "end" ? "Ends" : "Flagged"} at ${proctoring.maxViolations} violation${proctoring.maxViolations === 1 ? "" : "s"}`
     : "No limit";
@@ -461,10 +483,27 @@ export default function StepReview({
       </div>
 
       <section aria-label="Interview at a glance" data-review-kpis className="grid grid-cols-2 gap-6 lg:grid-cols-4">
-        <Kpi icon={ListChecks} label="Questions per student" value={live ? counts.questions + live : counts.questions} detail={live ? `${counts.questions} fixed + ${live} by ANVI` : "Same for every student"} />
-        <Kpi icon={Clock} label="Estimated time" value={counts.unlimited ? "Untimed" : counts.total ? `${counts.minutes} min` : "—"} detail="If every answer uses its full time" tone="violet" />
+        <Kpi
+          icon={ListChecks}
+          label="Questions per student"
+          value={live ? counts.questions + live : counts.questions}
+          detail={live ? `${counts.questions} from the bank + ${live} by ANVI` : picking ? `A balanced set from ${pool}` : "Same questions for every student"}
+        />
+        <Kpi
+          icon={Clock}
+          label={minutes ? "Interview length" : "Estimated time"}
+          value={minutes ? `${minutes} min` : counts.unlimited ? "Untimed" : counts.total ? `${counts.minutes} min` : "—"}
+          detail={minutes ? "Set in ANVI settings" : "If every answer uses its full time"}
+          tone="violet"
+        />
         <Kpi icon={Trophy} label="Total marks" value={counts.total ? counts.marks : "—"} detail={`${rubric.length} scoring criteria`} tone="amber" />
-        <Kpi icon={MessageSquareMore} label="Follow-ups" value={`Up to ${counts.followUps}`} detail="Asked by ANVI when useful" tone="emerald" />
+        <Kpi
+          icon={IndianRupee}
+          label="AI budget per student"
+          value={`Up to ₹${budgetCapInr(minutes || counts.minutes)}`}
+          detail="Hard limit; most interviews use far less"
+          tone="emerald"
+        />
       </section>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -473,11 +512,9 @@ export default function StepReview({
           icon={Briefcase}
           onEdit={() => onEdit("basics")}
           rows={[
-            ["Role", data.role || "—"],
+            ["Job role", data.role || "—"],
             ["Company", data.companyName || "General"],
             ["Level", `${labelOf(EXPERIENCE, data.experience, "—")} · ${labelOf(DIFFICULTY, data.difficulty, "—")}`],
-            ["Type", labelOf(MODES, data.rules?.mode, "Mock interview")],
-            ["Language", "English"],
           ]}
         />
         <SummaryCard
@@ -487,34 +524,34 @@ export default function StepReview({
           columns
           onEdit={() => onEdit("questions")}
           rows={[
+            ["Question bank", pool ? `${pool} question${pool === 1 ? "" : "s"}${topics ? ` · ${topics} topic${topics === 1 ? "" : "s"}` : ""}` : "Empty"],
             ["Questions per student", perStudent],
+            ["Order", order],
+            ["Follow-ups", counts.followUps ? `Up to ${counts.followUps} per student, prepared ones first` : "None"],
             ["Default answer time", answerTimeLabel(data.rules?.responseSeconds === undefined ? 120 : data.rules.responseSeconds)],
             ...(plan.topics.length
-              ? [["ANVI topics", plan.topics.map((t) => `${t.name} ×${t.count} (${priorityLabel(t.priority)})`).join(" · ")]]
+              ? [["ANVI topics (older format)", plan.topics.map((t) => `${t.name} ×${t.count} (${priorityLabel(t.priority)})`).join(" · ")]]
               : []),
-            ["Follow-ups", `Up to ${counts.followUps}`],
           ]}
         />
         <SummaryCard
-          title="Voice & personality"
+          title="Length & AI budget"
+          icon={Clock}
+          onEdit={() => onEdit("anvi", "durationMinutes")}
+          rows={[
+            ["Interview length", minutes ? `${minutes} minutes` : `Not set (about ${counts.minutes || "—"} minutes from the questions)`],
+            ...(guidance ? [["Questions for this length", guidance.warning || `${guidance.planned} planned · suits ${guidance.min}–${guidance.max}`]] : []),
+            ["AI budget per student", `Up to ₹${budgetCapInr(minutes || counts.minutes)}, enforced during the interview`],
+          ]}
+        />
+        <SummaryCard
+          title="Voice & speed"
           icon={AudioLines}
-          onEdit={() => onEdit("anvi", "voice")}
+          onEdit={() => onEdit("anvi", "speechRate")}
           rows={[
-            ["Voice", voiceSummary(data)],
-            ["Personality", `${labelOf(TONES, anvi.persona.tone)} · ${labelOf(PACES, anvi.persona.pace)} pace`],
-            ["Scripts", anvi.persona.introduction || anvi.persona.closing ? "Custom" : "Standard"],
-            ["Video avatar", anvi.avatar?.enabled ? "On" : "Off"],
-          ]}
-        />
-        <SummaryCard
-          title="Conversation"
-          icon={MessagesSquare}
-          onEdit={() => onEdit("anvi", "turns")}
-          rows={[
-            ["Replies after", `${anvi.turns.silenceSeconds} s silence`],
-            ["Nudges", anvi.turns.maxNudges ? `Up to ${anvi.turns.maxNudges} after ${anvi.turns.nudgeSeconds} s` : "None"],
-            ["Warm-up", warmup.enabled ? `On · ${warmup.icebreakers} icebreaker${warmup.icebreakers === 1 ? "" : "s"}${warmup.tellMeAboutYourself ? " + about yourself" : ""}` : "Off"],
-            ["Ground rules", join([conduct.finishAllQuestions && "Finish all questions", conduct.endByVoice && "End by voice", conduct.noPersonalQuestions && "No personal questions"])],
+            ["Voice", "ANVI · Indian English"],
+            ["Speed", speechRateLabel(anvi.persona.speechRate)],
+            ["Acknowledgements", anvi.persona.acknowledgements === false ? "Off" : "On"],
           ]}
         />
         <SummaryCard
@@ -526,7 +563,7 @@ export default function StepReview({
               "Resume",
               resume.mode === "none"
                 ? "Not asked"
-                : `${resume.mode === "required" ? "Required" : "Optional"} · ${resume.questionCount} question${resume.questionCount === 1 ? "" : "s"}`,
+                : `${resume.mode === "required" ? "Required" : "Optional"} · ${resume.questionCount} question${resume.questionCount === 1 ? "" : "s"} · up to ${resume.followUps} follow-up${resume.followUps === 1 ? "" : "s"} each`,
             ],
             ...(resume.mode === "none"
               ? []

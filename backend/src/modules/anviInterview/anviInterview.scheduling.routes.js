@@ -38,8 +38,10 @@ export function createAnviSchedulingAdminRouter(authenticate = requireAuth, deps
   }));
   router.get("/:id/targets", asyncRoute(async (req, res) => res.json(await service.listTargets(req.user, req.params.id, req.query))));
   router.post("/:id/targets", asyncRoute(async (req, res) => res.json(await service.addTargets(req.user, req.params.id, req.body || {}))));
-  router.post("/:id/targets/remove", asyncRoute(async (req, res) => res.json(await service.removeTargets(req.user, req.params.id, req.body?.studentIds))));
-  router.post("/:id/targets/:studentId/reset", asyncRoute(async (req, res) => res.json(await service.resetTarget(req.user, req.params.id, req.params.studentId))));
+  // `endInProgress: true` (the admin confirmed it) also stops an interview the student is taking right now.
+  const endInProgress = (req) => ({ endInProgress: req.body?.endInProgress === true });
+  router.post("/:id/targets/remove", asyncRoute(async (req, res) => res.json(await service.removeTargets(req.user, req.params.id, req.body?.studentIds, endInProgress(req)))));
+  router.post("/:id/targets/:studentId/reset", asyncRoute(async (req, res) => res.json(await service.resetTarget(req.user, req.params.id, req.params.studentId, endInProgress(req)))));
   router.post("/:id/targets/notify", asyncRoute(async (req, res) => res.json(await service.notifyTargets(req.user, req.params.id, req.body?.studentIds))));
   router.delete("/:id/targets/:studentId", asyncRoute(async (req, res) => res.json(await service.removeTargets(req.user, req.params.id, [req.params.studentId]))));
   router.post("/:id/:action(pause|resume|close|cancel|archive|release)", asyncRoute(async (req, res) =>

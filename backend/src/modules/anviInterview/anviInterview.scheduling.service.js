@@ -421,7 +421,19 @@ let audioPregenModule;
 const defaultPregenRevision = async (spec) =>
   (await (audioPregenModule ||= import("./anviInterview.audioPregen.js"))).defaultAudioPregen().ensureRevision(spec);
 
-export function createAnviScheduling({ clock = Date, notifier = createSchedulingNotifier({ clock }), log = console, pregenRevision = defaultPregenRevision } = {}) {
+let liveEndModules = null;
+// An admin reset or removal while the student's interview is still running: the attempt is closed from its
+// stored answers (abandoned, or expired past its deadline) and the conductor holding it in this process stops
+// and tells the student. `evaluate: false` (a reset deletes the attempt right after) queues no evaluation.
+const defaultEndInProgress = async (attempt, { endReason, at, evaluate = true }) => {
+  const [service, socket] = await (liveEndModules ||= Promise.all([import("./anviInterview.service.js"), import("./anviInterview.socket.js")]));
+  const outcome = { status: at >= new Date(attempt.hardDeadline) ? "expired" : "abandoned", endReason };
+  const applied = await service.finalizeFromLive(attempt, { ...outcome, now: at, ...(evaluate ? {} : { evaluateSoon: null }) });
+  if (applied) socket.stopAnviAttempt(attempt._id, outcome);
+  return applied;
+};
+
+export function createAnviScheduling({ clock = Date, notifier = createSchedulingNotifier({ clock }), log = console, pregenRevision = defaultPregenRevision, endInProgress = defaultEndInProgress } = {}) {
   const now = () => new Date(clock.now());
   const pregen = (spec) => {
     try {
@@ -1233,7 +1245,12 @@ export function createAnviScheduling({ clock = Date, notifier = createScheduling
     return { sent: due.length, recentlyNotified: targets.length - due.length, notEligible: ids.length - targets.length };
   }
 
-  async function removeTargets(admin, id, studentIds = []) {
+  // The in-progress attempts of these students on this assignment (what endInProgress needs).
+  const runningAttempts = (assignmentId, studentIds) => AnviAttempt.find({ assignmentId, studentId: { $in: studentIds }, status: "in_progress" })
+    .select("_id studentId interviewId assignmentId bookingId hardDeadline").lean();
+
+  /** `endInProgress: true` first ends a running interview of these students (kept and scored as partial). */
+  async function removeTargets(admin, id, studentIds = [], { endInProgress: endRunning = false } = {}) {
     const at = now();
     const assignment = await owned(admin, id);
     if (!Array.isArray(studentIds) || !studentIds.length) fail(400, "INVALID_STUDENTS", "Choose the students to remove.");
@@ -1241,6 +1258,9 @@ export function createAnviScheduling({ clock = Date, notifier = createScheduling
     const targets = await AnviAssignmentTarget.find({ assignmentId: assignment._id, studentId: { $in: ids }, status: "assigned" }).select("_id studentId").lean();
     if (!targets.length) fail(404, "TARGET_NOT_FOUND", "These students are not on this assignment.");
     const removedIds = targets.map((row) => row.studentId);
+    if (endRunning) {
+      for (const attempt of await runningAttempts(assignment._id, removedIds)) await endInProgress(attempt, { endReason: "removed_by_admin", at });
+    }
     await AnviAssignmentTarget.updateMany({ _id: { $in: targets.map((row) => row._id) }, outcome: { $in: ["pending", "booked"] } }, { $set: { outcome: "cancelled" } });
     await AnviAssignmentTarget.updateMany({ _id: { $in: targets.map((row) => row._id) } }, { $set: { status: "removed", removedAt: at } });
     // Removal cancels the student's future booking; an interview already under way is left alone.
@@ -1255,16 +1275,22 @@ export function createAnviScheduling({ clock = Date, notifier = createScheduling
     return { assignment: assignmentView(updated), removed: targets.length };
   }
 
-  /** Clears a finished scheduled attempt so the same target can take this interview again. */
-  async function resetTarget(admin, id, studentIdValue) {
+  /**
+   * Clears a finished scheduled attempt so the same target can take this interview again. An interview still
+   * in progress is refused unless `endInProgress` is true: it is then stopped first (no evaluation) and cleared.
+   */
+  async function resetTarget(admin, id, studentIdValue, { endInProgress: endRunning = false } = {}) {
     const at = now();
     const assignment = await owned(admin, id);
     if (!ACTIVE.includes(effectiveStatus(assignment, at))) fail(409, "ASSIGNMENT_CLOSED", "Only an active schedule can be reset for another attempt.");
     const studentId = objectId(studentIdValue, "student");
     const target = await AnviAssignmentTarget.findOne({ assignmentId: assignment._id, studentId, status: "assigned" }).lean();
     if (!target) fail(404, "TARGET_NOT_FOUND", "This student is not on the schedule.");
+    const running = await runningAttempts(assignment._id, [studentId]);
+    if (running.length && !endRunning) fail(409, "ATTEMPT_IN_PROGRESS", "An interview in progress cannot be reset.");
+    for (const attempt of running) await endInProgress(attempt, { endReason: "reset_by_admin", at, evaluate: false });
     const attempts = await AnviAttempt.find({ assignmentId: assignment._id, studentId }).select("_id status").lean();
-    if (attempts.some((row) => row.status === "in_progress")) fail(409, "ATTEMPT_IN_PROGRESS", "An interview in progress cannot be reset.");
+    if (attempts.some((row) => row.status === "in_progress")) fail(409, "ATTEMPT_IN_PROGRESS", "The interview in progress could not be stopped. Try again.");
     if (!attempts.length && !target.lastAttemptId) fail(409, "ATTEMPT_NOT_FOUND", "This student has no completed interview to reset.");
     const attemptIds = attempts.map((row) => row._id);
     if (attemptIds.length) {
@@ -1708,6 +1734,30 @@ export function createAnviScheduling({ clock = Date, notifier = createScheduling
   }
 
   /**
+   * "Mark complete" on an interview (the caller already set it completed and owns it): every interview still
+   * running is ended from its stored answers and evaluated, then each active schedule is closed (one that has
+   * not opened yet is cancelled, since nobody could have taken it). Safe to repeat.
+   * Returns { ended, closed, cancelled }.
+   */
+  async function completeInterview(admin, interviewIdValue) {
+    const at = now();
+    const interviewId = objectId(interviewIdValue, "interview");
+    const running = await AnviAttempt.find({ interviewId, status: "in_progress" })
+      .select("_id studentId interviewId assignmentId bookingId hardDeadline").lean();
+    let ended = 0;
+    for (const attempt of running) if (await endInProgress(attempt, { endReason: "interview_completed", at })) ended += 1;
+    const schedules = await AnviAssignment.find({ interviewId, ownerId: admin._id, status: { $in: ACTIVE } }).select("_id window").lean();
+    let closed = 0;
+    let cancelled = 0;
+    for (const row of schedules) {
+      const early = ms(at) < ms(row.window.opensAt);
+      await transitionAssignment(admin, String(row._id), early ? "cancel" : "close");
+      if (early) cancelled += 1; else closed += 1;
+    }
+    return { ended, closed, cancelled };
+  }
+
+  /**
    * Permanently removes every ANVI record owned by one interview. Definition deletion uses this after
    * the admin has typed the exact title. A live attempt is the sole blocker: deleting it would eject a
    * student from an interview currently under way.
@@ -1740,7 +1790,7 @@ export function createAnviScheduling({ clock = Date, notifier = createScheduling
     addTargets, removeTargets, resetTarget, listTargets, listInterviewTargets, notifyTargets, adminMoveBooking, adminCancelBooking,
     listStudentAssignments, listOpenSlots, bookSlot, rescheduleBooking, cancelBooking, bookingCalendarIcs,
     checkAssignedStart, recordAssignedAttempt, onAttemptFinalized, practiceBlocked, practiceBlockedIds, visibilityForAttempt, activeAssignmentFor,
-    deleteInterviewData,
+    deleteInterviewData, completeInterview,
     assignmentActive,
     // Used by the sweeper.
     runCloseEffects, runCancelEffects, reconcileFinalized, notifier, now,

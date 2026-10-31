@@ -43,7 +43,7 @@ function countdown(target, now) {
 function DayCell({ dayKey, label, count, planDone, isToday, future }) {
   const text = `${new Date(`${dayKey}T00:00:00Z`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' })}: ${count ? `${count} ${count === 1 ? 'activity' : 'activities'}` : 'no activity'}${planDone ? ', daily plan complete' : ''}`;
   return <li title={text} aria-current={isToday ? 'date' : undefined}
-    className={`relative mx-auto flex h-7 w-7 items-center justify-center rounded-lg text-[11.5px] tabular-nums transition-colors ${count ? LEVELS[level(count)] : future ? 'text-slate-300 dark:text-zinc-600' : 'text-slate-500 dark:text-zinc-400'} ${isToday ? 'font-semibold ring-2 ring-sky-500 ring-offset-1 ring-offset-white dark:ring-offset-[#232325]' : ''}`}>
+    className={`relative mx-auto flex h-6 w-6 items-center justify-center rounded-md text-[11px] tabular-nums transition-colors ${count ? LEVELS[level(count)] : future ? 'text-slate-300 dark:text-zinc-600' : 'text-slate-500 dark:text-zinc-400'} ${isToday ? 'font-semibold ring-2 ring-sky-500 ring-offset-1 ring-offset-white dark:ring-offset-[#232325]' : ''}`}>
     <span className="sr-only">{text}</span>
     <span aria-hidden="true">{label}</span>
     {planDone && <span className="absolute -bottom-0.5 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-[#232325]" aria-hidden="true" />}
@@ -60,7 +60,7 @@ function TodayRows({ daily, plan, now }) {
   const resetsIn = countdown(plan?.endsAt || daily?.nextResetAt, now);
   const difficulty = DIFFICULTY[problem?.difficulty];
   if (!problem) {
-    return <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#f0f1f4] pt-3 text-[12px] text-slate-500 dark:border-white/[0.06] dark:text-zinc-400">
+    return <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#f0f1f4] pt-3 text-[12px] text-slate-500 dark:border-white/[0.06] dark:text-zinc-400">
       <span>Any problem you solve counts today.</span>
       <DailyCodingChallenge variant="header" className="!h-auto !px-0 hover:!bg-transparent" />
     </div>;
@@ -82,8 +82,8 @@ function TodayRows({ daily, plan, now }) {
 }
 
 /**
- * Compact by default: streak, this week and today. The month view opens on request so the topic
- * list below stays in view.
+ * Compact by default: streak, this week and today. Sized for the narrow library column; the month
+ * view opens on request.
  */
 export default function PracticeCalendar() {
   const data = usePracticeCalendar();
@@ -112,10 +112,10 @@ export default function PracticeCalendar() {
     <header className="flex items-center justify-between gap-3">
       <h2 id="practice-calendar-title" className="flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.01em] text-slate-900 dark:text-zinc-50">
         <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/15" aria-hidden="true"><CalendarDays className="h-4 w-4" /></span>
-        Practice calendar
+        Calendar
       </h2>
       <button type="button" onClick={toggle} aria-expanded={expanded} aria-controls="practice-calendar-days"
-        className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-medium text-slate-600 hover:bg-[#f3f4f6] dark:text-zinc-300 dark:hover:bg-white/[0.06] ${focusRing}`}>
+        className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-medium text-slate-600 hover:bg-[#f3f4f6] dark:text-zinc-300 dark:hover:bg-white/[0.06] ${focusRing}`}>
         {expanded ? 'Week' : 'Month'}<ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
       </button>
     </header>

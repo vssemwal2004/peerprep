@@ -1,4 +1,4 @@
-import { defaultFilterState, newGroup, nodeId, normalizeState } from "./filterModel.js";
+import { defaultFilterState, newGroup, nodeId } from "./filterModel.js";
 
 const ANALYSIS_AREAS = new Set(["all", "coding", "learning", "interview", "assessment"]);
 
@@ -18,11 +18,10 @@ export function assessmentAnalysisPath(assessment) {
 }
 
 /**
- * URL context wins over browser-saved filters. This lets another admin page
- * open Prep Analysis for one exact feature or assessment while ordinary visits
- * still restore the admin's last filter setup.
+ * URL context lets another admin page open Prep Analysis for one exact feature
+ * or assessment. Ordinary visits always start on all students with no filter.
  */
-export function prepAnalysisStateFromSearch(search, storedState) {
+export function prepAnalysisStateFromSearch(search) {
   const params = new URLSearchParams(search || "");
   const requestedArea = params.get("area") || params.get("source");
   const assessmentIds = [...new Set([
@@ -46,6 +45,5 @@ export function prepAnalysisStateFromSearch(search, storedState) {
     };
   }
 
-  if (ANALYSIS_AREAS.has(requestedArea)) return defaultFilterState(requestedArea);
-  return normalizeState(storedState);
+  return defaultFilterState(ANALYSIS_AREAS.has(requestedArea) ? requestedArea : "coding");
 }

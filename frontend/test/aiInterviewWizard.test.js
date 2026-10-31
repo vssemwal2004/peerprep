@@ -103,7 +103,7 @@ test("estimate mirrors the server budget and marks", () => {
 
 test("step checks flag the exact fields to focus", () => {
   const data = newDefinition();
-  assert.deepEqual(Object.keys(stepErrors("basics", data)), ["title", "role", "experience", "difficulty"]);
+  assert.deepEqual(Object.keys(stepErrors("basics", data)), ["title", "role", "company", "experience", "difficulty"]);
   assert.ok(stepErrors("questions", data).questions);
   const { data: withBlank } = addQuestions(data, [question("")]);
   const groupId = withBlank.sections[0].groups[0].id;
@@ -145,15 +145,17 @@ test("every ANVI settings field a Fix link names maps to the sub-tab that render
     ["answerTime", "advanced"],
     ["rubric", "scoring"],
   ]);
-  for (const [field, tab] of [["voice", "voice"], ["voiceLanguage", "voice"], ["language", "voice"], ["persona", "voice"], ["introduction", "voice"], ["avatar", "voice"], ["turns", "conversation"], ["warmup", "conversation"], ["conduct", "conversation"], ["terms", "candidate"], ["resumeSources", "candidate"], ["proctoring", "proctoring"], ["proctoringCamera", "proctoring"]])
+  // Settings that are fixed now (scripts, turns, warm-up) still route older Fix links to a tab.
+  for (const [field, tab] of [["voice", "voice"], ["speechRate", "voice"], ["persona", "voice"], ["introduction", "voice"], ["avatar", "voice"], ["turns", "voice"], ["warmup", "voice"], ["conduct", "candidate"], ["terms", "candidate"], ["resumeSources", "candidate"], ["resumeFollowUps", "candidate"], ["proctoring", "proctoring"], ["proctoringCamera", "proctoring"]])
     assert.equal(tabForField(field), tab, field);
   assert.equal(tabForField("title"), null);
   assert.equal(tabForFields(["title", "rubric"]), "scoring", "the first field with a tab wins");
   assert.equal(tabForFields([]), null);
   assert.equal(resolveSettingsTab("proctoring"), "proctoring");
   assert.equal(resolveSettingsTab("nope"), null);
-  assert.equal(resolveSettingsTab("personality"), "voice", "old Personality links open Voice & personality");
-  assert.deepEqual(SETTINGS_TABS.map((t) => t.id), ["voice", "conversation", "candidate", "proctoring", "scoring", "advanced"]);
+  assert.equal(resolveSettingsTab("personality"), "voice", "old Personality links open Voice & speed");
+  assert.equal(resolveSettingsTab("conversation"), "voice", "the fixed Conversation settings' old links open Voice & speed");
+  assert.deepEqual(SETTINGS_TABS.map((t) => t.id), ["voice", "candidate", "proctoring", "scoring", "advanced"]);
 });
 
 test("ANVI settings tab status chips and error dots", () => {
@@ -161,8 +163,10 @@ test("ANVI settings tab status chips and error dots", () => {
   let status = settingsTabStatus(data);
   assert.deepEqual(
     Object.fromEntries(Object.entries(status).map(([id, s]) => [id, s.summary])),
-    { voice: "Aoede voice · warm tone", conversation: "2 conduct rules on · warm-up on", candidate: "No resume · no terms", proctoring: "AI proctoring off", scoring: "3 criteria", advanced: "No interviewer profile yet" },
+    { voice: "ANVI's voice · Normal speed", candidate: "No resume · no terms", proctoring: "AI proctoring off", scoring: "3 criteria", advanced: "No fixed length" },
   );
+  assert.equal(settingsTabStatus({ ...data, anvi: { ...data.anvi, persona: { speechRate: 1.1 }, durationMinutes: 30 } }).voice.summary, "ANVI's voice · 1.10× speed");
+  assert.equal(settingsTabStatus({ ...data, anvi: { ...data.anvi, durationMinutes: 30 } }).advanced.summary, "30-minute interview");
   assert.deepEqual(
     Object.entries(status).filter(([, s]) => s.badge).map(([id]) => id),
     [],

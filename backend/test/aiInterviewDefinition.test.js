@@ -59,6 +59,37 @@ test("complete manual configuration is valid without any AI provider", () => {
   assert.equal(CAPABILITIES.candidateAssignment, false);
   assert.equal(CAPABILITIES.evaluation, true);
 });
+test("a question pool counts what one student gets: pick of the pool, followUpLimit follow-ups", () => {
+  const d = definition();
+  d.sections[0].groups[0] = {
+    ...d.sections[0].groups[0], shuffle: true, byTopic: true, pick: 2,
+    questions: [1, 2, 3, 4].map((n) => ({
+      id: `q${n}`, prompt: `Question ${n}?`, competency: n < 3 ? "DSA" : "DBMS", difficulty: "medium", category: "Technical",
+      marks: 10, followUpLimit: 1, followUps: [{ id: `q${n}f`, prompt: "Why?" }, { id: `q${n}g`, prompt: "An example?" }],
+    })),
+  };
+  const normalized = normalizeDefinition(d);
+  const group = normalized.sections[0].groups[0];
+  assert.equal(group.pick, 2);
+  assert.equal(group.byTopic, true);
+  assert.equal(group.questions[0].followUpLimit, 1);
+  assert.equal(group.questions[0].category, "Technical");
+  const { summary, complete } = inspectDefinition(normalized);
+  assert.equal(complete, true);
+  assert.equal(summary.manualCount, 2);
+  assert.equal(summary.totalMarks, 20);
+  assert.equal(summary.followUpCount, 2, "one follow-up each, not the two prepared ones");
+  assert.equal(summary.budgetSeconds, 540, "2 questions plus 2 follow-ups at 135 s");
+  // Older questions keep null (cross-questions plus maxFollowUps); limits are validated.
+  assert.equal(normalizeDefinition(definition()).sections[0].groups[0].questions[0].followUpLimit, null);
+  assert.equal(normalizeDefinition(definition()).sections[0].groups[0].pick, null);
+  const tooMany = definition();
+  tooMany.sections[0].groups[0].questions[0].followUpLimit = 4;
+  assert.throws(() => normalizeDefinition(tooMany));
+  const badCategory = definition();
+  badCategory.sections[0].groups[0].questions[0].category = "Gossip";
+  assert.throws(() => normalizeDefinition(badCategory));
+});
 test("ANNU saves specifications and counts planned questions separately", () => {
   const d = definition();
   d.sections[0].groups = [
@@ -334,7 +365,13 @@ test("anvi settings default when missing and clamp turn settings into range", ()
     acknowledgements: true,
     introduction: "",
     closing: "",
+    speechRate: 1,
   });
+  // ANVI's speed: clamped into 0.85-1.2 and rounded to the 0.05 step.
+  assert.equal(normalizeAnvi({ persona: { speechRate: 1.13 } }).persona.speechRate, 1.15);
+  assert.equal(normalizeAnvi({ persona: { speechRate: 2 } }).persona.speechRate, 1.2);
+  assert.equal(normalizeAnvi({ persona: { speechRate: 0.5 } }).persona.speechRate, 0.85);
+  assert.throws(() => normalizeAnvi({ persona: { speechRate: "fast" } }));
   assert.deepEqual(normalized.anvi.turns, {
     silenceSeconds: 2,
     nudgeSeconds: 45,
@@ -439,14 +476,14 @@ test("anvi conduct, warm-up and resume settings normalise with defaults and vali
   const custom = normalizeAnvi({
     conduct: { endByVoice: true, finishAllQuestions: false, noPersonalQuestions: false, termsText: "<b>No notes</b> allowed.\nCamera on." },
     warmup: { enabled: false, icebreakers: 5, tellMeAboutYourself: false, scored: true },
-    resume: { mode: "optional", sources: ["upload", "upload"], questionCount: 4.4 },
+    resume: { mode: "optional", sources: ["upload", "upload"], questionCount: 4.4, followUps: 7 },
   });
   assert.deepEqual(custom.conduct, {
     endByVoice: true, finishAllQuestions: false, noPersonalQuestions: false,
     termsText: "No notes allowed.\nCamera on.", requireTermsAcceptance: true,
   });
   assert.deepEqual(custom.warmup, { enabled: false, icebreakers: 3, tellMeAboutYourself: false, scored: true });
-  assert.deepEqual(custom.resume, { mode: "optional", sources: ["upload"], questionCount: 4 });
+  assert.deepEqual(custom.resume, { mode: "optional", sources: ["upload"], questionCount: 4, followUps: 3 }, "resume follow-ups clamp to 3");
   assert.equal(normalizeAnvi({ conduct: { termsText: "Rules", requireTermsAcceptance: false } }).conduct.requireTermsAcceptance, false);
   assert.equal(normalizeAnvi({ conduct: { requireTermsAcceptance: true } }).conduct.requireTermsAcceptance, false, "no terms, nothing to accept");
   assert.throws(() => normalizeAnvi({ conduct: { termsText: "x".repeat(4001) } }), /4000/);

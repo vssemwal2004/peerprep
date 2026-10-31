@@ -127,11 +127,15 @@ beforeEach(async () => {
     items: [],
     pagination: { page: 1, pages: 1, limit: 25, total: 0 },
   });
-  api.saveResource = async (_kind, value) => ({
-    ...value,
-    _id: "507f1f77bcf86cd799439099",
-    revision: 1,
-  });
+  api.saveResource = async (kind, value) => {
+    calls.push(["saveResource", kind, structuredClone(value)]);
+    return {
+      ...value,
+      _id: "507f1f77bcf86cd799439099",
+      revision: 1,
+    };
+  };
+  api.companyCatalog = async () => ({ companies: ["Infosys", "Trilok Steel Works"] });
   api.create = async (data, key) => {
     calls.push(["create", data, key]);
     saved.data = structuredClone(data);
@@ -415,6 +419,17 @@ async function key(element, value) {
     element.dispatchEvent(new window.KeyboardEvent("keydown", { key: value, bubbles: true })),
   );
 }
+// Types into a combobox, waits for its suggestions, then clicks the option whose text starts with `option`.
+const options = (label) =>
+  [...(document.getElementById(field(label).getAttribute("aria-controls"))?.querySelectorAll('[role="option"]') || [])];
+async function pick(label, text, option = text) {
+  await click(field(label));
+  await type(field(label), text);
+  await settle(260);
+  const target = options(label).find((el) => el.textContent.trim().startsWith(option));
+  assert.ok(target, `Option ${option} is listed for ${label}`);
+  await click(target);
+}
 const simpleSection = (questions = []) => {
   const section = { ...newSection(), name: "Interview", weight: 100 };
   section.groups = [{ ...newGroup(), name: "Questions", weight: 100, questions }];
@@ -448,30 +463,44 @@ test("create starts at Basics, flags required fields, then creates the draft wit
   assert.ok(button("Continue").closest("footer").classList.contains("sticky"));
   await click(button("Continue"));
   assert.equal(calls.filter(([kind]) => kind === "create").length, 0);
-  assert.ok(document.body.textContent.includes("Give this interview a name."));
-  assert.ok(document.body.textContent.includes("Choose an experience level."));
+  for (const message of [
+    "Choose or add the interview name.", "Choose or add the job role this interview is for.",
+    "Choose or add the company this interview is for.", "Choose an experience level.", "Choose a difficulty.",
+  ])
+    assert.ok(document.body.textContent.includes(message), message);
+  assert.equal(document.querySelector('[data-field="jobName"]'), null, "No separate job name: the interview name is the job");
   assert.ok(document.activeElement === field("Interview name"), "Focus moves to the first invalid field");
   assert.equal(field("Interview name").getAttribute("aria-invalid"), "true");
 
-  await type(field("Interview name"), "Graduate practice");
-  await type(field("Job role"), "Software engineer");
+  await pick("Interview name", "backend dev", "Backend Developer");
+  assert.equal(field("Interview name").value, "Backend Developer", "The interview name is picked from the job names");
+  await pick("Job role", "Software engineer", "Add “Software engineer”");
+  assert.deepEqual(
+    calls.find(([kind, resource]) => kind === "saveResource" && resource === "jobRoles").slice(1),
+    ["jobRoles", { name: "Software engineer" }],
+    "A job role that is not listed is saved for every admin",
+  );
+  await pick("Company", "Infosys");
   await click(radio("Experience level", "Fresher"));
   await click(radio("Difficulty", "Easy"));
   await key(radio("Difficulty", "Easy"), "ArrowRight");
   assert.equal(radio("Difficulty", "Medium").getAttribute("aria-checked"), "true", "Arrow keys move the selection");
   assert.ok(document.activeElement === radio("Difficulty", "Medium"));
-  await click(radio("Interview type", "Practice"));
+  assert.equal(document.querySelector('[data-field="mode"]'), null, "One interview format: no Practice/Mock choice");
   assert.equal(document.querySelector('[data-field="language"]'), null, "Interviews are English only: no language picker");
+  assert.ok(document.querySelector('[data-field="description"] label').textContent.includes("Optional"), "Only the description is optional");
   await type(field("Short description"), "Campus placement practice.");
-  assert.ok(!document.body.textContent.includes("Give this interview a name."));
+  assert.ok(!document.body.textContent.includes("Choose or add the interview name."));
   await click(button("Continue"));
   const [, created, idempotencyKey] = calls.find(([kind]) => kind === "create");
-  assert.equal(created.title, "Graduate practice");
+  assert.equal(created.title, "Backend Developer");
+  assert.equal(created.jobName, undefined);
   assert.equal(created.role, "Software engineer");
+  assert.equal(created.companyName, "Infosys");
   assert.equal(created.experience, "fresher");
   assert.equal(created.difficulty, "medium");
   assert.equal(created.description, "Campus placement practice.");
-  assert.equal(created.rules.mode, "guided");
+  assert.equal(created.rules.mode, "mock");
   assert.equal(created.rules.language, "English");
   assert.deepEqual(created.anvi.language, { primary: "English", studentChoice: [], strict: true, onOtherLanguage: "remind_and_flag" });
   assert.equal(created.interviewer.displayName, "ANVI");
@@ -483,59 +512,87 @@ test("create starts at Basics, flags required fields, then creates the draft wit
     ["Problem solving", 30],
   ]);
   assert.equal(currentStep(), "questions", "Creation continues to Questions");
-  assert.ok(buttonStarting("Write my own"));
+  assert.ok(document.querySelector('[data-start="manual"]') && document.querySelector('[data-start="anvi"]'));
   assert.ok(!document.querySelector('[aria-label="AI interview workspace"]'), "The wizard has no directory navigation");
 });
-test("new company is persisted and selected in Basics", async () => {
+test("Company lists PeerPrep's catalog, and a new company is added and selected in Basics", async () => {
   await mount("/admin/ai-interviews/new");
-  await click(button("Select company"));
-  await click(button("Add company"));
-  const dialogs = [...document.querySelectorAll("dialog[open]")];
-  assert.equal(dialogs.length, 2);
-  await type(dialogs.at(-1).querySelector("input"), "Trilok Steel");
-  await click(button("Save"));
-  assert.equal(document.querySelectorAll("dialog[open]").length, 0);
-  assert.ok(button("Trilok Steel"));
-  assert.ok(button("Remove company"));
+  await click(field("Company"));
+  await settle(260);
+  assert.deepEqual(options("Company").map((el) => el.textContent.trim()), ["Infosys", "Trilok Steel Works"]);
+  await pick("Company", "Infosys");
+  assert.deepEqual(calls.filter(([kind]) => kind === "saveResource").at(-1).slice(1), ["companies", { name: "Infosys" }],
+    "A catalog company becomes the admin's own entry so the interview can reference it");
+  assert.equal(field("Company").value, "Infosys");
+  assert.ok(document.body.textContent.includes("ANVI tailors questions to this company."));
+
+  await pick("Company", "Trilok Steel", "Add “Trilok Steel”");
+  assert.deepEqual(calls.filter(([kind]) => kind === "saveResource").at(-1).slice(1), ["companies", { name: "Trilok Steel" }]);
+  assert.equal(field("Company").value, "Trilok Steel");
+  await click(document.querySelector('[aria-label="Clear company"]'));
+  assert.equal(field("Company").value, "");
+});
+test("typed text that is neither picked nor added is discarded", async () => {
+  await mount("/admin/ai-interviews/new");
+  await pick("Interview name", "data", "Data Analyst");
+  await click(field("Interview name"));
+  await type(field("Interview name"), "Something else");
+  await key(field("Interview name"), "Escape");
+  assert.equal(field("Interview name").value, "Data Analyst");
 });
 
 // ---- Step 2: Questions ------------------------------------------------------
-test("Write my own adds editable cards that autosave into one hidden section and group", async () => {
+test("Write manually adds editable cards into the question bank, with topic, level, type and follow-ups", async () => {
   await mount(`/admin/ai-interviews/${id}/questions`);
-  assert.ok(document.body.textContent.includes("No topics yet"));
-  await click(buttonStarting("Write my own"));
+  assert.ok(document.querySelector('[data-start="anvi"]').textContent.includes("Generate with ANVI"));
+  assert.equal(document.querySelector("[data-live-topic]"), null, "New interviews have no per-student topics");
+  assert.equal(buttonStarting("Advanced"), undefined, "No section editor for a simple interview");
+  await click(document.querySelector('[data-start="manual"]'));
   assert.equal(cards().length, 1);
   assert.ok(document.activeElement === field("Question"), "The new card is focused");
   await type(field("Question"), "Explain the event loop.");
   await type(field("Expected answer / key points"), "Call stack\nTask queue");
-  await type(field("Marks"), "20");
+  await type(field("Topic"), "JavaScript");
+  await type(field("Difficulty"), "medium");
+  await type(field("Type"), "Technical");
   await click(document.querySelector('[aria-label="Increase follow-ups"]'));
+  await click(button("Add follow-up"));
+  await type(document.querySelector('[aria-label="Prepared follow-up 1"]'), "Where do promises run?");
+  await type(field("Marks"), "20");
   await type(field("Max answer time"), "180");
   await click(switchFor("Students can skip this question"));
-  await type(field("Competency"), "JavaScript");
   await settle();
   const [section] = saved.data.sections;
   assert.equal(saved.data.sections.length, 1);
   assert.deepEqual([section.name, section.weight], ["Interview", 100]);
-  assert.deepEqual(section.groups.map((g) => [g.name, g.source, g.weight]), [["Questions", "manual", 100]]);
+  assert.deepEqual(
+    section.groups.map((g) => [g.name, g.source, g.weight, g.shuffle, g.byTopic, g.pick]),
+    [["Questions", "manual", 100, true, true, null]],
+    "The bank asks topic by topic in a per-student order by default",
+  );
   const [question] = section.groups[0].questions;
   assert.equal(question.prompt, "Explain the event loop.");
   assert.equal(question.expectedAnswer, "Call stack\nTask queue");
+  assert.deepEqual([question.competency, question.difficulty, question.category], ["JavaScript", "medium", "Technical"]);
+  assert.equal(question.followUpLimit, 2, "Starts from the default of 1 follow-up");
+  assert.equal(question.maxFollowUps, 0);
+  assert.deepEqual(question.followUps.map((f) => f.prompt), ["Where do promises run?"]);
   assert.equal(question.marks, 20);
-  assert.equal(question.maxFollowUps, 2, "Starts from the default of 1 follow-up");
   assert.deepEqual(question.ruleOverrides, { responseSeconds: 180 });
   assert.equal(question.skippable, false);
-  assert.equal(question.competency, "JavaScript");
   // The wizard has no side summary panel; Review & publish shows the totals.
   assert.equal(document.querySelector('[aria-label="Interview summary"]'), null);
 
   await click(button("Done"));
   assert.ok(cards()[0].textContent.includes("Manual"));
+  assert.ok(cards()[0].textContent.includes("Medium"));
   assert.ok(cards()[0].textContent.includes("20 marks"));
+  assert.ok(document.querySelector('[aria-label="Topic: JavaScript"]'), "The bank is listed by topic");
   await click(document.querySelector('[aria-label="Duplicate question 1"]'));
   assert.equal(cards().length, 2);
   await click(button("Add question"));
   await type(field("Question"), "What is a closure?");
+  await type(field("Topic"), "JavaScript");
   await click(document.querySelector('[aria-label="Move question 3 up"]'));
   assert.ok(cards()[1].textContent.includes("What is a closure?"));
   await click(document.querySelector('[aria-label="Delete question 1"]'));
@@ -551,12 +608,33 @@ test("Write my own adds editable cards that autosave into one hidden section and
     ["Explain the event loop.", "What is a closure?"],
   );
 });
+test("What each student gets: all questions or a balanced random set, topic by topic", async () => {
+  saved.data.sections = [simpleSection(["DSA", "DSA", "DSA", "DBMS"].map((topic, i) => q(`Question ${i + 1}?`, { competency: topic })))];
+  Object.assign(saved.data.sections[0].groups[0], { shuffle: true, byTopic: true });
+  await mount(`/admin/ai-interviews/${id}/questions`);
+  const bank = document.querySelector("[data-question-bank]");
+  assert.ok(bank.textContent.includes("Question bank (4)"));
+  assert.ok(bank.textContent.includes("2 topics"));
+  assert.equal(radio("Questions per student", "All 4").getAttribute("aria-checked"), "true");
+  await click(radio("Questions per student", "A random set"));
+  assert.equal(field("Questions each student is asked").value, "2");
+  await click(document.querySelector('[aria-label="Increase questions each student is asked"]'));
+  await settle();
+  assert.equal(saved.data.sections[0].groups[0].pick, 3);
+  assert.ok(bank.textContent.includes("30 marks per student"), "Totals are what one student gets");
+  await click(switchFor("Ask topic by topic, in a different order for each student"));
+  await settle();
+  assert.deepEqual([saved.data.sections[0].groups[0].shuffle, saved.data.sections[0].groups[0].byTopic], [false, false]);
+  await click(radio("Questions per student", "All 4"));
+  await settle();
+  assert.equal(saved.data.sections[0].groups[0].pick, null);
+});
 test("Continue on Questions flags empty cards and an empty interview", async () => {
   await mount(`/admin/ai-interviews/${id}/questions`);
   await click(button("Continue"));
   assert.equal(currentStep(), "questions");
-  assert.ok(document.body.textContent.includes("Add at least one topic for ANVI, or add fixed questions below."));
-  await click(buttonStarting("Write my own"));
+  assert.ok(document.body.textContent.includes("Add at least one question: write it yourself or generate questions with ANVI."));
+  await click(document.querySelector('[data-start="manual"]'));
   await click(button("Done"));
   await click(button("Continue"));
   assert.ok(document.body.textContent.includes("Write the question, or delete this card."));
@@ -565,56 +643,57 @@ test("Continue on Questions flags empty cards and an empty interview", async () 
   await click(button("Continue"));
   assert.equal(currentStep(), "anvi");
 });
-test("Generate & review (same questions for everyone) appends AI-badged questions that stay editable", async () => {
+test("Generate with ANVI drafts a reviewable bank by topic, type, difficulty and follow-ups", async () => {
   api.generateQuestions = async (interviewId, body) => {
     calls.push(["generate", interviewId, body]);
     return {
       questions: [
-        { prompt: "How would you find a slow endpoint?", expectedAnswer: "Measure latency\nUse tracing", keyPoints: [] },
-        { prompt: "What causes N+1 queries?", expectedAnswer: "ORM lazy loading", keyPoints: [] },
+        {
+          prompt: "What is normalisation?", expectedAnswer: "Remove redundancy\nNormal forms", keyPoints: [],
+          topic: "DBMS", difficulty: "easy", category: "Technical", followUpLimit: 2, followUps: ["Why does it matter?", "What is 3NF?"],
+        },
+        {
+          prompt: "Explain a deadlock.", expectedAnswer: "Circular wait", keyPoints: [],
+          topic: "Operating Systems", difficulty: "hard", category: "Technical", followUpLimit: 2, followUps: ["How do you prevent it?"],
+        },
       ],
     };
   };
-  saved.data.difficulty = "medium";
   await mount(`/admin/ai-interviews/${id}/questions`);
-  await click(buttonStarting("Generate & review"));
-  const composer = document.querySelector("[data-generate-composer]");
-  assert.ok(composer);
+  await click(document.querySelector('[data-start="anvi"]'));
+  const panel = document.querySelector("[data-generate-panel]");
+  assert.ok(panel);
   await click(button("Generate questions"));
-  assert.ok(composer.textContent.includes("Describe what ANVI should ask first."));
+  assert.ok(panel.textContent.includes("Add at least one topic."));
   assert.equal(calls.filter(([kind]) => kind === "generate").length, 0);
-  await click([...composer.querySelectorAll("button")].find((b) => b.title.startsWith("REST API design")));
-  assert.match(field("Describe what ANVI should ask").value, /^REST API design/);
-  await type(field("Skills to cover"), "Caching");
-  await key(field("Skills to cover"), "Enter");
-  assert.ok(document.querySelector('[aria-label="Remove Caching"]'));
+  await click(button("+ DBMS"));
+  await type(field("Topics"), "Operating Systems");
+  await key(field("Topics"), "Enter");
+  assert.ok(document.querySelector('[aria-label="Remove Operating Systems"]'));
+  await click(radio("Difficulty", "Mixed"));
   await type(field("Number of questions"), "2");
+  await click(document.querySelector('[aria-label="Increase follow-ups per question"]'));
+  await type(field("Anything else ANVI should know"), "Placement level.");
   await click(button("Generate questions"));
   const [, sentId, body] = calls.find(([kind]) => kind === "generate");
   assert.equal(sentId, id);
-  assert.match(body.groupId, /^[a-zA-Z0-9_-]{1,80}$/);
-  assert.deepEqual(
-    { ...body, groupId: undefined },
-    {
-      groupId: undefined,
-      count: 2,
-      requirements: "REST API design and debugging a slow endpoint for a junior backend developer.",
-      skills: ["Caching"],
-      difficulty: "medium",
-    },
-  );
+  assert.deepEqual(body, {
+    mode: "pool", topics: ["DBMS", "Operating Systems"], category: "Technical", difficulty: "mixed", count: 2, followUps: 2,
+    requirements: "Placement level.",
+  });
   assert.ok(document.body.textContent.includes("Added 2 questions from ANVI."));
   assert.equal(cards().length, 2);
   assert.ok(cards().every((card) => card.textContent.includes("AI")));
+  assert.ok(document.querySelector('[aria-label="Topic: DBMS"]') && document.querySelector('[aria-label="Topic: Operating Systems"]'));
   await click(cards()[0].querySelector("[data-question-toggle]"));
-  await type(field("Question"), "How would you find the slowest endpoint?");
+  await type(field("Question"), "What is database normalisation?");
   await settle();
   const questions = saved.data.sections[0].groups[0].questions;
   assert.deepEqual(
-    questions.map((x) => [x.prompt, x.expectedAnswer, x.marks, x.provenance.generated]),
+    questions.map((x) => [x.prompt, x.competency, x.difficulty, x.category, x.followUpLimit, x.followUps.map((f) => f.prompt), x.provenance.generated]),
     [
-      ["How would you find the slowest endpoint?", "Measure latency\nUse tracing", 10, true],
-      ["What causes N+1 queries?", "ORM lazy loading", 10, true],
+      ["What is database normalisation?", "DBMS", "easy", "Technical", 2, ["Why does it matter?", "What is 3NF?"], true],
+      ["Explain a deadlock.", "Operating Systems", "hard", "Technical", 2, ["How do you prevent it?"], true],
     ],
   );
   assert.ok(!Number.isNaN(Date.parse(questions[0].provenance.generatedAt)));
@@ -626,41 +705,26 @@ test("generation explains a server without ANVI configured and adds nothing", as
     });
   };
   await mount(`/admin/ai-interviews/${id}/questions`);
-  await click(buttonStarting("Generate & review"));
-  await type(field("Describe what ANVI should ask"), "Ask about REST.");
+  await click(document.querySelector('[data-start="anvi"]'));
+  await click(button("+ DBMS"));
   await click(button("Generate questions"));
   assert.ok(document.body.textContent.includes("ANVI isn't set up on the server yet"));
   assert.equal(cards().length, 0);
   await settle();
   assert.equal(calls.filter(([kind]) => kind === "save").length, 0);
 });
-test("ANVI topics become live groups next to written questions and never list questions", async () => {
+test("an older interview's per-student topics stay editable behind a cost notice", async () => {
+  const live = {
+    ...newGroup(), name: "HTTP caching", weight: 50, source: "annu", questions: undefined, priority: "medium",
+    annu: { requirements: "Ask about HTTP caching.", skills: [], exclusions: "", targetCount: 2, maxFollowUps: 1 },
+  };
   saved.data.sections = [simpleSection([q("Explain REST.")])];
+  saved.data.sections[0].groups[0].weight = 50;
+  saved.data.sections[0].groups.push(live);
   await mount(`/admin/ai-interviews/${id}/questions`);
-  await click(buttonStarting("Add a topic"));
-  await click(button("Continue"));
-  assert.equal(currentStep(), "questions");
-  assert.ok(document.body.textContent.includes("Describe what ANVI should ask about this topic."));
-  assert.ok(document.activeElement === field("What should ANVI ask about this topic?"));
-  await type(field("Topic name"), "HTTP caching");
-  await type(field("What should ANVI ask about this topic?"), "Ask a fresher about HTTP caching with one scenario.");
-  await click(document.querySelector('[aria-label="Increase questions per student"]'));
-  await settle();
-  const groups = saved.data.sections[0].groups;
-  assert.deepEqual(groups.map((g) => [g.source, g.weight]), [["manual", 50], ["annu", 50]]);
-  assert.equal(groups[1].questions, undefined);
-  assert.equal(groups[1].name, "HTTP caching");
-  assert.equal(groups[1].priority, "medium");
-  assert.deepEqual(groups[1].annu, {
-    requirements: "Ask a fresher about HTTP caching with one scenario.",
-    skills: [],
-    exclusions: "",
-    targetCount: null,
-    maxFollowUps: 1,
-  });
-  assert.equal(saved.data.anvi.liveQuestionCount, 6);
-  assert.ok(document.body.textContent.includes("Each student gets 6 questions from ANVI: HTTP caching ×6 (Medium)."));
-  assert.equal(cards().length, 1, "Only the fixed question has a card");
+  assert.ok(document.body.textContent.includes("Older format: ANVI writes these topics for each student"));
+  assert.ok(document.querySelector("[data-live-topic]"));
+  assert.equal(cards().length, 1, "Only the bank question has a card");
   await click(button("Continue"));
   assert.equal(currentStep(), "anvi");
 });
@@ -705,7 +769,7 @@ test("old builder links open the matching wizard step", async () => {
 });
 
 // ---- Step 3: ANVI settings ---------------------------------------------------
-test("ANVI settings save into data.anvi with a live script preview and a rubric total check", async () => {
+test("ANVI settings save into data.anvi: one voice, its speed, and a rubric total check", async () => {
   saved.data.role = "Backend developer";
   saved.data.interviewer = null;
   saved.data.sections = [simpleSection([q("Explain REST.")])];
@@ -713,31 +777,18 @@ test("ANVI settings save into data.anvi with a live script preview and a rubric 
   saved.data.rules = { ...saved.data.rules, language: "Hinglish" };
   saved.data.anvi = { ...saved.data.anvi, voice: { name: "Aoede", languageCode: "hi-IN" }, language: { primary: "Hinglish", studentChoice: ["English"], strict: false, onOtherLanguage: "ignore" } };
   await mount(`/admin/ai-interviews/${id}/anvi`);
-  assert.equal(selectedSettingsTab(), "voice", "Voice & personality opens first");
-  assert.equal(document.querySelectorAll('[role="tab"][data-settings-tab]').length, 6);
+  assert.equal(selectedSettingsTab(), "voice", "Voice & speed opens first");
+  assert.deepEqual([...document.querySelectorAll('[role="tab"][data-settings-tab]')].map((el) => el.dataset.settingsTab), ["voice", "candidate", "proctoring", "scoring", "advanced"]);
   assert.equal(document.querySelector('[data-field="language"]'), null, "no language card");
-  assert.equal(field("Accent and language"), undefined, "no accent picker");
-  assert.match(document.querySelector("[data-anvi-voice]").textContent, /Speaks as Aoede · Indian English/);
-  await click(radio("Voice", "Kore"));
-  assert.match(document.querySelector("[data-anvi-voice]").textContent, /Speaks as Kore/);
-  assert.equal(settingsTab("voice").title, "Kore voice · warm tone");
+  assert.match(document.querySelector("[data-anvi-voice]").textContent, /One natural voice for every interview, in Indian English/);
+  assert.equal(document.querySelector('[role="radiogroup"]'), null, "no voice, tone or pace pickers");
+  assert.equal(field("Introduction script"), undefined, "no scripts: the intro and closing are fixed");
   assert.equal(document.querySelector('[aria-label="Interview summary"]'), null, "ANVI settings use the full width, without the summary panel");
-  assert.match(document.querySelector("[data-anvi-voice]").textContent, /Speaks as Kore · Indian English/);
-  await click(radio("Tone", "Formal"));
-  await click(radio("Pace", "Slow"));
+  await type(document.getElementById("anvi-speech-rate"), "1.1");
+  assert.equal(settingsTab("voice").title, "ANVI's voice · 1.10× speed");
   await click(switchFor("Short acknowledgements"));
-  await type(field("Introduction script"), "Hi {name}, welcome to the {role} interview");
-  await click(document.querySelector('[aria-label="Insert {company} (Company name)"]'));
-  const preview = document.querySelector("[data-script-preview]").textContent;
-  assert.equal(preview, "“Hi Priya, welcome to the Backend developer interviewour company”");
-  await click(settingsTab("conversation"));
-  assert.equal(document.querySelector("[data-anvi-voice]"), null, "Only the selected tab is rendered");
-  await type(document.querySelector("#anvi-silence"), "3.5");
-  assert.ok(document.body.textContent.includes("ANVI replies after this much silence"));
-  await type(field("Nudge if silent after"), "60");
-  await click(radio("Maximum nudges per question", "1"));
-  await click(switchFor("Voice commands"));
   await click(settingsTab("advanced"));
+  assert.equal(document.querySelector("[data-anvi-voice]"), null, "Only the selected tab is rendered");
   await type(field("Default answer time"), "180");
 
   await click(settingsTab("scoring"));
@@ -754,19 +805,15 @@ test("ANVI settings save into data.anvi with a live script preview and a rubric 
   assert.ok(document.querySelector("[data-rubric-total]").textContent.includes("100%"));
   await settle();
   assert.deepEqual(saved.data.anvi.persona, {
-    tone: "formal",
-    pace: "slow",
+    tone: "warm",
+    pace: "normal",
     acknowledgements: false,
-    introduction: "Hi {name}, welcome to the {role} interview{company}",
+    introduction: "",
     closing: "",
+    speechRate: 1.1,
   });
-  assert.deepEqual(saved.data.anvi.turns, {
-    silenceSeconds: 3.5,
-    nudgeSeconds: 60,
-    maxNudges: 1,
-    voiceCommands: false,
-  });
-  assert.deepEqual(saved.data.anvi.voice, { name: "Kore", languageCode: "en-IN" });
+  assert.deepEqual(saved.data.anvi.turns, { silenceSeconds: 2, nudgeSeconds: 45, maxNudges: 2, voiceCommands: true }, "turn-taking is fixed");
+  assert.deepEqual(saved.data.anvi.voice, { name: "Aoede", languageCode: "en-IN" });
   assert.equal(saved.data.rules.language, "English", "the older Hinglish draft is saved as English");
   assert.deepEqual(saved.data.anvi.language, { primary: "English", studentChoice: [], strict: true, onOtherLanguage: "remind_and_flag" });
   assert.equal(saved.data.rules.responseSeconds, 180);
@@ -783,14 +830,13 @@ test("ANVI settings open the sub-tab in ?tab= and Fix links open the tab holding
   assert.ok(document.querySelector('[data-field="proctoring"]'));
   assert.equal(settingsTab("proctoring").querySelector("[data-tab-status]"), null, "no On badge while off");
   assert.equal(document.querySelector("[data-settings-panel-title]").textContent, "Proctoring");
-  assert.match(settingsTab("advanced").title, /^Profile: /);
+  assert.equal(settingsTab("advanced").title, "No fixed length");
   api.validate = validated([{ path: "interviewer", message: "Add an interviewer." }]);
   await click(document.querySelector('[data-wizard-step="review"] button'));
   await settle(20);
-  await click(document.querySelector('[aria-label="Fix: Choose who conducts the interview: pick an interviewer profile."]'));
+  await click(document.querySelector('[aria-label="Fix: ANVI isn\'t set up for this interview yet. Open Advanced and try again."]'));
   assert.equal(currentStep(), "anvi");
   assert.equal(selectedSettingsTab(), "advanced", "The interviewer Fix opens Advanced");
-  assert.ok(document.activeElement.closest('[data-field="interviewer"]'), "and focuses the profile picker");
 });
 
 // ---- Step 4: Review & publish --------------------------------------------------
@@ -814,7 +860,7 @@ test("review checklist maps server issues to friendly messages and Fix jumps to 
   await click(document.querySelector('[aria-label="Fix: Add the job role this interview is for."]'));
   assert.equal(currentStep(), "basics");
   assert.ok(document.activeElement === field("Job role"), "Fix focuses the job role");
-  assert.ok(document.body.textContent.includes("Enter the job role this interview is for."));
+  assert.ok(document.body.textContent.includes("Choose or add the job role this interview is for."));
   await click(document.querySelector('[data-wizard-step="review"] button'));
   assert.equal(calls.filter(([kind]) => kind === "validate").length, 1, "An unchanged revision is not rechecked");
   await click(document.querySelector('[aria-label="Fix: Question 1 is empty. Write it, or delete the card."]'));
@@ -885,22 +931,49 @@ test("publish validates, explains a missing AI key, then publishes and offers ne
   assert.ok(button("Publish interview"), "It can be published again");
 });
 
+test("Review shows what ANVI says, the bank selection, length and AI budget; an unready server shows a notice", async () => {
+  api.capabilities = async () => ({
+    limits: { sections: 20, groups: 10, questions: 200, followUps: 5, subquestions: 10, plannedQuestionsPerGroup: 50 },
+    runtime: { mode: "hybrid", ready: false, missing: ["ANVI_USD_INR_RATE", "ANVI_PRICE_TTS_AUDIO_OUTPUT"] },
+  });
+  Object.assign(saved.data, { role: "Engineer", experience: "junior", difficulty: "medium" });
+  saved.data.sections = [simpleSection(["DSA", "DSA", "DBMS", "DBMS"].map((topic, i) => q(`Question ${i + 1}?`, { competency: topic, followUpLimit: 1 })))];
+  Object.assign(saved.data.sections[0].groups[0], { shuffle: true, byTopic: true, pick: 2 });
+  saved.data.anvi = { ...saved.data.anvi, durationMinutes: 30 };
+  api.validate = validated([]);
+  await mount(`/admin/ai-interviews/${id}/review`);
+  await settle(20);
+  assert.match(document.querySelector("[data-runtime-missing]").textContent, /ANVI_USD_INR_RATE, ANVI_PRICE_TTS_AUDIO_OUTPUT/);
+  const preview = document.querySelector("#student-preview").textContent;
+  assert.ok(preview.includes("Hello, and welcome. I am ANVI"), "the fixed intro students hear");
+  assert.ok(preview.includes("how are you feeling today"));
+  assert.ok(preview.includes("That brings us to the end of the interview."));
+  assert.ok(!preview.includes("Priya"), "no sample-name script");
+  assert.match(document.querySelector("[data-preview-selection]").textContent, /Each student is asked 2 of these 4 questions, balanced by topic and difficulty, topic by topic in their own order\./);
+  const kpis = document.querySelector("[data-review-kpis]").textContent;
+  assert.ok(kpis.includes("Interview length") && kpis.includes("30 min"));
+  assert.ok(kpis.includes("AI budget per student") && kpis.includes("Up to ₹18"));
+  assert.ok(document.body.textContent.includes("2 of 4, balanced by topic and difficulty"));
+  assert.ok(document.body.textContent.includes("Topic by topic, a different order for each student"));
+  assert.ok(document.body.textContent.includes("4 questions · 2 topics"));
+});
+
 // ---- Autosave, archive and directory ---------------------------------------------
 test("autosave preserves edits and revision conflicts stop automatic retries", async () => {
   await mount(`/admin/ai-interviews/${id}/basics`);
-  await type(field("Job role"), "Developer");
+  await type(field("Short description"), "Developer");
   assert.equal(document.querySelector("[data-save-status]").textContent, "Saving…");
   await settle();
-  assert.equal(saved.data.role, "Developer");
+  assert.equal(saved.data.description, "Developer");
   assert.equal(document.querySelector("[data-save-status]").textContent, "All changes saved");
   failure = Object.assign(new Error("This interview changed elsewhere."), {
     response: { status: 409 },
   });
-  await type(field("Job role"), "Senior developer");
+  await type(field("Short description"), "Senior developer");
   await settle();
   assert.ok(document.body.textContent.includes("Reload saved version"));
   assert.ok(document.querySelector("[data-save-status]").textContent.includes("Changed elsewhere"));
-  assert.equal(field("Job role").value, "Senior developer");
+  assert.equal(field("Short description").value, "Senior developer");
   const count = calls.filter((x) => x[0] === "save").length;
   await settle();
   assert.equal(calls.filter((x) => x[0] === "save").length, count);
@@ -908,12 +981,12 @@ test("autosave preserves edits and revision conflicts stop automatic retries", a
 test("a failed save offers a retry", async () => {
   await mount(`/admin/ai-interviews/${id}/basics`);
   failure = new Error("Network down");
-  await type(field("Job role"), "Developer");
+  await type(field("Short description"), "Developer");
   await settle();
   assert.ok(document.querySelector("[data-save-status]").textContent.includes("Couldn't save"));
   failure = null;
   await click(button("Retry"));
-  assert.equal(saved.data.role, "Developer");
+  assert.equal(saved.data.description, "Developer");
 });
 test("edits made during an in-flight autosave survive the older response", async () => {
   let release;
@@ -928,13 +1001,13 @@ test("edits made during an in-flight autosave survive the older response", async
     return structuredClone(saved);
   };
   await mount(`/admin/ai-interviews/${id}/basics`);
-  await type(field("Job role"), "First role");
+  await type(field("Short description"), "First role");
   await settle();
-  await type(field("Job role"), "Latest role");
+  await type(field("Short description"), "Latest role");
   await act(async () => release());
-  assert.equal(field("Job role").value, "Latest role");
+  assert.equal(field("Short description").value, "Latest role");
   await settle();
-  assert.equal(saved.data.role, "Latest role");
+  assert.equal(saved.data.description, "Latest role");
   assert.deepEqual(
     calls.filter((x) => x[0] === "save").map((x) => x[1]),
     [1, 2],
@@ -947,9 +1020,10 @@ test("archived interviews are read-only on every step and can be restored", asyn
   assert.equal(document.querySelector("[data-interview-status]").textContent, "Archived");
   assert.ok(document.body.textContent.includes("Archived — read only"));
   await click(document.querySelector('[data-wizard-step="anvi"] button'));
-  assert.equal(settingsTab("conversation").disabled, false, "Sub-tabs stay usable when read-only");
-  await click(settingsTab("conversation"));
-  assert.ok(switchFor("Voice commands").closest("fieldset").disabled);
+  assert.equal(settingsTab("candidate").disabled, false, "Sub-tabs stay usable when read-only");
+  assert.ok(document.getElementById("anvi-speech-rate").disabled);
+  await click(settingsTab("candidate"));
+  assert.ok(radio("Ask for the student's resume", "Off").closest("fieldset").disabled);
   await click(document.querySelector('[data-wizard-step="review"] button'));
   assert.equal(button("Publish interview").disabled, true);
   assert.equal(calls.filter(([kind]) => kind === "save" || kind === "validate").length, 0);

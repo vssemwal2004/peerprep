@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Archive,
   CalendarClock,
+  CheckCircle2,
   ClipboardList,
   Clock3,
   Copy,
@@ -20,7 +21,7 @@ import { interviewApi } from "./api";
 import { ROOT, uid } from "./definition";
 import { useDebounced, useRemote } from "./useRemote";
 import { StatusChip } from "./wizard/WizardShell";
-import { interviewStatus } from "./wizard/steps";
+import { COMPLETE_TEXT, REOPEN_TEXT, interviewStatus } from "./wizard/steps";
 import { Dialog, Field, Notice, Pagination, Select, TextInput, primaryClass, secondaryClass, surfaceClass } from "./ui";
 import { scrollStripClass, useScrollFade } from "./useScrollFade";
 
@@ -29,6 +30,7 @@ const FILTERS = [
   ["", "All"],
   ["incomplete", "Drafts"],
   ["complete", "Ready & published"],
+  ["completed", "Completed"],
   ["archived", "Archived"],
 ];
 const SORTS = [
@@ -56,10 +58,20 @@ const duration = (summary = {}) =>
     : summary.budgetSeconds
       ? `≤ ${Math.ceil(summary.budgetSeconds / 60)} min`
       : "—";
+const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const completedMessage = (closing = {}) => {
+  const parts = [
+    closing.ended ? `${count(closing.ended, "interview")} in progress ended and sent for scoring` : "",
+    closing.closed ? `${count(closing.closed, "schedule")} closed` : "",
+    closing.cancelled ? `${count(closing.cancelled, "schedule")} not yet open cancelled` : "",
+  ].filter(Boolean);
+  return `Interview marked complete.${parts.length ? ` ${parts.join(", ")}.` : ""} Its reports stay under Reports.`;
+};
 const TILE_TONES = {
   emerald: "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-300",
   sky: "bg-sky-50 text-sky-600 dark:bg-sky-400/10 dark:text-sky-300",
   amber: "bg-amber-50 text-amber-600 dark:bg-amber-400/10 dark:text-amber-300",
+  indigo: "bg-indigo-50 text-indigo-600 dark:bg-indigo-400/10 dark:text-indigo-300",
   slate: "bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-gray-400",
 };
 
@@ -144,7 +156,11 @@ export default function Directory() {
             ? "Interview and its linked schedules deleted."
             : type === "archive"
               ? "Interview archived. Find it under Archived to restore it."
-              : "Interview restored as a draft.",
+              : type === "complete"
+                ? completedMessage(result?.closing)
+                : type === "reopen"
+                  ? "Interview reopened. Students can see and start it again."
+                  : "Interview restored as a draft.",
         );
     } catch (err) {
       setError(err.message);
@@ -296,13 +312,13 @@ export default function Directory() {
                       <InterviewActionMenu
                         name={item.title}
                         actions={[
-                          { id: "open", label: item.lifecycle === "archived" ? "View" : "Edit", icon: Pencil, run: () => open(item) },
+                          { id: "open", label: item.lifecycle === "draft" ? "Edit" : "View", icon: Pencil, run: () => open(item) },
                           { id: "preview", label: "Preview as student", icon: Eye, run: () => open(item, "review") },
+                          ...(item.publishedAt && item.lifecycle === "draft"
+                            ? [{ id: "schedule", label: "Assign to students", icon: CalendarClock, run: () => navigate(`${ROOT}/schedules/new?interviewId=${item._id}`) }]
+                            : []),
                           ...(item.publishedAt && item.lifecycle !== "archived"
-                            ? [
-                                { id: "schedule", label: "Assign to students", icon: CalendarClock, run: () => navigate(`${ROOT}/schedules/new?interviewId=${item._id}`) },
-                                { id: "schedules", label: "View schedules", icon: CalendarClock, run: () => navigate(`${ROOT}/schedules?interviewId=${item._id}`) },
-                              ]
+                            ? [{ id: "schedules", label: "View schedules", icon: CalendarClock, run: () => navigate(`${ROOT}/schedules?interviewId=${item._id}`) }]
                             : []),
                           // Students across every schedule of this interview (archived interviews keep their schedules).
                           ...(item.publishedAt
@@ -310,6 +326,12 @@ export default function Directory() {
                             : []),
                           { id: "duplicate", label: "Duplicate as draft", icon: Copy, run: () => action(item, "duplicate") },
                           { id: "copy", label: "Copy admin link", icon: Link2, run: () => action(item, "copy") },
+                          ...(item.publishedAt && item.lifecycle === "draft"
+                            ? [{ id: "complete", label: "Mark complete", icon: CheckCircle2, run: () => action(item, "complete") }]
+                            : []),
+                          ...(item.lifecycle === "completed"
+                            ? [{ id: "reopen", label: "Reopen", icon: RotateCcw, run: () => action(item, "reopen") }]
+                            : []),
                           {
                             id: "lifecycle",
                             label: item.lifecycle === "archived" ? "Restore" : "Archive",
@@ -343,7 +365,11 @@ export default function Directory() {
                 ? "Duplicate interview"
                 : confirm.type === "archive"
                   ? "Archive interview"
-                  : "Restore interview"
+                  : confirm.type === "complete"
+                    ? "Mark interview complete"
+                    : confirm.type === "reopen"
+                      ? "Reopen interview"
+                      : "Restore interview"
           }
           onClose={() => {
             if (!busy) setConfirm(null);
@@ -365,7 +391,11 @@ export default function Directory() {
                   ? "Creates an independent draft copy. No student activity is copied."
                   : confirm.type === "archive"
                     ? "Students will no longer see it and it becomes read-only. You can restore it later."
-                    : "Restores this interview as an editable draft. Publish it again when ready."}
+                    : confirm.type === "complete"
+                      ? COMPLETE_TEXT
+                      : confirm.type === "reopen"
+                        ? REOPEN_TEXT
+                        : "Restores this interview as an editable draft. Publish it again when ready."}
               </p>
             )}
             <div className="flex justify-end gap-2">

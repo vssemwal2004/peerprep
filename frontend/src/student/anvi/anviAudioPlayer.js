@@ -1,3 +1,5 @@
+import { speechRateOf, timeStretch } from "./anviTimeStretch.js";
+
 // Gapless playback of ANVI's 24 kHz s16le mono stream. Chunks are scheduled back to back on the
 // AudioContext clock; a short jitter buffer at the start of each utterance absorbs network jitter.
 // Hybrid mode adds cached clips (question, number, ack and template audio) on the same voice channel:
@@ -54,7 +56,9 @@ export function joinPcmParts(parts) {
  * `onSpeakingChange(speaking)` fires when audible output starts or the queue drains.
  * `clipCacheBytes` bounds the decoded-clip LRU.
  */
-export function createAnviAudioPlayer({ context, onSpeakingChange = () => {}, clipCacheBytes = CLIP_CACHE_BYTES } = {}) {
+export function createAnviAudioPlayer({ context, onSpeakingChange = () => {}, clipCacheBytes = CLIP_CACHE_BYTES, speechRate = 1 } = {}) {
+  // ANVI's speaking speed for clips: each clip is time-stretched once when it is decoded (pitch kept).
+  let clipRate = speechRateOf(speechRate);
   const analyser = context.createAnalyser();
   analyser.fftSize = 512;
   analyser.smoothingTimeConstant = 0.6;
@@ -190,7 +194,7 @@ export function createAnviAudioPlayer({ context, onSpeakingChange = () => {}, cl
     if (closed || typeof assetId !== "string" || !assetId) return null;
     const bytes = joinPcmParts(parts);
     if (!bytes.length) return null;
-    const { samples } = int16ToFloat32(bytes);
+    const samples = timeStretch(int16ToFloat32(bytes).samples, clipRate, sampleRate);
     if (!samples.length) return null;
     const buffer = context.createBuffer(1, samples.length, sampleRate);
     buffer.getChannelData(0).set(samples);
@@ -283,6 +287,16 @@ export function createAnviAudioPlayer({ context, onSpeakingChange = () => {}, cl
     jitterSeconds: () => jitter,
     resume: () => (context.state === "suspended" ? context.resume() : Promise.resolve()),
     loadClipPcm,
+    // The interview's speaking speed, from the join ack. Clips decoded at another speed are dropped and
+    // fetched again (normally none: the ack arrives before the first clip).
+    setSpeechRate: (rate) => {
+      const next = speechRateOf(rate);
+      if (next === clipRate) return;
+      clipRate = next;
+      clips.clear();
+      clipBytes = 0;
+    },
+    speechRate: () => clipRate,
     hasClip,
     clipSeconds,
     playClip,

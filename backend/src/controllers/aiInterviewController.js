@@ -4,14 +4,17 @@ import AIInterview from "../models/AIInterview.js";
 import Resource from "../models/AIInterviewResource.js";
 import QuestionLibrary from "../models/QuestionLibrary.js";
 import { anviConfig, anviConfigured } from "../modules/anviInterview/anviInterview.config.js";
+import { createAudioStorage } from "../modules/anviInterview/anviInterview.audioStorage.js";
+import { anviPricing } from "../modules/anviInterview/anviInterview.pricing.js";
 import { createGeminiClient } from "../modules/anviInterview/anviInterview.gemini.js";
-import { questionGenerationPrompt } from "../modules/anviInterview/anviInterview.prompts.js";
+import { poolGenerationPrompt, questionGenerationPrompt } from "../modules/anviInterview/anviInterview.prompts.js";
 import { defaultUsageLedger } from "../modules/anviInterview/anviInterview.usage.js";
 import { defaultAudioPregen, pendingOutbox } from "../modules/anviInterview/anviInterview.audioPregen.js";
 import {
   AuthoringError,
   CAPABILITIES,
   LIMITS,
+  QUESTION_CATEGORIES,
   cleanText,
   normalizedName,
   normalizeDefinition,
@@ -36,6 +39,8 @@ export const assignmentGuard = {
     (await (schedulingModule ||= import("../modules/anviInterview/anviInterview.scheduling.service.js"))).activeAssignmentFor(interviewId),
   deleteInterviewData: async (admin, interviewId) =>
     (await (schedulingModule ||= import("../modules/anviInterview/anviInterview.scheduling.service.js"))).anviScheduling().deleteInterviewData(admin, interviewId),
+  completeInterview: async (admin, interviewId) =>
+    (await (schedulingModule ||= import("../modules/anviInterview/anviInterview.scheduling.service.js"))).anviScheduling().completeInterview(admin, interviewId),
 };
 async function assertNoActiveAssignment(interviewId, verb) {
   const active = await assignmentGuard.activeAssignmentFor(interviewId);
@@ -48,6 +53,26 @@ async function assertNoActiveAssignment(interviewId, verb) {
     { assignmentId: active.id || active._id ? String(active.id || active._id) : null },
   );
 }
+// PeerPrep's company catalog (problem tags, central library, approved names, benchmarks), the same list
+// students pick from when reporting interview questions. A university reads it from the control plane.
+// Loaded on first use; tests replace `names`.
+export const companyCatalogSource = {
+  names: async () => {
+    const [{ isUniversity }, { controlRequest }, { interviewReportOptions }, { default: CompanyBenchmark }] = await Promise.all([
+      import("../platform/deployment.js"),
+      import("../platform/client.js"),
+      import("../platform/interviewQuestionReports.js"),
+      import("../models/CompanyBenchmark.js"),
+    ]);
+    const [shared, local] = await Promise.all([
+      (isUniversity() ? controlRequest("question-interviews/options") : interviewReportOptions())
+        .then((options) => options?.companies || [])
+        .catch(() => []),
+      isUniversity() ? CompanyBenchmark.distinct("companyName").catch(() => []) : [],
+    ]);
+    return [...shared, ...local];
+  },
+};
 // Publish-time question audio (ANVI hybrid); tests replace `pregen`. A publish never awaits it.
 export const audioPregenHooks = { pregen: () => defaultAudioPregen() };
 function kickAudioPregen(interviewId, rev) {
@@ -88,7 +113,7 @@ const pagination = (page, limit, total) => ({
   pages: Math.max(1, Math.ceil(total / limit)),
 });
 const resourceKind = (req) => {
-  if (!["companies", "profiles"].includes(req.params.kind))
+  if (!["companies", "profiles", "jobNames", "jobRoles"].includes(req.params.kind))
     error(404, "RESOURCE_NOT_FOUND", "Resource not found.");
   return req.params.kind;
 };
@@ -117,7 +142,7 @@ async function cas(req, update, editable = true) {
   if (doc) return doc;
   const current = await find(req);
   if (editable && current.lifecycle !== "draft")
-    error(409, "INVALID_LIFECYCLE", "Restore this interview before editing.");
+    error(409, "INVALID_LIFECYCLE", current.lifecycle === "completed" ? "Reopen this interview before editing." : "Restore this interview before editing.");
   error(
     409,
     "REVISION_CONFLICT",
@@ -199,12 +224,35 @@ async function references(req, data, previous) {
       );
   }
 }
-export const capabilities = (_req, res) => res.json({ ...CAPABILITIES, aiConfigured: anviConfigured() });
+/**
+ * Whether students can start ANVI interviews on this server: { mode, ready, missing }. Hybrid needs the
+ * Gemini key, every hybrid price with the USD-INR rate, and audio storage; without them attempts run Live.
+ * `missing` names settings only, never their values.
+ */
+export function runtimeReadiness(config = anviConfig(), env = process.env) {
+  if (!config.hybridEnabled) return { mode: "live", ready: anviConfigured(), missing: anviConfigured() ? [] : ["GEMINI_API_KEY"] };
+  const missing = [];
+  if (!anviConfigured()) missing.push("GEMINI_API_KEY");
+  try {
+    missing.push(...anviPricing(env, config).missingHybridPrices());
+  } catch {
+    missing.push("ANVI_PRICE_*");
+  }
+  if (!createAudioStorage({ env, config }).ready) missing.push("R2 audio storage (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, ANVI_AUDIO_R2_BUCKET or R2_BUCKET_NAME)");
+  // Without every hybrid setting an attempt runs Live (the rollout falls back), so only the key is required.
+  const live = missing.length > 0;
+  return { mode: live ? "live" : "hybrid", ready: anviConfigured(), missing };
+}
+export const capabilities = (_req, res) =>
+  res.json({ ...CAPABILITIES, aiConfigured: anviConfigured(), runtime: runtimeReadiness() });
 export async function listInterviews(req, res) {
   const { page, limit } = pageParams(req);
+  // "All" lists drafts and completed interviews; the draft filters and the schedulable picker list drafts only.
+  const status = req.query.status;
   const where = {
     ...owner(req),
-    lifecycle: req.query.status === "archived" ? "archived" : "draft",
+    lifecycle: status === "archived" || status === "completed" ? status
+      : status || req.query.published === "true" ? "draft" : { $in: ["draft", "completed"] },
   };
   if (req.query.status === "complete") where["validation.complete"] = true;
   if (req.query.status === "incomplete")
@@ -226,7 +274,7 @@ export async function listInterviews(req, res) {
   const [items, total] = await Promise.all([
     AIInterview.find(where)
       .select(
-        "title role companyName revision lifecycle summary validation.complete publishedAt updatedAt",
+        "title role companyName revision lifecycle summary validation.complete publishedAt completedAt updatedAt",
       )
       .sort(sort)
       .skip((page - 1) * limit)
@@ -331,20 +379,49 @@ export async function validateInterview(req, res) {
   delete doc.validatedSnapshot;
   res.json(doc);
 }
+// The lifecycle each action starts from. "complete" keeps the published snapshot and reports; students can no
+// longer see or start the interview. "reopen" makes a completed interview available again.
+const LIFECYCLE_FROM = { archive: ["draft", "completed"], restore: ["archived"], complete: ["draft"], reopen: ["completed"] };
 export async function lifecycleInterview(req, res) {
   const action = req.params.action;
-  if (!["archive", "restore"].includes(action))
+  if (!LIFECYCLE_FROM[action])
     error(404, "RESOURCE_NOT_FOUND", "Action not found.");
   const current = await find(req);
-  if ((action === "archive") !== (current.lifecycle === "draft"))
+  // Completing again finishes closing schedules a first try left open (it is safe to repeat).
+  if (action === "complete" && current.lifecycle === "completed") {
+    const closing = await assignmentGuard.completeInterview(req.user, current._id);
+    delete current.validatedSnapshot;
+    delete current.publishedSnapshot;
+    return res.json({ ...current, closing });
+  }
+  if (!LIFECYCLE_FROM[action].includes(current.lifecycle))
     error(409, "INVALID_LIFECYCLE", "This action is not available.");
+  if (action === "complete" && !current.publishedAt)
+    error(409, "INTERVIEW_NOT_PUBLISHED", "Only a published interview can be marked complete.");
   if (action === "archive") await assertNoActiveAssignment(current._id, "archive");
+  if (action === "complete" || action === "reopen") {
+    const doc = await cas(
+      req,
+      {
+        $set: { lifecycle: action === "complete" ? "completed" : "draft", completedAt: action === "complete" ? new Date() : null },
+        $inc: { revision: 1 },
+        $push: { history: { $each: [audit(req, action, revision(req) + 1)], $slice: -100 } },
+      },
+      false,
+    );
+    // Starts are refused from here on (they need a draft interview); then running interviews end and schedules close.
+    const closing = action === "complete" ? await assignmentGuard.completeInterview(req.user, current._id) : null;
+    delete doc.validatedSnapshot;
+    delete doc.publishedSnapshot;
+    return res.json(closing ? { ...doc, closing } : doc);
+  }
   const doc = await cas(
     req,
     {
       $set: {
         lifecycle: action === "archive" ? "archived" : "draft",
         archivedAt: action === "archive" ? new Date() : null,
+        completedAt: null,
         validation: { complete: false },
         // Archive only stops the audio outbox; clips pinned by assignments or attempts stay.
         ...(action === "archive" && current.audioPregen ? { "audioPregen.status": "inactive" } : {}),
@@ -421,6 +498,32 @@ export async function regenerateInterviewAudio(req, res) {
   if (!result.ok) error(409, "INTERVIEW_NOT_PUBLISHED", "Publish this interview before generating its question audio.");
   res.status(202).json(await audioPregenHooks.pregen().status(doc._id));
 }
+// ANVI's voice for the speed preview in ANVI settings: one cached template clip (synthesized once per tenant,
+// then served from storage), sent as base64 s16le PCM. Tests replace `load`.
+const VOICE_SAMPLE_ID = "small_talk.how_are_you";
+export const voiceSampleSource = {
+  load: async () => {
+    const [{ defaultAudioAssets }, { templateAssetSpec }, { pregenTemplates }] = await Promise.all([
+      import("../modules/anviInterview/anviInterview.audioAssets.js"),
+      import("../modules/anviInterview/anviInterview.audioPregen.js"),
+      import("../modules/anviInterview/anviInterview.templates.js"),
+    ]);
+    const template = pregenTemplates(["English"]).find((entry) => entry.id === VOICE_SAMPLE_ID);
+    const assets = defaultAudioAssets();
+    const asset = template ? await assets.ensure(templateAssetSpec(template, anviConfig().ttsVoice)) : null;
+    const clip = asset ? await assets.load(asset.assetId, null) : null;
+    return clip?.pcm ? { pcm: clip.pcm, sampleRate: clip.sampleRate || 24000, text: template.text } : null;
+  },
+};
+export async function voiceSample(req, res) {
+  const clip = await Promise.resolve().then(() => voiceSampleSource.load()).catch(() => null);
+  if (!clip)
+    return res.status(503).json({
+      code: "VOICE_SAMPLE_UNAVAILABLE",
+      error: "ANVI's voice sample isn't available right now. Check that ANVI audio is set up on the server.",
+    });
+  res.json({ sampleRate: clip.sampleRate, text: clip.text, pcm: Buffer.from(clip.pcm).toString("base64") });
+}
 export async function interviewAudioStatus(req, res) {
   const doc = await find(req);
   res.json(await audioPregenHooks.pregen().status(doc._id));
@@ -487,10 +590,13 @@ export async function deleteInterview(req, res) {
     );
   res.json({ deleted: true });
 }
+// Job names and roles that admins type are shared by every admin of the tenant; companies and profiles stay
+// per owner because interviews reference them by id.
+const SHARED_KINDS = new Set(["jobNames", "jobRoles"]);
 export async function listResources(req, res) {
   const kind = resourceKind(req),
     { page, limit } = pageParams(req);
-  const where = { ...owner(req), kind };
+  const where = SHARED_KINDS.has(kind) ? { kind } : { ...owner(req), kind };
   if (req.query.active === "true") where.active = true;
   const search = literalSearch(req.query.search);
   if (search) where.name = { $regex: search, $options: "i" };
@@ -503,6 +609,14 @@ export async function listResources(req, res) {
     Resource.countDocuments(where),
   ]);
   res.json({ items, pagination: pagination(page, limit, total) });
+}
+export async function companyCatalog(req, res) {
+  const names = new Map();
+  for (const value of await companyCatalogSource.names()) {
+    const name = cleanText(typeof value === "string" ? value.slice(0, 120) : "", 120).replace(/\s+/g, " ");
+    if (name.length >= 2 && !names.has(normalizedName(name))) names.set(normalizedName(name), name);
+  }
+  res.json({ companies: [...names.values()].sort((a, b) => a.localeCompare(b)) });
 }
 export async function saveResource(req, res) {
   const kind = resourceKind(req),
@@ -576,6 +690,101 @@ const generatedText = (value, max) =>
   cleanText(typeof value === "string" ? value.slice(0, max) : "", max)
     .replace(/\s+/g, " ")
     .trim();
+// "Generate with ANVI": the admin's question pool, written once and asked to every student. The count is
+// shared out across the topics (earlier topics get the remainder) and each topic is one model call of at
+// most POOL_PER_CALL questions, POOL_CONCURRENCY at a time; nothing is saved here.
+const POOL_TOPICS = 12;
+const POOL_PER_CALL = 15;
+const POOL_CONCURRENCY = 4;
+const POOL_DIFFICULTIES = ["mixed", "easy", "medium", "hard"];
+async function generatePool(doc, body, gemini, usage) {
+  // Topics once each, case-insensitively, in the admin's first spelling.
+  const named = new Map();
+  for (const topic of Array.isArray(body.topics) ? body.topics : []) {
+    const name = generatedText(topic, 80);
+    if (name && !named.has(name.toLowerCase())) named.set(name.toLowerCase(), name);
+  }
+  const topics = [...named.values()];
+  if (!topics.length || topics.length > POOL_TOPICS)
+    error(422, "VALIDATION_FAILED", `Add 1–${POOL_TOPICS} topics for ANVI.`);
+  const count = body.count;
+  if (!Number.isInteger(count) || count < topics.length || count > LIMITS.generateQuestions)
+    error(422, "VALIDATION_FAILED", `Choose ${topics.length}–${LIMITS.generateQuestions} questions to generate (at least one per topic).`);
+  const category = QUESTION_CATEGORIES.includes(body.category) ? body.category : "Technical";
+  const difficulty = POOL_DIFFICULTIES.includes(body.difficulty) ? body.difficulty : "mixed";
+  const followUps = Number.isInteger(body.followUps) ? Math.min(LIMITS.followUpLimit, Math.max(0, body.followUps)) : 1;
+  const requirements = generatedText(body.requirements ?? "", 4000);
+  const data = doc.data || {};
+  const avoid = (data.sections || [])
+    .flatMap((s) => s.groups || [])
+    .flatMap((g) => g.questions || [])
+    .filter((q) => q.kind !== "resume" && q.prompt)
+    .map((q) => q.prompt);
+  // One call per topic share; a share above POOL_PER_CALL is split into several calls.
+  const calls = [];
+  topics.forEach((topic, i) => {
+    let share = Math.floor(count / topics.length) + (i < count % topics.length ? 1 : 0);
+    while (share > 0) {
+      calls.push({ topic, count: Math.min(POOL_PER_CALL, share) });
+      share -= POOL_PER_CALL;
+    }
+  });
+  const onUsage = (usage || defaultUsageLedger()).recorder({ interviewId: doc._id });
+  const results = new Array(calls.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < calls.length) {
+      const index = next++;
+      const call = calls[index];
+      const { systemText, userText, schema } = poolGenerationPrompt({
+        ...call, category, difficulty, followUps, requirements,
+        // The interview name is the job name (picked from the job names list).
+        jobName: data.title, role: data.role, companyName: data.companyName, experience: data.experience,
+        avoid: avoid.slice(-60),
+      });
+      try {
+        const result = await gemini.generateJson({
+          model: anviConfig().generateModel, systemText, parts: [{ text: userText }], schema,
+          temperature: 0.6, timeoutMs: 45000, usageKind: "generate", onUsage,
+        });
+        results[index] = { call, questions: Array.isArray(result?.questions) ? result.questions : [] };
+      } catch {
+        results[index] = { call, questions: [] };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(POOL_CONCURRENCY, calls.length) }, worker));
+  const seen = new Set(avoid.map((text) => text.toLowerCase()));
+  const questions = [];
+  for (const { call, questions: list } of results) {
+    let kept = 0;
+    for (const entry of list) {
+      if (kept >= call.count) break;
+      const prompt = generatedText(entry?.text, 1200).replace(/^(?:question|q)\s*\d{1,3}\s*[:.)-]\s*/i, "");
+      if (prompt.length < 8 || seen.has(prompt.toLowerCase())) continue;
+      seen.add(prompt.toLowerCase());
+      kept += 1;
+      const keyPoints = (Array.isArray(entry.keyPoints) ? entry.keyPoints : [])
+        .map((point) => generatedText(point, 200))
+        .filter(Boolean)
+        .slice(0, GENERATED_KEY_POINTS);
+      questions.push({
+        prompt,
+        expectedAnswer: keyPoints.join("\n"),
+        keyPoints,
+        topic: call.topic,
+        category,
+        difficulty: ["easy", "medium", "hard"].includes(entry.difficulty) ? entry.difficulty : difficulty === "mixed" ? "medium" : difficulty,
+        followUps: (Array.isArray(entry.followUps) ? entry.followUps : [])
+          .map((text) => generatedText(text, 300))
+          .filter((text) => text.length >= 8)
+          .slice(0, followUps),
+        followUpLimit: followUps,
+      });
+    }
+  }
+  return questions;
+}
 export function createGenerateQuestions({
   gemini,
   usage,
@@ -619,6 +828,15 @@ export function createGenerateQuestions({
     if (doc.lifecycle !== "draft")
       error(409, "INVALID_LIFECYCLE", "Restore this interview before editing.");
     const body = req.body && typeof req.body === "object" ? req.body : {};
+    if (body.mode === "pool") {
+      const pool = await generatePool(doc, body, gemini ?? createGeminiClient(), usage);
+      if (!pool.length)
+        return res.status(502).json({
+          code: "GENERATION_FAILED",
+          error: "ANVI could not generate questions right now. Try again in a moment.",
+        });
+      return res.json({ questions: pool });
+    }
     if (typeof body.groupId !== "string" || !TOPIC_ID.test(body.groupId))
       error(422, "VALIDATION_FAILED", "Choose the topic to generate questions for.");
     const count = body.count;

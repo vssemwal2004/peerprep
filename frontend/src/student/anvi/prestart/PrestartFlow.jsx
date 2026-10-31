@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, Loader2, Maximize2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, BriefcaseBusiness, Check, ClipboardCheck, Loader2, Maximize2, Mic, ShieldCheck, X } from "lucide-react";
 import { AnviMark } from "../../../components/AnviApproach";
 import { createAnviAudioContexts } from "../useAnviLiveSession";
 import { resumeTargetOf, startBodyOf } from "../anviStartSetup";
@@ -30,22 +30,33 @@ const INTROS = {
   instructions: "Review the essentials, confirm consent, and join when you're ready.",
 };
 
+// Each phase's icon, on the step's header tile.
+const PHASE_ICONS = { background: BriefcaseBusiness, system: Mic, proctoring: ShieldCheck, instructions: ClipboardCheck };
+
+// A step in the dark side rail (as in the assessment's secure setup): a numbered circle that turns into
+// a tick when done, with a pulse on the current one.
 function StepMarker({ status, n }) {
-  const base = "relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums transition-colors duration-300";
-  if (status === "done") return <span className={`${base} anvi-pop bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200`}><Check className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" /></span>;
-  if (status === "attention") return <span className={`${base} bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300`}><AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" /></span>;
-  if (status === "current") return <span className={`${base} bg-violet-600 text-white ring-4 ring-violet-600/15 dark:bg-violet-500 dark:ring-violet-400/20`}>{n}</span>;
-  return <span className={`${base} bg-white text-slate-400 ring-1 ring-inset ring-slate-300 dark:bg-transparent dark:text-zinc-500 dark:ring-white/15`}>{n}</span>;
+  const base = "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums transition-colors duration-300";
+  if (status === "done") return <span className={`${base} anvi-pop bg-emerald-500 text-white`}><Check className="h-4 w-4" strokeWidth={3} aria-hidden="true" /></span>;
+  if (status === "attention") return <span className={`${base} bg-amber-400 text-amber-950`}><AlertTriangle className="h-4 w-4" aria-hidden="true" /></span>;
+  if (status === "current") return <span className={`${base} bg-violet-600 text-white dark:bg-violet-500`}>
+    <span aria-hidden="true" className="absolute inset-0 rounded-full bg-violet-400/40 motion-safe:animate-ping" />
+    <span className="relative">{n}</span>
+  </span>;
+  return <span className={`${base} bg-white text-slate-400 ring-1 ring-inset ring-slate-300 dark:bg-white/5 dark:ring-white/15`}>{n}</span>;
 }
 const STATUS_WORD = { done: "completed", attention: "needs attention", current: "current step", upcoming: "not started" };
+const STATUS_LINE = { done: "Completed", attention: "Needs attention", current: "In progress", upcoming: "Up next" };
+const STATUS_TONE = { done: "text-emerald-600 dark:text-emerald-300/90", attention: "text-amber-700 dark:text-amber-300", current: "text-violet-700 dark:text-violet-300", upcoming: "text-slate-400 dark:text-zinc-500" };
 
 
 /**
- * The full-window pre-start flow of a NEW ANVI attempt, in assessment-style phases with a horizontal
- * stepper: Background (details and resume), System check, Proctoring (only when on), then one compact
- * Review & join screen that combines instructions, consent and the readiness summary.
- * One phase per screen (it fits a desktop window; phones scroll inside the phase) with a fixed Back / Next
- * footer, and each phase gates Next with one short reason. A resume upload runs in the background across
+ * The pre-start flow of a NEW ANVI attempt, laid out like the assessment's secure setup: one centred card
+ * with a dark step rail (steps, their status and the overall progress) beside the current step. Phases:
+ * Background (details and resume), System check, Proctoring (only when on), then one compact Review & join
+ * screen that combines instructions, consent and the readiness summary.
+ * One phase at a time (it scrolls inside the card; phones get the full window and a progress strip) with a
+ * fixed Back / Next footer, and each phase gates Next with one short reason. A resume upload runs in the background across
  * phases; Join waits for it. Interviews are English only. When the interview requires fullscreen, Join
  * requests it in its own click (never earlier), together with the call's audio contexts, then starts
  * through `onStart({ stream, contexts, body })` (true: started).
@@ -62,7 +73,7 @@ export default function PrestartFlow({ setup, support, starting = false, startEr
   const [joinNote, setJoinNote] = useState("");
   const [fullscreenRefused, setFullscreenRefused] = useState(false);
   const resume = useResumeUpload({ target: resumeTargetOf(setup), setup: setup.resume });
-  const micCheck = useMicCheck({ support });
+  const micCheck = useMicCheck({ support, readAloud: true });
   const fsSupported = useMemo(() => fullscreenSupported(), []);
   const headingRef = useRef(null);
   const bodyRef = useRef(null);
@@ -95,7 +106,7 @@ export default function PrestartFlow({ setup, support, starting = false, startEr
   const exitLocked = busy && !(joining === "start" && !starting);
   const state = {
     resumeProvided: resume.provided, resumeUploading: resume.uploading, support, micReady: micCheck.ready,
-    micError: micCheck.mic.state === "error", online: micCheck.online, fullscreenSupported: fsSupported,
+    micError: micCheck.mic.state === "error", micSilent: micCheck.silent, micVerified: micCheck.verified, micReading: micCheck.read.state, online: micCheck.online, fullscreenSupported: fsSupported,
     cameraOn: cameraCheck.camera.state === "on", cameraReady: cameraCheck.ready, cameraError: cameraCheck.camera.state === "error",
     proctoringAck, termsAccepted, consent,
   };
@@ -248,79 +259,121 @@ export default function PrestartFlow({ setup, support, starting = false, startEr
           notices={notices}
         />;
 
-  const column = "mx-auto w-full max-w-5xl px-4 sm:px-6";
+  const done = statuses.filter((status) => status === "done").length;
+  const percent = Math.round((done / Math.max(1, phases.length)) * 100);
+  const PhaseIcon = PHASE_ICONS[current] || ClipboardCheck;
+  const subtitle = [setup.role, setup.companyName].filter(Boolean).join(" · ");
+  const exitButton = (className) => onClose && <button type="button" onClick={onClose} disabled={exitLocked} className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-medium disabled:cursor-not-allowed disabled:opacity-50 ${focus} ${className}`}>
+    <X className="h-4 w-4" aria-hidden="true" /><span>Exit<span className="hidden sm:inline"> setup</span></span>
+  </button>;
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="anvi-prestart-title" data-anvi-lobby="prestart" data-phase={current}
-      className="fixed inset-0 z-[80] flex h-[100dvh] flex-col overflow-hidden bg-slate-50 text-slate-900 antialiased [font-family:Inter,ui-sans-serif,system-ui,sans-serif] dark:bg-[#111318] dark:text-zinc-100">
+      className="fixed inset-0 z-[80] flex h-[100dvh] items-center justify-center overflow-hidden bg-slate-50 p-0 text-slate-900 antialiased [font-family:Inter,ui-sans-serif,system-ui,sans-serif] dark:bg-[#0b0c10] dark:text-zinc-100 sm:p-6">
       <AiMotionStyles />
-      {/* A very subtle wash of the primary colour from the top. */}
-      <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(70%_100%_at_50%_0%,rgba(124,58,237,0.07),transparent)] dark:bg-[radial-gradient(70%_100%_at_50%_0%,rgba(139,92,246,0.12),transparent)]" />
+      {/* A soft wash of the primary colour behind the card. */}
+      <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_70%_at_50%_0%,rgba(124,58,237,0.10),transparent)] dark:bg-[radial-gradient(60%_70%_at_50%_0%,rgba(139,92,246,0.16),transparent)]" />
 
-      {/* One slim header row: brand, the stepper, Exit. */}
-      <header className="relative z-20 shrink-0 border-b border-slate-200/80 bg-white/80 backdrop-blur dark:border-white/[0.06] dark:bg-[#111318]/80">
-        <div className={`${column} flex h-14 items-center gap-4`}>
-          <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white"><AnviMark className="h-6 w-6" /><span className="hidden sm:inline">ANVI</span></span>
-          <nav aria-label="Setup steps" className="min-w-0 flex-1">
-            <ol className="flex items-center justify-center">
+      {/* One contained card, centred, as in the assessment's secure setup: the dark step rail on the left,
+          the current step on the right with its own Back / Next footer. */}
+      <div className="anvi-fade-up relative z-10 flex h-full w-full max-w-6xl overflow-hidden bg-white shadow-2xl shadow-slate-900/10 ring-1 ring-slate-900/10 dark:bg-[#14161c] dark:shadow-black/40 dark:ring-white/10 sm:h-[min(780px,calc(100dvh-3rem))] sm:rounded-2xl">
+        <aside className="relative hidden w-[300px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-gradient-to-b from-violet-50 via-slate-50 to-slate-50 p-7 text-slate-900 dark:border-white/[0.06] dark:from-[#1a1526] dark:via-[#121319] dark:to-[#0f1015] dark:text-white md:flex">
+          <span aria-hidden="true" className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-violet-300/30 blur-3xl dark:bg-violet-600/25" />
+          <span aria-hidden="true" className="pointer-events-none absolute -bottom-28 -right-20 h-64 w-64 rounded-full bg-fuchsia-200/30 blur-3xl dark:bg-fuchsia-500/10" />
+          <div className="relative flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-violet-700 dark:text-violet-300">
+            <AnviMark className="h-5 w-5" />Interview setup
+          </div>
+          <h2 id="anvi-prestart-title" className="relative mt-3 text-xl font-semibold leading-snug">{setup.title}</h2>
+          {subtitle && <p className="relative mt-1 text-sm font-medium text-slate-600 dark:text-zinc-300">{subtitle}</p>}
+          <p className="relative mt-2 text-sm leading-6 text-slate-500 dark:text-zinc-400">
+            {assigned ? "Scheduled by your institution. " : ""}Complete these quick steps. The interview starts only when you join.
+          </p>
+
+          <nav aria-label="Setup steps" className="relative mt-8">
+            <ol>
               {phases.map((id, at) => {
                 const status = statuses[at];
                 const reachable = at <= reached && !busy;
                 const last = at === phases.length - 1;
-                return <li key={id} data-rail={id} data-status={status} className="flex min-w-0 items-center">
+                return <li key={id} data-rail={id} data-status={status} className="relative pb-5 last:pb-0">
+                  {!last && <span aria-hidden="true" className={`absolute left-[1.375rem] top-12 h-[calc(100%-2.75rem)] w-px transition-colors duration-500 ${status === "done" ? "bg-emerald-400/70" : "bg-slate-200 dark:bg-white/10"}`} />}
                   <button type="button" onClick={() => goTo(at)} disabled={!reachable} aria-current={status === "current" ? "step" : undefined}
-                    className={`flex shrink-0 items-center gap-2 rounded-full p-0.5 text-left transition-colors lg:pr-1.5 ${focus} disabled:cursor-default ${reachable && status !== "current" ? "hover:bg-slate-100 dark:hover:bg-white/[0.06]" : ""}`}>
+                    className={`flex w-full items-start gap-3.5 rounded-xl p-1.5 text-left transition-colors disabled:cursor-default ${focus} ${status === "current" ? "bg-white shadow-sm ring-1 ring-slate-900/[0.06] dark:bg-white/[0.06] dark:shadow-none dark:ring-white/10" : reachable ? "hover:bg-white/70 dark:hover:bg-white/[0.05]" : ""}`}>
                     <StepMarker status={status} n={at + 1} />
-                    <span className={`hidden whitespace-nowrap text-[13px] lg:inline ${status === "current" ? "font-semibold text-slate-900 dark:text-white" : status === "attention" ? "font-medium text-amber-700 dark:text-amber-300" : status === "done" ? "font-medium text-slate-700 dark:text-zinc-300" : "text-slate-400 dark:text-zinc-500"}`}>{PHASES[id].title}</span>
-                    <span className="sr-only lg:hidden">{PHASES[id].title}</span>
-                    <span className="sr-only">, {STATUS_WORD[status]}</span>
+                    <span className="min-w-0 pt-0.5">
+                      <span className={`block text-sm font-medium ${status === "current" ? "text-slate-950 dark:text-white" : status === "upcoming" ? "text-slate-400 dark:text-zinc-500" : "text-slate-700 dark:text-zinc-200"}`}>{PHASES[id].title}</span>
+                      <span className={`mt-0.5 block text-xs ${STATUS_TONE[status]}`} aria-hidden="true">{STATUS_LINE[status]}</span>
+                      <span className="sr-only">, {STATUS_WORD[status]}</span>
+                    </span>
                   </button>
-                  {!last && <span aria-hidden="true" className="relative mx-1.5 h-px w-5 bg-slate-200 dark:bg-white/10 sm:w-8 lg:mx-2.5 lg:w-10">
-                    <span className={`absolute inset-y-0 left-0 bg-violet-500 transition-[width] duration-500 ease-out motion-reduce:transition-none dark:bg-violet-400 ${at < index ? "w-full" : "w-0"}`} />
-                  </span>}
                 </li>;
               })}
             </ol>
           </nav>
-          {onClose && <button type="button" onClick={onClose} disabled={exitLocked} className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-100 ${focus}`}>
-            <X className="h-4 w-4" aria-hidden="true" /><span>Exit<span className="hidden sm:inline"> setup</span></span>
-          </button>}
-        </div>
-      </header>
 
-      <main ref={bodyRef} className="relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div key={current} className={`${column} pb-8 pt-6 lg:pt-8 ${direction === "prev" ? "anvi-slide-prev" : "anvi-slide-next"}`}>
-          <div className="mb-5">
-            <p data-mobile-progress="" className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-zinc-400">
-              <span className="text-violet-700 dark:text-violet-300">Step {n} of {phases.length}</span>
-              <span aria-hidden="true">·</span><span id="anvi-prestart-title" className="truncate">{setup.title}</span>
-            </p>
-            <h1 id="anvi-phase-title" ref={headingRef} tabIndex={-1} className={`mt-1.5 text-2xl font-semibold tracking-[-0.015em] text-slate-950 dark:text-white ${noOutline}`}>
-              {HEADINGS[current]}
-            </h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-zinc-400">{current === "background" ? (withResume ? INTROS.background : INTROS.backgroundNoResume) : current === "system" && cameraCheck.enabled ? INTROS.systemCamera : INTROS[current]}</p>
+          <div className="relative mt-auto pt-6">
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-zinc-400">
+              <span>{done} of {phases.length} steps complete</span>
+              <span className="tabular-nums">{percent}%</span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
+              <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-400 transition-[width] duration-500 ease-out motion-reduce:transition-none" style={{ width: `${percent}%` }} />
+            </div>
+            {exitButton("-ml-2 mt-5 text-slate-500 hover:bg-white/70 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-white")}
           </div>
-          {phaseBody}
-        </div>
-      </main>
+        </aside>
 
-      {/* Back / Next (Join on the last phase), fixed to the bottom, inside the content column. */}
-      <footer className="relative z-20 shrink-0 border-t border-slate-200/80 bg-white/85 backdrop-blur dark:border-white/[0.06] dark:bg-[#111318]/85">
-        <div className={`${column} flex flex-wrap items-center gap-x-4 gap-y-2 py-3 sm:flex-nowrap`}>
-          <p id={onReady ? "anvi-join-hint" : "anvi-phase-hint"} aria-live="polite" className="order-1 w-full text-center text-xs text-slate-500 empty:hidden dark:text-zinc-400 sm:order-2 sm:w-auto sm:min-w-0 sm:flex-1 sm:text-right">{onReady ? joinHint : blocker}</p>
-          <div className="order-2 sm:order-1">
-            {index > 0 && <button type="button" onClick={() => goTo(index - 1)} disabled={busy} className={secondaryButton}><ArrowLeft className="h-4 w-4" aria-hidden="true" />Back</button>}
+        <section className="flex min-w-0 flex-1 flex-col">
+          {/* Phones and tablets: the rail folds into a progress strip. */}
+          <div className="shrink-0 border-b border-slate-200 px-5 py-3 dark:border-white/[0.06] md:hidden">
+            <div className="flex items-center justify-between gap-3">
+              <span className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white"><AnviMark className="h-5 w-5 shrink-0" /><span className="truncate">{setup.title}</span></span>
+              {exitButton("text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-100")}
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
+              <div className="h-full rounded-full bg-violet-500 transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${Math.round((n / phases.length) * 100)}%` }} />
+            </div>
           </div>
-          <div className="order-3 ml-auto">
-            {onReady
-              ? <button type="button" onClick={() => void join()} disabled={!canJoin} aria-describedby="anvi-join-hint" data-join="" className={`${primaryButton(canJoin)} h-11 px-6 text-[15px]`}>
-                {busy && <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}{joinLabel}{!busy && <ArrowRight className="h-4 w-4" aria-hidden="true" />}
-              </button>
-              : <button type="button" onClick={next} disabled={Boolean(blocker) || busy} aria-describedby="anvi-phase-hint" data-next="" className={primaryButton(!blocker && !busy)}>
-                <span>{index === 0 ? "Continue" : "Next"}<span className="hidden sm:inline">: {PHASES[nextId].title}</span></span><ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </button>}
-          </div>
-        </div>
-      </footer>
+
+          <main ref={bodyRef} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div key={current} className={`px-5 py-6 sm:px-9 sm:py-8 ${direction === "prev" ? "anvi-slide-prev" : "anvi-slide-next"}`}>
+              <div className="mb-7 flex items-start gap-4">
+                <span className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-violet-600 ring-1 ring-inset ring-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-400/20 sm:flex">
+                  <PhaseIcon className="h-7 w-7" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p data-mobile-progress="" className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-zinc-500">
+                    Step {n} of {phases.length}<span className="md:hidden"> · {PHASES[current].title}</span>
+                  </p>
+                  <h1 id="anvi-phase-title" ref={headingRef} tabIndex={-1} className={`mt-1 text-2xl font-semibold tracking-[-0.015em] text-slate-950 dark:text-white ${noOutline}`}>
+                    {HEADINGS[current]}
+                  </h1>
+                  <p className="mt-1.5 max-w-xl text-[15px] leading-6 text-slate-500 dark:text-zinc-400">{current === "background" ? (withResume ? INTROS.background : INTROS.backgroundNoResume) : current === "system" && cameraCheck.enabled ? INTROS.systemCamera : INTROS[current]}</p>
+                </div>
+              </div>
+              {phaseBody}
+            </div>
+          </main>
+
+          {/* Back / Next (Join on the last phase), fixed to the bottom of the card. */}
+          <footer className="shrink-0 border-t border-slate-200 bg-white px-5 py-3.5 dark:border-white/[0.06] dark:bg-[#14161c] sm:px-9">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 sm:flex-nowrap">
+              <p id={onReady ? "anvi-join-hint" : "anvi-phase-hint"} aria-live="polite" className="order-1 w-full text-center text-xs text-slate-500 empty:hidden dark:text-zinc-400 sm:order-2 sm:w-auto sm:min-w-0 sm:flex-1 sm:text-right">{onReady ? joinHint : blocker}</p>
+              <div className="order-2 sm:order-1">
+                {index > 0 && <button type="button" onClick={() => goTo(index - 1)} disabled={busy} className={secondaryButton}><ArrowLeft className="h-4 w-4" aria-hidden="true" />Back</button>}
+              </div>
+              <div className="order-3 ml-auto">
+                {onReady
+                  ? <button type="button" onClick={() => void join()} disabled={!canJoin} aria-describedby="anvi-join-hint" data-join="" className={`${primaryButton(canJoin)} h-11 min-w-[180px] px-6 text-[15px]`}>
+                    {busy && <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}{joinLabel}{!busy && <ArrowRight className="h-4 w-4" aria-hidden="true" />}
+                  </button>
+                  : <button type="button" onClick={next} disabled={Boolean(blocker) || busy} aria-describedby="anvi-phase-hint" data-next="" className={`${primaryButton(!blocker && !busy)} h-11 min-w-[180px]`}>
+                    <span>{index === 0 ? "Continue" : "Next"}<span className="hidden sm:inline">: {PHASES[nextId].title}</span></span><ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </button>}
+              </div>
+            </div>
+          </footer>
+        </section>
+      </div>
     </div>
   );
 }

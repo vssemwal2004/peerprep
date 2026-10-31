@@ -23,6 +23,8 @@ export function createAuthoringRouter(authenticate = requireAuth, deps = {}) {
     : controller.generateQuestions;
   router.use(asyncRoute(authenticate), adminAuthoringOnly);
   router.get("/capabilities", controller.capabilities);
+  router.get("/catalog/companies", asyncRoute(controller.companyCatalog));
+  router.get("/voice-sample", asyncRoute(controller.voiceSample));
   router.get("/resources/:kind", asyncRoute(controller.listResources));
   router.post("/resources/:kind", asyncRoute(controller.saveResource));
   router.put("/resources/:kind/:id", asyncRoute(controller.saveResource));

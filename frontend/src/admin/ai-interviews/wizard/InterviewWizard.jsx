@@ -29,7 +29,7 @@ import { ensureDefaultInterviewer } from "./defaults";
 import { focusFields, nonce } from "./focus";
 import { tabForFields } from "./settings/tabs";
 import { englishOnly } from "./settings/model";
-import { STEPS, describeIssue, interviewStatus, resolveStep, stepErrors, stepIndex } from "./steps";
+import { COMPLETE_TEXT, REOPEN_TEXT, STEPS, describeIssue, interviewStatus, resolveStep, stepErrors, stepIndex } from "./steps";
 import { Alert, buttonPrimary, buttonSecondary } from "./controls";
 
 const publishMessage = (error) => {
@@ -52,7 +52,7 @@ function SaveStatus({ state, created = true }) {
         Not saved yet
       </>
     );
-  else if (state.doc?.lifecycle === "archived") content = "Read only";
+  else if (state.doc?.lifecycle === "archived" || state.doc?.lifecycle === "completed") content = "Read only";
   else if (state.conflict)
     content = (
       <>
@@ -236,6 +236,8 @@ export function EditInterviewWizard({ id }) {
   const doc = state.doc,
     data = state.data;
   const archived = doc?.lifecycle === "archived";
+  // Marked complete: read-only, with its reports kept; "Reopen" makes it editable and available again.
+  const completed = doc?.lifecycle === "completed";
   const validationCurrent = Boolean(
     doc && !state.dirty && doc.validation?.validatedRevision === doc.revision && doc.validation?.issues,
   );
@@ -247,7 +249,7 @@ export function EditInterviewWizard({ id }) {
   });
   // Entering Review runs the server check once per saved revision.
   useEffect(() => {
-    if (step !== "review" || !doc || archived || state.conflict || state.saving || state.error || publishing) return;
+    if (step !== "review" || !doc || archived || completed || state.conflict || state.saving || state.error || publishing) return;
     if (validationCurrent || autoChecked.current === doc.revision) return;
     autoChecked.current = doc.revision;
     // Validation bumps the revision; remember the checked one so the check never repeats itself.
@@ -276,7 +278,7 @@ export function EditInterviewWizard({ id }) {
         </div>
       </Message>
     );
-  const readOnly = archived || state.conflict;
+  const readOnly = archived || completed || state.conflict;
   // ANVI interviews are English only: every edit saves the English language settings.
   const change = (next) => state.change(englishOnly(next));
   const index = stepIndex(step);
@@ -373,12 +375,26 @@ export function EditInterviewWizard({ id }) {
       body: "The interview becomes an editable draft again. Publish it again when ready.",
       label: "Restore",
     },
+    complete: {
+      title: "Mark interview complete",
+      body: COMPLETE_TEXT,
+      label: "Mark complete",
+    },
+    reopen: {
+      title: "Reopen interview",
+      body: REOPEN_TEXT,
+      label: "Reopen",
+    },
   };
   const menuActions = [
     { id: "preview", label: "Preview as student", icon: Eye, run: () => go("review", { fields: ["preview"], nonce: nonce(), focus: true }) },
-    ...(doc.publishedAt && !archived
-      ? [{ id: "unpublish", label: "Unpublish", icon: EyeOff, run: () => ask("unpublish") }]
+    ...(doc.publishedAt && !archived && !completed
+      ? [
+          { id: "complete", label: "Mark complete", icon: CheckCircle2, run: () => ask("complete") },
+          { id: "unpublish", label: "Unpublish", icon: EyeOff, run: () => ask("unpublish") },
+        ]
       : []),
+    ...(completed ? [{ id: "reopen", label: "Reopen", icon: RotateCcw, run: () => ask("reopen") }] : []),
     archived
       ? { id: "restore", label: "Restore as draft", icon: RotateCcw, run: () => ask("restore") }
       : { id: "archive", label: "Archive", icon: Archive, danger: true, run: () => ask("archive") },
@@ -422,8 +438,18 @@ export function EditInterviewWizard({ id }) {
         Back
       </button>
     );
+  // Students cannot start ANVI interviews until the server has these settings (never their values).
+  const runtime = caps.result?.runtime;
   const notices = (
     <>
+      {runtime && !runtime.ready && (
+        <Alert tone="warning" title="Students can't start ANVI interviews on this server yet">
+          <span data-runtime-missing>
+            Ask your server administrator to set: {runtime.missing.join(", ")}. You can still build and publish
+            this interview.
+          </span>
+        </Alert>
+      )}
       {state.conflict && (
         <Alert
           tone="error"
@@ -454,6 +480,19 @@ export function EditInterviewWizard({ id }) {
           }
         >
           Restore this interview to edit or publish it again.
+        </Alert>
+      )}
+      {completed && (
+        <Alert
+          tone="info"
+          title="Completed — read only"
+          action={
+            <button type="button" className={buttonSecondary} onClick={() => ask("reopen")}>
+              Reopen
+            </button>
+          }
+        >
+          Students can no longer start this interview. Its schedules are closed and every report is kept.
         </Alert>
       )}
       {actionError && !confirm && <Alert tone="error">{actionError}</Alert>}
@@ -489,7 +528,7 @@ export function EditInterviewWizard({ id }) {
             stepReady={stepReady}
             onPublish={publish}
             publishing={publishing}
-            canAssign={Boolean(doc.publishedAt) && !archived}
+            canAssign={Boolean(doc.publishedAt) && !archived && !completed}
             onFix={(issue) => {
               setShowErrors((s) => ({ ...s, [issue.step]: true }));
               go(issue.step, {
@@ -538,7 +577,7 @@ export function EditInterviewWizard({ id }) {
                 readOnly={readOnly}
                 interviewer={{ ...interviewer, retry: () => setupInterviewer() }}
                 interviewId={id}
-                published={Boolean(doc.publishedAt) && !archived}
+                published={Boolean(doc.publishedAt) && !archived && !completed}
                 summary={serverSummary}
               />
             )}

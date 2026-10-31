@@ -52,13 +52,16 @@ function useEscape(open, onClose) {
   }, [open, onClose]);
 }
 
-/** Right-side drawer. data-platform-popup-root keeps the global popup closer away from it. */
+/**
+ * Right-side drawer. data-platform-popup-root keeps the global popup closer away from it. It
+ * sits above dialogs (a student opened from a chart's part popup covers that popup).
+ */
 export function Drawer({ open, onClose, title, subtitle, width = "max-w-[1040px]", footer, children }) {
   useEscape(open, onClose);
   const titleId = useId();
   if (!open) return null;
   return createPortal(
-    <div className="fixed inset-0 z-[130] flex justify-end" data-platform-popup-root>
+    <div className="fixed inset-0 z-[150] flex justify-end" data-platform-popup-root>
       <button type="button" aria-label="Close" className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]" onClick={onClose} />
       <section role="dialog" aria-modal="true" aria-labelledby={titleId} className={`relative flex h-full w-full ${width} flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-950`}>
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3 dark:border-gray-700">

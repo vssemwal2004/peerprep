@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { Check, Hand, MessageSquareText, Mic, PauseCircle, Repeat2, SkipForward, X } from "lucide-react";
+import { MessageSquareText, Mic, PauseCircle, Repeat2, SkipForward, X } from "lucide-react";
 import { AnviMark } from "../../../components/AnviApproach";
 import { initialsOf, surface, surfaceRing, surfaceShadow } from "./callUtils";
 
@@ -20,16 +20,11 @@ const seconds = (ms) => {
   return `${value} second${value === 1 ? "" : "s"}`;
 };
 
-/** A hybrid call's tips: how an answer ends follows the server's pause length and the input mode. */
-function hybridTips({ hangoverMs, inputMode }) {
-  const answer = inputMode === "ptt"
-    ? [{ Icon: Hand, title: "Hold to talk", text: "Hold Space or the talk button while you answer, then let go." }]
-    : [
-      { Icon: PauseCircle, title: `Pause for ${seconds(hangoverMs)}`, text: "ANVI takes the pause as the end of your answer." },
-      { Icon: Check, title: "Or press Done", text: "Finish your answer straight away." },
-    ];
+/** A hybrid call's tips: hands-free answers end after the server's pause length. */
+function hybridTips({ hangoverMs }) {
   return [
-    ...answer,
+    { Icon: Mic, title: "Just speak", text: "There is nothing to press. ANVI listens as soon as she finishes asking." },
+    { Icon: PauseCircle, title: `Pause for ${seconds(hangoverMs)}`, text: "ANVI takes the pause as the end of your answer and replies." },
     { Icon: Repeat2, title: "Say “repeat” or press Repeat", text: "Hear the current question again." },
     { Icon: SkipForward, title: "Say “skip”", text: "Move ahead naturally in the interview." },
   ];
@@ -42,7 +37,6 @@ export function FollowUpChip() {
 
 function QuestionTab({ followUp, questionText, hybrid = null }) {
   const tips = hybrid ? hybridTips(hybrid) : TIPS;
-  const switchTo = hybrid?.inputMode === "ptt" ? "vad" : "ptt";
   return <div className="space-y-6 p-5">
     <div>
       <div className="flex items-center gap-2">
@@ -61,10 +55,6 @@ function QuestionTab({ followUp, questionText, hybrid = null }) {
           <span className="min-w-0 text-sm"><span className="block font-medium text-slate-800 dark:text-zinc-100">{title}</span><span className="block text-slate-500 dark:text-zinc-400">{text}</span></span>
         </li>)}
       </ul>
-      {typeof hybrid?.onInputMode === "function" && <button type="button" onClick={() => hybrid.onInputMode(switchTo)}
-        className="mt-3 text-sm font-semibold text-violet-700 hover:text-violet-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300 dark:hover:text-violet-200">
-        {switchTo === "ptt" ? "Use push-to-talk instead" : "Answer hands-free instead"}
-      </button>}
     </div>
   </div>;
 }

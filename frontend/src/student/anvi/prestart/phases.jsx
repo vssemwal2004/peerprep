@@ -123,13 +123,13 @@ function CameraPanel({ cameraCheck }) {
 export function SystemPhase({ setup, support, micCheck, cameraCheck, studentName, fullscreenSupported }) {
   const { check, online } = micCheck;
   const cameraOn = cameraCheck?.enabled;
-  return <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+  return <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
     <div className="space-y-4">
       {cameraOn && <CameraPanel cameraCheck={cameraCheck} />}
       <MicPanel micCheck={micCheck} support={support} studentName={studentName} compact={cameraOn} />
       <p aria-live="polite" className="sr-only">{check.detail}</p>
     </div>
-    <Section title="Checklist" className="lg:self-start">
+    <Section title="Checklist" className="xl:self-start">
       <ul className="divide-y divide-slate-100 dark:divide-white/[0.06]">
         <CheckRow data-check="browser" state={support.ok ? "ok" : "bad"} title="Browser" detail={support.ok ? "Live audio is supported here." : support.reason} />
         <CheckRow data-check="mic" state={check.state} title="Microphone" detail={check.detail} />
@@ -151,7 +151,7 @@ export function ProctoringPhase({ setup, assigned, acknowledged, onAcknowledge, 
   const rules = proctoringRulesOf(setup.proctoring);
   const aiChecks = aiChecksOf(setup.proctoring);
   const id = useId();
-  return <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+  return <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
     <Section title={assigned ? "Your institution turned on proctoring" : "This interview is proctored"}>
       <p className={`-mt-1 ${quiet}`}>{aiChecks.length ? "Your browser activity and your camera are checked during the interview." : "Your browser activity is monitored during the interview. There is no camera."}</p>
       <ul className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2" data-proctoring-rules="">
@@ -212,8 +212,8 @@ export function InstructionsPhase({ setup, termsAccepted, onTerms, consent, onCo
       </ul>
     </div>
 
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,.92fr)]">
-      <Section title="Conversation essentials" className="lg:self-start" tag={<Tag>English only</Tag>}>
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,.92fr)]">
+      <Section title="Conversation essentials" className="xl:self-start" tag={<Tag>English only</Tag>}>
         <ul className="grid gap-2.5 sm:grid-cols-2" data-ground-rules="">
           {RULES.map(({ Icon, title, text, language }) => <li key={title} className="flex min-h-[86px] items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3 dark:border-white/[0.06] dark:bg-white/[0.025]">
             <span className={language ? "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300" : iconTile}><Icon className="h-4 w-4" aria-hidden="true" /></span>
@@ -223,7 +223,7 @@ export function InstructionsPhase({ setup, termsAccepted, onTerms, consent, onCo
         <p className={`mt-3 flex items-start gap-2 border-t border-slate-100 pt-3 dark:border-white/[0.06] ${quiet}`}><UserRoundX className="mt-0.5 h-4 w-4 shrink-0 text-slate-400 dark:text-zinc-500" aria-hidden="true" />Keep answers professional and do not share phone numbers, addresses, or other private details.</p>
       </Section>
 
-      <Section title="Final confirmation" className="lg:self-start" tag={<Tag tone="emerald">Setup checked</Tag>} data-final-confirmation="">
+      <Section title="Final confirmation" className="xl:self-start" tag={<Tag tone="emerald">Setup checked</Tag>} data-final-confirmation="">
         <ReadySummary items={readyItems} onEdit={onEdit} disabled={disabled} compact />
         {termsShown && <div className="mt-3 border-t border-slate-100 pt-3 dark:border-white/[0.06]" data-step="terms">
           <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-[13px] font-semibold text-slate-900 dark:text-zinc-100">Interview terms</h3>{setup.terms.required && <Tag tone={termsAccepted ? "emerald" : "amber"}>{termsAccepted ? "Accepted" : "Required"}</Tag>}</div>

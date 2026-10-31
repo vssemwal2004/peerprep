@@ -1,4 +1,4 @@
-import { FOLLOW_UP_LIMIT, newQuestion } from "../definition.js";
+import { FOLLOW_UP_ASK_LIMIT, newQuestion } from "../definition.js";
 import { estimate } from "./structure.js";
 
 export const DEFAULT_INTERVIEWER_NAME = "ANVI";
@@ -43,7 +43,7 @@ export async function ensureDefaultInterviewer(api, language = "English") {
   }
 }
 
-// The default AI follow-ups for new questions is an authoring preference, kept in
+// The default follow-ups for new questions is an authoring preference, kept in
 // this browser only: the interview definition has no field for it.
 const FOLLOW_UPS_KEY = "peerprep.aiInterviews.defaultFollowUps";
 export function readDefaultFollowUps() {
@@ -52,7 +52,7 @@ export function readDefaultFollowUps() {
     return window.localStorage.getItem(FOLLOW_UPS_KEY) !== null &&
       Number.isInteger(value) &&
       value >= 0 &&
-      value <= FOLLOW_UP_LIMIT
+      value <= FOLLOW_UP_ASK_LIMIT
       ? value
       : 1;
   } catch {
@@ -69,7 +69,7 @@ export function writeDefaultFollowUps(value) {
 
 export const blankQuestion = (extra = {}) => ({
   ...newQuestion(),
-  maxFollowUps: readDefaultFollowUps(),
+  followUpLimit: readDefaultFollowUps(),
   ...extra,
 });
 

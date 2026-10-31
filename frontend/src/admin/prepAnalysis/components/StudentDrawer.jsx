@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, AlertTriangle, CheckCircle2, Lightbulb, Loader2 } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, FileSpreadsheet, FileText, Lightbulb, Loader2 } from "lucide-react";
 import { prepAnalysisApi } from "../api";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
 import { DIFFICULTY_COLORS, OUTCOME_COLORS } from "../charts/chartTheme";
@@ -11,7 +11,7 @@ import { ScoreValue } from "../../../student/prepScore/PrepScore";
 import ModuleScores from "./ModuleScores";
 import { StatusPill } from "./Insights";
 import { initials, sectionStyle } from "./sectionStyles";
-import { Drawer } from "./ui";
+import { Button, Drawer } from "./ui";
 
 const TONES = {
   warn: { Icon: AlertTriangle, className: "bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-100", icon: "text-amber-500" },
@@ -78,10 +78,16 @@ function CodingSection({ coding, quickprep }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <CodingScore coding={coding} />
         <div className="min-w-0 flex-1 space-y-2.5">
+          {/* Problems solved by their difficulty in this period: the same numbers as the charts. */}
           {["Easy", "Medium", "Hard"].map((key) => (
-            <Bar key={key} label={key} value={coding.points[key]} max={Math.max(1, coding.points.Easy + coding.points.Medium + coding.points.Hard)} color={DIFFICULTY_COLORS[key]}
-              right={<><b className="text-slate-900 dark:text-white">{coding.solved[key]}</b> solved · {formatScore(coding.points[key])} points</>} />
+            <Bar key={key} label={key} value={coding.solved[key]} max={Math.max(1, coding.solved.total)} color={DIFFICULTY_COLORS[key]}
+              right={<><b className="text-slate-900 dark:text-white">{coding.solved[key]}</b> solved</>} />
           ))}
+          {coding.scoredCounts && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400" title="The Prep Score counts each solve at its scoring level, over all time, so these can differ from the solves above.">
+              Counted in Prep Score (all time): Easy {coding.scoredCounts.Easy || 0} · Medium {coding.scoredCounts.Medium || 0} · Hard {coding.scoredCounts.Hard || 0}
+            </p>
+          )}
           <Bar label="Accepted submissions" value={coding.accepted} max={Math.max(1, coding.submissions)} color={DIFFICULTY_COLORS.Accuracy}
             right={<b className="text-slate-900 dark:text-white">{formatScore(coding.accuracy)}%</b>}
             sub={`${coding.accepted} of ${coding.submissions} submissions accepted`} />
@@ -267,6 +273,33 @@ function LearningSection({ learning }) {
   );
 }
 
+/** Excel or PDF of everything about this student: every topic, problem and day, not just this drawer. */
+function ReportDownload({ studentId, range }) {
+  const [status, setStatus] = useState({ busy: "", text: "", error: false });
+  const run = async (format) => {
+    setStatus({ busy: format, text: "Preparing the report…", error: false });
+    try {
+      const result = await prepAnalysisApi.studentReport(studentId, range, format);
+      setStatus({ busy: "", text: `${result.filename} downloaded`, error: false });
+    } catch (error) {
+      setStatus({ busy: "", text: error.message, error: true });
+    }
+  };
+  return (
+    <div className="ml-auto flex flex-col items-end gap-1">
+      <div className="flex items-center gap-1.5">
+        <Button size="sm" disabled={Boolean(status.busy)} onClick={() => run("xlsx")} title="Every topic, every problem with first try and first solve, each day of practice, and every feature's details">
+          {status.busy === "xlsx" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />}Full report (Excel)
+        </Button>
+        <Button size="sm" disabled={Boolean(status.busy)} onClick={() => run("pdf")} title="The same report, ready to print or share">
+          {status.busy === "pdf" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5 text-rose-500" />}PDF
+        </Button>
+      </div>
+      {status.text && <p role="status" className={`max-w-[260px] truncate text-[10.5px] ${status.error ? "text-rose-600" : "text-slate-500"}`}>{status.text}</p>}
+    </div>
+  );
+}
+
 /** Everything about one student's prep, opened from the table or a chart. */
 export default function StudentDrawer({ studentId, range = "all", onClose }) {
   const [state, setState] = useState({ loading: true, error: null, profile: null });
@@ -298,6 +331,7 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
               <p className="truncate text-[12px] text-slate-500 dark:text-slate-400">{classLine || "No class details"}{student.email ? ` · ${student.email}` : ""}</p>
               {student.status === "inactive" && <p className="mt-0.5 text-[11px] font-semibold text-rose-600">Account disabled</p>}
             </div>
+            <ReportDownload studentId={studentId} range={range} />
           </div>
 
           {profile.prepScore && (

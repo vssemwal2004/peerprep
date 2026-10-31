@@ -1,11 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildKpiGroups, buildKpis, CHARTS } from '../src/modules/prepAnalysis/charts.js';
+import ExcelJS from 'exceljs';
+import { buildKpiGroups, buildKpis, CHARTS, pageItems } from '../src/modules/prepAnalysis/charts.js';
+import { drillDetail, drillStudents } from '../src/modules/prepAnalysis/drill.js';
+import { chartSummary } from '../src/modules/prepAnalysis/summaries.js';
+import { buildChartBook, renderChartCsv, renderChartXlsx } from '../src/modules/prepAnalysis/prepAnalysis.export.js';
+import { buildStudentReport, renderStudentReportPdf, renderStudentReportXlsx } from '../src/modules/prepAnalysis/studentReport.js';
 import { publicFieldCatalog } from '../src/modules/prepAnalysis/fields.js';
 import {
   applyRankCuts, evaluateFilterTree, normalizeFilterTree, normalizeRankCuts,
 } from '../src/modules/prepAnalysis/filterEngine.js';
-import { buildStudentProfile, validatePrepAnalysisQuery } from '../src/modules/prepAnalysis/prepAnalysis.service.js';
+import {
+  buildStudentProfile, compareGroups, previousRange, validatePrepAnalysisQuery, withDeltas,
+} from '../src/modules/prepAnalysis/prepAnalysis.service.js';
 import {
   buildReport, DEFAULT_EXPORT_COLUMNS, EXPORT_COLUMNS, renderCsv, renderPdf, renderXlsx, validateExportOptions,
 } from '../src/modules/prepAnalysis/prepAnalysis.export.js';
@@ -38,6 +45,33 @@ test('admin rows show the stored Prep Score students rank on, never a period-lim
   assert.equal(rows[0].scores.total, 9.5);
   assert.equal(rows[0].scores.features.learning, undefined, 'an unlicensed module is not shown');
   assert.deepEqual(rows[1].scores, { total: 0, features: {} }, 'no stored row yet means 0');
+});
+
+test('top-student bars are the Prep Score split by difficulty, so a longer bar always means a higher score', () => {
+  // Many Easy solves give lots of points but a lower score than fewer, harder solves.
+  const rows = buildStudentRows({
+    students: [{ _id: 's1', name: 'Volume' }, { _id: 's2', name: 'Depth' }],
+    facts: { byStudent: new Map([['s1', [{ problemId: 'p1', language: 'cpp', attempts: 1, accepted: 1 }]], ['s2', [{ problemId: 'p1', language: 'cpp', attempts: 1, accepted: 1 }]]]), days: new Map() },
+    problems: indexProblemMeta(new Map([['p1', { id: 'p1', title: 'One', difficulty: 'Easy', topicIds: [], topics: [], tags: [], companies: [] }]])),
+  });
+  const counts = { s1: { Easy: 45, Medium: 5, Hard: 0 }, s2: { Easy: 2, Medium: 6, Hard: 6 } };
+  attachStoredScores(rows, new Map(Object.entries(counts).map(([id, levelCounts]) => {
+    const score = scoreFromLevelCounts({ coding: levelCounts }, { coding: true });
+    return [id, { total: score.total, modules: { coding: { score: score.features.coding.score, counts: score.features.coding.counts } } }];
+  })), { features: { coding: true }, points: { Easy: 1, Medium: 2, Hard: 4 } });
+  const volume = rows.find((row) => row.id === 's1');
+  const depth = rows.find((row) => row.id === 's2');
+  assert.ok(volume.coding.points.Easy + volume.coding.points.Medium > depth.coding.points.Easy + depth.coding.points.Medium + depth.coding.points.Hard, 'the volume student has more raw points');
+  assert.ok(depth.coding.prepScore > volume.coding.prepScore, 'but the depth student has the higher score');
+
+  const items = CHARTS.find((chart) => chart.id === 'top-students').build({ rows, options: {}, range: {} }).items;
+  assert.deepEqual(items.map((item) => item.name), ['Depth', 'Volume']);
+  const length = (item) => Math.round((item.segments.Easy + item.segments.Medium + item.segments.Hard) * 100) / 100;
+  for (const item of items) assert.equal(length(item), item.score, `${item.name}: the parts add up to the score`);
+  assert.ok(length(items[0]) > length(items[1]), 'the higher score has the longer bar');
+  assert.ok(items[0].segments.Hard > items[0].segments.Easy, 'Hard work is the largest part of the depth student\'s score');
+  assert.deepEqual(items[0].counts, counts.s2, 'all-time counts behind the stored score');
+  assert.equal(items[0].solved.total, 1, 'period solves stay separate');
 });
 
 // ---------------------------------------------------------------- synthetic cohort
@@ -316,20 +350,211 @@ test('every chart builds from the cohort and from an empty selection', () => {
   assert.deepEqual(byId['practice-funnel'].stages.map((stage) => stage.value), [4, 3, 3, 1, 1]);
   assert.deepEqual(byId['difficulty-split'].items.map((item) => [item.name, item.value]), [['Easy', 4], ['Medium', 1], ['Hard', 1]]);
   assert.equal(byId['score-spread'].bins.reduce((sum, bin) => sum + bin.count, 0), 3);
-  assert.equal(byId['needs-attention'].items[0].name, 'Dev', 'the lowest score comes first');
-  assert.equal(byId['needs-attention'].items[0].note, 'Never practised');
-  assert.equal(byId['student-profile'].student.name, 'Asha', 'the profile defaults to the top student');
+  const attention = byId['needs-attention'];
+  assert.deepEqual(attention.items.map((item) => [item.name, item.value]), [['Chen', 39]], 'bars: students who stopped, by days away');
+  assert.deepEqual(attention.chips.map((chip) => [chip.key, chip.value]), [['listed', 1], ['never', 1]], 'never-started students are a chip, never zero bars');
+  const profile = byId['student-profile'];
+  assert.equal(profile.mode, 'cohort', 'with no student picked the profile covers every student in view');
+  assert.equal(profile.student, null);
+  assert.equal(profile.cohort, rows.length);
+  assert.ok(profile.topics.every((topic) => topic.pct === Math.round((topic.students / rows.length) * 1000) / 10), 'share of the students in view');
+  assert.ok(profile.indicators.every((indicator) => indicator.max === 100));
   assert.equal(byId['topic-strength'].items.find((item) => item.name === 'Graphs').value, 1);
-  assert.equal(byId['tough-problems'].items[0].name, 'Course Schedule');
-  const chosen = CHARTS.find((chart) => chart.id === 'student-profile').build({ rows, options: { studentId: 's3' }, range: {}, topics });
+  assert.deepEqual(byId['tough-problems'].items.slice(0, 2).map((item) => [item.name, item.value]), [['Climbing Stairs', 4], ['Course Schedule', 4]], 'most failed attempts first, ties A–Z');
+  const profileChart = CHARTS.find((chart) => chart.id === 'student-profile');
+  const chosen = profileChart.build({ rows, options: { studentId: 's3' }, range: {}, topics });
   assert.equal(chosen.student.name, 'Chen', 'an admin can pick the student');
+  assert.equal(chosen.average.length, chosen.values.length, 'the picked student is compared with the average');
+  const outside = profileChart.build({ rows: rows.filter((row) => row.id !== 's3'), options: { studentId: 's3' }, range: {}, topics });
+  assert.equal(outside.missing, true, 'a picked student outside the filter is reported, never swapped for another');
+  assert.equal(outside.student, null);
   const kpis = Object.fromEntries(buildKpis(rows).map((kpi) => [kpi.id, kpi.value]));
   assert.equal(kpis.active, 2);
   assert.equal(kpis.hard, 1, 'students who solved a Hard problem, not a total of solves');
   assert.equal(kpis.stopped, 2);
   assert.equal(buildKpis(rows).find((kpi) => kpi.id === 'stopped').hint, '50% of 4 students');
   assert.ok(!('prepScore' in kpis), 'no cohort-average Prep Score');
-  assert.equal(byId['needs-attention'].items[0].daysSinceActive, null, 'attention lists carry recency for the chart summary');
+  assert.equal(attention.items[0].daysSinceActive, 39, 'attention lists carry recency for the chart summary');
+});
+
+test('a chart\'s full page pages through every item; a card shows its limit', () => {
+  const list = Array.from({ length: 250 }, (_, index) => index);
+  assert.equal(pageItems(list, { limit: 12 }, { fallback: 10, max: 100 }).items.length, 12);
+  assert.equal(pageItems(list, {}, { fallback: 10, max: 100 }).pagination, null);
+  const second = pageItems(list, { full: true, page: 2 }, { fallback: 10, max: 100 });
+  assert.deepEqual(second.pagination, { page: 2, pages: 3, total: 250, pageSize: 100, offset: 100 });
+  assert.equal(second.items[0], 100);
+  assert.equal(pageItems(list, { full: true, page: 99 }, { fallback: 10, max: 100 }).pagination.page, 3, 'a page past the end shows the last page');
+  assert.equal(pageItems(list, { full: true }, { fallback: 12, max: 100, pageSize: 2000 }).items.length, 250, 'every topic fits on one page');
+  assert.equal(pageItems(list, { everything: true }, { fallback: 10, max: 100 }).items.length, 250, 'downloads take every item');
+});
+
+test('the students behind each part of a chart add up to what the chart shows', () => {
+  const { rows, topics } = cohort();
+  const chartOf = (id) => CHARTS.find((chart) => chart.id === id);
+  const build = (id, options = {}) => chartOf(id).build({ rows, options: { ...(chartOf(id).options || {}), ...options }, range: { preset: 'all', to: new Date('2026-10-10') }, topics });
+  const behind = (id, key) => drillStudents(chartOf(id), rows, key, chartOf(id).options || {}).items;
+
+  for (const item of build('difficulty-split').items) assert.equal(behind('difficulty-split', item.key).length, item.students, `${item.key}: students who solved one`);
+  for (const item of build('failure-reasons').items) assert.equal(behind('failure-reasons', item.key).length, item.students, `${item.key}: students with that result`);
+  for (const item of build('language-usage').items) assert.equal(behind('language-usage', item.key).length, item.value, `${item.key}: students using it`);
+  for (const item of build('topic-strength', { full: true }).items) assert.equal(behind('topic-strength', item.key).length, item.value, `${item.key}: students solving it`);
+  for (const bin of build('score-spread').bins) assert.equal(behind('score-spread', bin.key).length, bin.count, `band ${bin.label}`);
+  build('practice-funnel').stages.forEach((stage, index) => assert.equal(behind('practice-funnel', String(index)).length, stage.value, stage.name));
+  for (const item of build('tough-problems').items) assert.equal(behind('tough-problems', item.key).length, item.students, item.name);
+  const trend = build('practice-trend');
+  trend.labels.forEach((week, index) => assert.equal(behind('practice-trend', week).length, trend.series[2].values[index], `week ${week}`));
+  assert.equal(behind('top-students').length, rows.filter((row) => row.coding.submissions > 0).length, 'everyone who practised, ranked');
+
+  const easy = drillStudents(chartOf('difficulty-split'), rows, 'Easy', {});
+  assert.deepEqual(easy.columns.slice(0, 6).map((column) => column.key), ['name', 'studentId', 'semester', 'branch', 'group', 'prepScore'], 'student details come first');
+  assert.ok(easy.items.every((item) => item.values.solvedHere > 0));
+  const detail = drillDetail(chartOf('difficulty-split'), rows, 'Easy', {});
+  assert.ok(detail.items.length > 0 && detail.items.every((item) => item.values.difficulty === 'Easy'), 'one row per student and Easy problem');
+  assert.ok(drillStudents(chartOf('topic-strength'), rows, '', {}).items.length === rows.length, 'the whole chart lists every student in view');
+
+  const summary = chartSummary('difficulty-split', rows, build('difficulty-split'));
+  assert.equal(summary.cohort, rows.length);
+  assert.equal(summary.students, rows.filter((row) => row.coding.solved.total > 0).length);
+  assert.equal(summary.total, 6);
+  assert.equal(summary.pct, Math.round((summary.students / rows.length) * 1000) / 10);
+});
+
+// The parts a chart shows and how many students each stands for (undefined: the chart counts
+// something else there, such as solves or ratings, so only the drill running is checked).
+const STUDENT_STACKS = new Set(['learning-subjects', 'quickprep-sheets', 'assessment-tests', 'assessment-scores']);
+function partsOf(chart, data) {
+  const right = (index) => data.series?.find((series) => series.axis === 'right')?.values?.[index];
+  switch (chart.type) {
+    case 'donut': return (data.items || []).filter((item) => item.value > 0).map((item) => ({ key: item.key, expected: item.students ?? (data.centerLabel === 'students' ? item.value : undefined) }));
+    case 'barList': return [
+      ...(data.items || []).filter((item) => item.key).map((item) => ({ key: item.key, expected: item.students ?? (data.valueLabel === 'students solving' ? item.value : undefined) })),
+      ...(data.chips || []).map((chip) => ({ key: chip.key, expected: chip.value })),
+      { key: '__all__', expected: undefined },
+    ];
+    case 'histogram': return (data.bins || []).map((bin, index) => ({ key: bin.key ?? String(index), expected: bin.count }));
+    case 'funnel': return (data.stages || []).map((stage, index) => ({ key: String(index), expected: stage.value }));
+    case 'trend': return (data.labels || []).map((week, index) => ({ key: week, expected: right(index) }));
+    case 'stackedBar': return (data.groups || []).flatMap((group) => [
+      { key: group.label, expected: group.students },
+      ...(data.series || []).map((series) => ({ key: `${group.label}|${series}`, expected: STUDENT_STACKS.has(chart.id) ? group.values[series] : undefined })),
+    ]);
+    case 'radar': return (data.topics || []).map((topic) => ({ key: topic.name, expected: topic.students }));
+    case 'calendar': return (data.days || []).map(([day]) => ({ key: day }));
+    case 'heatmap': return (data.columns || []).map((column) => ({ key: column }));
+    case 'rankedStackedBar': return (data.items || []).flatMap((item) => ['Easy', 'Medium', 'Hard'].map((level) => ({ key: `${item.id}|${level}`, expected: item.solved[level] > 0 ? 1 : 0 })));
+    default: return [];
+  }
+}
+
+test('every part of every chart opens exactly the students the chart counts there', () => {
+  const coding = cohort();
+  const learning = learningAndQuickPrep();
+  const tested = interviewsAndTests();
+  const fixtures = [
+    { rows: coding.rows, context: { topics: coding.topics } },
+    { rows: learning.rows, context: { sheets: learning.sheets } },
+    { rows: tested.rows, context: { tests: tested.tests } },
+  ];
+  let checked = 0;
+  for (const chart of CHARTS) {
+    for (const { rows, context } of fixtures) {
+      const data = chart.build({ rows, options: chart.options || {}, range: { preset: 'all', to: new Date('2026-10-10') }, ...context });
+      for (const part of partsOf(chart, data)) {
+        const students = drillStudents(chart, rows, part.key, chart.options || {}, [], context);
+        if (part.expected !== undefined) {
+          assert.equal(students.items.length, part.expected, `${chart.id} · ${part.key}`);
+          checked += 1;
+        }
+        assert.doesNotThrow(() => drillDetail(chart, rows, part.key, chart.options || {}, context), `${chart.id} · ${part.key} detail`);
+      }
+    }
+  }
+  assert.ok(checked > 60, `checked ${checked} parts with an exact count`);
+});
+
+test('KPI changes compare with the previous period of the same length', () => {
+  const now = new Date('2026-10-31T00:00:00Z');
+  const range = { preset: '30d', from: new Date('2026-10-01T00:00:00Z'), to: null };
+  const previous = previousRange(range, now);
+  assert.equal(previous.to.getTime(), range.from.getTime() - 1, 'ends just before the period starts');
+  assert.equal(range.from.getTime() - previous.from.getTime(), now.getTime() - range.from.getTime(), 'same length');
+  assert.equal(previous.label, 'vs the previous 30 days');
+  assert.equal(previousRange({ preset: 'all', from: null, to: null }, now), null, 'all time has nothing before it');
+
+  const groups = [{ key: 'coding', kpis: [{ id: 'active', value: 12 }, { id: 'accuracy', value: 61.5, format: 'percent' }, { id: 'new', value: 3 }] }];
+  const before = [{ key: 'coding', kpis: [{ id: 'active', value: 8 }, { id: 'accuracy', value: 64, format: 'percent' }, { id: 'new', value: 0 }] }];
+  const [coding] = withDeltas(groups, before, 'vs the previous 30 days');
+  assert.deepEqual(coding.kpis[0].delta, { previous: 8, change: 4, pct: 50, label: 'vs the previous 30 days' });
+  assert.equal(coding.kpis[1].delta.change, -2.5, 'percent KPIs change in points');
+  assert.equal(coding.kpis[2].delta.pct, null, 'no % change from zero');
+});
+
+test('compare builds every chart and KPI once per group, from that group\'s students only', () => {
+  const { rows, topics } = cohort();
+  const branch = (value) => ({ type: 'group', join: 'and', children: [{ type: 'rule', field: 'student.branch', operator: 'anyOf', value: [value] }] });
+  const query = validatePrepAnalysisQuery({ module: 'coding', charts: [{ id: 'difficulty-split' }, { id: 'top-students' }], compare: [{ label: 'CSE', filter: branch('CSE') }, { label: 'ECE', filter: branch('ECE') }] });
+  assert.equal(query.group, null);
+  assert.throws(() => validatePrepAnalysisQuery({ module: 'coding', compare: [{ label: 'only one' }] }), /exactly two/);
+  const [cse, ece] = compareGroups(query, rows, { topics });
+  assert.deepEqual([cse.label, cse.matched, ece.label, ece.matched], ['CSE', 3, 'ECE', 1]);
+  const split = (side) => side.charts.find((chart) => chart.id === 'difficulty-split');
+  const total = (side) => split(side).data.items.reduce((sum, item) => sum + item.value, 0);
+  const all = CHARTS.find((chart) => chart.id === 'difficulty-split').build({ rows, options: {}, range: {} }).items.reduce((sum, item) => sum + item.value, 0);
+  assert.equal(total(cse) + total(ece), all, 'the two branches add up to everyone (every student has one of them)');
+  assert.equal(split(ece).summary.cohort, 1);
+  assert.ok(cse.kpiGroups.length && ece.kpiGroups.length, 'each group has its own headline numbers');
+  assert.equal(validatePrepAnalysisQuery({ module: 'coding', compare: query.compare, group: 1 }).group, 1, 'a drill can be about one side');
+});
+
+test('"only these students" narrows the page to the students behind one part', () => {
+  const { rows, topics } = cohort();
+  const query = validatePrepAnalysisQuery({ module: 'coding', focus: { chartId: 'difficulty-split', key: 'Hard', label: 'Hard' } });
+  assert.equal(query.focus.chartId, 'difficulty-split');
+  assert.throws(() => validatePrepAnalysisQuery({ module: 'coding', focus: { chartId: 'nope', key: 'x' } }), /Unknown chart/);
+  const chart = CHARTS.find((entry) => entry.id === 'difficulty-split');
+  const hard = drillStudents(chart, rows, 'Hard', {}, [], { topics }).items.map((item) => item.row.name);
+  assert.deepEqual(hard, ['Asha'], 'the fixture has one Hard solver');
+});
+
+test('a student\'s full report lists every topic, problem and day, as Excel and PDF', async () => {
+  const { rows } = cohort();
+  const row = rows.find((entry) => entry.name === 'Bilal');
+  const range = { preset: 'all', from: null, to: null };
+  const profile = buildStudentProfile(row, { range, modules: new Set(['coding']) });
+  const times = new Map([['p1', { firstAt: new Date('2026-10-01'), firstAcceptedAt: new Date('2026-10-02'), lastAt: new Date('2026-10-02') }]]);
+  const report = buildStudentReport({ row, profile, times, range });
+  assert.deepEqual(report.sections.map((section) => section.title), ['Profile', 'Prep Score', 'Prep Coding', 'Topics', 'Problems', 'Daily practice']);
+  const problems = report.sections.find((section) => section.title === 'Problems');
+  assert.equal(problems.rows.length, 3, 'every problem the student tried');
+  assert.equal(problems.rows[0][0], 'Course Schedule', 'unsolved problems come first');
+  const twoSum = problems.rows.find((values) => values[0] === 'Two Sum');
+  assert.deepEqual(twoSum.slice(-3), ['2026-10-01', '2026-10-02', '2026-10-02'], 'first try, first solve, last try');
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await renderStudentReportXlsx(report));
+  assert.equal(workbook.worksheets.length, report.sections.length);
+  const pdf = await renderStudentReportPdf(report);
+  assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+});
+
+test('a chart download has a summary, the chart\'s numbers, its students and the per-problem detail', async () => {
+  const { rows, topics } = cohort();
+  const chart = CHARTS.find((entry) => entry.id === 'difficulty-split');
+  const data = chart.build({ rows, options: { everything: true }, range: {}, topics });
+  const students = drillStudents(chart, rows, 'Easy', {});
+  const book = buildChartBook({
+    chart, partLabel: 'Easy problems', data, summary: chartSummary(chart.id, rows, data), students, detail: drillDetail(chart, rows, 'Easy', {}),
+    query: { module: 'coding', range: { preset: 'all' } }, filters: ['Branch is CSE'], cohortSize: 10,
+  });
+  assert.equal(book.students.rows.length, students.items.length);
+  assert.ok(book.figures.some(([label]) => label.startsWith('Students who solved')));
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await renderChartXlsx(book));
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Summary', 'Chart data', 'Students', 'Detail']);
+  assert.equal(workbook.getWorksheet('Chart data').rowCount, 1 + data.items.length);
+  const csv = renderChartCsv(book).toString('utf8');
+  assert.match(csv, /Branch is CSE/);
+  assert.match(csv, /Easy solved/);
 });
 
 function interviewsAndTests() {

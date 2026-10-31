@@ -4,7 +4,7 @@ import mongoose from "mongoose";
 import { normalizeDefinition } from "../src/services/aiInterviewDefinition.js";
 import { AnviLiveSession } from "../src/modules/anviInterview/anviInterview.models.js";
 import {
-  buildPlan, createPlanGenerator, seededShuffle, splitKeyPoints, MAX_PLAN_QUESTIONS, WARMUP_QID,
+  buildPlan, createPlanGenerator, poolSelection, seededShuffle, splitKeyPoints, MAX_PLAN_QUESTIONS, WARMUP_QID,
   normalizeConduct, normalizeResumeSettings, normalizeWarmup,
 } from "../src/modules/anviInterview/anviInterview.plan.js";
 import { TOPIC_PREFIX, buildSystemPrompt, questionGenerationPrompt } from "../src/modules/anviInterview/anviInterview.prompts.js";
@@ -17,6 +17,68 @@ const definition = (sections, extra = {}) => normalizeDefinition({
   rules: { language: "Hinglish", responseSeconds: 90 },
   interviewer: { profileId: "p1", displayName: "ANVI", tone: "Friendly", introduction: "Hello!", closing: "All the best." },
   sections, ...extra,
+});
+
+// A pool of 3 topics: DSA 6 (2 easy, 2 medium, 2 hard), DBMS 3 (medium), OOP 3 (1 easy, 2 hard).
+const POOL = [
+  ...["easy", "easy", "medium", "medium", "hard", "hard"].map((difficulty, i) => question(`dsa${i}`, `DSA question ${i}?`, { competency: "DSA", difficulty })),
+  ...[0, 1, 2].map((i) => question(`db${i}`, `DBMS question ${i}?`, { competency: "DBMS", difficulty: "medium" })),
+  ...["easy", "hard", "hard"].map((difficulty, i) => question(`oop${i}`, `OOP question ${i}?`, { competency: "oop ", difficulty })),
+];
+const topicOf = (id) => id.replace(/\d+$/, "");
+
+test("poolSelection: each student gets the same count per topic, a difficulty mix and a topic-wise order", () => {
+  const seeds = Array.from({ length: 40 }, (_, i) => `attempt-${i}`);
+  const firstTopics = new Set();
+  const subsets = new Set();
+  for (const seed of seeds) {
+    const picked = poolSelection(POOL, { pick: 6, shuffle: true, byTopic: true, seed });
+    assert.equal(picked.length, 6);
+    const ids = picked.map((q) => q.id);
+    // 6 of 12: one per topic, then the 3 left in proportion to what each topic has left (5:2:2).
+    const perTopic = Object.fromEntries(["dsa", "db", "oop"].map((t) => [t, ids.filter((id) => topicOf(id) === t).length]));
+    assert.deepEqual(perTopic, { dsa: 3, db: 2, oop: 1 }, seed);
+    // DSA's 3 always span easy, medium and hard.
+    const dsaLevels = new Set(picked.filter((q) => q.competency === "DSA").map((q) => q.difficulty));
+    assert.equal(dsaLevels.size, 3, seed);
+    // Topic by topic: once a topic ends it never comes back.
+    const runs = ids.map(topicOf).filter((t, i, all) => i === 0 || all[i - 1] !== t);
+    assert.equal(new Set(runs).size, runs.length, `contiguous topics for ${seed}`);
+    firstTopics.add(runs[0]);
+    subsets.add([...ids].sort().join(","));
+    assert.deepEqual(poolSelection(POOL, { pick: 6, shuffle: true, byTopic: true, seed }), picked, "deterministic per seed");
+  }
+  assert.equal(firstTopics.size, 3, "different students start with different topics");
+  assert.ok(subsets.size > 10, "students get different questions");
+});
+
+test("poolSelection: fewer picks than topics, no shuffle, resume questions and the older shuffle", () => {
+  const one = poolSelection(POOL, { pick: 2, seed: "s" });
+  assert.equal(new Set(one.map((q) => topicOf(q.id))).size, 2, "one question each from two topics");
+  const ordered = poolSelection(POOL, { pick: 9, seed: "s" });
+  assert.deepEqual(ordered.map((q) => q.id), POOL.filter((q) => ordered.includes(q)).map((q) => q.id), "without shuffle the authored order stays");
+  const withResume = [question("r", "", { kind: "resume" }), ...POOL];
+  assert.equal(poolSelection(withResume, { pick: 3, shuffle: true, byTopic: true, seed: "s" })[0].id, "r", "resume questions come first");
+  assert.equal(poolSelection(POOL, { pick: 50, seed: "s" }).length, POOL.length, "a pick above the pool asks it all");
+  // Without a pick or byTopic this is the older group shuffle, unchanged.
+  assert.deepEqual(poolSelection(POOL, { shuffle: true, seed: "s" }), seededShuffle(POOL, "s"));
+  assert.deepEqual(poolSelection(POOL, {}), POOL);
+});
+
+test("a pool group asks each student `pick` questions with followUpLimit as the follow-up budget", async () => {
+  const pool = POOL.map((q, i) => ({ ...q, followUpLimit: i % 4, followUps: [{ id: `${q.id}f`, prompt: "Why?" }], maxFollowUps: 1 }));
+  const data = definition([{ id: "s1", name: "Interview", category: "Technical", groups: [
+    { id: "g1", name: "Questions", shuffle: true, byTopic: true, pick: 6, questions: pool },
+  ] }]);
+  const { plan } = await buildPlan(data, { seed: "a1" });
+  assert.equal(plan.length, 6);
+  for (const item of plan) assert.equal(item.followUpBudget, pool.find((q) => q.id === item.qid).followUpLimit);
+  const again = await buildPlan(data, { seed: "a1" });
+  assert.deepEqual(again.plan.map((item) => item.qid), plan.map((item) => item.qid), "a rejoin gets the same questions");
+  // A duration cap trims every topic evenly instead of dropping the last topics.
+  const hybrid = await buildPlan({ ...data, anvi: { ...data.anvi, durationMinutes: 10 } }, { seed: "a1", runtimeMode: "hybrid" });
+  assert.equal(hybrid.plan.length, 4);
+  assert.equal(new Set(hybrid.plan.map((item) => item.competency.trim().toLowerCase())).size, 3);
 });
 
 test("specific, topic and authored follow-ups map into ordered plan items", async () => {
@@ -50,7 +112,7 @@ test("specific, topic and authored follow-ups map into ordered plan items", asyn
   assert.equal(plan[2].responseSeconds, 90);
   assert.equal(plan[2].topic, "Behaviour");
   // The ANVI settings tone (default "warm") wins over the profile tone; empty scripts fall back to the profile's.
-  assert.deepEqual(persona, { displayName: "ANVI", tone: "warm", pace: "normal", acknowledgements: true, language: "English", introduction: "Hello!", closing: "All the best.", voice: "", voiceLanguageCode: "" });
+  assert.deepEqual(persona, { displayName: "ANVI", tone: "warm", pace: "normal", acknowledgements: true, language: "English", introduction: "Hello!", closing: "All the best.", voice: "", speechRate: 1, voiceLanguageCode: "" });
   assert.equal(rules.language, "English", "every interview is English (DECISIONS #0)");
   assert.equal(rules.mode, "mock");
   // (60 + 120 for unlimited + 90) / 60 * 1.6 + 2 = 9.2, plus 2.5 minutes for the default warm-up
@@ -96,14 +158,16 @@ test("turns and persona come from the anvi settings, with defaults for older int
   const sections = [{ id: "s", groups: [{ id: "g", questions: [question("q", "Explain closures.")] }] }];
   const configured = await buildPlan(definition(sections, {
     anvi: {
-      persona: { tone: "formal", pace: "slow", acknowledgements: false, introduction: "Hi {name}, welcome.", closing: "" },
+      persona: { tone: "formal", pace: "slow", acknowledgements: false, introduction: "Hi {name}, welcome.", closing: "", speechRate: 1.1 },
       turns: { silenceSeconds: 3.5, nudgeSeconds: 30, maxNudges: 0, voiceCommands: false },
+      // An older interview's own voice is not used: one voice for every interview.
+      voice: { name: "Kore" },
     },
   }));
   assert.deepEqual(configured.turns, { silenceSeconds: 3.5, nudgeSeconds: 30, maxNudges: 0, voiceCommands: false });
   assert.deepEqual(configured.persona, {
     displayName: "ANVI", tone: "formal", pace: "slow", acknowledgements: false, language: "English",
-    introduction: "Hi {name}, welcome.", closing: "All the best.", voice: "", voiceLanguageCode: "",
+    introduction: "Hi {name}, welcome.", closing: "All the best.", voice: "", speechRate: 1.1, voiceLanguageCode: "",
   });
 
   // A snapshot published before the anvi settings existed (raw data, not re-normalised).
@@ -233,13 +297,13 @@ test("warm-up, conduct and resume settings: a scored introduction and resume que
   const plain = await buildPlan(definition(sections));
   assert.deepEqual(plain.warmup, { enabled: true, icebreakers: 2, tellMeAboutYourself: true, scored: false });
   assert.deepEqual(plain.conduct, { endByVoice: false, finishAllQuestions: true, noPersonalQuestions: true, termsText: "", requireTermsAcceptance: false });
-  assert.deepEqual(plain.resume, { mode: "none", sources: ["builder", "upload"], questionCount: 2 });
+  assert.deepEqual(plain.resume, { mode: "none", sources: ["builder", "upload"], questionCount: 2, followUps: 1 });
   assert.deepEqual(plain.plan.map((item) => item.qid), ["q1"], "an unscored warm-up adds no plan item");
 
   const data = definition(sections, { anvi: {
     warmup: { icebreakers: 1, scored: true },
     conduct: { termsText: "I will not use notes.", endByVoice: true },
-    resume: { mode: "optional", sources: ["upload"], questionCount: 2 },
+    resume: { mode: "optional", sources: ["upload"], questionCount: 2, followUps: 2 },
   } });
   const requests = [];
   const generate = async (request) => {
@@ -257,7 +321,7 @@ test("warm-up, conduct and resume settings: a scored introduction and resume que
   assert.equal(built.plan[0].keyPoints.length, 4, "the scored introduction is judged on fixed key points");
   assert.equal(built.plan[0].marks, 10);
   assert.deepEqual([requests.length, requests[0].kind, requests[0].count, requests[0].sectionName], [1, "resume", 2, "Resume"]);
-  assert.equal(built.plan[1].followUpBudget, 1);
+  assert.equal(built.plan[1].followUpBudget, 2, "resume questions take the admin's resume follow-up limit");
   assert.deepEqual(built.conduct, { endByVoice: true, finishAllQuestions: true, noPersonalQuestions: true, termsText: "I will not use notes.", requireTermsAcceptance: true });
   // Only the unscored part of the warm-up (one icebreaker) adds time: 4 items x 90 s x 1.6 + 2 + 0.5.
   assert.equal(built.estimatedMinutes, Math.ceil(((4 * 90) / 60) * 1.6 + 2 + 0.5));
@@ -285,7 +349,7 @@ test("resume settings derive their mode for older snapshots and keep at least on
   assert.equal(normalizeResumeSettings({}).mode, "none");
   assert.equal(normalizeResumeSettings({ ...withQuestion, anvi: { resume: { mode: "optional" } } }).mode, "optional");
   assert.deepEqual(normalizeResumeSettings({ anvi: { resume: { sources: [] } } }).sources, ["builder", "upload"]);
-  assert.deepEqual(normalizeResumeSettings({ anvi: { resume: { sources: ["upload", "fax"], questionCount: 9 } } }), { mode: "none", sources: ["upload"], questionCount: 5 });
+  assert.deepEqual(normalizeResumeSettings({ anvi: { resume: { sources: ["upload", "fax"], questionCount: 9, followUps: 9 } } }), { mode: "none", sources: ["upload"], questionCount: 5, followUps: 3 });
   assert.deepEqual(normalizeWarmup({ icebreakers: 7, tellMeAboutYourself: false }), { enabled: true, icebreakers: 3, tellMeAboutYourself: false, scored: false });
   assert.equal(normalizeConduct({ requireTermsAcceptance: true }).requireTermsAcceptance, false, "nothing to accept without terms text");
 });

@@ -32,9 +32,8 @@ const STATUS_TEXT = {
   preparing: ["Preparing the question…", "Preparing the question…"],
   playing: ["ANVI is asking the question…", "ANVI is asking…"],
   followUp: ["ANVI is asking a follow-up…", "Asking a follow-up…"],
-  recording: ["Recording your answer…", "Recording your answer…"],
-  ptt: ["Hold Space or the talk button to answer", "Hold the talk button to answer"],
-  processing: ["Processing your answer…", "Processing your answer…"],
+  recording: ["Listening… ANVI replies after you pause", "Listening… pause when done"],
+  processing: ["Got it. ANVI is thinking…", "Got it. Thinking…"],
   moving: ["Moving to the next question…", "Next question…"],
   closing: ["Wrapping up. Your report is being prepared…", "Preparing your report…"],
   hybridEnded: ["Interview finished. Your report is being prepared…", "Finished. Preparing your report…"],
@@ -43,20 +42,20 @@ const STATUS_TEXT = {
 const secondsText = (ms) => String(Math.round((Number(ms) || 2000) / 100) / 10);
 const hybridListeningText = (hangoverMs) => {
   const seconds = secondsText(hangoverMs);
-  return [`Listening — pause ${seconds} s when you finish`, `Listening — pause ${seconds} s to finish`];
+  return [`Your turn — just speak, then pause ${seconds} s`, `Your turn — speak, then pause ${seconds} s`];
 };
 
 /**
  * The status key of a hybrid call while it is live and not paused or muted: the prompt playing (or a
- * follow-up), the answer being recorded, listening (hands-free or push-to-talk), or the server's state.
+ * follow-up), the answer being heard, waiting for the student to speak, or the server's state.
  * A Live block inside it uses the Live keys.
  */
-function hybridStatusKey({ turnState, activity, promptKind = "", recording = false, inputMode = "vad", socketMode = "turn" } = {}) {
+function hybridStatusKey({ turnState, activity, promptKind = "", recording = false, socketMode = "turn" } = {}) {
   if (socketMode === "live") return STATUS_TEXT[activity] ? activity : "listening";
   // A prompt playing; an acknowledgement clip ("Okay.") while processing keeps the processing line.
   if (["preparing", "playing", "follow_up"].includes(turnState) && (activity === "speaking" || turnState !== "preparing")) return promptKind === "follow_up" ? "followUp" : "playing";
   if (recording) return "recording";
-  if (turnState === "listening") return inputMode === "ptt" ? "ptt" : "hybridListening";
+  if (turnState === "listening") return "hybridListening";
   return ["preparing", "playing", "processing", "moving", "closing"].includes(turnState) ? turnState : "preparing";
 }
 // Talking louder than this while muted shows the "you are muted" hint.
@@ -142,8 +141,26 @@ function Timer({ startedAt, deadlineAt, header = false }) {
 }
 
 /**
+ * Under the "Listening…" line: fills while the student pauses and sends the answer when full (the
+ * hangover), so they see ANVI heard them and needs nothing pressed. Polled; no re-render per frame.
+ */
+function PauseMeter({ getProgress }) {
+  const barRef = useRef(null);
+  useEffect(() => {
+    if (typeof getProgress !== "function") return undefined;
+    const id = setInterval(() => {
+      if (barRef.current) barRef.current.style.transform = `scaleX(${getProgress()})`;
+    }, 100);
+    return () => clearInterval(id);
+  }, [getProgress]);
+  return <span aria-hidden="true" data-testid="anvi-pause-meter" className="absolute inset-x-4 bottom-1 h-0.5 overflow-hidden rounded-full bg-slate-900/[0.06] dark:bg-white/10">
+    <span ref={barRef} className="block h-full origin-left rounded-full bg-violet-500 transition-transform duration-100 ease-linear dark:bg-violet-300" style={{ transform: "scaleX(0)" }} />
+  </span>;
+}
+
+/**
  * `pauseKey`: "proctorPaused", "tabPaused", "cameraPaused" or "serverHeld" while proctoring holds the interview.
- * `hybrid`: `{ key, hangoverMs, recording }` for a hybrid call (absent for Live).
+ * `hybrid`: `{ key, hangoverMs, pauseProgress }` for a hybrid call (absent for Live).
  */
 function StatusPill({ status, activity, muted, talkingMuted, pauseKey = "", getLevel, compact, hybrid = null }) {
   const levelRef = useLevelVar(getLevel);
@@ -166,8 +183,9 @@ function StatusPill({ status, activity, muted, talkingMuted, pauseKey = "", getL
   else if (status === "ended") icon = <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden="true" />;
   else if (status === "error" || status === "taken_over") icon = <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" aria-hidden="true" />;
   const tone = (showMuted && talkingMuted) || paused ? pillAmber : `${surface} ${surfaceRing} text-slate-800 shadow-sm dark:text-zinc-100 dark:shadow-none`;
-  return <p ref={levelRef} role="status" aria-live="polite" className={`mx-auto inline-flex max-w-full items-center gap-2.5 rounded-full px-4 py-2 text-sm font-medium ring-1 ring-inset ${tone}`}>
+  return <p ref={levelRef} role="status" aria-live="polite" className={`relative mx-auto inline-flex max-w-full items-center gap-2.5 rounded-full px-4 py-2 text-sm font-medium ring-1 ring-inset ${tone}`}>
     {icon}<span className="min-w-0 text-center max-sm:whitespace-normal sm:truncate">{text}</span>
+    {recording && !paused && <PauseMeter getProgress={hybrid?.pauseProgress} />}
   </p>;
 }
 
@@ -378,7 +396,7 @@ export default function LiveCall({ attempt, live, studentName, studentAvatar = "
     statusText: getProctoringStatusText,
   } : null;
 
-  // Hybrid (turn-based) call: the same room plus Repeat, push-to-talk / Done, and its own status line.
+  // Hybrid (turn-based) call: the same room plus Repeat and its own status line; answers are hands-free.
   const hybrid = live.runtimeMode === "hybrid";
   const muted = Boolean(live.muted);
   const canMute = typeof live.setMuted === "function" && status !== "ended" && status !== "ending";
@@ -418,34 +436,6 @@ export default function LiveCall({ attempt, live, studentName, studentAvatar = "
     return () => window.removeEventListener("keydown", onKey);
   }, [confirmEnd, proctorPaused, toggleCaptions, toggleMute]);
 
-  // Hybrid: holding Space is push-to-talk, under the same guards as the shortcuts above (and never on a
-  // focused button, link or tab, where Space activates it). A dialog, a pause or a lost focus releases it.
-  const pttRef = useRef(null);
-  useEffect(() => { pttRef.current = hybrid ? { down: live.pttDown, up: live.pttUp } : null; });
-  useEffect(() => {
-    if (!hybrid || confirmEnd || proctorPaused) return undefined;
-    let held = false;
-    const isSpace = (event) => event.key === " " || event.code === "Space";
-    const release = () => { if (held) { held = false; pttRef.current?.up?.(); } };
-    const onDown = (event) => {
-      if (!isSpace(event) || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (event.target?.closest?.("input, textarea, select, [contenteditable='true'], button, a, [role='tab']")) return;
-      event.preventDefault();
-      if (event.repeat || held) return;
-      held = Boolean(pttRef.current?.down?.());
-    };
-    const onUp = (event) => { if (isSpace(event) && held) { event.preventDefault(); release(); } };
-    window.addEventListener("keydown", onDown);
-    window.addEventListener("keyup", onUp);
-    window.addEventListener("blur", release);
-    return () => {
-      window.removeEventListener("keydown", onDown);
-      window.removeEventListener("keyup", onUp);
-      window.removeEventListener("blur", release);
-      release();
-    };
-  }, [hybrid, confirmEnd, proctorPaused]);
-
   // Notice speech while muted (polled: no re-render per audio frame).
   useEffect(() => {
     if (!muted || typeof live.mutedLevel !== "function") { setTalkingMuted(false); return undefined; }
@@ -466,7 +456,7 @@ export default function LiveCall({ attempt, live, studentName, studentAvatar = "
   const deadlineAt = serverState?.deadlineAt || attempt.hardDeadline;
   const ending = status === "ending" || status === "ended";
   const orbSize = wide ? 260 : tablet ? 220 : 200;
-  const hybridTips = hybrid ? { hangoverMs: live.hangoverMs, inputMode: live.inputMode, onInputMode: live.setInputMode } : null;
+  const hybridTips = hybrid ? { hangoverMs: live.hangoverMs } : null;
   const panelProps = { tab, onTab: setTab, onClose: closePanel, followUp, questionText, captions, studentName, ...(hybrid ? { hybrid: hybridTips } : {}) };
   const openQuestion = () => { setTab("question"); setPanelOpen(true); };
   const scheduled = attempt.assignmentId ? `Scheduled · ${modeLabel(attempt.mode).replace(/ interview$/, "")}` : "";
@@ -481,20 +471,14 @@ export default function LiveCall({ attempt, live, studentName, studentAvatar = "
   const questionShown = !wide || inPanel || questionBar;
   const captionQuestion = questionText && questionShown ? { text: questionText, where: wide && inPanel ? "in the panel" : "above" } : null;
   const hybridStatus = hybrid ? {
-    key: hybridStatusKey({ turnState: live.turnState, activity, promptKind: live.promptKind, recording: live.recording, inputMode: live.inputMode, socketMode: live.socketMode }),
+    key: hybridStatusKey({ turnState: live.turnState, activity, promptKind: live.promptKind, recording: live.recording, socketMode: live.socketMode }),
     hangoverMs: live.hangoverMs,
+    pauseProgress: live.pauseProgress,
   } : null;
   const turnMode = hybrid && live.socketMode !== "live";
   const hybridControls = hybrid ? {
     onRepeat: live.replay,
     canRepeat: status === "live" && turnMode && Boolean(live.canReplay) && !proctorPaused && !serverHeld,
-    inputMode: live.inputMode,
-    onPttDown: live.pttDown,
-    onPttUp: live.pttUp,
-    pttHeld: Boolean(live.pttHeld),
-    onDone: live.done,
-    canDone: status === "live" && turnMode && !muted && !proctorPaused && !serverHeld && (live.turnState === "listening" || Boolean(live.recording)),
-    canTalk: status === "live" && turnMode && !muted && !proctorPaused && !serverHeld,
   } : null;
   // The open transcript already shows every line.
   const showCaptions = captionsOn && !(docked && tab === "transcript");
@@ -515,12 +499,16 @@ export default function LiveCall({ attempt, live, studentName, studentAvatar = "
     <Loader2 className={`${bannerIcon} animate-spin motion-reduce:animate-none`} aria-hidden="true" />
     <span className="flex-1"><span className="font-semibold">Reconnecting to ANVI.</span> Your answers so far are saved, and ANVI continues where you left off. Stay on this page.</span>
   </div>);
-  // Hybrid: a noisy room (or answers that came out empty) suggests push-to-talk, one tap away.
-  if (hybrid && live.suggestPtt && live.inputMode === "vad" && status === "live" && !proctorPaused) banners.push(<div key="ptt" role="status" data-testid="anvi-ptt-suggestion" className={bannerTone}>
+  // Hybrid: a microphone that sends pure silence (muted by a key or by Windows) is named at once.
+  if (hybrid && live.micSilent && status === "live" && !muted && !proctorPaused) banners.push(<div key="mic-silent" role="alert" data-testid="anvi-mic-silent" className={bannerTone}>
+    <MicOff className={bannerIcon} aria-hidden="true" />
+    <span className="flex-1"><span className="font-semibold">ANVI can't hear any sound from your microphone.</span> It may be muted: press your laptop's mic-mute key or check Windows Sound settings › Input. ANVI is waiting for your answer.</span>
+  </div>);
+  // Hybrid: a noisy room (or answers that came out empty) gets a hint; answering stays hands-free.
+  if (hybrid && live.noisyRoom && status === "live" && !proctorPaused) banners.push(<div key="noisy" role="status" data-testid="anvi-noisy-room" className={bannerTone}>
     <Mic className={bannerIcon} aria-hidden="true" />
-    <span className="flex-1">It sounds noisy where you are. With push-to-talk, ANVI records only while you hold the talk button or Space.</span>
-    <button type="button" onClick={() => live.setInputMode("ptt")} className={bannerButton}>Use push-to-talk</button>
-    <button type="button" onClick={live.dismissPttSuggestion} aria-label="Dismiss" className="rounded-full p-0.5 text-amber-700 hover:bg-amber-900/5 dark:text-amber-200 dark:hover:bg-white/10"><X className="h-4 w-4" /></button>
+    <span className="flex-1">It sounds noisy where you are. Move somewhere quieter or closer to your microphone so ANVI hears every word.</span>
+    <button type="button" onClick={live.dismissNoisyRoom} aria-label="Dismiss" className="rounded-full p-0.5 text-amber-700 hover:bg-amber-900/5 dark:text-amber-200 dark:hover:bg-white/10"><X className="h-4 w-4" /></button>
   </div>);
   if (live.audioPaused && status === "live") banners.push(<div key="audio" role="alert" className={bannerTone}>
     <AlertTriangle className={bannerIcon} aria-hidden="true" />

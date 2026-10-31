@@ -50,15 +50,72 @@ function TestButton({ mic, support, test }) {
   </button>;
 }
 
+/** Choose the microphone, when the device has more than one. */
+function DevicePicker({ micCheck }) {
+  const { devices, deviceId, selectDevice, mic } = micCheck;
+  if (!Array.isArray(devices) || devices.length < 2) return null;
+  return <label className="mt-3 flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
+    <span className="shrink-0 font-medium">Microphone</span>
+    <select value={deviceId} onChange={(event) => void selectDevice(event.target.value)} disabled={mic.state === "requesting"} data-mic-device=""
+      className={`min-w-0 flex-1 truncate rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px] text-slate-800 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-100 ${focus}`}>
+      {!devices.some((device) => device.id === deviceId) && <option value="">Choose a microphone</option>}
+      {devices.map((device) => <option key={device.id} value={device.id}>{device.label}</option>)}
+    </select>
+  </label>;
+}
+
+/**
+ * The read-aloud check: a random sentence to read out, Start reading, and the result. The microphone is
+ * verified only when it carried enough clear voice for the sentence (measured on this device).
+ */
+function ReadAloud({ micCheck }) {
+  const { read, startReading, newSentence, silent, mic } = micCheck;
+  const listening = read.state === "listening";
+  const passed = read.state === "passed";
+  const failed = read.state === "failed";
+  const tone = passed ? "ring-emerald-200 bg-emerald-50/60 dark:ring-emerald-400/20 dark:bg-emerald-500/[0.06]"
+    : failed ? "ring-amber-200 bg-amber-50/60 dark:ring-amber-400/25 dark:bg-amber-500/[0.06]"
+      : "ring-violet-200 bg-violet-50/50 dark:ring-violet-400/20 dark:bg-violet-500/[0.06]";
+  const message = passed ? "Microphone verified. ANVI can hear you clearly."
+    : failed ? (read.reason === "none" ? "We couldn't hear you. Check that your microphone isn't muted, then try again." : "That was too short. Read the whole sentence aloud, then pause.")
+      : listening ? "Listening… read the sentence aloud, then pause."
+        : "Press Start reading, then read this sentence aloud in your normal voice.";
+  return <div data-read-aloud={read.state} className={`mt-4 rounded-xl p-4 ring-1 ring-inset ${tone}`}>
+    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-300">Read this aloud</p>
+    <p data-read-sentence="" className="mt-1.5 text-[17px] font-medium leading-7 text-slate-900 dark:text-white">“{read.sentence}”</p>
+    <div className="mt-3 flex flex-wrap items-center gap-3">
+      {passed ? <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300"><AnimatedCheck className="h-5 w-5" />Verified</span>
+        : <button type="button" onClick={() => { if (failed) newSentence(); else startReading(); }} disabled={listening || silent || mic.state !== "on"} data-read-start=""
+          className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-violet-600 px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-violet-500 dark:hover:bg-violet-400 ${focus}`}>
+          {listening ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mic className="h-4 w-4" aria-hidden="true" />}
+          {listening ? "Listening…" : failed ? "Try another sentence" : "Start reading"}
+        </button>}
+      <p role="status" className={`min-w-0 flex-1 text-[13px] leading-5 ${passed ? "text-emerald-700 dark:text-emerald-300" : failed ? "text-amber-800 dark:text-amber-200" : "text-slate-600 dark:text-zinc-300"}`}>{message}</p>
+    </div>
+  </div>;
+}
+
 /**
  * The microphone preview: the student's initials with a ring that follows the level, an equaliser meter and
- * the Test microphone button. `compact` is one row for the System check under the camera.
+ * the Test microphone button; the microphone picker, a muted-microphone warning and (pre-start) the
+ * read-aloud check. `compact` is one row for the System check under the camera.
  * `micCheck`: useMicCheck().
  */
 export function MicPanel({ micCheck, support, studentName = "", compact = false }) {
   const { mic, heard, barsRef, levelRef, test } = micCheck;
   const on = mic.state === "on";
-  const status = on ? (heard ? "Sounds good. ANVI will hear you like this." : "Say a few words…") : mic.state === "error" ? "Not available" : "Not tested yet";
+  const status = on ? (micCheck.silent ? "No sound from this microphone" : heard ? "Sounds good. ANVI will hear you like this." : "Say a few words…") : mic.state === "error" ? "Not available" : "Not tested yet";
+  const extras = on && <>
+    <DevicePicker micCheck={micCheck} />
+    {micCheck.silent && <p role="alert" data-mic-silent="" className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-[13px] leading-5 text-amber-900 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-400/25">
+      <MicOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{micCheck.check.detail}
+    </p>}
+    {micCheck.signal === "suspended" && !heard && <button type="button" onClick={() => void test()} data-mic-resume=""
+      className={`mt-3 inline-flex h-8 items-center gap-2 rounded-lg bg-violet-600 px-3 text-[13px] font-semibold text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-400 ${focus}`}>
+      <Mic className="h-4 w-4" aria-hidden="true" />Start sound check
+    </button>}
+    {micCheck.readRequired && <ReadAloud micCheck={micCheck} />}
+  </>;
 
   if (compact) {
     return <div ref={levelRef} data-mic-panel="compact" className={`p-4 ${glass}`}>
@@ -71,6 +128,7 @@ export function MicPanel({ micCheck, support, studentName = "", compact = false 
         <TestButton mic={mic} support={support} test={test} />
       </div>
       <LevelMeter barsRef={barsRef} className="mt-3 h-6" />
+      {extras}
     </div>;
   }
 
@@ -91,6 +149,7 @@ export function MicPanel({ micCheck, support, studentName = "", compact = false 
         <TestButton mic={mic} support={support} test={test} />
       </div>
       <LevelMeter barsRef={barsRef} className="mt-3 h-6" />
+      {extras}
     </div>
   </div>;
 }

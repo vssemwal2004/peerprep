@@ -2,7 +2,7 @@
 // live session and rendered into the Live system prompt; key points never leave the server.
 import { createHash } from "node:crypto";
 import {
-  ANVI_DEFAULTS, ANVI_LANGUAGE, RESUME_MODES, RESUME_SOURCES, TERMS_LIMIT, derivedResumeMode, durationMaxQuestions,
+  ANVI_DEFAULTS, ANVI_LANGUAGE, RESUME_MODES, RESUME_SOURCES, SPEECH_RATE, TERMS_LIMIT, derivedResumeMode, durationMaxQuestions,
   englishOnlyLanguage, liveTopicCounts, priorityOf,
 } from "../../services/aiInterviewDefinition.js";
 import { durationBucket } from "./anviInterview.config.js";
@@ -119,6 +119,86 @@ export function seededShuffle(items, seed) {
   return out;
 }
 
+const topicKeyOf = (question) => String(question?.competency || "").trim().toLowerCase() || "general";
+const DIFFICULTY_ORDER = ["medium", "easy", "hard", ""];
+
+// One topic's questions, shuffled within each difficulty and then taken in turn from each difficulty
+// (largest first), so the first k of a topic always mix difficulties the way the topic does.
+function interleaveDifficulties(questions, seed) {
+  const byDifficulty = new Map();
+  for (const question of questions) {
+    const key = DIFFICULTY_ORDER.includes(question.difficulty) ? question.difficulty : "";
+    if (!byDifficulty.has(key)) byDifficulty.set(key, []);
+    byDifficulty.get(key).push(question);
+  }
+  const lists = [...byDifficulty.entries()]
+    .sort(([a, x], [b, y]) => y.length - x.length || DIFFICULTY_ORDER.indexOf(a) - DIFFICULTY_ORDER.indexOf(b))
+    .map(([key, list]) => seededShuffle(list, `${seed}:${key}`));
+  const out = [];
+  for (let i = 0; out.length < questions.length; i += 1) for (const list of lists) if (i < list.length) out.push(list[i]);
+  return out;
+}
+
+// How many of `total` questions each topic gives: one per topic first, then the rest in proportion to
+// what each topic has left (largest remainder, earlier topics win ties). Fewer questions than topics:
+// a seeded choice of topics gives one each.
+function topicQuotas(sizes, total, seed) {
+  const quotas = sizes.map(() => 0);
+  if (total < sizes.length) {
+    seededShuffle(sizes.map((_, i) => i), `${seed}:topics-picked`).slice(0, total).forEach((i) => { quotas[i] = 1; });
+    return quotas;
+  }
+  sizes.forEach((_, i) => { quotas[i] = 1; });
+  const spare = sizes.map((size) => size - 1);
+  const room = spare.reduce((sum, value) => sum + value, 0);
+  const rest = total - sizes.length;
+  if (!room || rest <= 0) return quotas;
+  const exact = spare.map((value) => (value * rest) / room);
+  exact.forEach((value, i) => { quotas[i] += Math.floor(value); });
+  let left = total - quotas.reduce((sum, value) => sum + value, 0);
+  // Equal remainders (within float error) go to the earlier topic.
+  const order = exact.map((value, i) => [value - Math.floor(value), i])
+    .sort((a, b) => (Math.abs(b[0] - a[0]) > 1e-9 ? b[0] - a[0] : a[1] - b[1]));
+  for (const [, i] of order) {
+    if (left <= 0) break;
+    if (quotas[i] < sizes[i]) { quotas[i] += 1; left -= 1; }
+  }
+  return quotas;
+}
+
+/**
+ * The questions one attempt gets from a group's pool, in the order it hears them. `pick` (null = all)
+ * draws a per-attempt subset stratified by topic (question.competency) and difficulty, so every student
+ * gets the same number per topic and a similar difficulty mix. `shuffle` with `byTopic` groups the
+ * questions by topic in a per-attempt topic order (one student starts with DSA, another with DBMS) and
+ * shuffles within each topic; `shuffle` alone shuffles them all; neither keeps the authored order. With a
+ * pick or byTopic, resume questions come first. Deterministic per seed, so a rejoin gets the same questions.
+ * Without a pick or byTopic this is the older group.shuffle behaviour, unchanged.
+ */
+export function poolSelection(questions = [], { pick = null, shuffle = false, byTopic = false, seed = "" } = {}) {
+  const picking = Number.isInteger(pick) && pick > 0;
+  if (!picking && !(shuffle && byTopic)) return shuffle ? seededShuffle(questions, seed) : [...questions];
+  const resume = questions.filter((question) => question?.kind === "resume");
+  const pool = questions.filter((question) => question?.kind !== "resume");
+  const total = picking ? Math.min(pick, pool.length) : pool.length;
+  const topics = new Map();
+  for (const question of pool) {
+    const key = topicKeyOf(question);
+    if (!topics.has(key)) topics.set(key, []);
+    topics.get(key).push(question);
+  }
+  const keys = [...topics.keys()];
+  const quotas = topicQuotas(keys.map((key) => topics.get(key).length), total, seed);
+  const chosen = new Map(keys.map((key, i) => [key, interleaveDifficulties(topics.get(key), `${seed}:${key}`).slice(0, quotas[i])]));
+  if (!shuffle) {
+    const kept = new Set([...chosen.values()].flat());
+    return [...resume, ...pool.filter((question) => kept.has(question))];
+  }
+  if (!byTopic) return [...resume, ...seededShuffle([...chosen.values()].flat(), `${seed}:order`)];
+  const order = seededShuffle(keys, `${seed}:topic-order`);
+  return [...resume, ...order.flatMap((key) => seededShuffle(chosen.get(key), `${seed}:${key}:order`))];
+}
+
 // Per-attempt variation hints for generated questions, so every student gets a different set.
 const SCENARIO_DOMAINS = Object.freeze([
   "e-commerce", "banking and payments", "healthcare", "education", "logistics and delivery", "social media",
@@ -158,6 +238,12 @@ const previousEntries = (list) => (Array.isArray(list) ? list : [])
 const responseSecondsOf = (...layers) => {
   const merged = Object.assign({}, ...layers.map((layer) => layer || {}));
   return merged.responseSeconds === undefined ? DEFAULT_RESPONSE_SECONDS : merged.responseSeconds;
+};
+
+/** A stored speaking speed within SPEECH_RATE, else 1 (older snapshots). */
+export const speechRateOf = (value) => {
+  const rate = Number(value);
+  return Number.isFinite(rate) && rate >= SPEECH_RATE.min && rate <= SPEECH_RATE.max ? rate : 1;
 };
 
 const budgetOf = (value) => Math.min(MAX_FOLLOW_UPS, Math.max(0, Math.round(Number(value) || 0)));
@@ -224,6 +310,7 @@ export function normalizeResumeSettings(snapshotData) {
     mode: RESUME_MODES.includes(resume.mode) ? resume.mode : derivedResumeMode(data),
     sources: sources.length ? sources : [...RESUME_SOURCES],
     questionCount: clampNumber(resume.questionCount, 0, 5, ANVI_DEFAULTS.resume.questionCount),
+    followUps: clampNumber(resume.followUps, 0, 3, ANVI_DEFAULTS.resume.followUps),
   };
 }
 
@@ -265,7 +352,8 @@ export function termsOf(snapshotData) {
  * already provided one (`context`: their stored resume for this interview or assignment, if any).
  */
 export function resumeSetupOf(snapshotData, context) {
-  const settings = normalizeResumeSettings(snapshotData);
+  // The follow-up limit is the runtime's; students are not shown it.
+  const { followUps: _followUps, ...settings } = normalizeResumeSettings(snapshotData);
   const usable = context && settings.sources.includes(context.source) ? context : null;
   return { ...settings, provided: Boolean(usable), source: usable?.source || null, providedAt: usable?.createdAt || null };
 }
@@ -368,7 +456,7 @@ export async function buildPlan(snapshotData, {
         qidBase: "resume-q", numbered: true, count, addedByServer: true, priority: "medium",
         item: (entry) => ({
           sectionId: "resume", sectionName: "Resume", topic: "Resume", competency: "Resume", context: "",
-          text: entry.text, keyPoints: entry.keyPoints, authoredFollowUps: [], followUpBudget: 1,
+          text: entry.text, keyPoints: entry.keyPoints, authoredFollowUps: [], followUpBudget: resumeSettings.followUps,
           responseSeconds: responseSecondsOf(rules), marks: DEFAULT_MARKS, weight: 1, skippable: true,
           expectedAnswer: expectedAnswerOf(entry.keyPoints.join("\n")), source: "resume", kind: "resume",
         }),
@@ -432,12 +520,18 @@ export async function buildPlan(snapshotData, {
         continue;
       }
 
-      const questions = group.shuffle ? seededShuffle(group.questions || [], `${shuffleSeed}:${group.id}`) : group.questions || [];
+      // The subset is drawn within the questions still left in the plan, so a duration cap trims every
+      // topic evenly instead of dropping the topics that come last.
+      const room = Math.max(1, planMax - reserved);
+      const pick = Number.isInteger(group.pick) ? Math.min(group.pick, room) : null;
+      const questions = poolSelection(group.questions || [], { pick, shuffle: Boolean(group.shuffle), byTopic: Boolean(group.byTopic), seed: `${shuffleSeed}:${group.id}` });
       for (const question of questions) {
         const authoredFollowUps = authoredFollowUpsOf(question);
+        // followUpLimit caps follow-ups (prepared ones first); older questions: cross-questions plus AI ones.
+        const limit = Number.isInteger(question.followUpLimit) ? question.followUpLimit : null;
         const common = {
           ...base, context: promptLine(question.context, 600), authoredFollowUps,
-          followUpBudget: budgetOf(authoredFollowUps.length + (Number(question.maxFollowUps) || 0)),
+          followUpBudget: budgetOf(limit ?? authoredFollowUps.length + (Number(question.maxFollowUps) || 0)),
           responseSeconds: responseSecondsOf(...groupRules, question.ruleOverrides),
           marks: marksOf(question.marks),
           competency: promptLine(question.competency, 60) || base.competency,
@@ -553,8 +647,11 @@ export async function buildPlan(snapshotData, {
     language: rules.language,
     introduction: script(anviPersona.introduction, interviewer.introduction),
     closing: script(anviPersona.closing, interviewer.closing),
-    // The admin's Live voice and accent locale ("" = the server voice / the interview language's locale).
-    voice: String(data.anvi?.voice?.name || ""),
+    // One voice for every interview (user decision 2026-10-30): the server voice (ANVI_TTS_VOICE, Aoede). A
+    // voice an older interview picked is not used, so its audio is shared with every other interview.
+    voice: "",
+    // Playback rate of ANVI's cached audio in the student's browser (pitch kept).
+    speechRate: speechRateOf(anviPersona.speechRate),
     // English only (DECISIONS #0): an older hi-IN accent falls back to the interview language's en-IN.
     voiceLanguageCode: data.anvi?.voice?.languageCode === "en-IN" ? "en-IN" : "",
   };

@@ -4,11 +4,13 @@ import { api } from "../../utils/api";
 import { createAnviAudioPlayer, PLAYBACK_RATE } from "./anviAudioPlayer";
 import { createAnviSegmenter } from "./anviSegmenter";
 import { createAnviSegmentOutbox } from "./anviSegmentOutbox";
-import { CLIENT_EVENTS, INPUT_MODES, SERVER_EVENTS, TURN_STATES, isAssetId, isTurnId, validateClip } from "./anviHybridProtocol";
+import { ACK_LINES, createSpeechFallback } from "./anviSpeechFallback";
+import { CLIENT_EVENTS, SERVER_EVENTS, TURN_STATES, isAssetId, isTurnId, validateClip } from "./anviHybridProtocol";
 import { ANVI_CLIENT_ID, MIC_CONSTRAINTS, createAnviAudioContexts, mergeCaption, micError } from "./useAnviLiveSession";
 
 // Hybrid (turn-based) ANVI: the server leads a cursor of prompts; the question audio is cached clips
-// played locally, and only the student's own speech is cut into segments and sent. Same room contract as
+// played locally, and only the student's own speech is cut into segments and sent, hands-free: speech
+// opens the answer and a 2 s pause sends it, with nothing to press. Same room contract as
 // useAnviLiveSession (status, captions, proctoring, end, retry...), plus the turn state and the controls.
 // Never logs audio, clip ids, transcripts or URLs.
 
@@ -28,6 +30,9 @@ const SEGMENT_ACK_MS = 12000;
 const CLIP_WAIT_MS = 3000;
 // The acknowledgement clip ("Okay.") plays only after an answer at least this long.
 const ACK_CLIP_MIN_MS = 3000;
+// Frames this quiet for this long while ANVI listens mean the microphone sends nothing at all.
+const DEAD_MIC_RMS = 1e-4;
+const DEAD_MIC_MS = 8000;
 const SCREEN_EVENTS = new Set(["fullscreen_enter", "fullscreen_exit", "tab_hidden", "tab_visible", "window_blur", "window_focus", "ai_camera_blocked", "ai_camera_restored"]);
 const RETRYABLE_JOIN = new Set(["JOIN_FAILED", "LIVE_UNAVAILABLE", "BUSY", "TAKEN_OVER", "JOIN_TIMEOUT", "RATE_LIMITED", "ATTEMPT_ENDING"]);
 // Local phases in which the student's speech is cut into segments: after the prompt played, and while
@@ -70,10 +75,9 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
   const [turnState, setTurnStateValue] = useState("preparing");
   const [promptKind, setPromptKind] = useState("");
   const [promptText, setPromptText] = useState("");
-  const [inputMode, setInputModeState] = useState("vad");
   const [recording, setRecording] = useState(false);
-  const [pttHeld, setPttHeld] = useState(false);
-  const [suggestPtt, setSuggestPtt] = useState(false);
+  const [noisyRoom, setNoisyRoom] = useState(false);
+  const [micSilent, setMicSilent] = useState(false);
   const [hangoverMs, setHangoverMs] = useState(2000);
   const [socketMode, setSocketMode] = useState("turn");
   const [canReplay, setCanReplay] = useState(false);
@@ -105,6 +109,7 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
   const timersRef = useRef(new Set());
   const holdUntilRef = useRef(0);
   const inputLevelRef = useRef(0);
+  const deadSinceRef = useRef(0);
   const mutedLevelRef = useRef(0);
   const userMutedRef = useRef(false);
   const proctorSeqRef = useRef(0);
@@ -118,8 +123,6 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
   const phaseRef = useRef("idle");
   const playGenRef = useRef(0);
   const modeRef = useRef("turn");
-  const inputModeRef = useRef("vad");
-  const pttHeldRef = useRef(false);
   // A prompt cut off by a pause; replayed from the cache when the pause ends (unless the server held,
   // in which case its release sends the prompt again).
   const pendingReplayRef = useRef(false);
@@ -129,6 +132,12 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
   const clipWaitersRef = useRef(new Map());
   const ackIdsRef = useRef([]);
   const lastAckRef = useRef("");
+  // The browser voice that speaks a prompt whose cached audio is missing (never silence), its speed,
+  // whether acknowledgements are on, and the last question's text (what "repeat" says without clips).
+  const speechRef = useRef(null);
+  const speechRateRef = useRef(1);
+  const acksOnRef = useRef(true);
+  const questionTextRef = useRef("");
   const answerMsRef = useRef(0);
   const callbacksRef = useRef({ onEnded, onJoinRejected, onRuntimeMode });
 
@@ -167,17 +176,16 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
 
   const dropOpenSegment = useCallback(() => {
     segmenterRef.current?.cancel();
-    pttHeldRef.current = false;
-    setPttHeld(false);
     setRecording(false);
   }, []);
 
+  // Answers are hands-free only: speech opens the answer and a pause of the hangover (2 s) sends it.
   const handleSegmentEvents = useCallback((events) => {
     for (const event of events || []) {
       if (event.type === "onset") setRecording(true);
       else if (event.type === "discard") {
         setRecording(false);
-        if (segmenterRef.current?.noisy() && inputModeRef.current === "vad") setSuggestPtt(true);
+        if (segmenterRef.current?.noisy()) setNoisyRoom(true);
       } else if (event.type === "segment") {
         const turnId = turnIdRef.current;
         if (!turnId) continue;
@@ -200,10 +208,18 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
   // same twice in a row, never fetched, and only while nothing newer has started.
   const playAckClip = useCallback(() => {
     const player = playerRef.current;
-    if (!player || phaseRef.current !== "processing" || gatedNow() || player.isSpeaking()) return;
+    if (!player || phaseRef.current !== "processing" || gatedNow() || player.isSpeaking() || speechRef.current?.speaking()) return;
     const cached = ackIdsRef.current.filter((id) => player.hasClip(id));
     const choices = cached.length > 1 ? cached.filter((id) => id !== lastAckRef.current) : cached;
-    if (!choices.length) return;
+    if (!choices.length) {
+      // No ack clip ready (TTS down): the browser voice says it, so the answer never meets silence.
+      if (!acksOnRef.current || !speechRef.current?.available) return;
+      const lines = ACK_LINES.filter((line) => line !== lastAckRef.current);
+      const line = lines[Math.floor(Math.random() * lines.length)];
+      lastAckRef.current = line;
+      void speechRef.current.speak(line, { rate: speechRateRef.current });
+      return;
+    }
     const id = choices[Math.floor(Math.random() * choices.length)];
     lastAckRef.current = id;
     void player.playClip(id);
@@ -243,7 +259,8 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
 
   const refreshCanReplay = useCallback(() => {
     const ids = promptRef.current?.assetIds || [];
-    setCanReplay(ids.length > 0 && ids.every((id) => playerRef.current?.hasClip(id)));
+    const cached = ids.length > 0 && ids.every((id) => playerRef.current?.hasClip(id));
+    setCanReplay(cached || Boolean(speechRef.current?.available && (questionTextRef.current || promptRef.current?.text)));
   }, []);
 
   // ---- Turn loop ----
@@ -256,23 +273,40 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
     emit(CLIENT_EVENTS.PROMPT_PLAYED, { turnId, ok });
   }, [emit]);
 
-  // Text fallback (no audio, R2 or TTS down): the text is on screen; listening starts at once.
-  const textFallback = useCallback((turnId) => {
-    ackPlayed(turnId, false);
-    startListening();
-  }, [ackPlayed, startListening]);
+  // Speaks `text` with the browser voice (cached audio missing), then `then()` unless something newer
+  // (a prompt, a hold, the end) cancelled it. The microphone is held while it speaks, as for a clip.
+  const speakLine = useCallback((text, gen, then) => {
+    const speech = speechRef.current;
+    if (!speech?.available || !String(text || "").trim()) return false;
+    setPhase("playing");
+    holdUntilRef.current = Infinity;
+    void speech.speak(text, { rate: speechRateRef.current }).then(() => {
+      holdUntilRef.current = performance.now() + ECHO_TAIL_MS;
+      if (gen !== playGenRef.current || endedRef.current || !aliveRef.current) return;
+      then();
+    });
+    return true;
+  }, [setPhase]);
+
+  // Text fallback (no audio, R2 or TTS down): the text is on screen and the browser voice says it;
+  // listening starts when it finishes (at once when the browser has no voice).
+  const textFallback = useCallback((turnId, gen = playGenRef.current) => {
+    const done = () => { ackPlayed(promptRef.current?.turnId || turnId, false); startListening(); };
+    if (heldNow() || !speakLine(promptRef.current?.text, gen, done)) done();
+  }, [ackPlayed, heldNow, speakLine, startListening]);
 
   const playPrompt = useCallback(async () => {
     const prompt = promptRef.current;
     if (!prompt || endedRef.current) return;
     const gen = ++playGenRef.current;
+    speechRef.current?.cancel();
     pendingReplayRef.current = false;
     if (heldNow()) { pendingReplayRef.current = true; return; }
-    if (!prompt.assetIds.length) { textFallback(prompt.turnId); return; }
+    if (!prompt.assetIds.length) { textFallback(prompt.turnId, gen); return; }
     const results = await Promise.all(prompt.assetIds.map((id) => ensureClip(id)));
     if (gen !== playGenRef.current || endedRef.current || !aliveRef.current) return;
     refreshCanReplay();
-    if (!results.every(Boolean)) { textFallback(promptRef.current?.turnId || prompt.turnId); return; }
+    if (!results.every(Boolean)) { textFallback(promptRef.current?.turnId || prompt.turnId, gen); return; }
     if (heldNow()) { pendingReplayRef.current = true; return; }
     setPhase("playing");
     const result = await playerRef.current.playSequence(prompt.assetIds);
@@ -291,8 +325,6 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
     if (promptRef.current) promptRef.current = { ...promptRef.current, turnId };
     outboxRef.current?.setTurn(turnId);
     segmenterRef.current?.reset();
-    pttHeldRef.current = false;
-    setPttHeld(false);
     setRecording(false);
     answerMsRef.current = 0;
     return true;
@@ -307,6 +339,7 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
     serverHeldDuringPauseRef.current = false;
     setPromptKind(prompt.kind);
     if (QUESTION_KINDS.has(prompt.kind) && prompt.text) {
+      questionTextRef.current = prompt.text;
       setPromptText(prompt.text);
       setServerState((state) => ({
         ...(state || {}), questionText: prompt.text, followUp: prompt.kind === "follow_up",
@@ -330,9 +363,20 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
   // Plays the current prompt's clips again from the cache: no fetch, no model call.
   const replayClips = useCallback((assetIds, turnId) => {
     const player = playerRef.current;
-    if (!player || !assetIds.length || !assetIds.every((id) => player.hasClip(id))) return false;
+    if (!player) return false;
+    if (!assetIds.length || !assetIds.every((id) => player.hasClip(id))) {
+      // No clips: the browser voice says the question again.
+      const gen = ++playGenRef.current;
+      const spoken = speakLine(questionTextRef.current || promptRef.current?.text, gen, () => {
+        emit(CLIENT_EVENTS.REPLAYED, { turnId: promptRef.current?.turnId || turnId });
+        startListening();
+      });
+      if (spoken) { dropOpenSegment(); pendingReplayRef.current = false; }
+      return spoken;
+    }
     dropOpenSegment();
     const gen = ++playGenRef.current;
+    speechRef.current?.cancel();
     pendingReplayRef.current = false;
     setPhase("playing");
     void player.playSequence(assetIds).then((result) => {
@@ -342,7 +386,7 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
       startListening();
     });
     return true;
-  }, [dropOpenSegment, emit, setPhase, startListening]);
+  }, [dropOpenSegment, emit, setPhase, speakLine, startListening]);
 
   /** Repeat question: replays the cached question audio and tells the server with `anvi:replayed` only. */
   const replay = useCallback(() => {
@@ -356,10 +400,11 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
   const applyGate = useCallback(() => {
     if (gatedNow()) {
       dropOpenSegment();
-      if (heldNow() && playerRef.current?.isSpeaking()) {
+      if (heldNow() && (playerRef.current?.isSpeaking() || speechRef.current?.speaking())) {
         playGenRef.current += 1;
         pendingReplayRef.current = true;
-        playerRef.current.flush();
+        playerRef.current?.flush();
+        speechRef.current?.cancel();
       }
       return;
     }
@@ -396,6 +441,8 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
     detachRef.current?.();
     detachRef.current = null;
     playGenRef.current += 1;
+    speechRef.current?.cancel();
+    speechRef.current = null;
     for (const id of [...clipWaitersRef.current.keys()]) resolveClipWaiters(id, false);
     clipPartsRef.current.clear();
     outboxRef.current?.clear();
@@ -484,7 +531,6 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
     // Clips this tab already holds (a reconnect keeps the player), so the server does not push them again.
     const have = playerRef.current?.clipIds() || [];
     if (have.length) emit(CLIENT_EVENTS.CLIP_HAVE, { assetIds: have.slice(-64) });
-    if (inputModeRef.current !== "vad") emit(CLIENT_EVENTS.INPUT_MODE, { mode: inputModeRef.current });
     // Segments of the current turn that were never committed go again, with the same segmentIds. After a
     // join the server's segment assembler is new and empty, so every chunk goes again from index 0.
     outboxRef.current?.resend({ full: newHolder });
@@ -503,7 +549,7 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
     const startedAt = Date.now();
     const handOver = () => {
       if (!aliveRef.current) return;
-      if (playerRef.current?.isSpeaking() && Date.now() - startedAt < 8000) { later(handOver, 200); return; }
+      if ((playerRef.current?.isSpeaking() || speechRef.current?.speaking()) && Date.now() - startedAt < 12000) { later(handOver, 200); return; }
       teardown();
       callbacksRef.current.onEnded?.(payload);
     };
@@ -573,24 +619,24 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
         segmenterRef.current?.configure(config.vad);
         if (Number.isFinite(config.vad.hangoverMs) && config.vad.hangoverMs > 0) setHangoverMs(config.vad.hangoverMs);
       }
-      // The student's own choice on this page wins over the server's default after a reconnect.
-      if (!joinedOnceRef.current && INPUT_MODES.includes(config.inputMode)) {
-        inputModeRef.current = config.inputMode;
-        setInputModeState(config.inputMode);
-        segmenterRef.current?.setInputMode(config.inputMode);
-      }
       ackIdsRef.current = assetIdsOf(config.ackAssetIds);
+      // ANVI's speaking speed: every clip is time-stretched to it once (before the first clip arrives).
+      playerRef.current?.setSpeechRate?.(config.speechRate);
+      speechRateRef.current = Number(config.speechRate) > 0 ? Number(config.speechRate) : 1;
+      acksOnRef.current = config.acknowledgements !== false;
       if (res.proctoring && typeof res.proctoring === "object") setJoinProctoring(res.proctoring);
       markJoined(res.state, { newHolder: true });
+      // An attempt that an older room switched to push-to-talk goes back to hands-free.
+      if (config.inputMode === "ptt") emit(CLIENT_EVENTS.INPUT_MODE, { mode: "vad" });
       if (res.paused === true) { serverPausedRef.current = true; serverHeldDuringPauseRef.current = true; setServerPaused({ reason: typeof res.reason === "string" ? res.reason : "" }); applyGate(); }
     });
-  }, [applyGate, attemptId, cancelRejoin, endViaRest, handBack, markJoined]);
+  }, [applyGate, attemptId, cancelRejoin, emit, endViaRest, handBack, markJoined]);
 
   const onFrame = useCallback((event) => {
     const { pcm, rms } = event.data || {};
     if (!(pcm instanceof ArrayBuffer)) return;
     const now = performance.now();
-    if (playerRef.current?.isSpeaking()) holdUntilRef.current = now + ECHO_TAIL_MS;
+    if (playerRef.current?.isSpeaking() || speechRef.current?.speaking()) holdUntilRef.current = now + ECHO_TAIL_MS;
     const echoHold = now < holdUntilRef.current;
     const isPaused = serverPausedRef.current || localPausedRef.current;
     const silent = echoHold || userMutedRef.current || isPaused;
@@ -605,6 +651,11 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
     }
     // Turn mode cuts segments locally, also while reconnecting: the outbox sends them after the rejoin.
     if (silent || endedRef.current || !CAPTURE_PHASES.has(phaseRef.current)) return;
+    // A muted microphone (mute key, input volume 0) sends pure silence: say so instead of waiting forever.
+    if (rms < DEAD_MIC_RMS) {
+      if (!deadSinceRef.current) deadSinceRef.current = now;
+      else if (now - deadSinceRef.current >= DEAD_MIC_MS) setMicSilent(true);
+    } else if (deadSinceRef.current) { deadSinceRef.current = 0; setMicSilent(false); }
     const segmenter = segmenterRef.current;
     if (segmenter) handleSegmentEvents(segmenter.push({ pcm, rms }));
   }, [handleSegmentEvents]);
@@ -713,7 +764,8 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
       [SERVER_EVENTS.TURN, (payload) => {
         if (endedRef.current || !payload || typeof payload !== "object") return;
         if (isTurnId(payload.turnId)) enterTurn(payload.turnId);
-        if (payload.suggestPtt === true && inputModeRef.current === "vad") setSuggestPtt(true);
+        // The server saw answers come out empty: the room asks for a quieter place, nothing to press.
+        if (payload.suggestPtt === true) setNoisyRoom(true);
         const state = payload.state ?? payload.turnState;
         if (!SERVER_TURN_STATES.has(state) || modeRef.current !== "turn") return;
         // The server stopped waiting for the prompt's ack (its timeout) while it still plays here.
@@ -738,6 +790,7 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
       }],
       ["anvi:interrupted", () => {
         playerRef.current?.flush();
+        speechRef.current?.cancel();
         if (modeRef.current === "live") return;
         // A hold: the open segment and the playback stop; the release prompts again.
         playGenRef.current += 1;
@@ -777,6 +830,7 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
         cancelRejoin();
         playGenRef.current += 1;
         playerRef.current?.flush();
+        speechRef.current?.cancel();
         dropOpenSegment();
         setStatus("taken_over");
         clearServerPause();
@@ -836,7 +890,8 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
         if (speaking) autoRejoinUsedRef.current = false;
       },
     });
-    segmenterRef.current = createAnviSegmenter({ inputMode: inputModeRef.current });
+    segmenterRef.current = createAnviSegmenter({ inputMode: "vad" });
+    speechRef.current = createSpeechFallback();
     outboxRef.current = createAnviSegmentOutbox({
       emit: (event, payload, ack) => {
         const socket = socketRef.current;
@@ -876,6 +931,7 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
     setError(null);
     playGenRef.current += 1;
     playerRef.current?.flush();
+    speechRef.current?.cancel();
     dropOpenSegment();
     joinedRef.current = false;
     const socket = socketRef.current;
@@ -924,7 +980,7 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
     if (status !== "live") { setActivity(status === "ended" ? "idle" : "connecting"); return undefined; }
     const tick = () => {
       let next = "thinking";
-      if (playerRef.current?.isSpeaking()) next = "speaking";
+      if (playerRef.current?.isSpeaking() || speechRef.current?.speaking()) next = "speaking";
       else if (modeRef.current === "live" || phaseRef.current === "listening" || (phaseRef.current === "processing" && segmenterRef.current?.speaking())) next = "listening";
       setActivity((current) => (current === next ? current : next));
     };
@@ -964,57 +1020,23 @@ export function useAnviHybridSession({ attemptId, onEnded, onJoinRejected, onRun
     applyGate();
   }, [applyGate]);
 
-  // Push-to-talk (button or held Space): the held span is one answer segment.
-  const pttDown = useCallback(() => {
-    const segmenter = segmenterRef.current;
-    if (!segmenter || pttHeldRef.current || status !== "live" || modeRef.current !== "turn" || gatedNow() || !CAPTURE_PHASES.has(phaseRef.current)) return false;
-    pttHeldRef.current = true;
-    setPttHeld(true);
-    handleSegmentEvents(segmenter.pttDown());
-    return true;
-  }, [gatedNow, handleSegmentEvents, status]);
-  const pttUp = useCallback(() => {
-    const segmenter = segmenterRef.current;
-    if (!segmenter || !pttHeldRef.current) return;
-    pttHeldRef.current = false;
-    setPttHeld(false);
-    handleSegmentEvents(segmenter.pttUp());
-    // A press in hands-free mode goes back to voice detection afterwards.
-    if (inputModeRef.current === "vad") segmenter.setInputMode("vad");
-  }, [handleSegmentEvents]);
-
-  /** "Done answering": closes the open answer now and tells the server the turn is finished. */
-  const done = useCallback(() => {
-    const segmenter = segmenterRef.current;
-    if (!segmenter || status !== "live" || modeRef.current !== "turn" || !CAPTURE_PHASES.has(phaseRef.current)) return;
-    pttHeldRef.current = false;
-    setPttHeld(false);
-    handleSegmentEvents(segmenter.end());
-    emit(CLIENT_EVENTS.DONE, { turnId: turnIdRef.current });
-  }, [emit, handleSegmentEvents, status]);
-
-  const setInputMode = useCallback((mode) => {
-    if (!INPUT_MODES.includes(mode) || mode === inputModeRef.current) return;
-    inputModeRef.current = mode;
-    setInputModeState(mode);
-    setSuggestPtt(false);
-    pttHeldRef.current = false;
-    setPttHeld(false);
-    handleSegmentEvents(segmenterRef.current?.setInputMode(mode));
-    setRecording(false);
-    emit(CLIENT_EVENTS.INPUT_MODE, { mode });
-  }, [emit, handleSegmentEvents]);
-
-  const outputLevel = useCallback(() => playerRef.current?.level() || 0, []);
+  // The browser voice gives no level, so the orb moves gently while it speaks.
+  const outputLevel = useCallback(() => playerRef.current?.level() || (speechRef.current?.speaking() ? 0.3 : 0), []);
   const inputLevel = useCallback(() => inputLevelRef.current, []);
   const mutedLevel = useCallback(() => mutedLevelRef.current, []);
+  // 0..1: how far the student's pause has gone towards sending the answer (0 while they talk).
+  const pauseProgress = useCallback(() => {
+    const segmenter = segmenterRef.current;
+    if (!segmenter?.speaking()) return 0;
+    return Math.min(1, segmenter.pauseMs() / Math.max(1, segmenter.hangoverMs()));
+  }, []);
   const dismissError = useCallback(() => setError(null), []);
-  const dismissPttSuggestion = useCallback(() => setSuggestPtt(false), []);
+  const dismissNoisyRoom = useCallback(() => setNoisyRoom(false), []);
 
   return {
     status, activity, serverState, captions, error, audioPaused, muted, setMuted, start, retry, end, resumeAudio, outputLevel, inputLevel, mutedLevel,
     dismissError, endReason, proctorWarning, sendProctor, serverPaused, setProctorPaused, joinProctoring,
-    runtimeMode: "hybrid", turnState, promptKind, promptText, inputMode, setInputMode, replay, canReplay, pttDown, pttUp, pttHeld, done,
-    recording, suggestPtt, dismissPttSuggestion, hangoverMs, socketMode,
+    runtimeMode: "hybrid", turnState, promptKind, promptText, replay, canReplay,
+    recording, pauseProgress, noisyRoom, dismissNoisyRoom, micSilent, hangoverMs, socketMode,
   };
 }

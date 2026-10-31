@@ -176,14 +176,15 @@ function emptyCoding() {
     attempted: 0, submissions: 0, accepted: 0, accuracy: 0, activeDays: 0,
     lastActiveAt: null, daysSinceActive: null, practiceStatus: 'never',
     languages: [], solvedTopics: [], solvedTags: [], solvedDifficulties: [],
-    prepScore: 0, points: { Easy: 0, Medium: 0, Hard: 0 },
+    prepScore: 0, points: { Easy: 0, Medium: 0, Hard: 0 }, scoredCounts: { Easy: 0, Medium: 0, Hard: 0 },
   };
 }
 
 /**
  * Prep Scores are read from the stored rows students rank on, never recomputed here: the
  * admin's period filter narrows activity, not the score. `stored`: Map(id -> stored row).
- * `points` (Easy/Medium/Hard per solve) splits the coding score's work for the top-students chart.
+ * `points` (Easy/Medium/Hard per solve) weigh the stored all-time counts (`scoredCounts`) so the
+ * top-students chart can split each score by difficulty.
  */
 export function attachStoredScores(rows, stored, { features = {}, points = { Easy: 1, Medium: 2, Hard: 4 } } = {}) {
   for (const row of rows) {
@@ -191,6 +192,7 @@ export function attachStoredScores(rows, stored, { features = {}, points = { Eas
     const modules = Object.fromEntries(Object.entries(saved?.modules || {}).filter(([key]) => features[key] !== false));
     row.scores = { total: saved?.total ?? 0, features: modules };
     row.coding.prepScore = modules.coding?.score ?? 0;
+    row.coding.scoredCounts = Object.fromEntries(DIFFICULTIES.map((level) => [level, modules.coding?.counts?.[level] || 0]));
     row.coding.points = Object.fromEntries(DIFFICULTIES.map((level) => [level, roundScore((modules.coding?.counts?.[level] || 0) * points[level], 2)]));
   }
   return rows;

@@ -33,8 +33,6 @@ const BUSY_MAX_MS = 30_000;
 const BUSY_ABORT_STREAK = 3;
 const BUSY_CODE = "GEMINI_UNAVAILABLE";
 const OBJECT_ID = /^[a-f0-9]{24}$/i;
-// The conductor's persona-voice check.
-const VOICE_ID = /^[A-Za-z]{2,30}$/;
 const defaultSleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms).unref?.(); });
 
 /** The outbox a publish writes (inside its CAS) for `revision`. */
@@ -63,9 +61,10 @@ const languagesOf = (config) => {
  * plan.persona.voice carries to the hybrid conductor), else the server TTS voice. Must match the conductor,
  * or the publish-time clips are never found.
  */
-export function pregenVoiceOf(data, config = anviConfig()) {
-  const chosen = String(data?.anvi?.voice?.name || "");
-  return VOICE_ID.test(chosen) ? chosen : String(config.ttsVoice || "");
+// One voice for every interview (user decision 2026-10-30): an older interview's own voice choice is ignored,
+// as in buildPlan's persona.voice.
+export function pregenVoiceOf(_data, config = anviConfig()) {
+  return String(config.ttsVoice || "");
 }
 
 /** Every ensure() spec of one published revision: static items first, then templates and number clips. */

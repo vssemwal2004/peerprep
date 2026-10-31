@@ -245,37 +245,14 @@ test("the topic editor previews the split and never lists live questions", async
   assert.equal(latest.anvi.liveQuestionCount, 3);
 });
 
-test("adding a topic from scratch builds the live group payload", async () => {
+test("a new interview starts a question bank, and an older live topic can still be removed", async () => {
   await render(h(Harness, { initial: newDefinition() }));
-  assert.ok(document.body.textContent.includes("No topics yet"));
-  assert.ok(document.body.textContent.includes("Want questions about each student's resume too?"));
-  await click(button("Add a topic"));
-  const row = document.querySelector("[data-live-topic]");
-  assert.equal(document.activeElement, field("Topic name", row), "the new topic's name is focused");
-  await type(field("Topic name", row), "React");
-  await type(field("What should ANVI ask about this topic?", row), "Hooks and state for a fresher.");
-  await click(radio(row, "High"));
-  await click(row.querySelector('[aria-label="Increase follow-ups per question"]'));
-  await click(row.querySelector('[role="switch"][aria-label="Set an exact number of questions"]'));
-  await click(row.querySelector('[aria-label="Increase exact number of questions"]'));
-  const [group] = latest.sections[0].groups;
-  assert.equal(group.source, "annu");
-  assert.equal(group.questions, undefined);
-  assert.equal(group.priority, "high");
-  assert.deepEqual(group.annu, {
-    requirements: "Hooks and state for a fresher.",
-    skills: [],
-    exclusions: "",
-    targetCount: 6,
-    maxFollowUps: 2,
-  });
-  assert.equal(latest.anvi.liveQuestionCount, 5);
-  assert.ok(document.querySelector("[data-live-preview]").textContent.includes("Each student gets 6 questions from ANVI: React ×6 (High)."));
-  await click(row.querySelector('[role="switch"][aria-label="Set an exact number of questions"]'));
-  assert.equal(latest.sections[0].groups[0].annu.targetCount, null, "back to sharing the pool");
-  await click(button("Done", row));
-  await type(field("Questions per student"), "4");
-  assert.ok(document.querySelector("[data-live-topic]").textContent.includes("4 questions"));
+  assert.equal(document.querySelector("[data-live-topic]"), null, "no per-student topics for new interviews");
+  assert.ok(document.querySelector('[data-start="manual"]') && document.querySelector('[data-start="anvi"]'));
+
+  const { data } = addLiveTopic(newDefinition(), { name: "React", annu: { requirements: "Hooks and state for a fresher." } });
+  await render(h(Harness, { key: "older", initial: data }));
+  assert.ok(document.body.textContent.includes("Older format: ANVI writes these topics for each student"));
   await click(document.querySelector('[aria-label="Remove topic React"]'));
   assert.equal(latest.sections[0].groups.length, 0);
   assert.equal(latest.anvi.liveQuestionCount, null);
@@ -313,5 +290,6 @@ test("review and summary show topics and counts but no generated questions", asy
     1,
     "only the fixed question is listed",
   );
-  assert.ok(document.body.textContent.includes("7 (1 fixed + 6 by ANVI)"));
+  assert.ok(document.body.textContent.includes("7 (1 from the bank + 6 written by ANVI per student)"));
+  assert.ok(document.body.textContent.includes("ANVI topics (older format)"));
 });

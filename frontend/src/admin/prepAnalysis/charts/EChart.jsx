@@ -22,13 +22,17 @@ function useDarkMode() {
 /**
  * Renders an ECharts option produced by buildOption(theme).
  * The instance is created once per mount, resized with its box, and disposed on unmount.
- * onClick(params) receives clicks on data; instanceRef (optional) gets the instance.
+ * onClick(params) receives clicks on data (and on clickable labels such as radar topics);
+ * onBlankClick({ x, y }, chart) receives clicks on empty chart space; instanceRef (optional)
+ * gets the instance.
  */
-export default function EChart({ buildOption, height, ariaLabel, onClick, instanceRef }) {
+export default function EChart({ buildOption, height, ariaLabel, onClick, onBlankClick, instanceRef }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const clickRef = useRef(onClick);
   clickRef.current = onClick;
+  const blankRef = useRef(onBlankClick);
+  blankRef.current = onBlankClick;
   const dark = useDarkMode();
   const [ready, setReady] = useState(false);
 
@@ -38,8 +42,23 @@ export default function EChart({ buildOption, height, ariaLabel, onClick, instan
     loadEcharts().then((echarts) => {
       if (disposed || !containerRef.current) return;
       chartRef.current = echarts.init(containerRef.current, null, { renderer: "canvas" });
-      chartRef.current.on("click", (params) => clickRef.current?.(params));
-      if (instanceRef) instanceRef.current = chartRef.current;
+      const chart = chartRef.current;
+      // The chart's click and zrender's click share one event object: the chart marks it, and
+      // a click it never marked (empty space, a bar's background track) is passed on with its
+      // position once both have run, whatever order they run in.
+      chart.on("click", (params) => {
+        if (params.event) params.event.peerprepHandled = true;
+        clickRef.current?.(params);
+      });
+      chart.getZr().on("click", (event) => {
+        setTimeout(() => { if (!event.peerprepHandled) blankRef.current?.({ x: event.offsetX, y: event.offsetY }, chart); }, 0);
+      });
+      chart.getZr().on("mousemove", (event) => {
+        if (!event.target) chart.getZr().setCursorStyle(blankRef.current ? "pointer" : "default");
+      });
+      if (instanceRef) instanceRef.current = chart;
+      // Lets the local browser checks find bars and slices; never in a production build.
+      if (import.meta.env?.DEV) containerRef.current.__peerprepChart = chart;
       observer = new ResizeObserver(() => chartRef.current?.resize());
       observer.observe(containerRef.current);
       setReady(true);

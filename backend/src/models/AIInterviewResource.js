@@ -7,7 +7,7 @@ const schema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    kind: { type: String, enum: ["companies", "profiles"], required: true },
+    kind: { type: String, enum: ["companies", "profiles", "jobNames", "jobRoles"], required: true },
     name: { type: String, required: true },
     normalizedName: { type: String, required: true },
     active: { type: Boolean, default: true },

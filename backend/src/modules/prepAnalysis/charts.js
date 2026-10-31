@@ -17,12 +17,28 @@ export const GROUP_BY = Object.freeze({
 });
 
 const NOT_SET = 'Not set';
-const practising = (rows) => rows.filter((row) => row.coding.submissions > 0);
-const byScore = (left, right) => right.coding.prepScore - left.coding.prepScore || left.name.localeCompare(right.name);
+export const practising = (rows) => rows.filter((row) => row.coding.submissions > 0);
+export const byScore = (left, right) => right.coding.prepScore - left.coding.prepScore || left.name.localeCompare(right.name);
 // Lower edges of the Prep Score bands in "How Prep Scores are spread".
 // Prep Score bands for the default values (a steady student is around 10–40); the score has no ceiling.
-const SCORE_BANDS = [0, 2.5, 5, 10, 20, 40, 80, 160];
+export const SCORE_BANDS = [0, 2.5, 5, 10, 20, 40, 80, 160];
+export const VERDICT_LABELS = Object.freeze({ AC: 'Accepted', WA: 'Wrong answer', TLE: 'Too slow', RE: 'Crashed', CE: 'Did not compile' });
+export const scoreBandOf = (score) => SCORE_BANDS.findLastIndex((from) => score >= from);
 const clampLimit = (value, fallback, max) => Math.min(max, Math.max(1, Number.parseInt(value, 10) || fallback));
+
+/**
+ * A card shows the first `limit` items. The chart's full page (`options.full`) shows every item,
+ * `pageSize` at a time, with { page, pages, total, offset } so it can page through them. A
+ * download (`options.everything`, set by the server only) takes every item at once.
+ */
+export function pageItems(list, options, { fallback, max, pageSize = 100 }) {
+  if (options.everything) return { items: list, pagination: null };
+  if (!options.full) return { items: list.slice(0, clampLimit(options.limit, fallback, max)), pagination: null };
+  const pages = Math.max(1, Math.ceil(list.length / pageSize));
+  const page = Math.min(pages, Math.max(1, Number.parseInt(options.page, 10) || 1));
+  const offset = (page - 1) * pageSize;
+  return { items: list.slice(offset, offset + pageSize), pagination: { page, pages, total: list.length, pageSize, offset } };
+}
 
 function groupRows(rows, groupBy, maxGroups = 12) {
   const getter = (GROUP_BY[groupBy] || GROUP_BY.semester).get;
@@ -37,24 +53,64 @@ function groupRows(rows, groupBy, maxGroups = 12) {
     .sort((left, right) => left[0].localeCompare(right[0], undefined, { numeric: true }));
 }
 
+/** A problem's topics, or its tags when it has no topics. */
+export const entryTopics = (entry) => (entry.meta.topics.length ? entry.meta.topics : entry.meta.tags);
+/** part / whole as a percentage with one decimal. */
+export const percentOne = (part, whole) => (whole ? Math.round((part / whole) * 1000) / 10 : 0);
+
 /** Distinct solved problems per topic for one student (cached on the row). */
-function topicSolved(row) {
+export function topicSolved(row) {
   if (row.topicSolvedCache) return row.topicSolvedCache;
   const counts = new Map();
   const seen = new Set();
   for (const entry of row.entries) {
     if (entry.accepted <= 0 || seen.has(entry.problemId)) continue;
     seen.add(entry.problemId);
-    for (const name of entry.meta.topics.length ? entry.meta.topics : entry.meta.tags) counts.set(name, (counts.get(name) || 0) + 1);
+    for (const name of entryTopics(entry)) counts.set(name, (counts.get(name) || 0) + 1);
   }
   row.topicSolvedCache = counts;
   return counts;
 }
 
-function weekStart(day) {
-  const date = new Date(`${day}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
-  return date.toISOString().slice(0, 10);
+/**
+ * Per topic across students: Map(name -> { students, solved, attempted, attempts, accepted }).
+ * `students` solved at least one problem in it, `attempted` tried one, `solved` adds every
+ * student's distinct solves.
+ */
+export function topicStats(rows) {
+  const topics = new Map();
+  for (const row of rows) {
+    const solvedHere = topicSolved(row);
+    const touched = new Set();
+    for (const entry of row.entries) {
+      for (const name of entryTopics(entry)) {
+        const topic = topics.get(name) || { students: 0, solved: 0, attempted: 0, attempts: 0, accepted: 0 };
+        topic.attempts += entry.attempts;
+        topic.accepted += entry.accepted;
+        if (!touched.has(name)) {
+          touched.add(name);
+          topic.attempted += 1;
+          if (solvedHere.has(name)) { topic.students += 1; topic.solved += solvedHere.get(name); }
+        }
+        topics.set(name, topic);
+      }
+    }
+  }
+  return topics;
+}
+
+// A large cohort has hundreds of thousands of practice days but only a few hundred distinct ones.
+const weekStarts = new Map();
+export function weekStart(day) {
+  let week = weekStarts.get(day);
+  if (!week) {
+    const date = new Date(`${day}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+    week = date.toISOString().slice(0, 10);
+    if (weekStarts.size > 5000) weekStarts.clear();
+    weekStarts.set(day, week);
+  }
+  return week;
 }
 
 /** One year of daily totals ending at the period end: { from, to, unit, days: [[day, value]], max }. */
@@ -67,8 +123,50 @@ export function calendarPayload(totals, range, unit) {
   return { from: start, to: end, unit, days, max: Math.max(1, ...days.map(([, value]) => value)) };
 }
 
-const lastPractice = (row) => (row.coding.daysSinceActive === null ? 'Never practised'
-  : row.coding.daysSinceActive === 0 ? 'Practised today' : `Last practice ${row.coding.daysSinceActive} day${row.coding.daysSinceActive === 1 ? '' : 's'} ago`);
+/**
+ * A Prep Score split by difficulty. The score grows slower than the points behind it, so the bar is
+ * the score itself and each difficulty gets its share of the points: the parts always add up to the
+ * score and longer bars always mean higher scores.
+ */
+export function scoreSegments(score, points) {
+  const total = DIFFICULTIES.reduce((sum, level) => sum + (points?.[level] || 0), 0);
+  if (!(score > 0) || !(total > 0)) return Object.fromEntries(DIFFICULTIES.map((level) => [level, 0]));
+  const round = (value) => Math.round(value * 100) / 100;
+  const segments = Object.fromEntries(DIFFICULTIES.map((level) => [level, round((score * (points[level] || 0)) / total)]));
+  // Rounding leftovers go to the largest part so the parts still add up to the score.
+  const largest = DIFFICULTIES.reduce((best, level) => ((points[level] || 0) > (points[best] || 0) ? level : best));
+  segments[largest] = round(segments[largest] + score - DIFFICULTIES.reduce((sum, level) => sum + segments[level], 0));
+  return segments;
+}
+
+/**
+ * A "needs attention" list: bars for the `listed` students (in `order`), and two chips (how
+ * many are listed, how many `never` started), each a part with its own student list. Students
+ * who never started are often most of a cohort and all at zero, so they are never bars.
+ */
+export function attentionList(rows, { options, valueLabel, listed, never, order, item, chips, unit }) {
+  const shown = rows.filter(listed).sort((left, right) => order(left, right) || left.name.localeCompare(right.name));
+  const { items, pagination } = pageItems(shown, options, { fallback: 10, max: 100 });
+  const neverCount = rows.filter(never).length;
+  return {
+    valueLabel, tone: 'warning', ...(unit ? { unit } : {}), pagination, listedCount: shown.length, neverCount,
+    chips: [
+      { key: 'listed', label: chips.listed, value: shown.length, tone: 'warning' },
+      { key: 'never', label: chips.never, value: neverCount, tone: 'muted' },
+    ],
+    items: items.map((row) => ({ id: row.id, name: row.name, ...item(row) })),
+  };
+}
+
+/** The students behind an attention chart's chip: "listed" or "never" (same tests as the chart). */
+export const ATTENTION_GROUPS = {
+  'needs-attention': { listed: (row) => row.coding.practiceStatus === 'inactive', never: (row) => row.coding.practiceStatus === 'never' },
+  'learning-needs-attention': { listed: (row) => Boolean(row.learning) && row.learning.status !== 'never', never: (row) => row.learning?.status === 'never' },
+  'quickprep-needs-attention': { listed: (row) => row.quickprep?.started > 0, never: (row) => Boolean(row.quickprep) && !(row.quickprep.started > 0) },
+  'assessment-needs-attention': { listed: (row) => row.assessment?.taken > 0 || row.assessment?.missed > 0, never: (row) => Boolean(row.assessment) && !row.assessment.taken && !row.assessment.missed },
+  'interview-needs-attention': { listed: (row) => row.interview?.done > 0, never: (row) => Boolean(row.interview) && !(row.interview.done > 0) },
+};
+
 
 const CODING_CHARTS = [
   {
@@ -76,13 +174,19 @@ const CODING_CHARTS = [
     title: 'Top students',
     question: 'Who leads on Prep Score, and how much comes from Easy, Medium and Hard problems?',
     options: { limit: 10 },
-    build: ({ rows, options }) => ({
-      items: practising(rows).sort(byScore).slice(0, clampLimit(options.limit, 10, 50)).map((row, index) => ({
-        id: row.id, name: row.name, position: index + 1, score: row.coding.prepScore,
-        segments: { Easy: row.coding.points.Easy, Medium: row.coding.points.Medium, Hard: row.coding.points.Hard },
-        solved: row.coding.solved,
-      })),
-    }),
+    build: ({ rows, options }) => {
+      const { items, pagination } = pageItems(practising(rows).sort(byScore), options, { fallback: 10, max: 100 });
+      return {
+        pagination,
+        items: items.map((row, index) => ({
+          id: row.id, name: row.name, position: (pagination?.offset || 0) + index + 1, score: row.coding.prepScore,
+          segments: scoreSegments(row.coding.prepScore, row.coding.points),
+          // `counts` are the all-time solves behind the stored score; `solved` is the selected period.
+          counts: row.coding.scoredCounts,
+          solved: row.coding.solved,
+        })),
+      };
+    },
   },
   {
     id: 'difficulty-split', type: 'donut', size: 'sm',
@@ -90,7 +194,12 @@ const CODING_CHARTS = [
     question: 'Are students solving only Easy problems, or Medium and Hard too?',
     build: ({ rows }) => ({
       centerLabel: 'problems solved',
-      items: DIFFICULTIES.map((difficulty) => ({ key: difficulty, name: difficulty, value: rows.reduce((sum, row) => sum + row.coding.solved[difficulty], 0) })).filter((item) => item.value > 0),
+      // `students`: how many solved at least one problem of that difficulty.
+      items: DIFFICULTIES.map((difficulty) => ({
+        key: difficulty, name: difficulty,
+        value: rows.reduce((sum, row) => sum + row.coding.solved[difficulty], 0),
+        students: rows.filter((row) => row.coding.solved[difficulty] > 0).length,
+      })).filter((item) => item.value > 0),
     }),
   },
   {
@@ -140,39 +249,34 @@ const CODING_CHARTS = [
     question: 'Which topics have the most students solving problems, and how accurately?',
     options: { limit: 12 },
     build: ({ rows, options }) => {
-      const topics = new Map();
-      for (const row of rows) {
-        const solvedHere = topicSolved(row);
-        const touched = new Set();
-        for (const entry of row.entries) {
-          for (const name of entry.meta.topics.length ? entry.meta.topics : entry.meta.tags) {
-            const topic = topics.get(name) || { students: 0, attempts: 0, accepted: 0 };
-            topic.attempts += entry.attempts;
-            topic.accepted += entry.accepted;
-            if (!touched.has(name) && solvedHere.has(name)) { topic.students += 1; touched.add(name); }
-            topics.set(name, topic);
-          }
-        }
-      }
+      const sorted = [...topicStats(rows).entries()].filter(([, topic]) => topic.students > 0)
+        .sort((left, right) => right[1].students - left[1].students || left[0].localeCompare(right[0]));
+      // Every topic fits on the full page at once.
+      const { items, pagination } = pageItems(sorted, options, { fallback: 12, max: 100, pageSize: 2000 });
       return {
         valueLabel: 'students solving',
-        items: [...topics.entries()].filter(([, topic]) => topic.students > 0)
-          .sort((left, right) => right[1].students - left[1].students).slice(0, clampLimit(options.limit, 12, 40))
-          .map(([name, topic]) => ({ name, value: topic.students, note: `${topic.attempts ? Math.round((topic.accepted / topic.attempts) * 100) : 0}% accurate` })),
+        cohort: rows.length,
+        pagination,
+        items: items.map(([name, topic]) => ({
+          key: name, name, value: topic.students, pct: percentOne(topic.students, rows.length),
+          attempted: topic.attempted, solved: topic.solved, accuracy: percentOne(topic.accepted, topic.attempts),
+          note: `${percentOne(topic.students, rows.length)}% of students · ${percentOne(topic.accepted, topic.attempts)}% accurate`,
+        })),
       };
     },
   },
   {
     id: 'needs-attention', type: 'barList', size: 'md',
     title: 'Students who need attention',
-    question: 'Who has the lowest Prep Score, and when did they last practise?',
+    question: 'Who stopped practising, and for how long?',
     options: { limit: 10 },
-    build: ({ rows, options }) => ({
-      valueLabel: 'Prep Score',
-      tone: 'warning',
-      items: [...rows].sort((left, right) => left.coding.prepScore - right.coding.prepScore || (right.coding.daysSinceActive ?? 1e9) - (left.coding.daysSinceActive ?? 1e9) || left.name.localeCompare(right.name))
-        .slice(0, clampLimit(options.limit, 10, 50))
-        .map((row) => ({ id: row.id, name: row.name, value: row.coding.prepScore, note: lastPractice(row), daysSinceActive: row.coding.daysSinceActive })),
+    // Bars: students who practised and then stopped, longest away first. Students who never
+    // started are a chip (often most of a cohort, and all at zero, so never bars).
+    build: ({ rows, options }) => attentionList(rows, {
+      options, valueLabel: 'days since last practice', ...ATTENTION_GROUPS['needs-attention'],
+      order: (left, right) => right.coding.daysSinceActive - left.coding.daysSinceActive || left.coding.prepScore - right.coding.prepScore,
+      item: (row) => ({ value: row.coding.daysSinceActive, note: `Prep Score ${row.coding.prepScore} · ${row.coding.solved.total} solved`, daysSinceActive: row.coding.daysSinceActive }),
+      chips: { listed: 'Stopped practising', never: 'Never practised' },
     }),
   },
   {
@@ -188,23 +292,50 @@ const CODING_CHARTS = [
   {
     id: 'student-profile', type: 'radar', size: 'sm',
     title: 'Student skill profile',
-    question: 'For one student: which topics are strong and which are missing?',
-    options: { studentId: '' },
+    question: 'Which topics have students covered, and how does one student compare?',
+    options: { studentId: '', limit: 8 },
+    // No student picked: the filtered students as a whole (share who solved in each topic).
+    // A picked student: their solves per topic next to the filtered students' average.
     build: ({ rows, options }) => {
-      const student = rows.find((row) => row.id === options.studentId) || practising(rows).sort(byScore)[0];
-      if (!student) return { student: null, indicators: [], values: [] };
+      const limit = Math.max(3, clampLimit(options.limit, 8, 12));
+      const stats = topicStats(rows);
+      const cohort = rows.length;
+      const describe = (name) => {
+        const topic = stats.get(name) || { students: 0, solved: 0, attempts: 0, accepted: 0 };
+        return {
+          name, students: topic.students, pct: percentOne(topic.students, cohort),
+          avgSolved: cohort ? Math.round((topic.solved / cohort) * 100) / 100 : 0,
+          accuracy: percentOne(topic.accepted, topic.attempts),
+        };
+      };
+      if (!options.studentId) {
+        const topics = [...stats.entries()].filter(([, topic]) => topic.students > 0)
+          .sort((left, right) => right[1].students - left[1].students || left[0].localeCompare(right[0])).slice(0, limit)
+          .map(([name]) => describe(name));
+        return {
+          mode: 'cohort', cohort, student: null, unit: '%',
+          indicators: topics.map((topic) => ({ name: topic.name, max: 100 })),
+          values: topics.map((topic) => topic.pct),
+          topics,
+        };
+      }
+      const student = rows.find((row) => row.id === options.studentId);
+      if (!student) return { mode: 'student', cohort, student: null, missing: true, unit: 'solved', indicators: [], values: [], topics: [] };
       const attempted = new Map();
       for (const entry of student.entries) {
-        for (const name of entry.meta.topics.length ? entry.meta.topics : entry.meta.tags) attempted.set(name, (attempted.get(name) || 0) + entry.attempts);
+        for (const name of entryTopics(entry)) attempted.set(name, (attempted.get(name) || 0) + entry.attempts);
       }
-      const names = [...attempted.entries()].sort((left, right) => right[1] - left[1]).slice(0, 8).map(([name]) => name);
       const solved = topicSolved(student);
-      const values = names.map((name) => solved.get(name) || 0);
-      const max = Math.max(1, ...values);
+      const topics = [...attempted.entries()].sort((left, right) => right[1] - left[1]).slice(0, limit)
+        .map(([name]) => ({ ...describe(name), studentSolved: solved.get(name) || 0 }));
+      const max = Math.max(1, ...topics.flatMap((topic) => [topic.studentSolved, topic.avgSolved]));
       return {
+        mode: 'student', cohort, unit: 'solved',
         student: { id: student.id, name: student.name, score: student.coding.prepScore, solved: student.coding.solved },
-        indicators: names.map((name) => ({ name, max })),
-        values,
+        indicators: topics.map((topic) => ({ name: topic.name, max })),
+        values: topics.map((topic) => topic.studentSolved),
+        average: topics.map((topic) => topic.avgSolved),
+        topics,
       };
     },
   },
@@ -213,10 +344,21 @@ const CODING_CHARTS = [
     title: 'Why submissions fail',
     question: 'Wrong answers, too slow, crashes or code that does not compile?',
     build: ({ rows }) => {
-      const totals = { AC: 0, WA: 0, TLE: 0, RE: 0, CE: 0 };
-      for (const row of rows) for (const entry of row.entries) for (const key of Object.keys(totals)) totals[key] += entry.verdicts?.[key] || 0;
-      const labels = { AC: 'Accepted', WA: 'Wrong answer', TLE: 'Too slow', RE: 'Crashed', CE: 'Did not compile' };
-      return { centerLabel: 'submissions', items: Object.entries(totals).filter(([, value]) => value > 0).map(([key, value]) => ({ key, name: labels[key], value })) };
+      const totals = Object.fromEntries(Object.keys(VERDICT_LABELS).map((key) => [key, { value: 0, students: 0 }]));
+      for (const row of rows) {
+        const seen = new Set();
+        for (const entry of row.entries) {
+          for (const key of Object.keys(totals)) {
+            const count = entry.verdicts?.[key] || 0;
+            totals[key].value += count;
+            if (count && !seen.has(key)) { seen.add(key); totals[key].students += 1; }
+          }
+        }
+      }
+      return {
+        centerLabel: 'submissions',
+        items: Object.entries(totals).filter(([, total]) => total.value > 0).map(([key, total]) => ({ key, name: VERDICT_LABELS[key], value: total.value, students: total.students })),
+      };
     },
   },
   {
@@ -226,7 +368,12 @@ const CODING_CHARTS = [
     build: ({ rows }) => {
       const students = new Map();
       for (const row of rows) for (const language of row.coding.languages) students.set(language, (students.get(language) || 0) + 1);
-      return { centerLabel: 'students', items: [...students.entries()].sort((left, right) => right[1] - left[1]).map(([key, value]) => ({ key, name: key, value })) };
+      // A student can use several languages, so the shares are of the students who practised.
+      const practised = practising(rows).length;
+      return {
+        centerLabel: 'students', shareOf: practised,
+        items: [...students.entries()].sort((left, right) => right[1] - left[1]).map(([key, value]) => ({ key, name: key, value, students: value, pct: percentOne(value, practised) })),
+      };
     },
   },
   {
@@ -236,9 +383,9 @@ const CODING_CHARTS = [
     build: ({ rows }) => {
       // Prep Score has no ceiling, so the bands widen as scores grow.
       const bins = SCORE_BANDS.map((from, index) => ({
-        label: index === SCORE_BANDS.length - 1 ? `${from}+` : `${from}–${SCORE_BANDS[index + 1]}`, count: 0,
+        key: String(index), label: index === SCORE_BANDS.length - 1 ? `${from}+` : `${from}–${SCORE_BANDS[index + 1]}`, count: 0,
       }));
-      practising(rows).forEach((row) => { bins[SCORE_BANDS.findLastIndex((from) => row.coding.prepScore >= from)].count += 1; });
+      practising(rows).forEach((row) => { bins[scoreBandOf(row.coding.prepScore)].count += 1; });
       return { label: 'Prep Score', bins };
     },
   },
@@ -258,12 +405,17 @@ const CODING_CHARTS = [
           problems.set(entry.problemId, problem);
         }
       }
+      const sorted = [...problems.entries()].filter(([, problem]) => problem.failed > 0).sort((left, right) => right[1].failed - left[1].failed || left[1].title.localeCompare(right[1].title));
+      const { items, pagination } = pageItems(sorted, options, { fallback: 10, max: 100, pageSize: 200 });
       return {
         valueLabel: 'failed attempts',
         tone: 'danger',
-        items: [...problems.values()].filter((problem) => problem.failed > 0).sort((left, right) => right.failed - left.failed)
-          .slice(0, clampLimit(options.limit, 10, 40))
-          .map((problem) => ({ name: problem.title, value: problem.failed, difficulty: problem.difficulty, note: `${problem.solvers.size} of ${problem.students.size} students solved it` })),
+        pagination,
+        items: items.map(([problemId, problem]) => ({
+          key: problemId, name: problem.title, value: problem.failed, difficulty: problem.difficulty,
+          students: problem.students.size, solvers: problem.solvers.size,
+          note: `${problem.solvers.size} of ${problem.students.size} students solved it`,
+        })),
       };
     },
   },
@@ -403,13 +555,11 @@ const LEARNING_CHARTS = [
     title: 'Students behind in learning',
     question: 'Who has completed the least of their course, and when did they last study?',
     options: { limit: 10 },
-    build: ({ rows, options }) => ({
-      valueLabel: '% of course completed',
-      tone: 'warning',
-      unit: '%',
-      items: rows.filter((row) => row.learning).sort((left, right) => left.learning.progress - right.learning.progress || left.name.localeCompare(right.name))
-        .slice(0, clampLimit(options.limit, 10, 50))
-        .map((row) => ({ id: row.id, name: row.name, value: row.learning.progress, note: lastLesson(row), daysSinceActive: row.learning.daysSinceActive })),
+    build: ({ rows, options }) => attentionList(rows, {
+      options, valueLabel: '% of course completed', unit: '%', ...ATTENTION_GROUPS['learning-needs-attention'],
+      order: (left, right) => left.learning.progress - right.learning.progress,
+      item: (row) => ({ value: row.learning.progress, note: lastLesson(row), daysSinceActive: row.learning.daysSinceActive }),
+      chips: { listed: 'Started learning', never: 'Never started' },
     }),
   },
   {
@@ -521,13 +671,11 @@ const QUICKPREP_CHARTS = [
     title: 'Students stuck in sheets',
     question: 'Who started sheets but has solved the least of them?',
     options: { limit: 10 },
-    build: ({ rows, options }) => ({
-      valueLabel: '% of started sheets solved',
-      tone: 'warning',
-      unit: '%',
-      items: sheetStarters(rows).sort((left, right) => left.quickprep.progress - right.quickprep.progress || left.name.localeCompare(right.name))
-        .slice(0, clampLimit(options.limit, 10, 50))
-        .map((row) => ({ id: row.id, name: row.name, value: row.quickprep.progress, note: lastSheetVisit(row), daysSinceActive: row.quickprep.daysSinceActive })),
+    build: ({ rows, options }) => attentionList(rows, {
+      options, valueLabel: '% of started sheets solved', unit: '%', ...ATTENTION_GROUPS['quickprep-needs-attention'],
+      order: (left, right) => left.quickprep.progress - right.quickprep.progress,
+      item: (row) => ({ value: row.quickprep.progress, note: lastSheetVisit(row), daysSinceActive: row.quickprep.daysSinceActive }),
+      chips: { listed: 'Started a sheet', never: 'Never opened a sheet' },
     }),
   },
 ];
@@ -670,14 +818,11 @@ const ASSESSMENT_CHARTS = [
     title: 'Students who need help in tests',
     question: 'Who misses tests or scores lowest, and when was their last test?',
     options: { limit: 10 },
-    build: ({ rows, options }) => ({
-      valueLabel: 'their average test score',
-      tone: 'warning',
-      unit: '%',
-      items: rows.filter((row) => row.assessment && (row.assessment.taken > 0 || row.assessment.missed > 0))
-        .sort((left, right) => right.assessment.missed - left.assessment.missed || left.assessment.averageScore - right.assessment.averageScore || left.name.localeCompare(right.name))
-        .slice(0, clampLimit(options.limit, 10, 50))
-        .map((row) => ({ id: row.id, name: row.name, value: row.assessment.averageScore, note: `${row.assessment.missed} missed · ${lastTest(row)}`, daysSinceActive: row.assessment.daysSinceActive })),
+    build: ({ rows, options }) => attentionList(rows, {
+      options, valueLabel: 'their average test score', unit: '%', ...ATTENTION_GROUPS['assessment-needs-attention'],
+      order: (left, right) => right.assessment.missed - left.assessment.missed || left.assessment.averageScore - right.assessment.averageScore,
+      item: (row) => ({ value: row.assessment.averageScore, note: `${row.assessment.missed} missed · ${lastTest(row)}`, daysSinceActive: row.assessment.daysSinceActive }),
+      chips: { listed: 'Took or missed a test', never: 'No tests yet' },
     }),
   },
   {
@@ -786,13 +931,11 @@ const INTERVIEW_CHARTS = [
     title: 'Students who need more interviews',
     question: 'Who has done the fewest interviews, and when was their last one?',
     options: { limit: 10 },
-    build: ({ rows, options }) => ({
-      valueLabel: 'interviews done',
-      tone: 'warning',
-      items: rows.filter((row) => row.interview)
-        .sort((left, right) => left.interview.done - right.interview.done || left.interview.mockScore - right.interview.mockScore || left.name.localeCompare(right.name))
-        .slice(0, clampLimit(options.limit, 10, 50))
-        .map((row) => ({ id: row.id, name: row.name, value: row.interview.done, note: lastInterview(row), daysSinceActive: row.interview.daysSinceActive })),
+    build: ({ rows, options }) => attentionList(rows, {
+      options, valueLabel: 'interviews done', ...ATTENTION_GROUPS['interview-needs-attention'],
+      order: (left, right) => left.interview.done - right.interview.done || left.interview.mockScore - right.interview.mockScore,
+      item: (row) => ({ value: row.interview.done, note: lastInterview(row), daysSinceActive: row.interview.daysSinceActive }),
+      chips: { listed: 'Interviewed', never: 'Never interviewed' },
     }),
   },
   {

@@ -17,7 +17,7 @@ export function phasesOf(setup) {
 
 /**
  * What still blocks leaving phase `id`, as one short sentence ("" when nothing does).
- * `state`: { resumeProvided, resumeUploading, support, micReady, micError, online, cameraOn, cameraReady,
+ * `state`: { resumeProvided, resumeUploading, support, micReady, micError, micSilent, micVerified, micReading, online, cameraOn, cameraReady,
  * cameraError, fullscreenSupported, proctoringAck, termsAccepted, consent }.
  */
 export function phaseBlockerOf(id, setup, state = {}) {
@@ -28,7 +28,10 @@ export function phaseBlockerOf(id, setup, state = {}) {
   if (id === "system") {
     if (state.support && !state.support.ok) return state.support.reason || "This browser can't run a voice interview.";
     if (state.online === false) return "You're offline. Reconnect to continue.";
+    if (state.micSilent) return "Your microphone sends no sound. Unmute it or choose another one.";
     if (!state.micReady) return state.micError ? "Allow your microphone, then test it again." : "Test your microphone to continue.";
+    // `micVerified` undefined (an older caller) does not block; false does until the sentence is read.
+    if (state.micVerified === false) return state.micReading === "failed" ? "ANVI couldn't hear the sentence clearly. Try again." : "Read the sentence aloud to verify your microphone.";
     if (setup?.proctoring?.active && setup.proctoring.ai?.enabled && !state.cameraReady) {
       if (state.cameraError) return "Allow your camera, then try again.";
       if (!state.cameraOn) return "Turn on your camera to continue.";

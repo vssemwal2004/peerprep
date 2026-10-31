@@ -51,7 +51,7 @@ export default function ResumeCard({ data, onChange, readOnly }) {
               lockedHint="At least one way must stay on."
               onToggle={(value) => set({ sources: toggleSource(resume.sources, value) })}
             />
-            <div className="max-w-xs">
+            <div className="grid gap-5 sm:grid-cols-2">
               <NumberField
                 label="Questions from the resume"
                 stepper
@@ -60,6 +60,16 @@ export default function ResumeCard({ data, onChange, readOnly }) {
                 value={resume.questionCount}
                 hint="Asked in addition to your own questions. Up to 5."
                 onChange={(questionCount) => set({ questionCount })}
+              />
+              <NumberField
+                label="Follow-ups per resume question"
+                field="resumeFollowUps"
+                stepper
+                min={0}
+                max={3}
+                value={resume.followUps}
+                hint="At most, only when an answer needs one. ANVI writes these from the answer, so each one adds a little cost."
+                onChange={(followUps) => set({ followUps })}
               />
             </div>
           </>

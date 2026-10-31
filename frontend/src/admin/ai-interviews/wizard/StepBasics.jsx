@@ -1,12 +1,61 @@
-import { BriefcaseBusiness, GraduationCap, MessagesSquare, Target } from "lucide-react";
-import { ResourcePicker } from "../Resources";
-import { DIFFICULTY, EXPERIENCE, MODES } from "./steps";
-import { Card, FieldLabel, Segmented, StepHeading, TextField, buttonGhost } from "./controls";
+import { useRef } from "react";
+import { BriefcaseBusiness, FileText } from "lucide-react";
+import { interviewApi } from "../api";
+import { DIFFICULTY, EXPERIENCE } from "./steps";
+import { Card, Segmented, StepHeading, TextField } from "./controls";
+import { ComboField } from "./ComboField";
+import { JOB_NAMES, JOB_ROLES } from "./jobCatalog";
 
-const MODE_ICONS = { guided: GraduationCap, mock: Target };
+const keyOf = (value) => String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+const namesOf = (result) => (result?.items || []).map((item) => item.name);
+const CUSTOM_LIMIT = 100;
+
+// PeerPrep's company catalog changes rarely, so one load serves the whole session (a failure retries next time).
+let catalogLoad = null;
+const companyCatalog = () => {
+  catalogLoad ||= Promise.resolve()
+    .then(() => interviewApi.companyCatalog())
+    .then((result) => result?.companies || [])
+    .catch(() => {
+      catalogLoad = null;
+      return [];
+    });
+  return catalogLoad;
+};
+
+// Defaults first in their curated order, then names this university's admins added.
+const jobOptions = (kind, defaults) => async (search) => {
+  const custom = await interviewApi
+    .resources(kind, { active: "true", search, limit: CUSTOM_LIMIT })
+    .then(namesOf)
+    .catch(() => []);
+  return [...defaults, ...custom];
+};
+const companyOptions = async (search) => {
+  const [own, catalog] = await Promise.all([
+    interviewApi.resources("companies", { active: "true", search, limit: CUSTOM_LIMIT }).then(namesOf).catch(() => []),
+    companyCatalog(),
+  ]);
+  return [...own, ...catalog];
+};
 
 export default function StepBasics({ data, onChange, errors = {}, readOnly }) {
-  const set = (patch) => onChange({ ...data, ...patch });
+  // Saving a new name is async; merge into the latest draft so edits made meanwhile are kept.
+  const latest = useRef(data);
+  latest.current = data;
+  const set = (patch) => onChange({ ...latest.current, ...patch });
+  const pickJob = (kind, key) => async (name, { isNew }) => {
+    const saved = isNew ? (await interviewApi.saveResource(kind, { name }))?.name || name : name;
+    set({ [key]: saved });
+  };
+  // An interview references a company by id: picking a catalog name creates (or reuses) the admin's own entry.
+  const pickCompany = async (name) => {
+    if (!name) return set({ companyId: "", companyName: "" });
+    if (keyOf(name) === keyOf(latest.current.companyName) && latest.current.companyId) return undefined;
+    const company = await interviewApi.saveResource("companies", { name });
+    return set({ companyId: company._id, companyName: company.name });
+  };
+
   return (
     <div className="space-y-6">
       <StepHeading
@@ -14,56 +63,44 @@ export default function StepBasics({ data, onChange, errors = {}, readOnly }) {
         description="Tell ANVI who this interview is for. These details shape the questions and how answers are judged."
       />
       <Card icon={BriefcaseBusiness} title="Role and audience" description="Who the interview is for and how hard it should be.">
-        <div className="space-y-6">
-          <TextField
-            label="Interview name"
-            field="title"
-            required
-            maxLength={160}
-            value={data.title}
-            error={errors.title}
-            placeholder="e.g. Junior backend developer — practice round"
-            hint="Students see this name in their AI Interviews list."
-            onChange={(title) => set({ title })}
-          />
+        <fieldset disabled={readOnly} className="min-w-0 space-y-6">
           <div className="grid gap-6 sm:grid-cols-2">
-            <TextField
+            <ComboField
+              label="Interview name"
+              field="title"
+              required
+              value={data.title}
+              error={errors.title}
+              placeholder="Search or add, e.g. Backend Developer"
+              hint="Students see this name in their AI Interviews list."
+              loadOptions={jobOptions("jobNames", JOB_NAMES)}
+              onSelect={pickJob("jobNames", "title")}
+              disabled={readOnly}
+            />
+            <ComboField
               label="Job role"
               field="role"
               required
-              maxLength={120}
               value={data.role}
               error={errors.role}
-              placeholder="e.g. Backend developer"
-              onChange={(role) => set({ role })}
+              placeholder="Search or add, e.g. Node.js Developer"
+              loadOptions={jobOptions("jobRoles", JOB_ROLES)}
+              onSelect={pickJob("jobRoles", "role")}
+              disabled={readOnly}
             />
-            <div data-field="company" className="min-w-0">
-              <FieldLabel optional>Company</FieldLabel>
-              <ResourcePicker
-                kind="companies"
-                disabled={readOnly}
-                selected={data.companyName}
-                onSelect={(item) => set({ companyId: item._id, companyName: item.name })}
-              />
-              <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500 dark:text-gray-400">
-                {data.companyId ? (
-                  <>
-                    ANVI tailors questions to this company.
-                    <button
-                      type="button"
-                      className={`${buttonGhost} -my-1 px-1.5 py-0.5 text-xs`}
-                      disabled={readOnly}
-                      onClick={() => set({ companyId: "", companyName: "" })}
-                    >
-                      Remove company
-                    </button>
-                  </>
-                ) : (
-                  "Leave empty for general practice."
-                )}
-              </p>
-            </div>
           </div>
+          <ComboField
+            label="Company"
+            field="company"
+            required
+            value={data.companyName}
+            error={errors.company}
+            placeholder="Search or add a company"
+            hint="ANVI tailors questions to this company."
+            loadOptions={companyOptions}
+            onSelect={pickCompany}
+            disabled={readOnly}
+          />
           <div className="grid gap-6 lg:grid-cols-2">
             <Segmented
               label="Experience level"
@@ -84,30 +121,21 @@ export default function StepBasics({ data, onChange, errors = {}, readOnly }) {
               onChange={(difficulty) => set({ difficulty })}
             />
           </div>
-        </div>
+        </fieldset>
       </Card>
-      <Card icon={MessagesSquare} title="Format" description="How ANVI runs the conversation. Interviews are in English.">
-        <div className="space-y-6">
-          <Segmented
-            label="Interview type"
-            field="mode"
-            variant="cards"
-            options={MODES.map((mode) => ({ ...mode, icon: MODE_ICONS[mode.value] }))}
-            value={data.rules?.mode || "mock"}
-            onChange={(mode) => set({ rules: { ...data.rules, mode } })}
-          />
-          <TextField
-            label="Short description"
-            field="description"
-            optional
-            multiline
-            rows={3}
-            maxLength={12000}
-            value={data.description}
-            placeholder="What should this interview assess? Any context about the job helps ANVI."
-            onChange={(description) => set({ description })}
-          />
-        </div>
+      <Card icon={FileText} title="Description" description="Context about the job helps ANVI ask the right questions.">
+        <TextField
+          label="Short description"
+          field="description"
+          optional
+          multiline
+          rows={3}
+          maxLength={12000}
+          value={data.description}
+          disabled={readOnly}
+          placeholder="What should this interview assess? Any context about the job helps ANVI."
+          onChange={(description) => set({ description })}
+        />
       </Card>
     </div>
   );

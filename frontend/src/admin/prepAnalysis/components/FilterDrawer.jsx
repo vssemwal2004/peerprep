@@ -187,12 +187,12 @@ function Chip({ label, text, onOpen, onClear }) {
   );
 }
 
-/** The page's one line: the "Filters" button, what is being analysed, the filters in use, and the count. */
-export function FilterToolbar({ state, catalog, fieldMap, meta, loading, onOpen, onChange }) {
+/**
+ * The page's filter line: the "Filters" button, the filters in use as chips, any extra chips
+ * (`extra`, such as "only these students"), and the count. Feature and period live in the header.
+ */
+export function FilterToolbar({ state, catalog, fieldMap, meta, loading, onOpen, onChange, extra = null }) {
   const lookup = useMemo(() => optionLookup(catalog), [catalog]);
-  const areaLabel = catalog.areas?.find((entry) => entry.key === state.area)?.label || "";
-  const AreaIcon = AREA_ICONS[state.area] || LayoutGrid;
-  const period = RANGE_PRESETS.find((preset) => preset.value === state.range.preset)?.label || "All time";
   const metricLabel = (key) => fieldMap.get(key)?.label || key;
   const ranking = rankText(state.rank, metricLabel);
   const total = countActive(state, fieldMap);
@@ -205,12 +205,8 @@ export function FilterToolbar({ state, catalog, fieldMap, meta, loading, onOpen,
         <SlidersHorizontal className="h-4 w-4" />Filters
         {total > 0 && <span className="rounded-full bg-white/25 px-1.5 text-[11px] leading-5">{total}</span>}
       </button>
-      <button type="button" onClick={onOpen} title="Change what you analyse"
-        className={`inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-[12px] text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 ${focusRing}`}>
-        <AreaIcon className="h-4 w-4 text-sky-600 dark:text-sky-400" />
-        <span className="font-bold text-slate-900 dark:text-white">{areaLabel}</span><span className="text-slate-400">·</span>{period}
-      </button>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        {extra}
         {several
           ? state.groups.map((group, index) => {
             const text = groupText(group, fieldMap, lookup);
@@ -227,7 +223,7 @@ export function FilterToolbar({ state, catalog, fieldMap, meta, loading, onOpen,
             return <Chip key={rule.field} label={field.label} text={`${text}${extra ? ` +${extra}` : ""}`} onOpen={onOpen} onClear={() => onChange({ ...state, groups: [setRule(single, rule.field, null)] })} />;
           })}
         {ranking && <Chip label="Showing" text={ranking} onOpen={onOpen} onClear={() => onChange({ ...state, rank: { join: "and", rules: [] } })} />}
-        {!total && <span className="text-[12px] text-slate-500 dark:text-gray-400">No filters: every student is shown.</span>}
+        {!total && !extra && <span className="text-[12px] text-slate-500 dark:text-gray-400">Everyone</span>}
       </div>
       <p className="ml-auto inline-flex items-center gap-2 whitespace-nowrap text-[12.5px] text-slate-500 dark:text-gray-400" aria-live="polite">
         {loading ? <Loader2 className="h-4 w-4 animate-spin text-sky-600" /> : <Users className="h-4 w-4 text-sky-600" />}

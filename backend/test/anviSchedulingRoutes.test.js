@@ -88,9 +88,11 @@ const createBody = (interview, students) => ({
 test("scheduling routers are mounted ahead of the interview id routes", () => {
   const source = readFileSync(new URL("../src/routes/index.js", import.meta.url), "utf8");
   const admin = source.indexOf("router.use('/ai-interviews/schedules'");
-  const student = source.indexOf("router.use('/student/ai-interviews', createAnviSchedulingStudentRouter())");
+  // Student mounts carry their auth and feature gate between the path and the router.
+  const mount = (router) => source.search(new RegExp(`router\\.use\\('/student/ai-interviews',[^\\n]*\\b${router}\\b`));
+  const student = mount("createAnviSchedulingStudentRouter");
   assert.ok(admin > 0 && admin < source.indexOf("router.use('/ai-interviews', "), "/schedules must not be captured by /ai-interviews/:id");
-  assert.ok(student > 0 && student < source.indexOf("router.use('/student/ai-interviews', aiInterviewStudentRoutes)"));
+  assert.ok(student > 0 && student < mount("aiInterviewStudentRoutes"));
 });
 
 test("admin routes create, list, edit, transition and export an assignment", async (t) => {

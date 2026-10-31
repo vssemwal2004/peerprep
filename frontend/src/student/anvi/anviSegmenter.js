@@ -3,9 +3,12 @@
 // already passed the echo, mute and pause gates; the caller streams and commits what it returns.
 //
 // VAD: an adaptive (EMA) noise floor; onset after `onsetFrames` frames above max(onsetMinRms,
-// onsetFloorFactor x floor) with `preRollMs` of audio kept from before; release below 2 x floor; the
-// segment closes after `hangoverMs` of release-level audio (optionally a speculative close earlier),
-// with the trailing silence trimmed. Shorter than `minSpeechMs` of voiced audio is dropped (a cough).
+// onsetFloorFactor x floor) with `preRollMs` of audio kept from before. Inside an answer a frame is a
+// pause when it is under the release level (2 x floor) or under `endSpeechRatio` of the answer's own
+// speech level, so room noise that the browser's auto gain lifts after the student stops never keeps the
+// answer open. A steady (flat) stretch well under that speech level is a pause too. The segment closes
+// after `hangoverMs` of pause (optionally a speculative close earlier), with the trailing silence
+// trimmed. Shorter than `minSpeechMs` of voiced audio is dropped (a cough).
 // A segment longer than `maxSegmentSeconds` is split into parts of the same turn. PTT bypasses onset
 // and hangover: the held span is the segment.
 
@@ -21,11 +24,21 @@ export const SEGMENTER_DEFAULTS = Object.freeze({
   // A floor of near-digital-silence would put the release level under the hiss of any microphone.
   releaseMinRms: 0.012,
   initialFloor: 0.004,
-  // The first frames of a session set the floor directly; afterwards it falls fast and rises slowly.
+  // Inside an answer: under this share of the answer's speech level is a pause (about -14 dB).
+  endSpeechRatio: 0.2,
+  // A stretch as long as the hangover whose loudest frame is under this share of the speech level and
+  // within `flatRatio` of its quietest is steady noise, not speech (speech rises and falls every syllable).
+  flatLevelRatio: 0.6,
+  flatRatio: 2.5,
+  // The speech level follows clearly voiced frames (above the onset level and half the current speech
+  // level, so noise never drags it down) by this much per frame.
+  speechLevelRise: 0.2,
+  // The first frames of a session set the floor (their quietest, so a student who starts talking at once
+  // does not become the floor); afterwards it falls fast and rises slowly.
   calibrationFrames: 3,
   floorRise: 0.05,
   floorFall: 0.3,
-  // `noisy()`: a floor this high, or this many short (dropped) onsets in a row, suggests push-to-talk.
+  // `noisy()`: a floor this high, or this many short (dropped) onsets in a row, means a noisy room.
   noisyFloor: 0.05,
   noisyDiscards: 3,
   maxParts: LIMITS.maxPartsPerTurn,
@@ -109,7 +122,7 @@ export function createAnviSegmenter(options = {}) {
     if (calibrating) {
       calibrating.push(rms);
       if (calibrating.length >= settings.calibrationFrames) {
-        floor = Math.max(settings.initialFloor / 4, calibrating.reduce((sum, value) => sum + value, 0) / calibrating.length);
+        floor = Math.max(settings.initialFloor / 4, Math.min(...calibrating));
         calibrating = null;
       }
       return;
@@ -123,7 +136,8 @@ export function createAnviSegmenter(options = {}) {
     if (preRoll.length > keep) preRoll.splice(0, preRoll.length - keep);
   };
 
-  const newSegment = ({ ptt = false, continuation = false } = {}) => ({ frames: [], voicedFrames: 0, lastVoiced: -1, bytes: 0, ptt, continuation });
+  // `level`: the answer's speech level; `recent`: the last hangover's frame levels (flatness check).
+  const newSegment = ({ ptt = false, continuation = false, level = 0 } = {}) => ({ frames: [], voicedFrames: 0, lastVoiced: -1, bytes: 0, ptt, continuation, level, recent: [] });
 
   const startSegment = (frames, events, ptt = false) => {
     open = newSegment({ ptt });
@@ -131,6 +145,7 @@ export function createAnviSegmenter(options = {}) {
       open.frames.push(frame);
       open.bytes += frame.bytes.length;
       if (frame.voiced) { open.voicedFrames += 1; open.lastVoiced = open.frames.length - 1; }
+      open.level = Math.max(open.level, frame.rms);
     }
     preRoll = [];
     silentFrames = 0;
@@ -177,14 +192,22 @@ export function createAnviSegmenter(options = {}) {
         return;
       }
       // Max length mid-speech: this part ends here untrimmed and the answer continues in the next part, no pre-roll.
-      const { ptt } = open;
+      const { ptt, level } = open;
       closeSegment(events, { final: false, trim: false });
-      if (part < settings.maxParts) open = newSegment({ ptt, continuation: true });
+      if (part < settings.maxParts) open = newSegment({ ptt, continuation: true, level });
       else {
         pttHeld = false;
         emit(events, { type: "end", part: part - 1 });
       }
     }
+  };
+
+  // True when the open answer's last `window` frames are flat and well under its speech level.
+  const steady = (window) => {
+    const { recent, level } = open;
+    if (recent.length < window || !(level > 0)) return false;
+    const loudest = Math.max(...recent);
+    return loudest < level * settings.flatLevelRatio && loudest <= Math.min(...recent) * settings.flatRatio;
   };
 
   /** Feeds one capture frame `{ pcm, rms? }`. Returns the events it caused. */
@@ -202,8 +225,19 @@ export function createAnviSegmenter(options = {}) {
     }
 
     if (open) {
+      if (rms > Math.max(onsetLevel(), open.level / 2)) open.level += (rms - open.level) * settings.speechLevelRise;
+      entry.voiced = rms >= Math.max(releaseLevel(), open.level * settings.endSpeechRatio);
+      const window = framesFor(settings.hangoverMs);
+      open.recent.push(rms);
+      if (open.recent.length > window) open.recent.shift();
       appendFrame(entry, events);
       if (!open) return events;
+      if (entry.voiced && steady(window)) {
+        // The whole last hangover was steady noise under the speech level: the answer ended before it.
+        open.lastVoiced = Math.min(open.lastVoiced, open.frames.length - 1 - window);
+        closeSegment(events, { final: true });
+        return events;
+      }
       if (entry.voiced) { silentFrames = 0; return events; }
       updateFloor(rms);
       silentFrames += 1;
@@ -298,9 +332,12 @@ export function createAnviSegmenter(options = {}) {
     configure,
     setInputMode,
     inputMode: () => mode,
-    // True when the room is noisy enough that push-to-talk would serve the student better.
+    // True when the room is noisy enough that the student should move somewhere quieter.
     noisy: () => floor >= settings.noisyFloor || discardsInRow >= settings.noisyDiscards,
     speaking: () => Boolean(open),
+    // How long the open answer has been paused (the room shows it filling up to the hangover).
+    pauseMs: () => (open ? silentFrames * settings.frameMs : 0),
+    hangoverMs: () => settings.hangoverMs,
     part: () => part,
     floor: () => floor,
     frameBytes,
