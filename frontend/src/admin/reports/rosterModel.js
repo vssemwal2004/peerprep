@@ -26,6 +26,16 @@ export const ROSTER_TYPE_OPTIONS = [
   { value: 'late', label: 'Late' },
 ];
 
+// Class details a candidate belongs to. The roster sends them on every row; an empty value is
+// shown as "Not set" so those candidates can still be found.
+export const ACADEMIC_DIMENSIONS = [
+  { key: 'college', label: 'College' },
+  { key: 'course', label: 'Course' },
+  { key: 'branch', label: 'Branch' },
+  { key: 'semester', label: 'Semester' },
+  { key: 'group', label: 'Group / section' },
+];
+
 export const DEFAULT_ROSTER_FILTERS = Object.freeze({
   query: '',
   statuses: [],
@@ -35,6 +45,10 @@ export const DEFAULT_ROSTER_FILTERS = Object.freeze({
   scoreMax: '',
   flaggedOnly: false,
   hasViolations: false,
+  // { course: ['B.Tech'], semester: ['3', '5'] }: values within one class detail are OR, details are AND.
+  academic: Object.freeze({}),
+  // Per-column filters from the table header menus, see COLUMN_FILTERS.
+  columns: Object.freeze({}),
 });
 
 export const DISTRIBUTION_BUCKETS = ['0-25', '26-50', '51-75', '76-100'];
@@ -223,6 +237,86 @@ const parseBound = (value) => {
   return Number.isFinite(number) ? number : null;
 };
 
+export const academicValue = (row, key) => {
+  const value = row?.[key];
+  return value === null || value === undefined || value === '' ? '' : String(value);
+};
+
+const minutesOf = (row) => {
+  const seconds = toNumberOrNull(row?.timeTakenSec);
+  return seconds === null ? null : Math.round((seconds / 60) * 10) / 10;
+};
+
+const progressPercent = (row) => {
+  const answered = toNumberOrNull(row?.answeredCount);
+  const total = toNumberOrNull(row?.totalQuestions);
+  if (answered === null || !total) return null;
+  return Math.min(100, Math.round((answered / total) * 1000) / 10);
+};
+
+/**
+ * Filter kinds the table header menus offer. `get` is the value the filter reads:
+ * enum -> a string, number -> a number or null, date -> epoch ms or null, text -> a string.
+ */
+export const COLUMN_FILTERS = {
+  student: { kind: 'text', get: (row) => `${row.name || ''} ${row.email || ''} ${row.rollNo || ''}`.toLowerCase() },
+  status: { kind: 'enum', get: (row) => row.status || 'not_started' },
+  course: { kind: 'enum', get: (row) => academicValue(row, 'course') },
+  branch: { kind: 'enum', get: (row) => academicValue(row, 'branch') },
+  college: { kind: 'enum', get: (row) => academicValue(row, 'college') },
+  semester: { kind: 'enum', get: (row) => academicValue(row, 'semester') },
+  group: { kind: 'enum', get: (row) => academicValue(row, 'group') },
+  progress: { kind: 'number', get: progressPercent },
+  score: { kind: 'number', get: (row) => (rowEvaluationState(row) === 'graded' ? rowPercentage(row) : null) },
+  time: { kind: 'number', get: minutesOf },
+  violations: { kind: 'number', get: (row) => rowViolationCount(row) },
+  startedAt: { kind: 'date', get: (row) => toTime(row.startedAt) },
+  submittedAt: { kind: 'date', get: (row) => toTime(row.submittedAt) },
+};
+
+const dayStart = (value) => {
+  const time = value ? new Date(`${value}T00:00:00`).getTime() : NaN;
+  return Number.isFinite(time) ? time : null;
+};
+const dayEnd = (value) => {
+  const start = dayStart(value);
+  return start === null ? null : start + 24 * 60 * 60 * 1000 - 1;
+};
+
+export function columnFilterActive(kind, spec) {
+  if (!spec) return false;
+  if (kind === 'enum') return Array.isArray(spec.values) && spec.values.length > 0;
+  if (kind === 'number') return parseBound(spec.min) !== null || parseBound(spec.max) !== null;
+  if (kind === 'date') return Boolean(spec.from || spec.to);
+  if (kind === 'text') return Boolean(String(spec.text || '').trim());
+  return false;
+}
+
+function matchesColumnFilter(row, key, spec) {
+  const definition = COLUMN_FILTERS[key];
+  if (!definition || !columnFilterActive(definition.kind, spec)) return true;
+  const value = definition.get(row);
+  if (definition.kind === 'enum') return spec.values.includes(String(value));
+  if (definition.kind === 'text') return String(value).includes(String(spec.text).trim().toLowerCase());
+  if (value === null || value === undefined) return false;
+  if (definition.kind === 'number') {
+    const min = parseBound(spec.min);
+    const max = parseBound(spec.max);
+    return (min === null || value >= min) && (max === null || value <= max);
+  }
+  const from = dayStart(spec.from);
+  const to = dayEnd(spec.to);
+  return (from === null || value >= from) && (to === null || value <= to);
+}
+
+export function activeColumnFilterKeys(filters = DEFAULT_ROSTER_FILTERS) {
+  return Object.keys(filters.columns || {}).filter((key) => COLUMN_FILTERS[key] && columnFilterActive(COLUMN_FILTERS[key].kind, filters.columns[key]));
+}
+
+export function activeAcademicKeys(filters = DEFAULT_ROSTER_FILTERS) {
+  return ACADEMIC_DIMENSIONS.map((dimension) => dimension.key).filter((key) => filters.academic?.[key]?.length);
+}
+
 export function hasActiveRosterFilters(filters = DEFAULT_ROSTER_FILTERS) {
   return Boolean(
     String(filters.query || '').trim()
@@ -232,7 +326,9 @@ export function hasActiveRosterFilters(filters = DEFAULT_ROSTER_FILTERS) {
     || parseBound(filters.scoreMin) !== null
     || parseBound(filters.scoreMax) !== null
     || filters.flaggedOnly
-    || filters.hasViolations,
+    || filters.hasViolations
+    || activeAcademicKeys(filters).length
+    || activeColumnFilterKeys(filters).length,
   );
 }
 
@@ -241,7 +337,15 @@ export function filterRosterRows(rows = [], filters = DEFAULT_ROSTER_FILTERS) {
   const statuses = new Set(filters.statuses || []);
   const min = parseBound(filters.scoreMin);
   const max = parseBound(filters.scoreMax);
+  const academicKeys = activeAcademicKeys(filters);
+  const columnKeys = activeColumnFilterKeys(filters);
   return rows.filter((row) => {
+    for (const key of academicKeys) {
+      if (!filters.academic[key].includes(academicValue(row, key))) return false;
+    }
+    for (const key of columnKeys) {
+      if (!matchesColumnFilter(row, key, filters.columns[key])) return false;
+    }
     if (query) {
       const haystack = `${row.name || ''} ${row.email || ''} ${row.rollNo || ''} ${row.studentId || ''}`.toLowerCase();
       if (!haystack.includes(query)) return false;
@@ -285,9 +389,90 @@ const SORT_ACCESSORS = {
   violations: (row) => rowViolationCount(row),
   violationScore: (row) => toNumberOrNull(row.violationScore),
   flagged: (row) => (row.flagged ? 1 : 0),
+  course: (row) => textValue(row.course),
+  branch: (row) => textValue(row.branch),
+  college: (row) => textValue(row.college),
+  group: (row) => textValue(row.group),
+  semester: (row) => toNumberOrNull(row.semester),
 };
 
 export const ROSTER_SORT_KEYS = Object.keys(SORT_ACCESSORS);
+
+const STATUS_LABELS = Object.fromEntries(ROSTER_STATUS_OPTIONS.map((option) => [option.value, option.label]));
+
+/** Distinct values of an enum column with how many rows carry each, in a sensible order. */
+export function columnOptions(rows = [], key) {
+  const definition = COLUMN_FILTERS[key];
+  if (!definition || definition.kind !== 'enum') return [];
+  const counts = new Map();
+  rows.forEach((row) => {
+    const value = String(definition.get(row));
+    counts.set(value, (counts.get(value) || 0) + 1);
+  });
+  const label = (value) => (key === 'status' ? STATUS_LABELS[value] || value : value === '' ? 'Not set' : value);
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, label: label(value), count }))
+    .sort((a, b) => {
+      if (key === 'status') return (STATUS_ORDER[a.value] ?? 99) - (STATUS_ORDER[b.value] ?? 99);
+      if (a.value === '' || b.value === '') return a.value === '' ? 1 : -1;
+      if (key === 'semester') return Number(a.value) - Number(b.value);
+      return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' });
+    });
+}
+
+/**
+ * Options for one class detail with counts that respect every OTHER active filter, so picking
+ * "Branch: CSE" immediately shows which semesters, groups and courses still have candidates.
+ */
+export function facetOptions(rows = [], filters = DEFAULT_ROSTER_FILTERS, key) {
+  const without = {
+    ...filters,
+    academic: { ...(filters.academic || {}), [key]: [] },
+    columns: { ...(filters.columns || {}), [key]: undefined },
+  };
+  const options = columnOptions(filterRosterRows(rows, without), key);
+  // A value that is selected but now has no candidates must stay visible so it can be unticked.
+  (filters.academic?.[key] || []).forEach((value) => {
+    if (!options.some((option) => option.value === value)) options.push({ value, label: value === '' ? 'Not set' : value, count: 0 });
+  });
+  return options;
+}
+
+/** One line per class detail value for the overview: candidates, finished, average, pass rate. */
+export function groupBreakdown(rows = [], key, { passPercentage = null } = {}) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const value = academicValue(row, key);
+    const list = groups.get(value) || [];
+    list.push(row);
+    groups.set(value, list);
+  });
+  return [...groups.entries()]
+    .map(([value, list]) => {
+      const stats = computeRosterStats(list, { passPercentage });
+      return {
+        value,
+        label: value === '' ? 'Not set' : value,
+        candidates: stats.total,
+        started: stats.started,
+        finished: stats.finished,
+        graded: stats.graded,
+        avgPercentage: stats.avgPercentage,
+        passRate: stats.passRate,
+      };
+    })
+    .sort((a, b) => b.candidates - a.candidates || a.label.localeCompare(b.label, undefined, { numeric: true }));
+}
+
+/** Page numbers to show: 1 2 3 4 5 … last, or 1 … 9 10 11 … last, or 1 … 38 39 40 41 42. */
+export function pageWindow(current, total) {
+  const last = Math.max(1, Number(total) || 1);
+  const page = Math.min(Math.max(1, Number(current) || 1), last);
+  if (last <= 7) return Array.from({ length: last }, (_, index) => index + 1);
+  if (page <= 4) return [1, 2, 3, 4, 5, 'gap-end', last];
+  if (page >= last - 3) return [1, 'gap-start', last - 4, last - 3, last - 2, last - 1, last];
+  return [1, 'gap-start', page - 1, page, page + 1, 'gap-end', last];
+}
 
 /**
  * Stable sort by one column. Missing values always go last regardless of
@@ -336,7 +521,14 @@ export function computeRosterStats(rows = [], { passPercentage = null } = {}) {
     total: rows.length,
     notStarted: 0,
     inProgress: 0,
+    // finished = every candidate whose attempt has ended: submitted + expired + violation + incomplete.
+    finished: 0,
+    // Of those, by how the attempt ended (these four add up to `finished`).
     submitted: 0,
+    expired: 0,
+    violation: 0,
+    incomplete: 0,
+    // started = attempted = inProgress + finished.
     started: 0,
     graded: 0,
     evaluating: 0,
@@ -366,7 +558,13 @@ export function computeRosterStats(rows = [], { passPercentage = null } = {}) {
   for (const row of rows) {
     if (!row?.status || row.status === 'not_started') stats.notStarted += 1;
     else if (row.status === 'in_progress') stats.inProgress += 1;
-    else stats.submitted += 1;
+    else {
+      stats.finished += 1;
+      if (row.status === 'submitted') stats.submitted += 1;
+      else if (row.status === 'expired') stats.expired += 1;
+      else if (row.status === 'violation') stats.violation += 1;
+      else stats.incomplete += 1;
+    }
     if (isSubmittedRow(row) && row.isLate) stats.late += 1;
 
     const evaluation = rowEvaluationState(row);
@@ -400,7 +598,7 @@ export function computeRosterStats(rows = [], { passPercentage = null } = {}) {
     }
   }
 
-  stats.started = stats.inProgress + stats.submitted;
+  stats.started = stats.inProgress + stats.finished;
   if (percentages.length) {
     stats.avgPercentage = round1(percentages.reduce((sum, value) => sum + value, 0) / percentages.length);
     stats.minPercentage = round1(Math.min(...percentages));

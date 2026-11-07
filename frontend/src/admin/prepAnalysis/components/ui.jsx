@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Loader2, Search, X } from "lucide-react";
-import { prepAnalysisApi } from "../api";
+import { useAnalysisApi } from "../analysisScope";
 
 export const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-gray-900";
 
@@ -208,18 +208,19 @@ const optionLabel = (option) => option.label ?? String(option.value);
 
 /** Options for a picker: a static list, or a server list searched as the admin types. */
 function useOptions({ list, staticOptions, query, active = true }) {
+  const api = useAnalysisApi();
   const [remote, setRemote] = useState({ options: [], loading: false });
   useEffect(() => {
     if (!active || staticOptions || !list) return undefined;
     const controller = new AbortController();
     setRemote((current) => ({ ...current, loading: true }));
     const timer = setTimeout(() => {
-      prepAnalysisApi.options(list, query, controller.signal)
+      api.options(list, query, controller.signal)
         .then((result) => setRemote({ options: result.options || [], loading: false }))
         .catch((error) => { if (error.name !== "AbortError") setRemote({ options: [], loading: false }); });
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [active, list, query, staticOptions]);
+  }, [active, api, list, query, staticOptions]);
   if (staticOptions) {
     const needle = query.trim().toLowerCase();
     return { options: staticOptions.filter((option) => optionLabel(option).toLowerCase().includes(needle)), loading: false };

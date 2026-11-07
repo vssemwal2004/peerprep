@@ -3,7 +3,7 @@ import { drillFor } from './drill.js';
 import { publicFieldCatalog } from './fields.js';
 import {
   countPrepAnalysis, drillPrepAnalysis, exportPrepAnalysis, exportPrepAnalysisChart, exportStudentReport, getStudentProfile, listFieldOptions, runPrepAnalysis,
-  validateDrill, validatePrepAnalysisQuery,
+  scopeFromQueryString, validateDrill, validatePrepAnalysisQuery,
 } from './prepAnalysis.service.js';
 import {
   DEFAULT_EXPORT_COLUMNS, EXPORT_LIMITS, publicExportColumns, validateChartExportOptions, validateExportOptions,
@@ -42,6 +42,7 @@ export async function queryPrepAnalysis(req, res) {
 
 export async function exportPrepAnalysisFile(req, res) {
   let file;
+  // `scope: 'chart'` picks a one-chart download; the assessments for that request go in `assessmentScope`.
   if (req.body?.scope === 'chart') {
     // One chart (or one part of it): its own filter and options come with it in `charts`.
     const query = validatePrepAnalysisQuery({ ...req.body, table: undefined }, req.platformPermissions);
@@ -85,6 +86,7 @@ export async function getPrepAnalysisStudent(req, res) {
     permissions: req.platformPermissions,
     studentId: req.params.studentId,
     range: studentRange(req.query),
+    scope: scopeFromQueryString(req.query.assessmentIds),
   }));
 }
 
@@ -94,6 +96,7 @@ export async function exportPrepAnalysisStudent(req, res) {
     permissions: req.platformPermissions,
     studentId: req.params.studentId,
     range: studentRange(req.query),
+    scope: scopeFromQueryString(req.query.assessmentIds),
     format: String(req.query.format || ''),
   });
   res.set({
@@ -129,5 +132,6 @@ export async function listPrepAnalysisOptions(req, res) {
     permissions: req.platformPermissions,
     optionsKey: String(req.query.list || ''),
     q: req.query.q,
+    scope: scopeFromQueryString(req.query.assessmentIds),
   }));
 }

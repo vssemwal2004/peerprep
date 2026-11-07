@@ -53,6 +53,29 @@ function groupRows(rows, groupBy, maxGroups = 12) {
     .sort((left, right) => left[0].localeCompare(right[0], undefined, { numeric: true }));
 }
 
+/** Value at fraction `at` (0–1) of an ascending list, interpolating between neighbours. */
+function quantile(sorted, at) {
+  if (!sorted.length) return 0;
+  const position = (sorted.length - 1) * at;
+  const low = Math.floor(position);
+  const high = Math.ceil(position);
+  return sorted[low] + (sorted[high] - sorted[low]) * (position - low);
+}
+
+/** Five-number summary (and the mean) of a list of numbers, for a box plot. */
+export function boxStats(values) {
+  const sorted = values.filter((value) => Number.isFinite(value)).sort((left, right) => left - right);
+  const round = (value) => Math.round(value * 100) / 100;
+  if (!sorted.length) return { count: 0, min: 0, q1: 0, median: 0, q3: 0, max: 0, mean: 0 };
+  return {
+    count: sorted.length, min: round(sorted[0]), q1: round(quantile(sorted, 0.25)), median: round(quantile(sorted, 0.5)), q3: round(quantile(sorted, 0.75)),
+    max: round(sorted[sorted.length - 1]), mean: round(sorted.reduce((sum, value) => sum + value, 0) / sorted.length),
+  };
+}
+
+/** A scatter chart shows at most this many dots; the rest are counted in `total`. */
+const MAX_DOTS = 600;
+
 /** A problem's topics, or its tags when it has no topics. */
 export const entryTopics = (entry) => (entry.meta.topics.length ? entry.meta.topics : entry.meta.tags);
 /** part / whole as a percentage with one decimal. */
@@ -451,6 +474,36 @@ const CODING_CHARTS = [
       };
     },
   },
+  {
+    id: 'student-map', type: 'scatter', size: 'lg',
+    title: 'Effort versus result',
+    question: 'Do students who submit more also score higher, and who practises a lot without results?',
+    // One dot per student who practised: how much they submitted against their Prep Score.
+    build: ({ rows }) => {
+      const active = practising(rows).sort(byScore);
+      const items = active.slice(0, MAX_DOTS).map((row) => ({
+        id: row.id, name: row.name, x: row.coding.submissions, y: row.coding.prepScore, size: row.coding.solved.total,
+        accuracy: row.coding.accuracy, group: row.coding.practiceStatus === 'active' ? 'Practising' : 'Stopped',
+        note: `${row.coding.solved.total} solved · ${row.coding.accuracy}% accurate`,
+      }));
+      return {
+        xLabel: 'Submissions', yLabel: 'Prep Score', sizeLabel: 'problems solved', groups: ['Practising', 'Stopped'],
+        total: active.length, shown: items.length,
+        medianX: boxStats(active.map((row) => row.coding.submissions)).median, medianY: boxStats(active.map((row) => row.coding.prepScore)).median,
+        items,
+      };
+    },
+  },
+  {
+    id: 'class-spread', type: 'boxplot', size: 'md',
+    title: 'Prep Score by class',
+    question: 'How do Prep Scores differ between semesters, branches or sections, and how wide is the spread in each?',
+    options: { groupBy: 'semester' },
+    build: ({ rows, options }) => ({
+      groupBy: options.groupBy || 'semester', label: 'Prep Score', unit: '',
+      groups: groupRows(practising(rows), options.groupBy).map(([label, members]) => ({ label, students: members.length, ...boxStats(members.map((row) => row.coding.prepScore)) })),
+    }),
+  },
 ];
 
 // ---------------------------------------------------------------- Prep Learning
@@ -814,6 +867,42 @@ const ASSESSMENT_CHARTS = [
     },
   },
   {
+    id: 'assessment-score-time', type: 'scatter', size: 'lg',
+    title: 'Score versus time taken',
+    question: 'Who finished fast with a low score, and who took long but did well?',
+    // One dot per graded attempt (a student's latest on each test).
+    build: ({ rows, tests }) => {
+      const dots = [];
+      let total = 0;
+      for (const row of rows) {
+        if (!row.assessment) continue;
+        for (const attempt of row.assessment.byTest.values()) {
+          total += 1;
+          if (dots.length >= MAX_DOTS) continue;
+          const title = tests?.get(attempt.testId)?.title || 'Test';
+          dots.push({
+            id: row.id, name: row.name, x: attempt.minutes, y: attempt.percent, group: attempt.percent >= PASS_PERCENT ? 'Passed' : 'Failed',
+            note: `${title} · ${attempt.score}/${attempt.maxMarks} marks`,
+          });
+        }
+      }
+      return {
+        xLabel: 'Minutes taken', yLabel: 'Score (%)', groups: ['Passed', 'Failed'], total, shown: dots.length, yMax: 100, referenceY: { value: PASS_PERCENT, label: `Pass mark ${PASS_PERCENT}%` },
+        medianX: boxStats(dots.map((dot) => dot.x)).median, medianY: boxStats(dots.map((dot) => dot.y)).median, items: dots,
+      };
+    },
+  },
+  {
+    id: 'assessment-class-spread', type: 'boxplot', size: 'md',
+    title: 'Test scores by class',
+    question: 'How do average test scores differ between semesters, branches or sections?',
+    options: { groupBy: 'semester' },
+    build: ({ rows, options }) => ({
+      groupBy: options.groupBy || 'semester', label: 'Average test score', unit: '%', passMark: PASS_PERCENT,
+      groups: groupRows(testTakers(rows), options.groupBy).map(([label, members]) => ({ label, students: members.length, ...boxStats(members.map((row) => row.assessment.averageScore)) })),
+    }),
+  },
+  {
     id: 'assessment-needs-attention', type: 'barList', size: 'md',
     title: 'Students who need help in tests',
     question: 'Who misses tests or scores lowest, and when was their last test?',
@@ -980,11 +1069,11 @@ export const CHART_BY_ID = new Map(CHARTS.map((chart) => [chart.id, chart]));
 // What a fresh page shows per area; admins add or remove charts from that area's catalogue.
 export const DEFAULT_LAYOUT = Object.freeze({
   coding: ['top-students', 'difficulty-split', 'practice-trend', 'practice-funnel', 'topic-strength', 'needs-attention',
-    'activity-calendar', 'student-profile', 'failure-reasons', 'language-usage', 'score-spread', 'tough-problems',
+    'activity-calendar', 'student-profile', 'failure-reasons', 'language-usage', 'score-spread', 'class-spread', 'student-map', 'tough-problems',
     'quickprep-sheets', 'quickprep-funnel', 'quickprep-matrix', 'quickprep-leaders', 'quickprep-needs-attention'],
   learning: ['learning-subjects', 'learning-funnel', 'learning-trend', 'learning-leaders', 'learning-needs-attention', 'learning-spread', 'learning-calendar'],
   interview: ['interview-trend', 'interview-funnel', 'interview-ratings', 'interview-mix', 'interview-leaders', 'interview-needs-attention', 'interview-spread', 'interview-calendar'],
-  assessment: ['assessment-tests', 'assessment-funnel', 'assessment-scores', 'assessment-by-class', 'assessment-leaders', 'assessment-needs-attention', 'assessment-trend', 'assessment-spread', 'assessment-calendar'],
+  assessment: ['assessment-tests', 'assessment-funnel', 'assessment-scores', 'assessment-by-class', 'assessment-class-spread', 'assessment-score-time', 'assessment-leaders', 'assessment-needs-attention', 'assessment-trend', 'assessment-spread', 'assessment-calendar'],
   // "All": a short view of each feature, side by side.
   all: ['top-students', 'practice-funnel', 'quickprep-sheets', 'learning-subjects', 'learning-funnel', 'interview-funnel', 'interview-trend', 'assessment-tests', 'assessment-funnel'],
 });

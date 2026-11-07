@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Copy, Loader2, Plus, Search, Trash2, Users, X } from "lucide-react";
-import { prepAnalysisApi } from "../api";
+import { useAnalysisApi, useAnalysisScope } from "../analysisScope";
 import {
   MAX_RANK_RULES, groupText, isMainField, isRuleComplete, listRule, newRankRule, numberPresets, optionLookup, rangeOf, rangeRule, ruleFor, setRule,
   valueParts,
@@ -16,16 +16,20 @@ const TOGGLE_OFF = "text-slate-600 hover:text-slate-900 dark:text-gray-400 dark:
 const optionCache = new Map();
 
 function useFieldOptions(field, catalog) {
+  const api = useAnalysisApi();
+  const scope = useAnalysisScope();
+  // A scoped page (one assessment) lists only its own values, so it never shares the page-wide cache.
+  const cacheKey = `${scope?.assessmentIds?.join(",") || ""}|${field.options}`;
   const fixed = catalog.staticOptions?.[field.options];
-  const [state, setState] = useState(() => ({ options: optionCache.get(field.options) || [], loading: !fixed && !optionCache.has(field.options) }));
+  const [state, setState] = useState(() => ({ options: optionCache.get(cacheKey) || [], loading: !fixed && !optionCache.has(cacheKey) }));
   useEffect(() => {
-    if (fixed || optionCache.has(field.options)) return undefined;
+    if (fixed || optionCache.has(cacheKey)) return undefined;
     const controller = new AbortController();
-    prepAnalysisApi.options(field.options, "", controller.signal)
-      .then((result) => { optionCache.set(field.options, result.options || []); setState({ options: result.options || [], loading: false }); })
+    api.options(field.options, "", controller.signal)
+      .then((result) => { optionCache.set(cacheKey, result.options || []); setState({ options: result.options || [], loading: false }); })
       .catch((error) => { if (error.name !== "AbortError") setState({ options: [], loading: false }); });
     return () => controller.abort();
-  }, [field.options, fixed]);
+  }, [api, cacheKey, field.options, fixed]);
   return fixed ? { options: fixed, loading: false } : state;
 }
 

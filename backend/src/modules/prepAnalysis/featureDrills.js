@@ -277,6 +277,11 @@ export const FEATURE_DRILLS = {
       return !series || (row.assessment[series.toLowerCase()] || 0) > 0;
     },
   }),
+  'assessment-class-spread': groupDrill(ASSESSMENT, {
+    groups: (rows, context, options) => [...new Set(rows.map((row) => (GROUP_BY[options.groupBy] || GROUP_BY.semester).get(row) || 'Not set'))],
+    test: (row, label, series, context, options) => Boolean(row.assessment?.taken > 0)
+      && ((GROUP_BY[options.groupBy] || GROUP_BY.semester).get(row) || 'Not set') === label,
+  }),
   'assessment-funnel': funnelDrill(ASSESSMENT, hasAssessment, [
     { name: 'Students', test: () => true },
     { name: 'Took a test', test: (row) => row.assessment.taken > 0 },

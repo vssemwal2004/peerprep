@@ -11,8 +11,13 @@ export const DIFFICULTY_COLORS = Object.freeze({
   Other: "#94a3b8",
 });
 
-// Sky shades first, then slate, so categories stay within the theme.
-export const CATEGORICAL = Object.freeze(["#0284c7", "#38bdf8", "#0c4a6e", "#7dd3fc", "#0369a1", "#64748b", "#bae6fd", "#94a3b8", "#075985", "#cbd5e1"]);
+// Categories (languages, subjects…): the app's sky first, then hues that stay apart from each
+// other and from the meaning colours (emerald = good, rose = bad, amber = warning).
+export const CATEGORICAL = Object.freeze(["#0284c7", "#6366f1", "#14b8a6", "#8b5cf6", "#06b6d4", "#ec4899", "#0ea5e9", "#64748b", "#a78bfa", "#94a3b8"]);
+
+// Series colours for line / combo charts: the main series in sky, the second in emerald (usually
+// "the good part": accepted, passed), a third in violet; the dashed right-axis line is slate.
+export const SERIES_COLORS = Object.freeze(["#0284c7", "#10b981", "#8b5cf6", "#f59e0b"]);
 
 export const OUTCOME_COLORS = Object.freeze({
   Solved: "#10b981", "Not solved": "#f43f5e",
@@ -22,6 +27,7 @@ export const OUTCOME_COLORS = Object.freeze({
   Mock: "#0284c7", AI: "#38bdf8",
   "Rated 1": "#e0f2fe", "Rated 2": "#bae6fd", "Rated 3": "#7dd3fc", "Rated 4": "#0ea5e9", "Rated 5": "#0369a1",
   AC: "#10b981", WA: "#f43f5e", TLE: "#f59e0b", RE: "#64748b", CE: "#94a3b8",
+  Practising: "#0284c7", Stopped: "#f59e0b",
 });
 
 // One accent for every feature: the app's primary sky.

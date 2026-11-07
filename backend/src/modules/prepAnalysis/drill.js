@@ -381,6 +381,19 @@ const DRILLS = {
       };
     },
   },
+  'class-spread': {
+    // One box of the plot: the students of that semester, branch or group who practised.
+    label: (key) => (key && key !== '*' ? key : 'Every group'),
+    students(rows, key, options) {
+      const by = GROUP_BY[options.groupBy] || GROUP_BY.semester;
+      return {
+        sort: 'score',
+        columns: [text('groupLabel', by.label, 14), decimal('score', 'Prep Score'), ...solvedColumns, percent('accuracy', 'Accuracy %')],
+        items: practising(rows).filter((row) => !key || key === '*' || (by.get(row) || 'Not set') === key)
+          .map((row) => ({ row, values: { groupLabel: by.get(row) || 'Not set', score: row.coding.prepScore, ...solvedValues(row), accuracy: row.coding.accuracy } })),
+      };
+    },
+  },
   'group-breakdown': {
     // "<group>|<difficulty>" is one segment, "*|Hard" a legend chip, "<group>" a whole bar.
     label: (key) => {

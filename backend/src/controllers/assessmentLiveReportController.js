@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import { sharedAssessment } from '../platform/sharedContent.js';
 import { evaluatedScoreExpression } from '../services/assessmentReportSummaryService.js';
 import { studentFeatureQuery } from '../services/studentFeatureAccess.js';
+import { isGraded, passPercentageOf, percentOf, summarizeAttempts } from '../services/assessmentAttemptCounts.js';
 import {
   ASSESSMENT_EDIT_PERMISSION, AssessmentAccessError, authorizeAssessmentReportAccess,
 } from '../services/assessmentReportAccess.js';
@@ -30,13 +31,17 @@ function respondAccessError(res, error) {
 }
 
 const finiteOrNull = (value) => (Number.isFinite(Number(value)) && value !== null && value !== '' ? Number(value) : null);
-const round2 = (value) => Math.round(value * 100) / 100;
 const isoOrNull = (value) => (value ? new Date(value).toISOString() : null);
 
-function passPercentageOf(settings = {}) {
-  const configured = Number(settings?.passPercentage);
-  return Number.isFinite(configured) ? Math.min(100, Math.max(0, configured)) : 40;
-}
+// Academic fields the report UI filters/sorts by (User has no section/batch field).
+const STUDENT_PROJECTION = '_id name email studentId college course branch semester group';
+const academicFields = (student) => ({
+  college: student?.college || '',
+  course: student?.course || '',
+  branch: student?.branch || '',
+  semester: finiteOrNull(student?.semester),
+  group: student?.group || '',
+});
 
 function assessmentStatus(assessment, now) {
   if (assessment.lifecycleStatus === 'draft') return 'Draft';
@@ -92,10 +97,9 @@ const answeredExpression = {
 };
 
 function submissionRow(doc, student, assessment, passPercentage) {
-  const graded = TERMINAL_STATUSES.includes(doc.status) && (doc.evaluationStatus ?? 'completed') === 'completed'
-    && Number.isFinite(doc.score);
+  const graded = isGraded(doc);
   const maxMarks = graded ? (finiteOrNull(doc.maxMarks) ?? finiteOrNull(assessment.totalMarks)) : null;
-  const percentage = graded && maxMarks > 0 ? round2(Math.min(100, Math.max(0, (doc.score / maxMarks) * 100))) : null;
+  const percentage = graded ? percentOf(doc.score, maxMarks) : null;
   const tabSwitches = Number(doc.tabSwitches || 0);
   const fullscreenExits = Number(doc.fullscreenExits || 0);
   const cameraFlags = Number(doc.cameraFlags || 0);
@@ -107,6 +111,7 @@ function submissionRow(doc, student, assessment, passPercentage) {
     name: student?.name || '',
     email: student?.email || '',
     rollNo: student?.studentId || '',
+    ...academicFields(student),
     status: doc.status || 'not_started',
     evaluationStatus: TERMINAL_STATUSES.includes(doc.status) ? (doc.evaluationStatus || 'completed') : null,
     score: graded ? doc.score : null,
@@ -139,6 +144,7 @@ function notStartedRow(student, assessment) {
     name: student.name || '',
     email: student.email || '',
     rollNo: student.studentId || '',
+    ...academicFields(student),
     status: 'not_started',
     evaluationStatus: null,
     score: null,
@@ -171,7 +177,7 @@ function parseCursor(value) {
 
 async function assignedStudentsWithoutAttempt(assessment, attemptedIds, remaining) {
   if (remaining <= 0) return [];
-  const projection = '_id name email studentId';
+  const projection = STUDENT_PROJECTION;
   if (assessment.targetType === 'all' && !assessment.assignedCount) {
     return User.find({
       role: 'student', accessScope: { $ne: 'assessment_only' }, ...studentFeatureQuery('assessments'),
@@ -231,7 +237,7 @@ export async function getAssessmentRoster(req, res) {
 
     const studentIds = [...new Set(page.map((doc) => String(doc.studentId)))];
     const students = studentIds.length
-      ? await User.find({ _id: { $in: studentIds } }).select('_id name email studentId').maxTimeMS(5000).lean()
+      ? await User.find({ _id: { $in: studentIds } }).select(STUDENT_PROJECTION).maxTimeMS(5000).lean()
       : [];
     const byId = new Map(students.map((student) => [String(student._id), student]));
     const rows = page.map((doc) => submissionRow(doc, byId.get(String(doc.studentId)), assessment, passPercentage));
@@ -242,11 +248,14 @@ export async function getAssessmentRoster(req, res) {
       rows.push(...waiting.map((student) => notStartedRow(student, assessment)));
     }
 
+    // Canonical counts over the whole roster; a delta only carries changed rows, so no counts there.
+    const counts = cursor.since ? null : summarizeAttempts(rows, { passPercentage, totalMarks: finiteOrNull(assessment.totalMarks) });
     const latest = page.reduce((max, doc) => (doc.updatedAt && (!max || doc.updatedAt > max) ? doc.updatedAt : max), null);
     return res.json({
       rows,
       cursor: latest ? new Date(latest).toISOString() : (cursor.since ? cursor.since.toISOString() : now.toISOString()),
       full: !cursor.since,
+      counts,
       truncated,
       serverTime: now.toISOString(),
       assessment: {

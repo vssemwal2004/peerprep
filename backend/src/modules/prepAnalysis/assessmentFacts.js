@@ -42,17 +42,46 @@ export async function loadAssessmentDefinitions(user, now = new Date()) {
 /** True when a test was meant for this student. */
 export const testAssignedTo = (test, studentId) => test.visible && (test.forEveryone || test.assigned.has(String(studentId)));
 
-export async function loadAssessmentFacts({ user, studentIds, range }) {
+/**
+ * Narrows the visible tests to the requested ids. Unknown or invisible ids are dropped, never an
+ * error. The result keeps the visible map's order so a scoped analysis is deterministic.
+ */
+export function scopeAssessmentDefinitions(definitions, assessmentIds) {
+  const wanted = new Set((assessmentIds || []).map(String));
+  return new Map([...definitions].filter(([id]) => wanted.has(id)));
+}
+
+const gradedMatch = (tests) => ({
+  assessmentId: { $in: [...tests.keys()].map((id) => new mongoose.Types.ObjectId(id)) },
+  status: { $in: FINAL_STATUSES },
+  evaluationStatus: 'completed',
+  score: { $type: 'number' },
+  maxMarks: { $gt: 0 },
+});
+
+/**
+ * The students a scoped analysis is about: assigned to at least one of `tests`, or with a graded
+ * submission on one (in any period, so the cohort does not change with the date range).
+ */
+export async function scopeStudentsToAssessments(students, tests) {
+  if (!tests.size || !students.length) return [];
+  const graded = new Set((await AssessmentSubmission.aggregate([
+    { $match: gradedMatch(tests) },
+    { $group: { _id: '$studentId' } },
+  ]).option({ maxTimeMS: MAX_QUERY_MS })).map((row) => String(row._id)));
+  const list = [...tests.values()];
+  return students.filter((student) => {
+    const id = String(student._id);
+    return graded.has(id) || list.some((test) => testAssignedTo(test, id));
+  });
+}
+
+/** `tests`: already-loaded (and possibly scoped) definitions; they are loaded for `user` when omitted. */
+export async function loadAssessmentFacts({ user, studentIds, range, tests: loaded = null }) {
   const cohort = new Set(studentIds);
-  const tests = await loadAssessmentDefinitions(user);
+  const tests = loaded || await loadAssessmentDefinitions(user);
   if (!studentIds.length || !tests.size) return { tests, byStudent: new Map() };
-  const match = {
-    assessmentId: { $in: [...tests.keys()].map((id) => new mongoose.Types.ObjectId(id)) },
-    status: { $in: FINAL_STATUSES },
-    evaluationStatus: 'completed',
-    score: { $type: 'number' },
-    maxMarks: { $gt: 0 },
-  };
+  const match = gradedMatch(tests);
   if (studentIds.length <= IN_LIST_LIMIT) match.studentId = { $in: studentIds.map((id) => new mongoose.Types.ObjectId(id)) };
   if (range.from || range.to) {
     const window = { ...(range.from ? { $gte: range.from } : {}), ...(range.to ? { $lte: range.to } : {}) };

@@ -1,36 +1,69 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import {
-  ArrowLeft, ArrowRight, BarChart3, Clock, Download, FileSpreadsheet, Filter,
-  GraduationCap, LayoutDashboard, Megaphone, Search,
-  ShieldAlert, SlidersHorizontal, TrendingUp, Users, X,
+  ArrowLeft, BarChart3, Download, FileSpreadsheet, Filter,
+  GraduationCap, LayoutDashboard, Loader2, Megaphone, Search,
+  ShieldAlert, SlidersHorizontal, X,
 } from 'lucide-react';
 import {
-  FilterChip, SortHeader,
+  FilterChip,
   TableEmpty, TableRow, SkeletonRow,
   formatDuration, formatDateTime,
 } from './reports/ReportComponents';
+import ColumnHeader from './reports/ColumnHeader';
+import PageNav from './reports/PageNav';
 import ReportDetailDrawer from './reports/ReportDetailDrawer';
 import ReportViolationModal from './reports/ReportViolationModal';
 import ReportOverview from './reports/ReportOverview';
 import RosterFilterSheet from './reports/RosterFilterSheet';
 import LiveRefreshControl from './reports/LiveRefreshControl';
-import { assessmentAnalysisPath } from './prepAnalysis/analysisPreset';
 import useLiveAssessmentRoster, { DEFAULT_REFRESH_INTERVAL_MS } from './reports/useLiveAssessmentRoster';
 import {
-  DEFAULT_ROSTER_FILTERS, ROSTER_EVALUATION_OPTIONS, ROSTER_PAGE_SIZES,
-  ROSTER_STATUS_OPTIONS, ROSTER_TYPE_OPTIONS, computeRosterStats, filterRosterRows,
-  hasActiveRosterFilters, paginateRows, rowHasViolations, rowOutcome, rowViolationCount,
-  sortRosterRows,
+  ACADEMIC_DIMENSIONS, COLUMN_FILTERS, DEFAULT_ROSTER_FILTERS, ROSTER_EVALUATION_OPTIONS, ROSTER_PAGE_SIZES,
+  ROSTER_STATUS_OPTIONS, ROSTER_TYPE_OPTIONS, academicValue, activeAcademicKeys, activeColumnFilterKeys,
+  columnOptions, computeRosterStats, filterRosterRows, hasActiveRosterFilters, paginateRows, rowHasViolations,
+  rowOutcome, rowViolationCount, sortRosterRows,
 } from './reports/rosterModel';
+
+// Charts are heavy; the analysis loads only when its tab is first opened.
+const ReportAnalysis = lazy(() => import('./reports/ReportAnalysis'));
 
 const PAGE_SIZES = ROSTER_PAGE_SIZES;
 
 const ROSTER_COLUMN_LABELS = {
   student: 'Candidate', status: 'Status', progress: 'Progress', score: 'Score',
   startedAt: 'Started', submittedAt: 'Submitted', time: 'Time', violations: 'Flags',
+  ...Object.fromEntries(ACADEMIC_DIMENSIONS.map(({ key, label }) => [key, label])),
+};
+
+// Table columns in display order. `sortKey` feeds sortRosterRows, `filterKey` feeds COLUMN_FILTERS.
+const TABLE_COLUMNS = [
+  { key: 'student', label: 'Candidate', sortKey: 'name', filterKey: 'student' },
+  { key: 'course', label: 'Course', sortKey: 'course', filterKey: 'course' },
+  { key: 'branch', label: 'Branch', sortKey: 'branch', filterKey: 'branch' },
+  { key: 'semester', label: 'Semester', sortKey: 'semester', filterKey: 'semester' },
+  { key: 'group', label: 'Group', sortKey: 'group', filterKey: 'group' },
+  { key: 'college', label: 'College', sortKey: 'college', filterKey: 'college' },
+  { key: 'status', label: 'Status', sortKey: 'status', filterKey: 'status', align: 'center' },
+  { key: 'progress', label: 'Progress', sortKey: 'progress', filterKey: 'progress', align: 'center' },
+  { key: 'score', label: 'Score', sortKey: 'score', filterKey: 'score', align: 'right' },
+  { key: 'startedAt', label: 'Started', sortKey: 'startedAt', filterKey: 'startedAt' },
+  { key: 'submittedAt', label: 'Submitted', sortKey: 'submittedAt', filterKey: 'submittedAt' },
+  { key: 'time', label: 'Time', sortKey: 'timeTakenSec', filterKey: 'time', align: 'right' },
+  { key: 'violations', label: 'Flags', sortKey: 'violations', filterKey: 'violations', align: 'center' },
+];
+
+const DEFAULT_VISIBLE_COLUMNS = {
+  student: true, course: false, branch: false, semester: false, group: false, college: false,
+  status: true, progress: true, score: true, startedAt: true, submittedAt: false, time: true, violations: true,
+};
+
+const COLUMN_FILTER_LABELS = {
+  student: 'Candidate', status: 'Status', progress: 'Progress', score: 'Score', time: 'Time', violations: 'Flags',
+  startedAt: 'Started', submittedAt: 'Submitted',
+  ...Object.fromEntries(ACADEMIC_DIMENSIONS.map(({ key, label }) => [key, label])),
 };
 
 // Quick views above the candidate table. Outcome views (passed, failed, ...) are
@@ -74,7 +107,13 @@ function readSavedFilters(assessmentId) {
   try {
     const saved = JSON.parse(window.sessionStorage.getItem(filtersStorageKey(assessmentId)) || 'null');
     if (!saved || typeof saved !== 'object') return DEFAULT_ROSTER_FILTERS;
-    return { ...DEFAULT_ROSTER_FILTERS, ...saved, statuses: Array.isArray(saved.statuses) ? saved.statuses : [] };
+    return {
+      ...DEFAULT_ROSTER_FILTERS,
+      ...saved,
+      statuses: Array.isArray(saved.statuses) ? saved.statuses : [],
+      academic: saved.academic && typeof saved.academic === 'object' ? saved.academic : {},
+      columns: saved.columns && typeof saved.columns === 'object' ? saved.columns : {},
+    };
   } catch {
     return DEFAULT_ROSTER_FILTERS;
   }
@@ -214,6 +253,9 @@ export default function AssessmentReports() {
 
   /* View state */
   const [activeTab, setActiveTab] = useState('overview');
+  // The analysis mounts the first time its tab opens and then stays, so switching tabs is instant.
+  const [analysisOpened, setAnalysisOpened] = useState(false);
+  useEffect(() => { if (activeTab === 'analytics') setAnalysisOpened(true); }, [activeTab]);
   const [selectedAssessmentId, setSelectedAssessmentId] = useState(initialAssessmentId);
 
   /* Candidate filters (all client-side, applied to the live roster) */
@@ -275,10 +317,7 @@ export default function AssessmentReports() {
   const [releaseConfirm, setReleaseConfirm] = useState(null);
 
   /* Column visibility */
-  const [visibleColumns, setVisibleColumns] = useState({
-    student: true, status: true, progress: true, score: true,
-    startedAt: true, submittedAt: false, time: true, violations: true,
-  });
+  const [visibleColumns, setVisibleColumns] = useState(DEFAULT_VISIBLE_COLUMNS);
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
@@ -311,6 +350,29 @@ export default function AssessmentReports() {
         : [...prev.statuses, status],
     }));
   }, []);
+
+  const setAcademicFilter = useCallback((key, values) => {
+    setRosterFilters((prev) => ({ ...prev, academic: { ...prev.academic, [key]: values } }));
+  }, []);
+
+  // The table header menus and the filter sheet edit the same class-detail filters.
+  const getColumnFilter = useCallback((key) => (
+    ACADEMIC_DIMENSIONS.some((dimension) => dimension.key === key)
+      ? { values: rosterFilters.academic?.[key] || [] }
+      : rosterFilters.columns?.[key]
+  ), [rosterFilters.academic, rosterFilters.columns]);
+
+  const setColumnFilter = useCallback((key, spec) => {
+    if (ACADEMIC_DIMENSIONS.some((dimension) => dimension.key === key)) {
+      setAcademicFilter(key, spec?.values || []);
+      return;
+    }
+    setRosterFilters((prev) => {
+      const columns = { ...prev.columns };
+      if (spec) columns[key] = spec; else delete columns[key];
+      return { ...prev, columns };
+    });
+  }, [setAcademicFilter]);
 
   const selectAssessmentReport = useCallback((assessmentOrId, options = {}) => {
     const id = typeof assessmentOrId === 'object'
@@ -493,12 +555,40 @@ export default function AssessmentReports() {
 
   const visibleExportDefs = EXPORT_COLUMN_DEFS;
 
+  // submissionId always travels with the export so the file can be limited to the candidates on screen.
   const buildExportParams = useCallback((selectedDefs) => {
     const params = {};
     if (selectedAssessmentId) params.assessmentId = selectedAssessmentId;
-    params.columns = selectedDefs.map(({ key }) => key).join(',');
+    params.columns = [...selectedDefs.map(({ key }) => key), 'submissionId'].join(',');
     return params;
   }, [selectedAssessmentId]);
+
+  // "Current view" = every candidate the filters and quick view leave (not only the visible page).
+  // Candidates who never started have no attempt, so they are in the on-screen count but not in a file.
+  // The rows are computed further down the component, so they are read through a ref at click time.
+  const [exportScope, setExportScope] = useState('all');
+  const exportViewRef = useRef([]);
+  const scopeExportRows = useCallback((rows) => {
+    if (exportScope !== 'view') return rows;
+    const ids = new Set(exportViewRef.current.map((row) => row.submissionId).filter(Boolean).map(String));
+    return rows.filter((row) => ids.has(String(row.submissionId)));
+  }, [exportScope]);
+  // The summary must describe the rows in the file, so a filtered export recomputes it from the same rows.
+  const scopeExportSummary = useCallback((summary) => {
+    if (exportScope !== 'view') return summary;
+    const viewStats = computeRosterStats(exportViewRef.current, { passPercentage });
+    return {
+      ...summary,
+      totalCandidates: viewStats.total,
+      avgScore: viewStats.avgPercentage,
+      maxScore: viewStats.maxPercentage,
+      minScore: viewStats.minPercentage,
+      passCount: viewStats.passed,
+      failCount: viewStats.failed,
+      violationCount: viewStats.violationEvents,
+      unit: '%',
+    };
+  }, [exportScope, passPercentage]);
 
   const buildExportValue = useCallback((row, key) => {
     const value = row?.[key];
@@ -520,9 +610,12 @@ export default function AssessmentReports() {
     setExportingExcel(true);
     try {
       const payload = await api.getAssessmentReportsExportData(buildExportParams(selectedDefs));
-      const rows = Array.isArray(payload?.rows) ? payload.rows : [];
-      const sectionRows = Array.isArray(payload?.sectionRows) ? payload.sectionRows : [];
-      const summary = payload?.summary || {};
+      const rows = scopeExportRows(Array.isArray(payload?.rows) ? payload.rows : []);
+      const rowIds = new Set(rows.map((row) => String(row.submissionId)));
+      const sectionRows = (Array.isArray(payload?.sectionRows) ? payload.sectionRows : [])
+        .filter((row) => exportScope !== 'view' || rowIds.has(String(row.submissionId)));
+      const summary = scopeExportSummary(payload?.summary || {});
+      const unitSuffix = summary.unit === '%' ? ' (%)' : '';
 
       if (!rows.length) {
         toast.error('No candidate report data found for the selected assessment and filters.');
@@ -611,8 +704,8 @@ export default function AssessmentReports() {
       summarySheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 1, paperSize: 9 };
       summarySheet.headerFooter.oddFooter = '&RPage &P of &N';
       const kpis = [
-        ['Candidates', summary.totalCandidates || rows.length || 0, palette.blue, palette.sky],
-        ['Average score', summary.avgScore ?? '—', palette.navy, 'FFE8EEF5'],
+        [exportScope === 'view' ? 'Candidates (filtered)' : 'Candidates', summary.totalCandidates || rows.length || 0, palette.blue, palette.sky],
+        [`Average score${unitSuffix}`, summary.avgScore ?? '—', palette.navy, 'FFE8EEF5'],
         ['Passed', summary.passCount || 0, palette.green, palette.greenPale],
         ['Failed', summary.failCount || 0, palette.red, palette.redPale],
       ];
@@ -641,8 +734,8 @@ export default function AssessmentReports() {
       summarySheet.getCell('A8').font = { name: 'Aptos', size: 11, bold: true, color: { argb: palette.navy } };
       const totalResults = Number(summary.passCount || 0) + Number(summary.failCount || 0);
       const detailRows = [
-        ['Highest score', summary.maxScore ?? '—'],
-        ['Lowest score', summary.minScore ?? '—'],
+        [`Highest score${unitSuffix}`, summary.maxScore ?? '—'],
+        [`Lowest score${unitSuffix}`, summary.minScore ?? '—'],
         ['Pass rate', totalResults ? Number(((Number(summary.passCount || 0) / totalResults) * 100).toFixed(1)) : 0],
       ];
       detailRows.forEach(([label, value], index) => {
@@ -691,7 +784,7 @@ export default function AssessmentReports() {
     } finally {
       setExportingExcel(false);
     }
-  }, [buildExportParams, buildExportValue, exportColumns, selectedAssessment, toast, visibleExportDefs]);
+  }, [buildExportParams, buildExportValue, exportColumns, exportScope, scopeExportRows, scopeExportSummary, selectedAssessment, toast, visibleExportDefs]);
 
   const handleCsvExport = useCallback(async () => {
     const selectedDefs = visibleExportDefs.filter(({ key }) => exportColumns[key]);
@@ -702,7 +795,7 @@ export default function AssessmentReports() {
     setExportingExcel(true);
     try {
       const payload = await api.getAssessmentReportsExportData(buildExportParams(selectedDefs));
-      const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+      const rows = scopeExportRows(Array.isArray(payload?.rows) ? payload.rows : []);
       if (!rows.length) {
         toast.error('No candidate report data found for the selected filters.');
         return;
@@ -728,7 +821,7 @@ export default function AssessmentReports() {
     } finally {
       setExportingExcel(false);
     }
-  }, [buildExportParams, buildExportValue, exportColumns, toast, visibleExportDefs]);
+  }, [buildExportParams, buildExportValue, exportColumns, scopeExportRows, toast, visibleExportDefs]);
 
   const handlePdfExport = useCallback(async () => {
     const selectedDefs = visibleExportDefs.filter(({ key }) => exportColumns[key]);
@@ -739,7 +832,8 @@ export default function AssessmentReports() {
     setExportingExcel(true);
     try {
       const payload = await api.getAssessmentReportsExportData(buildExportParams(selectedDefs));
-      const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+      const rows = scopeExportRows(Array.isArray(payload?.rows) ? payload.rows : []);
+      const summary = scopeExportSummary(payload?.summary || {});
       if (!rows.length) {
         toast.error('No candidate report data found for the selected filters.');
         return;
@@ -779,10 +873,10 @@ export default function AssessmentReports() {
             <h1>PeerPrep Assessment Analytics Report</h1>
             <div class="meta">Assessment: ${escapeHtml(selectedAssessment?.title || 'All Assessments')} | Generated: ${escapeHtml(formatDateTime(payload?.generatedAt))}</div>
             <div class="summary">
-              <div class="card"><div class="label">Candidates</div><div class="value">${payload?.summary?.totalCandidates || rows.length}</div></div>
-              <div class="card"><div class="label">Average Score</div><div class="value">${payload?.summary?.avgScore || 0}</div></div>
-              <div class="card"><div class="label">Passed</div><div class="value">${payload?.summary?.passCount || 0}</div></div>
-              <div class="card"><div class="label">Violations</div><div class="value">${payload?.summary?.violationCount || 0}</div></div>
+              <div class="card"><div class="label">Candidates${exportScope === 'view' ? ' (filtered)' : ''}</div><div class="value">${summary.totalCandidates || rows.length}</div></div>
+              <div class="card"><div class="label">Average Score${summary.unit === '%' ? ' (%)' : ''}</div><div class="value">${summary.avgScore || 0}</div></div>
+              <div class="card"><div class="label">Passed</div><div class="value">${summary.passCount || 0}</div></div>
+              <div class="card"><div class="label">Violations</div><div class="value">${summary.violationCount || 0}</div></div>
             </div>
             <table><thead><tr>${tableHead}</tr></thead><tbody>${tableRows}</tbody></table>
           </body>
@@ -796,12 +890,13 @@ export default function AssessmentReports() {
     } finally {
       setExportingExcel(false);
     }
-  }, [buildExportParams, buildExportValue, exportColumns, selectedAssessment, toast, visibleExportDefs]);
+  }, [buildExportParams, buildExportValue, exportColumns, exportScope, scopeExportRows, scopeExportSummary, selectedAssessment, toast, visibleExportDefs]);
 
   /* ── Sorting ── */
   const handleSort = useCallback((key) => {
     setSort((prev) => ({ key, dir: prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc' }));
   }, []);
+  const handleSortDirection = useCallback((key, dir) => setSort({ key, dir }), []);
 
   /* ── Clear ── */
   const clearFilters = useCallback(() => {
@@ -825,8 +920,29 @@ export default function AssessmentReports() {
     if (f.scoreMin !== '' || f.scoreMax !== '') chips.push({ key: 'score', label: `Score: ${f.scoreMin || 0}% - ${f.scoreMax || 100}%`, clear: () => setRosterFilters((prev) => ({ ...prev, scoreMin: '', scoreMax: '' })) });
     if (f.flaggedOnly) chips.push({ key: 'flagged', label: 'Flagged only', clear: () => updateRosterFilter('flaggedOnly', false) });
     if (f.hasViolations) chips.push({ key: 'violations', label: 'Has violations', clear: () => updateRosterFilter('hasViolations', false) });
+    activeAcademicKeys(f).forEach((key) => {
+      const label = ROSTER_COLUMN_LABELS[key];
+      const values = f.academic[key].map((value) => (value === '' ? 'Not set' : value));
+      chips.push({ key: `academic-${key}`, label: `${label}: ${values.length > 2 ? `${values.slice(0, 2).join(', ')} +${values.length - 2}` : values.join(', ')}`, clear: () => setAcademicFilter(key, []) });
+    });
+    activeColumnFilterKeys(f).forEach((key) => {
+      const spec = f.columns[key];
+      const label = COLUMN_FILTER_LABELS[key] || key;
+      let text;
+      if (COLUMN_FILTERS[key].kind === 'enum') {
+        const names = columnOptions(roster.rows, key).filter((option) => spec.values.includes(option.value)).map((option) => option.label);
+        text = names.length > 2 ? `${names.slice(0, 2).join(', ')} +${names.length - 2}` : names.join(', ');
+      } else if (COLUMN_FILTERS[key].kind === 'text') {
+        text = spec.text;
+      } else if (COLUMN_FILTERS[key].kind === 'date') {
+        text = `${spec.from || '…'} → ${spec.to || '…'}`;
+      } else {
+        text = `${spec.min === '' || spec.min == null ? '…' : spec.min} – ${spec.max === '' || spec.max == null ? '…' : spec.max}`;
+      }
+      chips.push({ key: `column-${key}`, label: `${label}: ${text}`, clear: () => setColumnFilter(key, null) });
+    });
     return chips;
-  }, [quickView, rosterFilters, toggleStatusFilter, updateRosterFilter]);
+  }, [quickView, roster.rows, rosterFilters, setAcademicFilter, setColumnFilter, toggleStatusFilter, updateRosterFilter]);
 
   /* ── Roster derived data (client-side, instant) ── */
   const stats = useMemo(
@@ -863,7 +979,7 @@ export default function AssessmentReports() {
     setKpiDeltas({
       started: stats.started - previous.stats.started,
       inProgress: stats.inProgress - previous.stats.inProgress,
-      submitted: stats.submitted - previous.stats.submitted,
+      finished: stats.finished - previous.stats.finished,
       flagged: stats.flaggedSessions - previous.stats.flaggedSessions,
     });
   }, [roster.lastUpdatedAt, stats]);
@@ -879,45 +995,15 @@ export default function AssessmentReports() {
   );
   const pageData = useMemo(() => paginateRows(visibleRows, page, pageSize), [page, pageSize, visibleRows]);
   const filtersActive = hasActiveRosterFilters(rosterFilters);
-
-  /* ── KPI data ── */
-  const kpiData = useMemo(() => {
-    const pct = (value) => (value == null ? '—' : `${value}%`);
-    const gradedParts = [`${stats.graded} graded`];
-    if (stats.evaluating) gradedParts.push(`${stats.evaluating} evaluating`);
-    if (stats.needsReview) gradedParts.push(`${stats.needsReview} need review`);
-    let passInsight = 'No graded attempts yet';
-    if (stats.passRate != null) passInsight = `${stats.passed} of ${stats.graded} graded passed`;
-    else if (stats.graded && passPercentage == null) passInsight = 'Pass mark not set';
-    return [
-      {
-        icon: Users, label: 'Candidates', value: stats.total, delta: kpiDeltas.started,
-        insight: `${stats.started} started · ${stats.notStarted} not started`, tone: 'sky',
-      },
-      {
-        icon: Clock, label: 'In progress', value: stats.inProgress, delta: kpiDeltas.inProgress,
-        insight: reportAssessment?.totalQuestions ? `${reportAssessment.totalQuestions} questions · ${reportAssessment.totalMarks || 0} marks` : 'Writing right now',
-        tone: 'sky',
-      },
-      {
-        icon: GraduationCap, label: 'Submitted', value: stats.submitted, delta: kpiDeltas.submitted,
-        insight: gradedParts.join(' · '), tone: 'emerald',
-      },
-      {
-        icon: TrendingUp, label: 'Avg Score', value: pct(stats.avgPercentage),
-        insight: stats.avgPercentage == null ? 'No graded attempts yet' : `Low ${stats.minPercentage}% · High ${stats.maxPercentage}%`,
-        tone: 'violet',
-      },
-      {
-        icon: BarChart3, label: 'Pass Rate', value: pct(stats.passRate),
-        insight: passInsight, tone: 'emerald',
-      },
-      {
-        icon: ShieldAlert, label: 'Flagged', value: stats.flaggedSessions, delta: kpiDeltas.flagged,
-        insight: `${stats.violationEvents} integrity events`, tone: 'rose',
-      },
-    ];
-  }, [kpiDeltas, passPercentage, reportAssessment, stats]);
+  useEffect(() => { exportViewRef.current = visibleRows; }, [visibleRows]);
+  // Opening the export dialog on a narrowed table defaults to exactly what is on screen.
+  useEffect(() => {
+    if (showExportModal) setExportScope(filtersActive || quickView !== 'all' ? 'view' : 'all');
+    // Only the opening should choose the default; later filter edits must not flip the user's choice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showExportModal]);
+  const exportableInView = useMemo(() => visibleRows.filter((row) => row.submissionId).length, [visibleRows]);
+  const exportableAll = useMemo(() => roster.rows.filter((row) => row.submissionId).length, [roster.rows]);
 
   // Violation chart data, from the live roster
   const violationLabels = ['Tab Switch', 'Fullscreen Exit', 'Camera Flags', 'AI Flags'];
@@ -975,60 +1061,69 @@ export default function AssessmentReports() {
     </div>
   );
 
+  // A slim icon rail that slides open over the page while the pointer is on it and slides shut
+  // when it leaves (80 ms), so the report keeps the full width. The inner column has a fixed
+  // width, so opening only reveals it: nothing inside reflows.
+  const railReveal = 'opacity-0 transition-opacity duration-[80ms] group-hover/rail:opacity-100 group-has-[:focus-visible]/rail:opacity-100 group-has-[input:focus]/rail:opacity-100';
   const assessmentRail = (
-    <div className="flex h-full min-h-0 flex-col border-r border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-      <div className="shrink-0 border-b border-slate-200 p-3 dark:border-gray-800">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input
-            id="report-assessment-search"
-            type="search"
-            placeholder="Search assessments"
-            value={assessmentSearch}
-            onChange={(e) => setAssessmentSearch(e.target.value)}
-            className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-700 outline-none placeholder:text-slate-400 focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-          />
+    <div className="group/rail absolute inset-y-0 left-0 z-30 w-14 overflow-hidden border-r border-slate-200 bg-white transition-[width,box-shadow] duration-[80ms] ease-out hover:w-72 hover:shadow-2xl has-[:focus-visible]:w-72 has-[input:focus]:w-72 dark:border-gray-800 dark:bg-gray-950">
+      <div className="flex h-full w-72 flex-col">
+        <div className="shrink-0 border-b border-slate-200 px-3 py-3 dark:border-gray-800">
+          <div className="flex h-8 items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center text-slate-400" aria-hidden="true"><Search className="h-4 w-4" /></span>
+            <input
+              id="report-assessment-search"
+              type="search"
+              placeholder="Search assessments"
+              aria-label="Search assessments"
+              value={assessmentSearch}
+              onChange={(e) => setAssessmentSearch(e.target.value)}
+              className={`h-8 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-700 outline-none placeholder:text-slate-400 focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 ${railReveal}`}
+            />
+          </div>
         </div>
-      </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        <div>
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-1.5">
           {shellLoading && !assessmentSidebarItems.length ? (
             Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-12 animate-pulse rounded-md bg-slate-100 dark:bg-gray-800" />
+              <div key={i} className="mx-3 my-1.5 h-8 w-8 animate-pulse rounded-lg bg-slate-100 dark:bg-gray-800" />
             ))
           ) : assessmentSidebarItems.length ? (
             assessmentSidebarItems.map((a) => {
               const active = String(a._id) === String(selectedAssessmentId);
               const status = reportAssessmentStatus(a, statusTime);
+              const attempts = a.startedCount ?? a.submissionCount ?? 0;
               return (
                 <button
                   key={a._id}
                   type="button"
-                  onClick={() => selectAssessmentReport(a, { openOverview: false })}
+                  onClick={(event) => { selectAssessmentReport(a, { openOverview: false }); event.currentTarget.blur(); }}
                   aria-current={active ? 'true' : undefined}
-                  className={`group flex w-full items-center gap-2.5 border-b border-slate-200/80 px-2.5 py-3 text-left transition-colors last:border-b-0 dark:border-gray-800 ${
+                  aria-label={`${a.title || 'Untitled'}, ${status}, ${attempts} attempts`}
+                  title={a.title || 'Untitled'}
+                  className={`group flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors ${
                     active
-                      ? 'rounded-lg bg-sky-50 text-sky-950 dark:bg-sky-900/20 dark:text-sky-100'
+                      ? 'bg-sky-50 text-sky-950 dark:bg-sky-900/20 dark:text-sky-100'
                       : 'text-slate-700 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-900'
                   }`}
                 >
-                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-sky-50 group-hover:text-sky-600 dark:bg-gray-800 dark:text-gray-500'}`}>
+                  <span className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-sky-50 group-hover:text-sky-600 dark:bg-gray-800 dark:text-gray-500'}`}>
                     <FileSpreadsheet className="h-3.5 w-3.5" />
+                    <span aria-hidden="true" className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-gray-950 ${status === 'Live' ? 'bg-emerald-500' : status === 'Scheduled' ? 'bg-amber-400' : status === 'Completed' ? 'bg-sky-400' : 'bg-slate-300'}`} />
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-1.5"><span className="min-w-0 flex-1 truncate text-xs font-semibold" title={a.title || 'Untitled'}>{a.title || 'Untitled'}</span><span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${reportAssessmentStatusClass[status]}`}>{status}</span></div>
+                  <div className={`min-w-0 flex-1 ${railReveal}`}>
+                    <div className="flex min-w-0 items-center gap-1.5"><span className="min-w-0 flex-1 truncate text-xs font-semibold">{a.title || 'Untitled'}</span><span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${reportAssessmentStatusClass[status]}`}>{status}</span></div>
                     <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-gray-500">
-                      <span className="truncate">{a.assessmentType || 'Mixed'}</span>
+                      <span className="truncate capitalize">{a.assessmentType || 'Mixed'}</span>
                       <span aria-hidden="true">·</span>
-                      <span className="shrink-0">{a.submissionCount || 0} attempts</span>
+                      <span className="shrink-0 tabular-nums" title="Candidates who started the test">{attempts} attempted</span>
                     </div>
                   </div>
                 </button>
               );
             })
           ) : (
-            <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-500 dark:border-gray-800 dark:text-gray-400">
+            <div className={`mx-3 rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-500 dark:border-gray-800 dark:text-gray-400 ${railReveal}`}>
               No assessments found
             </div>
           )}
@@ -1038,109 +1133,107 @@ export default function AssessmentReports() {
   );
 
   return (
-    <div className="h-screen overflow-hidden bg-slate-50 text-slate-900 dark:bg-gray-950">
-      <div data-page-header className="shrink-0 border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => navigate(`${rolePrefix}/assessment`)}
-              aria-label="Back to assessments"
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-sky-300 hover:bg-sky-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">Assessments</span>
-            </button>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm shadow-sky-200 dark:shadow-none">
-              <BarChart3 className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold text-slate-950 dark:text-white">Assessment Reports</h1>
-              <p className="text-xs text-slate-500 dark:text-gray-400">
-                {selectedAssessment ? `${selectedAssessment.title} · ${roster.rows.length} candidates` : 'Choose an assessment to view its report'}
+    <div className="flex h-screen flex-col overflow-hidden bg-slate-50 text-slate-900 dark:bg-gray-950">
+      {/* One compact bar: back, title, tabs and live controls (the page used to spend ~160px on two bars). */}
+      <header data-page-header className="shrink-0 border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex min-h-[52px] flex-wrap items-center gap-x-3 gap-y-0 px-3 sm:px-4">
+          <button
+            type="button"
+            onClick={() => navigate(`${rolePrefix}/assessment`)}
+            aria-label="Back to assessments"
+            title="Back to assessments"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-sky-300 hover:bg-sky-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="flex min-w-0 items-center gap-2.5 py-2">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white shadow-sm shadow-sky-200 dark:shadow-none">
+              <BarChart3 className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-semibold leading-tight text-slate-950 dark:text-white">Assessment Reports</h1>
+              <p className="max-w-[16rem] truncate text-[11px] leading-tight text-slate-500 dark:text-gray-400" title={selectedAssessment?.title}>
+                {selectedAssessment ? `${selectedAssessment.title} · ${roster.rows.length} candidates` : 'Choose an assessment'}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="relative lg:hidden">
-                <select
-                  value={selectedAssessmentId || ''}
-                  onChange={(e) => setSelectedAssessmentId(e.target.value)}
-                  className="h-9 w-48 rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-xs text-slate-700 outline-none ring-sky-200 transition-all focus:border-sky-400 focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900"
+          <nav aria-label="Report sections" className="order-last -mb-px flex w-full gap-0.5 overflow-x-auto self-stretch sm:order-none sm:ml-2 sm:w-auto">
+            {tabsConfig.map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  aria-current={active ? 'page' : undefined}
+                  className={`relative flex shrink-0 items-center gap-1.5 border-b-2 px-3 text-xs font-semibold transition-colors ${active ? 'border-sky-600 text-sky-700 dark:border-sky-400 dark:text-sky-300' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-300'}`}
                 >
-                  <option value="">Choose assessment</option>
-                  {(allAssessments.length ? allAssessments : assessments).map((a) => (
-                    <option key={a._id} value={a._id}>{a.title || 'Untitled'}</option>
-                  ))}
-                </select>
-                {selectedAssessmentId && (
-                  <button
-                    onClick={() => setSelectedAssessmentId('')}
-                    className="absolute right-7 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            </div>
+                  <Icon className="h-3.5 w-3.5" />
+                  {tab.label}
+                  {tab.id === 'violations' && stats.flaggedSessions > 0 && (
+                    <span className="ml-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sky-600 px-1 text-[9px] font-bold text-white">
+                      {stats.flaggedSessions}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
 
-            {selectedAssessment && <div className="flex items-center gap-2">
-              <LiveRefreshControl
-                roster={roster}
-                intervalMs={refreshIntervalMs}
-                onIntervalChange={changeRefreshInterval}
-                onRefresh={() => { void roster.refresh(); setShellVersion((value) => value + 1); }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowExportModal(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-gray-200"
+          <div className="ml-auto flex flex-wrap items-center gap-2 py-2">
+            <div className="relative lg:hidden">
+              <select
+                value={selectedAssessmentId || ''}
+                onChange={(e) => setSelectedAssessmentId(e.target.value)}
+                aria-label="Choose assessment"
+                className="h-8 w-44 rounded-lg border border-slate-200 bg-white py-1 pl-3 pr-8 text-xs text-slate-700 outline-none ring-sky-200 transition-all focus:border-sky-400 focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900"
               >
-                <Download className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Export</span>
-              </button>
-            </div>}
-          </div>
-        </div>
-
-        {/* ── Tab Bar ── */}
-        <div className="border-t border-slate-200 bg-slate-50 dark:border-gray-700 dark:bg-gray-800">
-          <div className="mx-auto max-w-[1600px] px-4 sm:px-6">
-            <div className="flex gap-1">
-              {tabsConfig.map((tab) => {
-                const Icon = tab.icon;
-                const active = activeTab === tab.id;
-                return (
-                  <button key={tab.id} onClick={() => {
-                    if (tab.id === 'analytics') {
-                      navigate(assessmentAnalysisPath({ _id: selectedAssessmentId, title: selectedAssessment?.title }));
-                      return;
-                    }
-                    setActiveTab(tab.id);
-                  }} className={`relative flex items-center gap-1.5 border-b-2 px-3 py-3 text-xs font-semibold transition-colors ${active ? 'border-sky-600 text-sky-700 dark:border-sky-400 dark:text-sky-300' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-300'}`}>
-                    <Icon className="h-3.5 w-3.5" />
-                    {tab.label}
-                    {tab.id === 'violations' && stats.flaggedSessions > 0 && (
-                      <span className="ml-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sky-600 px-1 text-[9px] font-bold text-white">
-                        {stats.flaggedSessions}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                <option value="">Choose assessment</option>
+                {(allAssessments.length ? allAssessments : assessments).map((a) => (
+                  <option key={a._id} value={a._id}>{a.title || 'Untitled'}</option>
+                ))}
+              </select>
+              {selectedAssessmentId && (
+                <button
+                  type="button"
+                  aria-label="Clear assessment"
+                  onClick={() => setSelectedAssessmentId('')}
+                  className="absolute right-7 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
+            {selectedAssessment && (
+              <>
+                <LiveRefreshControl
+                  roster={roster}
+                  intervalMs={refreshIntervalMs}
+                  onIntervalChange={changeRefreshInterval}
+                  onRefresh={() => { void roster.refresh(); setShellVersion((value) => value + 1); }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowExportModal(true)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-gray-200"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Export</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="mx-auto grid h-[calc(100vh-113px)] max-w-[1600px] grid-cols-1 overflow-hidden lg:grid-cols-[244px_minmax(0,1fr)]">
-        <aside className="hidden min-h-0 lg:block">
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[56px_minmax(0,1fr)]">
+        <aside className="relative hidden min-h-0 lg:block" aria-label="Assessments">
           {assessmentRail}
         </aside>
 
-        <main className={`min-h-0 px-4 py-4 sm:px-5 ${activeTab === 'candidates' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`}>
+        <main className={`min-h-0 px-3 py-3 sm:px-4 [&>*]:mx-auto [&>*]:w-full [&>*]:max-w-[1560px] ${activeTab === 'candidates' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`}>
         {activeTab === 'overview' && !selectedAssessment && (
           <div className="flex min-h-[500px] items-center justify-center">
             <div className="max-w-md px-6 text-center">
@@ -1169,7 +1262,8 @@ export default function AssessmentReports() {
               statusLabel={reportAssessmentStatus(selectedAssessment, statusTime)}
               statusClass={reportAssessmentStatusClass[reportAssessmentStatus(selectedAssessment, statusTime)]}
               stats={stats}
-              kpis={kpiData}
+              deltas={kpiDeltas}
+              passPercentage={passPercentage}
               release={releaseControl}
               rows={roster.rows}
               activity={roster.activity}
@@ -1177,7 +1271,17 @@ export default function AssessmentReports() {
               onOpenStudent={openStudentDetail}
               onOpenViolations={openViolationsFor}
               onShowCandidates={showCandidates}
+              onOpenAnalysis={() => setActiveTab('analytics')}
             />
+          </div>
+        )}
+
+        {/* ── Analysis: the Prep Analysis charts, scoped to this assessment, without leaving the report ── */}
+        {analysisOpened && selectedAssessment && (
+          <div className={activeTab === 'analytics' ? 'block' : 'hidden'}>
+            <Suspense fallback={<div className="flex h-64 items-center justify-center text-xs text-slate-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading analysis…</div>}>
+              <ReportAnalysis assessmentId={String(selectedAssessmentId)} title={selectedAssessment.title} />
+            </Suspense>
           </div>
         )}
 
@@ -1295,7 +1399,10 @@ export default function AssessmentReports() {
                     </button>
                     {showColumnMenu && (
                       <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-xl border border-slate-200 bg-white py-2 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-                        {Object.entries(visibleColumns).map(([key, visible]) => (
+                        {Object.entries(visibleColumns)
+                          .filter(([key]) => !ACADEMIC_DIMENSIONS.some((dimension) => dimension.key === key)
+                            || roster.rows.some((row) => academicValue(row, key) !== ''))
+                          .map(([key, visible]) => (
                           <label key={key} className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
                             <input type="checkbox" checked={visible} onChange={() => setVisibleColumns((p) => ({ ...p, [key]: !p[key] }))} className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
                             {ROSTER_COLUMN_LABELS[key] || key}
@@ -1340,15 +1447,23 @@ export default function AssessmentReports() {
                 <table className="min-w-full text-left" style={{ '--serial-start': pageData.start }}>
                   <thead className={`${activeTab === 'candidates' ? 'sticky top-0 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] dark:shadow-[0_1px_0_0_rgba(55,65,81,1)]' : ''} bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:bg-gray-800 dark:text-gray-400`}>
                     <tr>
-                      {visibleColumns.student && <SortHeader label="Candidate" sortKey="name" currentSort={sort} onSort={handleSort} />}
-                      {visibleColumns.status && <SortHeader label="Status" sortKey="status" currentSort={sort} onSort={handleSort} align="center" />}
-                      {visibleColumns.progress && <SortHeader label="Progress" sortKey="progress" currentSort={sort} onSort={handleSort} align="center" />}
-                      {visibleColumns.score && <SortHeader label="Score" sortKey="score" currentSort={sort} onSort={handleSort} align="right" />}
-                      {visibleColumns.startedAt && <SortHeader label="Started" sortKey="startedAt" currentSort={sort} onSort={handleSort} />}
-                      {visibleColumns.submittedAt && <SortHeader label="Submitted" sortKey="submittedAt" currentSort={sort} onSort={handleSort} />}
-                      {visibleColumns.time && <SortHeader label="Time" sortKey="timeTakenSec" currentSort={sort} onSort={handleSort} align="right" />}
-                      {visibleColumns.violations && <SortHeader label="Flags" sortKey="violations" currentSort={sort} onSort={handleSort} align="center" />}
-                      <th className="px-4 py-3 text-right">Actions</th>
+                      {TABLE_COLUMNS.filter((column) => visibleColumns[column.key]).map((column) => (
+                        <ColumnHeader
+                          key={column.key}
+                          label={column.label}
+                          sortKey={column.sortKey}
+                          filterKey={column.filterKey}
+                          align={column.align}
+                          sort={sort}
+                          onSort={handleSort}
+                          onSortDirection={handleSortDirection}
+                          filters={rosterFilters}
+                          getFilter={getColumnFilter}
+                          onFilter={setColumnFilter}
+                          rows={tabRows}
+                        />
+                      ))}
+                      <th scope="col" className="px-4 py-2.5 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
@@ -1388,28 +1503,7 @@ export default function AssessmentReports() {
                     </>
                   ) : '0 candidates'}
                 </span>
-                <div className="flex items-center gap-1.5">
-                  <button type="button" disabled={currentPage <= 1} onClick={() => setPage(Math.max(1, currentPage - 1))} className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
-                    <ArrowLeft className="h-3 w-3" />Prev
-                  </button>
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
-                      let p;
-                      if (totalPages <= 7) p = i + 1;
-                      else if (currentPage <= 4) p = i + 1;
-                      else if (currentPage >= totalPages - 3) p = totalPages - 6 + i;
-                      else p = currentPage - 3 + i;
-                      return (
-                        <button key={p} onClick={() => setPage(p)} className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors ${p === currentPage ? 'bg-sky-600 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>
-                          {p}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <button type="button" disabled={currentPage >= totalPages} onClick={() => setPage(Math.min(totalPages, currentPage + 1))} className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
-                    Next<ArrowRight className="h-3 w-3" />
-                  </button>
-                </div>
+                <PageNav page={currentPage} totalPages={totalPages} onPage={setPage} />
               </div>
             </div>
           </div>
@@ -1423,7 +1517,7 @@ export default function AssessmentReports() {
           <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-gray-700">
               <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Excel Export Settings</h2>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Export report</h2>
                 <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
                   Choose the columns for the main candidate sheet. Section performance and proctoring logs will be added as separate sheets when data exists.
                 </p>
@@ -1431,6 +1525,24 @@ export default function AssessmentReports() {
               <button onClick={() => setShowExportModal(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Close</button>
             </div>
             <div className="px-5 py-4">
+              <fieldset className="mb-4">
+                <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400">Candidates to include</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {[
+                    { value: 'view', title: 'What is on screen', detail: `${exportableInView} attempt${exportableInView === 1 ? '' : 's'} · all filters and the current view applied` },
+                    { value: 'all', title: 'Everyone in this assessment', detail: `${exportableAll} attempt${exportableAll === 1 ? '' : 's'} · filters ignored` },
+                  ].map((option) => (
+                    <label key={option.value} className={`flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 text-xs transition-colors ${exportScope === option.value ? 'border-sky-500 bg-sky-50 dark:border-sky-600 dark:bg-sky-900/20' : 'border-slate-200 hover:border-slate-300 dark:border-gray-700'}`}>
+                      <input type="radio" name="export-scope" value={option.value} checked={exportScope === option.value} onChange={() => setExportScope(option.value)} className="mt-0.5 h-3.5 w-3.5 text-sky-600 focus:ring-sky-500" />
+                      <span>
+                        <span className="block font-semibold text-slate-800 dark:text-gray-100">{option.title}</span>
+                        <span className="block text-slate-500 dark:text-gray-400">{option.detail}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-400 dark:text-gray-500">A file lists attempts. Candidates who have not started have no attempt, so they are counted on screen but not in the file.</p>
+              </fieldset>
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <button onClick={() => setAllExportColumns(true)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Select All</button>
                 <button onClick={() => setAllExportColumns(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Unselect All</button>
@@ -1490,10 +1602,12 @@ export default function AssessmentReports() {
       <RosterFilterSheet
         open={showFilterPanel}
         filters={rosterFilters}
+        rows={tabRows}
         statusCounts={statusCounts}
         matchCount={visibleRows.length}
         totalCount={tabRows.length}
         onChange={updateRosterFilter}
+        onAcademicChange={setAcademicFilter}
         onToggleStatus={toggleStatusFilter}
         onClear={clearFilters}
         onClose={closeFilterPanel}

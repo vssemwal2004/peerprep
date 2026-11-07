@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import ExcelJS from 'exceljs';
-import { buildKpiGroups, buildKpis, CHARTS, pageItems } from '../src/modules/prepAnalysis/charts.js';
+import { boxStats, buildKpiGroups, buildKpis, CHARTS, pageItems, practising } from '../src/modules/prepAnalysis/charts.js';
 import { drillDetail, drillStudents } from '../src/modules/prepAnalysis/drill.js';
 import { chartSummary } from '../src/modules/prepAnalysis/summaries.js';
 import { buildChartBook, renderChartCsv, renderChartXlsx } from '../src/modules/prepAnalysis/prepAnalysis.export.js';
@@ -387,6 +387,34 @@ test('every chart builds from the cohort and from an empty selection', () => {
   assert.equal(buildKpis(rows).find((kpi) => kpi.id === 'stopped').hint, '50% of 4 students');
   assert.ok(!('prepScore' in kpis), 'no cohort-average Prep Score');
   assert.equal(attention.items[0].daysSinceActive, 39, 'attention lists carry recency for the chart summary');
+});
+
+test('scatter and box-plot charts: one dot per student, honest quartiles, and a box opens exactly its students', () => {
+  assert.deepEqual(boxStats([1, 2, 3, 4, 5]), { count: 5, min: 1, q1: 2, median: 3, q3: 4, max: 5, mean: 3 });
+  assert.deepEqual(boxStats([10, 20]), { count: 2, min: 10, q1: 12.5, median: 15, q3: 17.5, max: 20, mean: 15 }, 'quartiles interpolate between neighbours');
+  assert.deepEqual(boxStats([]), { count: 0, min: 0, q1: 0, median: 0, q3: 0, max: 0, mean: 0 }, 'no values is zeros, never NaN');
+  assert.equal(boxStats([4, Number.NaN, 8]).count, 2, 'non-numbers are ignored');
+
+  const { rows, topics } = cohort();
+  const chartOf = (id) => CHARTS.find((chart) => chart.id === id);
+  const build = (id) => chartOf(id).build({ rows, options: chartOf(id).options || {}, range: { preset: 'all', to: new Date('2026-10-10') }, topics });
+  const practised = practising(rows);
+
+  const map = build('student-map');
+  assert.equal(map.items.length, practised.length, 'a dot for every student who practised, none for those who never did');
+  assert.equal(map.total, practised.length);
+  assert.ok(map.items.every((item) => item.id && item.name && Number.isFinite(item.x) && Number.isFinite(item.y) && ['Practising', 'Stopped'].includes(item.group)));
+  assert.equal(map.items[0].y, Math.max(...map.items.map((item) => item.y)), 'highest score first, so a cap keeps the best-scoring dots');
+
+  const spread = build('class-spread');
+  assert.equal(spread.groups.reduce((sum, group) => sum + group.students, 0), practised.length, 'every student who practised is in exactly one box');
+  for (const group of spread.groups) {
+    assert.ok(group.min <= group.q1 && group.q1 <= group.median && group.median <= group.q3 && group.q3 <= group.max, `${group.label}: quartiles are in order`);
+    const behind = drillStudents(chartOf('class-spread'), rows, group.label, chartOf('class-spread').options).items;
+    assert.equal(behind.length, group.students, `${group.label}: the box opens exactly its students`);
+  }
+  assert.equal(chartSummary('class-spread', rows, spread).students, practised.length);
+  assert.ok(CHARTS.filter((chart) => ['scatter', 'boxplot'].includes(chart.type)).every((chart) => JSON.stringify(chart.build({ rows: [], options: chart.options || {}, range: {}, topics }))), 'both build from nobody');
 });
 
 test('a chart\'s full page pages through every item; a card shows its limit', () => {

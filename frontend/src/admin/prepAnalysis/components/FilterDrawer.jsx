@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { LayoutGrid, Loader2, Plus, RotateCcw, SlidersHorizontal, Users, X } from "lucide-react";
-import { prepAnalysisApi } from "../api";
+import { useAnalysisApi } from "../analysisScope";
 import {
   MAX_GROUPS, RANGE_PRESETS, countActive, countRules, defaultFilterState, featureFields, groupName, groupText, isRuleComplete, newGroup, nodeId,
   optionLookup, rankMetrics, rankText, setRule, studentFields, switchArea, toQueryRequest, valueParts,
@@ -45,6 +45,7 @@ const withoutEmptyGroups = (state, fieldMap) => {
  * until "Show N students".
  */
 export function FilterDrawer({ open, state, catalog, fieldMap, matched, onApply, onClose }) {
+  const api = useAnalysisApi();
   const [draft, setDraft] = useState(state);
   const [openGroup, setOpenGroup] = useState(state.groups[0]?.id);
   const [count, setCount] = useState({ value: matched ?? null, loading: false });
@@ -60,12 +61,12 @@ export function FilterDrawer({ open, state, catalog, fieldMap, matched, onApply,
     const controller = new AbortController();
     setCount((current) => ({ ...current, loading: true }));
     const timer = setTimeout(() => {
-      prepAnalysisApi.count(JSON.parse(requestKey), controller.signal)
+      api.count(JSON.parse(requestKey), controller.signal)
         .then((result) => setCount({ value: result.matched, loading: false }))
         .catch((error) => { if (error.name !== "AbortError") setCount((current) => ({ ...current, loading: false })); });
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [open, requestKey]);
+  }, [api, open, requestKey]);
 
   if (!open) return null;
   const areas = catalog.areas || [];

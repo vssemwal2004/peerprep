@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { CheckCircle2, Download, FileSpreadsheet, FileText, Loader2, RotateCcw, Sheet } from "lucide-react";
-import { prepAnalysisApi } from "../api";
+import { useAnalysisApi } from "../analysisScope";
 import { RANGE_PRESETS, optionLookup, summaryLines, toQueryRequest } from "../filterModel";
 import { Button, Dialog, Popover, focusRing } from "./ui";
 
@@ -19,6 +19,7 @@ const AREA_GROUPS = {
 };
 
 function ExportDialog({ open, initialFormat, onClose, catalog, area, areaLabel, state, fieldMap, matched, table, focus }) {
+  const api = useAnalysisApi();
   const groups = AREA_GROUPS[area] || AREA_GROUPS.all;
   const columns = useMemo(() => (catalog.exportColumns || []).filter((column) => groups.includes(column.group)), [catalog, groups]);
   const recommended = useMemo(() => (catalog.exportDefaults?.[area] || []).filter((key) => columns.some((column) => column.key === key)), [area, catalog, columns]);
@@ -42,7 +43,7 @@ function ExportDialog({ open, initialFormat, onClose, catalog, area, areaLabel, 
     setStatus({ busy: true, error: "", done: "" });
     try {
       const body = { ...toQueryRequest({ state, layout: [], table }, fieldMap), ...(focus ? { focus } : {}), format, columns: ordered, summary: focus ? [...lines, `Only: ${focus.label}`] : lines };
-      const result = await prepAnalysisApi.download(body);
+      const result = await api.download(body);
       setStatus({ busy: false, error: "", done: `${result.filename} downloaded${result.rowCount != null ? ` · ${result.rowCount.toLocaleString()} students` : ""}` });
     } catch (error) {
       setStatus({ busy: false, error: error.message, done: "" });

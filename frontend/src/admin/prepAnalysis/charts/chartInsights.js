@@ -190,9 +190,39 @@ const BY_ID = {
     const weakest = maxBy((groups || []).filter((group) => group.students), lowShare);
     return weakest && lowShare(weakest) > 0 ? `${weakest.label} gets the most low ratings (1 or 2): ${Math.round(lowShare(weakest) * 100)}% of its ratings.` : null;
   },
+  "student-map": ({ items, total, medianX, medianY }) => {
+    if (!items?.length) return null;
+    // Busy but low: submitted more than the middle student yet scored below their score.
+    const busyLow = items.filter((item) => item.x > medianX && item.y < medianY).length;
+    return busyLow
+      ? `${plural(busyLow, "student")} submitted more than the middle student but scored below them. Click a dot to open the student (${number(total)} practised).`
+      : `Students who submit more score higher here. Click a dot to open the student (${number(total)} practised).`;
+  },
+  "assessment-score-time": ({ items, total, referenceY }) => {
+    if (!items?.length) return null;
+    const pass = referenceY?.value ?? 40;
+    const quickLow = items.filter((item) => item.y < pass && item.x <= 5).length;
+    const failed = items.filter((item) => item.y < pass).length;
+    return quickLow
+      ? `${plural(quickLow, "attempt")} below the ${pass}% pass mark took 5 minutes or less. ${number(failed)} of ${number(total)} attempts failed.`
+      : `${number(failed)} of ${number(total)} attempts are below the ${pass}% pass mark. Click a dot to open the student.`;
+  },
+  "class-spread": ({ groups }) => boxLine(groups, "Prep Score", ""),
+  "assessment-class-spread": ({ groups }) => boxLine(groups, "test score", "%"),
   "learning-leaders": ({ items }) => (items?.[0] ? `${items[0].name} has completed the most topics (${number(items[0].value)}).` : null),
   "quickprep-leaders": ({ items }) => (items?.[0] ? `${items[0].name} has finished the most sheets (${number(items[0].value)}).` : null),
 };
+
+/** Which group has the highest middle student, and which has the widest spread. */
+function boxLine(groups, label, unit) {
+  const filled = (groups || []).filter((group) => group.count > 1);
+  if (!filled.length) return null;
+  const best = maxBy(filled, (group) => group.median);
+  const widest = maxBy(filled, (group) => group.q3 - group.q1);
+  const text = (value) => `${number(value)}${unit}`;
+  if (filled.length === 1) return `${best.label}: the middle student's ${label} is ${text(best.median)}.`;
+  return `${best.label} has the highest middle ${label} (${text(best.median)}); ${widest.label} is the most spread out (${text(widest.q3 - widest.q1)} between the quarters).`;
+}
 
 function calendarLine({ days, unit }) {
   if (!days?.length) return null;

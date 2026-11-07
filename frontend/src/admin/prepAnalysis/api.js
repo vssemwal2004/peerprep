@@ -41,16 +41,24 @@ async function saveResponse(response, fallbackName) {
   return { filename, rowCount: Number(response.headers.get("x-row-count")) || null };
 }
 
-export const prepAnalysisApi = {
+// A scope ({ assessmentIds }) narrows every request to those assessments: the report page shows
+// the same analysis for one test. Without a scope nothing is added, so Prep Analysis is unchanged.
+const hasScope = (scope) => Boolean(scope?.assessmentIds?.length);
+// `scope: "chart"` already means "download one chart", so the assessments travel as `assessmentScope`.
+const withScope = (body, scope) => (hasScope(scope) ? { ...body, assessmentScope: { assessmentIds: scope.assessmentIds } } : body);
+const scopeQuery = (scope) => (hasScope(scope) ? { assessmentIds: scope.assessmentIds.join(",") } : {});
+
+export function createPrepAnalysisApi(scope = null) {
+  return {
   catalog: (signal) => request("/catalog", { signal }),
-  options: (list, q = "", signal) => request(`/options?${new URLSearchParams({ list, q })}`, { signal }),
+  options: (list, q = "", signal) => request(`/options?${new URLSearchParams({ list, q, ...scopeQuery(scope) })}`, { signal }),
   query: (body, { signal, refresh = false } = {}) => request("/query", {
     method: "POST",
-    body: { ...body, refresh },
+    body: withScope({ ...body, refresh }, scope),
     headers: refresh ? { "Cache-Control": "no-cache" } : undefined,
     signal,
   }),
-  count: (body, signal) => request("/count", { method: "POST", body, signal }),
+  count: (body, signal) => request("/count", { method: "POST", body: withScope(body, scope), signal }),
   /** Saved views: the admin's own and the ones other admins shared. */
   views: {
     list: (signal) => request("/views", { signal }),
@@ -59,20 +67,23 @@ export const prepAnalysisApi = {
     remove: (id) => request(`/views/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
   /** The students behind a chart or one part of it: body is a /query body plus `drill`. */
-  drill: (body, signal) => request("/drill", { method: "POST", body, signal }),
+  drill: (body, signal) => request("/drill", { method: "POST", body: withScope(body, scope), signal }),
   /** One student's own prep for a period (preset such as "90d" or "all"). */
-  student: (id, range = "all", signal) => request(`/students/${encodeURIComponent(id)}?${new URLSearchParams({ range })}`, { signal }),
+  student: (id, range = "all", signal) => request(`/students/${encodeURIComponent(id)}?${new URLSearchParams({ range, ...scopeQuery(scope) })}`, { signal }),
   /** Downloads a CSV / Excel / PDF file of the filtered students, or (scope "chart") one chart's detail. */
   download: async (body, signal) => saveResponse(await fetch(`${API_BASE}/admin/prep-analysis/export`, {
     method: "POST",
     credentials: "include",
     signal,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(withScope(body, scope)),
   }), `prep-analysis.${body.format}`),
   /** Downloads one student's full report (format "xlsx" or "pdf") for a period preset. */
   studentReport: async (id, range = "all", format = "xlsx") => saveResponse(
-    await fetch(`${API_BASE}/admin/prep-analysis/students/${encodeURIComponent(id)}/export?${new URLSearchParams({ range, format })}`, { credentials: "include" }),
+    await fetch(`${API_BASE}/admin/prep-analysis/students/${encodeURIComponent(id)}/export?${new URLSearchParams({ range, format, ...scopeQuery(scope) })}`, { credentials: "include" }),
     `prep-report.${format}`,
   ),
-};
+  };
+}
+
+export const prepAnalysisApi = createPrepAnalysisApi();

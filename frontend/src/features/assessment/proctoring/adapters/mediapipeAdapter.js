@@ -1,4 +1,5 @@
 import { createFaceLandmarker } from '../utils/modelLoader';
+import { unwrapFrame } from '../utils/frameSource';
 
 const SOURCE = 'mediapipe_face_landmarker';
 // The primary face is out of frame when its centre leaves the safe zone or
@@ -62,7 +63,7 @@ export class MediaPipeFaceAdapter {
       return createUnknownFrameResult();
     }
 
-    const result = this.faceLandmarker.detectForVideo(videoElement, timestamp);
+    const result = this.faceLandmarker.detectForVideo(unwrapFrame(videoElement), timestamp);
     return normalizeFaceLandmarkerResult(result, {
       detectLookingAway: this.options.outputFaceBlendshapes === true,
     });
@@ -121,7 +122,7 @@ export function normalizeFaceLandmarkerResult(result = {}, options = {}) {
   };
 }
 
-function createUnknownFrameResult() {
+export function createUnknownFrameResult() {
   return {
     facePresent: true,
     faceCount: 1,

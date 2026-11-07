@@ -24,6 +24,18 @@ export const STATIC_FEED_MAX_DIFF = 0.06;
 export const STATIC_FEED_WINDOW = 40;
 const MAX_LABEL_LENGTH = 80;
 
+export const INTEGRITY_SAMPLE_WIDTH = SAMPLE_WIDTH;
+export const INTEGRITY_SAMPLE_HEIGHT = SAMPLE_HEIGHT;
+
+// RGBA pixels -> one luma byte per pixel. Shared by the page and the inference worker.
+export function lumaFromImageData(data) {
+  const luma = new Uint8Array(data.length / 4);
+  for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+    luma[p] = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
+  }
+  return luma;
+}
+
 export function matchVirtualCameraLabel(label) {
   const text = String(label || '').trim();
   return text && VIRTUAL_CAMERA_LABEL.test(text) ? text.slice(0, MAX_LABEL_LENGTH) : null;
@@ -70,18 +82,16 @@ export class CameraIntegrityMonitor {
     }
     if (!this.context) return null;
     this.context.drawImage(video, 0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT);
-    const { data } = this.context.getImageData(0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT);
-    const luma = new Uint8Array(SAMPLE_WIDTH * SAMPLE_HEIGHT);
-    for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
-      luma[p] = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
-    }
-    return luma;
+    return lumaFromImageData(this.context.getImageData(0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT).data);
   }
 
   // Returns { fresh, suspected, reason, label, diff }. `fresh` is false when the
   // sample says nothing (hidden tab, no new frame, unreadable canvas), so the
   // rule neither raises nor clears an episode on it.
-  evaluate(stream, video, { staticCheck = true } = {}) {
+  // `externalLuma`: undefined reads the thumbnail here (drawImage + getImageData, which waits on
+  // the GPU); a Uint8Array is a thumbnail already computed off-thread by the inference worker;
+  // null means "none available this tick" and the sample counts for nothing.
+  evaluate(stream, video, { staticCheck = true, externalLuma } = {}) {
     const label = getTrackLabel(stream);
     const virtualLabel = matchVirtualCameraLabel(label);
     if (virtualLabel) {
@@ -98,10 +108,14 @@ export class CameraIntegrityMonitor {
     }
 
     let luma;
-    try {
-      luma = this.readLuma(video);
-    } catch {
-      return quiet;
+    if (externalLuma === undefined) {
+      try {
+        luma = this.readLuma(video);
+      } catch {
+        return quiet;
+      }
+    } else {
+      luma = externalLuma;
     }
     if (!luma) return quiet;
 

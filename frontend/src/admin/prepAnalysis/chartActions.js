@@ -3,7 +3,7 @@
 // request uses exactly the students the chart shows.
 
 import { useCallback, useRef, useState } from "react";
-import { prepAnalysisApi } from "./api";
+import { createPrepAnalysisApi } from "./api";
 import { useToasts } from "./components/Toasts";
 import { optionLookup, summaryLines, toQueryRequest } from "./filterModel";
 
@@ -35,14 +35,14 @@ export function filterLines(analysis) {
 
 /** The students behind a chart (or one part of it, `drill.key`), a page at a time. */
 export function drillChart(analysis, chartId, { group = null, ...drill }, signal) {
-  return prepAnalysisApi.drill({ ...chartRequest(analysis, chartId, {}, group), drill: { chartId, ...drill } }, signal);
+  return createPrepAnalysisApi(analysis.scope).drill({ ...chartRequest(analysis, chartId, {}, group), drill: { chartId, ...drill } }, signal);
 }
 
 /** The chart's detailed file: Excel (summary, chart data, students, detail) or CSV (students). */
 export function downloadChart(analysis, chartId, { key = "", format = "xlsx", group = null } = {}) {
   const side = analysis.compareRequest && (group === 0 || group === 1) ? [`Group: ${analysis.compareRequest[group].label}`] : [];
   const summary = [...filterLines(analysis), ...(analysis.focus ? [`Only: ${analysis.focus.label}`] : []), ...side];
-  return prepAnalysisApi.download({ ...chartRequest(analysis, chartId, {}, group), scope: "chart", drill: { chartId, key }, format, summary });
+  return createPrepAnalysisApi(analysis.scope).download({ ...chartRequest(analysis, chartId, {}, group), scope: "chart", drill: { chartId, key }, format, summary });
 }
 
 /** Downloads one chart's file, with progress in a toast: { run(format, key, label), busy }. */

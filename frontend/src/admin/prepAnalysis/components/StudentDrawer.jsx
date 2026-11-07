@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, AlertTriangle, CheckCircle2, FileSpreadsheet, FileText, Lightbulb, Loader2 } from "lucide-react";
-import { prepAnalysisApi } from "../api";
+import { useAnalysisApi } from "../analysisScope";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
 import { DIFFICULTY_COLORS, OUTCOME_COLORS } from "../charts/chartTheme";
 import { RANGE_PRESETS } from "../filterModel";
@@ -275,11 +275,12 @@ function LearningSection({ learning }) {
 
 /** Excel or PDF of everything about this student: every topic, problem and day, not just this drawer. */
 function ReportDownload({ studentId, range }) {
+  const api = useAnalysisApi();
   const [status, setStatus] = useState({ busy: "", text: "", error: false });
   const run = async (format) => {
     setStatus({ busy: format, text: "Preparing the report…", error: false });
     try {
-      const result = await prepAnalysisApi.studentReport(studentId, range, format);
+      const result = await api.studentReport(studentId, range, format);
       setStatus({ busy: "", text: `${result.filename} downloaded`, error: false });
     } catch (error) {
       setStatus({ busy: "", text: error.message, error: true });
@@ -302,16 +303,17 @@ function ReportDownload({ studentId, range }) {
 
 /** Everything about one student's prep, opened from the table or a chart. */
 export default function StudentDrawer({ studentId, range = "all", onClose }) {
+  const api = useAnalysisApi();
   const [state, setState] = useState({ loading: true, error: null, profile: null });
   useEffect(() => {
     if (!studentId) return undefined;
     const controller = new AbortController();
     setState({ loading: true, error: null, profile: null });
-    prepAnalysisApi.student(studentId, range, controller.signal)
+    api.student(studentId, range, controller.signal)
       .then((profile) => setState({ loading: false, error: null, profile }))
       .catch((error) => { if (error.name !== "AbortError") setState({ loading: false, error, profile: null }); });
     return () => controller.abort();
-  }, [range, studentId]);
+  }, [api, range, studentId]);
   if (!studentId) return null;
   const { profile, loading, error } = state;
   const student = profile?.student;

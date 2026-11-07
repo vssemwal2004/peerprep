@@ -56,6 +56,22 @@ const SUMMARIES = {
   },
   'needs-attention': (rows) => summary(rows.length, rows.filter((row) => row.coding.daysSinceActive === null || row.coding.daysSinceActive > 14).length, 'not practised in 14 days'),
   'activity-calendar': (rows) => summary(rows.length, practising(rows).length, 'practised', { average: perStudent(rows.reduce((sum, row) => sum + row.coding.activeDays, 0), rows.length), averageLabel: 'days practised per student' }),
+  'student-map': (rows) => {
+    const active = practising(rows);
+    return summary(rows.length, active.length, 'practised', { average: mean(active.map((row) => row.coding.prepScore)), averageLabel: 'average Prep Score of those who practised' });
+  },
+  'class-spread': (rows) => {
+    const active = practising(rows);
+    return summary(rows.length, active.length, 'practised', { average: mean(active.map((row) => row.coding.prepScore)), averageLabel: 'average Prep Score of those who practised' });
+  },
+  'assessment-score-time': (rows, data) => {
+    const takers = rows.filter((row) => row.assessment?.taken > 0);
+    return summary(rows.length, takers.length, 'took a test', { total: data.total ?? 0, totalLabel: 'graded attempts' });
+  },
+  'assessment-class-spread': (rows) => {
+    const takers = rows.filter((row) => row.assessment?.taken > 0);
+    return summary(rows.length, takers.length, 'took a test', { average: mean(takers.map((row) => row.assessment.averageScore)), averageLabel: 'average test score of those who took one' });
+  },
   'group-breakdown': (rows) => {
     const total = rows.reduce((sum, row) => sum + row.coding.solved.total, 0);
     return summary(rows.length, rows.filter((row) => row.coding.solved.total > 0).length, 'solved a problem', { total, totalLabel: 'problems solved', average: perStudent(total, rows.length), averageLabel: 'solved per student' });

@@ -222,6 +222,14 @@ const SAMPLES = {
   histogram: { label: 'Course completed', bins: Array.from({ length: 10 }, (_, index) => ({ label: `${index * 10}–${index * 10 + 10}%`, count: index % 3 })) },
   stackedBar: { series: ['Finished', 'In progress', 'Not started'], horizontal: true, groups: [{ label: 'Placement essentials', students: 9, values: { Finished: 2, 'In progress': 3, 'Not started': 4 } }] },
   heatmap: { unit: '% solved', max: 100, students: ['Asha', 'Bilal'], columns: ['Sheet A', 'Sheet B'], cells: [[0, 0, 100], [1, 0, 25], [0, 1, 20], [1, 1, 0]] },
+  scatter: {
+    xLabel: 'Submissions', yLabel: 'Prep Score', sizeLabel: 'problems solved', groups: ['Practising', 'Stopped'], total: 3, shown: 3, medianX: 12, medianY: 5,
+    items: [{ id: 'a', name: 'Asha', x: 40, y: 12, size: 9, group: 'Practising', note: '9 solved' }, { id: 'b', name: 'Bilal', x: 12, y: 5, size: 3, group: 'Practising' }, { id: 'c', name: 'Chen', x: 30, y: 2, size: 1, group: 'Stopped' }],
+  },
+  boxplot: {
+    groupBy: 'semester', label: 'Average test score', unit: '%', passMark: 40,
+    groups: [{ label: 'Sem 1', students: 5, count: 5, min: 10, q1: 30, median: 45, q3: 60, max: 90, mean: 46 }, { label: 'Sem 2', students: 3, count: 3, min: 35, q1: 40, median: 50, q3: 70, max: 80, mean: 55 }],
+  },
 };
 const serializable = (option) => JSON.stringify(option, (key, value) => (typeof value === 'function' ? undefined : value));
 
@@ -240,7 +248,7 @@ test('every chart type builds in every view, light and dark, and is empty with n
   const empty = {
     rankedStackedBar: { items: [] }, donut: { items: [] }, trend: { labels: [] }, funnel: { stages: [{ value: 0 }] },
     barList: { items: [] }, calendar: { days: [] }, radar: { student: null, indicators: [] }, histogram: { bins: [{ count: 0 }] },
-    stackedBar: { groups: [] }, heatmap: { students: [], columns: [] },
+    stackedBar: { groups: [] }, heatmap: { students: [], columns: [] }, scatter: { items: [] }, boxplot: { groups: [{ count: 0 }] },
   };
   for (const [type, data] of Object.entries(empty)) assert.equal(buildChartOption({ type, data }, chartTheme(false)), null, `${type} is empty`);
   assert.ok(chartHeight({ type: 'stackedBar', data: { horizontal: true, groups: new Array(10).fill({}) } }) > chartHeight({ type: 'stackedBar', data: { horizontal: true, groups: [{}] } }));
@@ -260,6 +268,36 @@ test('views change how a chart reads: steps with %, 100% bars, weekly lines', ()
   assert.equal(accent.series[0].data[0].itemStyle.color, '#0284c7', 'every feature uses the app\'s sky colour');
   assert.equal(alpha('#4f46e5', 0.5), 'rgba(79,70,229,0.5)');
   assert.equal(alpha('rgba(79,70,229,0.5)', 0.5), 'rgba(79,70,229,0.25)');
+});
+
+test('box plots, heat grids, treemaps and dots point at the right group, cell, row and student', () => {
+  const at = (type, data, params, view = 'chart') => chartPartAt({ type, data, drillable: true }, view, params);
+  assert.equal(at('boxplot', SAMPLES.boxplot, { dataIndex: 1 }).key, 'Sem 2', 'a box (or its average diamond) is its group');
+  assert.equal(at('boxplot', SAMPLES.boxplot, { dataIndex: 1 }).students, 3);
+  // A heat cell is [series, group, count]: the click knows both, not just the cell's position in the list.
+  assert.equal(at('stackedBar', SAMPLES.stackedBar, { dataIndex: 7, value: [1, 0, 3] }, 'heat').key, 'Placement essentials|In progress');
+  assert.equal(at('radar', { indicators: [{ name: 'Arrays' }, { name: 'Graphs' }, { name: 'DP' }], topics: [] }, { dataIndex: 2 }, 'polar').key, 'DP', 'the radial bars are topics');
+
+  // A treemap puts a hidden root first, so each box carries its own row and zeros stay drawable.
+  const donut = buildChartOption({ type: 'donut', data: SAMPLES.donut }, chartTheme(false), 'treemap');
+  assert.deepEqual(donut.series[0].data.map((box) => box.rowIndex), [0, 1]);
+  const zeros = buildChartOption({ type: 'barList', data: SAMPLES.barList }, chartTheme(false), 'treemap');
+  assert.equal(zeros.series[0].data[0].real, 0, 'the label keeps the real value');
+  assert.ok(zeros.series[0].data[0].value > 0, 'but the box has a size');
+  const mixed = buildChartOption({ type: 'barList', data: { items: [{ key: 'a', name: 'A', value: 50 }, { key: 'b', name: 'B', value: 0 }] } }, chartTheme(false), 'treemap');
+  assert.ok(mixed.series[0].data[1].value < mixed.series[0].data[0].value / 20, 'a zero is a sliver beside real values');
+
+  // Dots are students: the option carries the student for the click, and no dot is drawn without data.
+  const dots = buildChartOption({ type: 'scatter', data: SAMPLES.scatter }, chartTheme(false));
+  assert.deepEqual(dots.series.map((series) => [series.name, series.data.length]), [['Practising', 2], ['Stopped', 1]]);
+  assert.equal(dots.series[0].data[0].item.id, 'a');
+  assert.equal(chartTable({ type: 'scatter', data: SAMPLES.scatter }).ids.join(), 'a,b,c', 'a table row opens its student');
+  const boxes = buildChartOption({ type: 'boxplot', data: SAMPLES.boxplot }, chartTheme(false));
+  assert.deepEqual(boxes.series[0].data[0], [10, 30, 45, 60, 90], 'low, lower quartile, median, upper quartile, high');
+  assert.ok(boxes.series[0].markLine, 'the pass mark is drawn');
+  assert.deepEqual(chartTableKeys({ type: 'boxplot', data: SAMPLES.boxplot }), ['Sem 1', 'Sem 2']);
+  assert.match(chartInsight({ id: 'class-spread', data: SAMPLES.boxplot }), /Sem 2 has the highest middle/);
+  assert.match(chartInsight({ id: 'student-map', data: SAMPLES.scatter }), /submitted more than the middle student/);
 });
 
 test('every chart can be read as a table', () => {

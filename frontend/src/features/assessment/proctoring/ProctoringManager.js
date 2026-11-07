@@ -15,6 +15,12 @@ import { attachStreamToVideo, requestCameraStream, stopCameraStream } from './ut
 import { CameraIntegrityMonitor } from './utils/cameraIntegrity';
 import { createFaceDetector } from './detectors/faceDetector';
 import { createObjectDetector } from './detectors/objectDetector';
+import {
+  WorkerFaceAdapter,
+  WorkerObjectAdapter,
+  disableInferenceWorker,
+  isInferenceWorkerSupported,
+} from './worker/workerClient';
 
 const MOBILE_OBJECT_DETECTION_INTERVAL_MS = 2500;
 const OBJECT_STEADY_MIN_INTERVAL_MS = 1200;
@@ -75,13 +81,13 @@ function createSafeDetectionResult(overrides = {}) {
 }
 
 // Looking-away alone never needs the face model.
-function shouldUseFaceDetection(settings = {}) {
+export function shouldUseFaceDetection(settings = {}) {
   return settings.detectNoFace !== false
     || settings.detectMultiplePersons !== false
     || settings.detectFaceOutOfFrame !== false;
 }
 
-function shouldUseObjectDetection(settings = {}) {
+export function shouldUseObjectDetection(settings = {}) {
   return settings.detectMobile !== false
     || settings.detectMultiplePersons !== false;
 }
@@ -276,6 +282,9 @@ export class ProctoringManager {
     // Bumped by stop(); async work from an older lifecycle is discarded.
     this.generation = 0;
     this.groupLastEmitAt = new Map();
+    // Inference runs in a worker so model loading and every sample stay off the UI thread.
+    // If the worker cannot run on this device the same adapters run on the page thread instead.
+    this.useWorker = options.useWorker !== false && isInferenceWorkerSupported();
     this.handleOnline = () => this.scheduleModelRetry(0);
     this.violationBuffer = new ViolationBuffer({
       cooldownMs: getCooldownMs(this.settings),
@@ -450,8 +459,10 @@ export class ProctoringManager {
     const loadFaceModel = async () => {
       if (!shouldUseFaceDetection(this.settings) || this.faceDetectorAvailable) return;
       if (firstAttempt) this.updateStatus({ faceModel: 'loading' });
+      const mediaPipe = { outputFaceBlendshapes: this.settings.detectLookingAway === true };
       const detector = this.faceDetector || createFaceDetector({
-        mediaPipe: { outputFaceBlendshapes: this.settings.detectLookingAway === true },
+        mediaPipe,
+        adapter: this.useWorker ? new WorkerFaceAdapter(mediaPipe) : undefined,
       });
       this.faceDetector = detector;
       try {
@@ -465,6 +476,11 @@ export class ProctoringManager {
       } catch (error) {
         detector.dispose?.();
         if (superseded(this.faceDetector, detector)) return;
+        if (error?.isWorkerError && this.useWorker) {
+          this.faceDetector = null;
+          this.fallBackToPageThread();
+          return loadFaceModel();
+        }
         this.faceDetectorAvailable = false;
         this.faceDetector = null;
         const fallbackReady = this.faceFallbackAvailable || this.setupFaceFallback();
@@ -482,7 +498,9 @@ export class ProctoringManager {
     const loadObjectModel = async () => {
       if (!shouldUseObjectDetection(this.settings) || this.objectDetectorAvailable) return;
       if (firstAttempt) this.updateStatus({ objectModel: 'loading' });
-      const detector = this.objectDetector || createObjectDetector();
+      const detector = this.objectDetector || createObjectDetector({
+        adapter: this.useWorker ? new WorkerObjectAdapter() : undefined,
+      });
       this.objectDetector = detector;
       try {
         await detector.load();
@@ -496,6 +514,11 @@ export class ProctoringManager {
       } catch (error) {
         detector.dispose?.();
         if (superseded(this.objectDetector, detector)) return;
+        if (error?.isWorkerError && this.useWorker) {
+          this.objectDetector = null;
+          this.fallBackToPageThread();
+          return loadObjectModel();
+        }
         this.objectDetectorAvailable = false;
         this.objectDetector = null;
         this.updateStatus({
@@ -507,7 +530,12 @@ export class ProctoringManager {
     };
 
     try {
-      await Promise.all([loadFaceModel(), loadObjectModel()]);
+      // Stagger the two models: compiling both at once monopolises the main thread right as the
+      // question paper renders. The object model starts once the face model is done or after 2.5 s.
+      const faceTask = loadFaceModel();
+      await Promise.race([faceTask, new Promise((resolve) => setTimeout(resolve, 2500))]);
+      await yieldToMain();
+      await Promise.all([faceTask, loadObjectModel()]);
       if (generation !== this.generation) return false;
       this.modelsLoaded = this.faceDetectorAvailable || this.objectDetectorAvailable || this.faceFallbackAvailable;
       if (this.hasUnavailableRequiredModel()) this.scheduleModelRetry();
@@ -519,6 +547,28 @@ export class ProctoringManager {
     } finally {
       if (generation === this.generation) this.modelLoadInProgress = false;
     }
+  }
+
+  // With the worker the integrity thumbnail comes from the frame the face model just analysed.
+  // undefined = read it on the page thread (no worker, or no face model to piggy-back on).
+  getIntegrityLuma(useFace) {
+    if (!this.useWorker || !useFace) return undefined;
+    if (!this.faceDetectorAvailable) return null;
+    return this.faceDetector?.adapter?.takeLuma?.() ?? null;
+  }
+
+  // Permanent for this page load: a worker that failed once on this device is not retried.
+  fallBackToPageThread() {
+    if (!this.useWorker) return;
+    this.useWorker = false;
+    disableInferenceWorker();
+    this.faceDetector?.dispose?.();
+    this.objectDetector?.dispose?.();
+    this.faceDetector = null;
+    this.objectDetector = null;
+    this.faceDetectorAvailable = false;
+    this.objectDetectorAvailable = false;
+    this.modelsLoaded = false;
   }
 
   stopModels() {
@@ -604,7 +654,8 @@ export class ProctoringManager {
       let faceResult = null;
 
       if (canSample && useFace && this.faceDetectorAvailable && this.faceDetector) {
-        faceResult = this.faceDetector.detect(this.videoElement, timestamp);
+        faceResult = await this.faceDetector.detect(this.videoElement, timestamp);
+        if (!this.isCurrent(generation)) return null;
       } else if (canSample && useFace && this.faceFallbackAvailable) {
         faceResult = await this.detectWithFaceFallback(this.videoElement);
         if (!this.isCurrent(generation)) return null;
@@ -629,7 +680,7 @@ export class ProctoringManager {
       }
 
       const integrity = canSample && this.settings.detectVirtualCamera !== false
-        ? this.cameraIntegrity.evaluate(this.stream, this.videoElement)
+        ? this.cameraIntegrity.evaluate(this.stream, this.videoElement, { externalLuma: this.getIntegrityLuma(useFace) })
         : null;
 
       const faceCount = Number(faceResult?.faceCount ?? 1);
@@ -670,6 +721,13 @@ export class ProctoringManager {
       this.handleDetectionResult(result);
       return result;
     } catch (error) {
+      if (error?.isWorkerError && this.useWorker && this.isCurrent(generation)) {
+        // The worker died or hung mid-test: reload the models on the page thread.
+        this.fallBackToPageThread();
+        this.modelRetryAttempt = 0;
+        this.scheduleModelRetry(0);
+        return null;
+      }
       this.tickFailureCount += 1;
       // A single failed inference is noise; report only a persistent failure.
       if (this.tickFailureCount === TICK_ERROR_THRESHOLD && this.isCurrent(generation)) {

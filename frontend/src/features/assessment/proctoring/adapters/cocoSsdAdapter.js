@@ -1,4 +1,5 @@
 import { createCocoSsdModel } from '../utils/modelLoader';
+import { createScratchCanvas, unwrapFrame } from '../utils/frameSource';
 
 const SOURCE = 'coco_ssd';
 const MOBILE_LABEL = 'cell phone';
@@ -73,7 +74,7 @@ export class CocoSsdAdapter {
     const source = this.getFullFrameSource(videoElement);
     const startedAt = now();
     const predictions = await this.model.detect(
-      source || videoElement,
+      source || unwrapFrame(videoElement),
       detectOptions.maxNumBoxes,
       detectOptions.minScore,
     );
@@ -134,7 +135,7 @@ export class CocoSsdAdapter {
 
       context.clearRect(0, 0, canvas.width, canvas.height);
       context.drawImage(
-        videoElement,
+        unwrapFrame(videoElement),
         sourceX,
         sourceY,
         sourceWidth,
@@ -166,28 +167,26 @@ export class CocoSsdAdapter {
 
   getMobileScanCanvas() {
     if (this.mobileScanCanvas) return this.mobileScanCanvas;
-    if (typeof document === 'undefined') return null;
 
-    const canvas = document.createElement('canvas');
-    canvas.width = MOBILE_CROP_SCAN_SIZE;
-    canvas.height = MOBILE_CROP_SCAN_SIZE;
+    const canvas = createScratchCanvas(MOBILE_CROP_SCAN_SIZE, MOBILE_CROP_SCAN_SIZE);
+    if (!canvas) return null;
     this.mobileScanCanvas = canvas;
     return canvas;
   }
 
   getFullFrameSource(videoElement) {
-    if (typeof document === 'undefined') return videoElement;
     const videoWidth = Number(videoElement?.videoWidth || 0);
     const videoHeight = Number(videoElement?.videoHeight || 0);
-    if (!videoWidth || !videoHeight) return videoElement;
+    if (!videoWidth || !videoHeight) return unwrapFrame(videoElement);
 
-    const canvas = this.fullFrameCanvas || document.createElement('canvas');
+    const canvas = this.fullFrameCanvas || createScratchCanvas();
+    if (!canvas) return unwrapFrame(videoElement);
     const scale = Math.min(1, FULL_FRAME_SCAN_SIZE / Math.max(videoWidth, videoHeight));
     canvas.width = Math.max(1, Math.round(videoWidth * scale));
     canvas.height = Math.max(1, Math.round(videoHeight * scale));
     const context = canvas.getContext?.('2d', { willReadFrequently: false });
-    if (!context) return videoElement;
-    context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+    if (!context) return unwrapFrame(videoElement);
+    context.drawImage(unwrapFrame(videoElement), 0, 0, canvas.width, canvas.height);
     this.fullFrameCanvas = canvas;
     return canvas;
   }
@@ -244,7 +243,7 @@ export function normalizeCocoSsdPredictions(predictions = [], options = {}) {
   };
 }
 
-function createDefaultObjectResult(reason) {
+export function createDefaultObjectResult(reason) {
   return {
     mobileDetected: false,
     personCount: 0,

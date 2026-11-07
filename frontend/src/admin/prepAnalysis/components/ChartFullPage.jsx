@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { AlertCircle, ArrowLeft, ChevronLeft, ChevronRight, FileSpreadsheet, Info, Loader2, Search, Sheet, SlidersHorizontal, Sparkles } from "lucide-react";
-import { prepAnalysisApi } from "../api";
+import { useAnalysisApi } from "../analysisScope";
 import { chartRequest, useChartDownload } from "../chartActions";
 import { chartInsight } from "../charts/chartInsights";
 import { viewsFor } from "../charts/chartOptions";
@@ -14,17 +14,18 @@ import { Button, IconButton, focusRing } from "./ui";
 
 /** Every item of one chart for the current filters, a page at a time where the list is long. */
 function useFullChart(analysis, chartId, page, refreshTick) {
+  const api = useAnalysisApi();
   const [result, setResult] = useState({ chart: null, loading: true, error: null });
   const body = useMemo(() => chartRequest(analysis, chartId, { full: true, page }), [analysis, chartId, page]);
   const requestKey = JSON.stringify(body);
   useEffect(() => {
     const controller = new AbortController();
     setResult((current) => ({ ...current, loading: true, error: null }));
-    prepAnalysisApi.query({ ...JSON.parse(requestKey), table: { page: 1, limit: 1 } }, { signal: controller.signal })
+    api.query({ ...JSON.parse(requestKey), table: { page: 1, limit: 1 } }, { signal: controller.signal })
       .then((data) => setResult({ chart: data.charts?.[0] || null, compare: data.compare || null, meta: data.meta, loading: false, error: null }))
       .catch((error) => { if (error.name !== "AbortError") setResult((current) => ({ ...current, loading: false, error })); });
     return () => controller.abort();
-  }, [requestKey, refreshTick]);
+  }, [api, requestKey, refreshTick]);
   return result;
 }
 

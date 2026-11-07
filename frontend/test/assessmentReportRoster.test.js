@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  DEFAULT_ROSTER_FILTERS, computeRosterStats, filterRosterRows, formatRelativeAge,
-  hasActiveRosterFilters, legacyReportRowToRoster, mergeRosterRows, paginateRows,
+  DEFAULT_ROSTER_FILTERS, columnOptions, computeRosterStats, facetOptions, filterRosterRows, formatRelativeAge,
+  groupBreakdown, hasActiveRosterFilters, legacyReportRowToRoster, mergeRosterRows, pageWindow, paginateRows,
   rowEvaluationState, rowOutcome, sortRosterRows,
 } from '../src/admin/reports/rosterModel.js';
 import { assessmentEvaluationLabel, isResultAnnounced } from '../src/utils/assessmentEvaluation.js';
@@ -131,8 +131,13 @@ test('stats are percentage based with correct pass rate and outcome counts', () 
   assert.equal(stats.total, 7);
   assert.equal(stats.notStarted, 1);
   assert.equal(stats.inProgress, 1);
-  assert.equal(stats.submitted, 5);
+  // finished = every attempt that has ended; the four end states add up to it.
+  assert.equal(stats.finished, 5);
+  assert.equal(stats.submitted + stats.expired + stats.violation + stats.incomplete, stats.finished);
+  assert.deepEqual([stats.submitted, stats.expired, stats.violation, stats.incomplete], [4, 1, 0, 0]);
   assert.equal(stats.started, 6);
+  assert.equal(stats.started, stats.inProgress + stats.finished);
+  assert.equal(stats.total, stats.notStarted + stats.started);
   assert.equal(stats.graded, 3);
   assert.equal(stats.evaluating, 1);
   assert.equal(stats.needsReview, 1);
@@ -181,4 +186,77 @@ test('relative age label for the live indicator', () => {
   assert.equal(formatRelativeAge(1000, 3000), 'just now');
   assert.equal(formatRelativeAge(0, 12000), '12s ago');
   assert.equal(formatRelativeAge(0, 125000), '2m ago');
+});
+
+// ---- class details, column filters, pagination -------------------------------------------------
+const classRoster = [
+  row({ submissionId: 'c1', studentId: 'k1', name: 'Anil', status: 'submitted', evaluationStatus: 'completed', score: 18, percentage: 90, passed: true, course: 'B.Tech', branch: 'CSE', semester: 3, group: 'A', timeTakenSec: 600 }),
+  row({ submissionId: 'c2', studentId: 'k2', name: 'Bela', status: 'submitted', evaluationStatus: 'completed', score: 4, percentage: 20, passed: false, course: 'B.Tech', branch: 'ECE', semester: 3, group: 'B', timeTakenSec: 1800 }),
+  row({ submissionId: 'c3', studentId: 'k3', name: 'Chirag', status: 'in_progress', course: 'B.Tech', branch: 'CSE', semester: 5, group: 'A' }),
+  row({ studentId: 'k4', name: 'Dia', course: 'M.Tech', branch: 'CSE', semester: 1 }),
+  row({ studentId: 'k5', name: 'Esha' }),
+];
+const names = (rows) => rows.map((r) => r.name);
+
+test('class-detail filters are OR within one detail and AND across details', () => {
+  const filters = (academic) => ({ ...DEFAULT_ROSTER_FILTERS, academic });
+  assert.deepEqual(names(filterRosterRows(classRoster, filters({ branch: ['CSE'] }))), ['Anil', 'Chirag', 'Dia']);
+  assert.deepEqual(names(filterRosterRows(classRoster, filters({ branch: ['CSE', 'ECE'] }))), ['Anil', 'Bela', 'Chirag', 'Dia']);
+  assert.deepEqual(names(filterRosterRows(classRoster, filters({ branch: ['CSE'], semester: ['3', '5'] }))), ['Anil', 'Chirag']);
+  assert.deepEqual(names(filterRosterRows(classRoster, filters({ course: [''] }))), ['Esha'], 'Not set is filterable');
+  assert.equal(hasActiveRosterFilters(filters({ branch: ['CSE'] })), true);
+  assert.equal(hasActiveRosterFilters(filters({ branch: [] })), false);
+});
+
+test('facet counts follow every other filter so combinations are easy to find', () => {
+  const picked = { ...DEFAULT_ROSTER_FILTERS, academic: { branch: ['CSE'] } };
+  const semesters = facetOptions(classRoster, picked, 'semester');
+  assert.deepEqual(semesters.map((o) => [o.value, o.count]), [['1', 1], ['3', 1], ['5', 1]]);
+  // The detail being edited ignores its own filter, so the other branches stay visible and tickable.
+  assert.deepEqual(facetOptions(classRoster, picked, 'branch').map((o) => [o.value, o.count]), [['CSE', 3], ['ECE', 1], ['', 1]]);
+  const none = facetOptions(classRoster, { ...DEFAULT_ROSTER_FILTERS, academic: { branch: ['MECH'] } }, 'branch');
+  assert.ok(none.some((o) => o.value === 'MECH' && o.count === 0), 'a selected value with no candidates stays listed');
+});
+
+test('column filters: values, number range, date range and text', () => {
+  const columns = (spec) => ({ ...DEFAULT_ROSTER_FILTERS, columns: spec });
+  assert.deepEqual(names(filterRosterRows(classRoster, columns({ status: { values: ['submitted'] } }))), ['Anil', 'Bela']);
+  assert.deepEqual(names(filterRosterRows(classRoster, columns({ score: { min: '50', max: '' } }))), ['Anil']);
+  assert.deepEqual(names(filterRosterRows(classRoster, columns({ time: { min: '', max: '15' } }))), ['Anil'], 'minutes');
+  assert.deepEqual(names(filterRosterRows(classRoster, columns({ student: { text: 'bel' } }))), ['Bela']);
+  assert.deepEqual(names(filterRosterRows(classRoster, columns({ score: { min: '', max: '' } }))), names(classRoster), 'empty spec filters nothing');
+  const dated = [row({ studentId: 'd1', name: 'Early', startedAt: '2026-11-01T10:00:00' }), row({ studentId: 'd2', name: 'Late', startedAt: '2026-11-05T10:00:00' })];
+  assert.deepEqual(names(filterRosterRows(dated, columns({ startedAt: { from: '2026-11-04', to: '' } }))), ['Late']);
+  assert.deepEqual(columnOptions(classRoster, 'status').map((o) => [o.value, o.label, o.count]),
+    [['in_progress', 'In progress', 1], ['submitted', 'Submitted', 2], ['not_started', 'Not started', 2]]);
+});
+
+test('class columns sort, with missing values last in either direction', () => {
+  assert.deepEqual(names(sortRosterRows(classRoster, { key: 'semester', dir: 'asc' })), ['Dia', 'Anil', 'Bela', 'Chirag', 'Esha']);
+  assert.deepEqual(names(sortRosterRows(classRoster, { key: 'semester', dir: 'desc' })), ['Chirag', 'Anil', 'Bela', 'Dia', 'Esha']);
+  assert.equal(names(sortRosterRows(classRoster, { key: 'branch', dir: 'desc' })).at(-1), 'Esha');
+});
+
+test('group breakdown counts candidates, finished, average and pass rate per class detail', () => {
+  const lines = groupBreakdown(classRoster, 'branch', { passPercentage: 40 });
+  const cse = lines.find((line) => line.value === 'CSE');
+  assert.deepEqual([cse.candidates, cse.started, cse.finished, cse.graded, cse.avgPercentage, cse.passRate], [3, 2, 1, 1, 90, 100]);
+  const ece = lines.find((line) => line.value === 'ECE');
+  assert.deepEqual([ece.candidates, ece.finished, ece.passRate], [1, 1, 0]);
+  assert.equal(lines.reduce((sum, line) => sum + line.candidates, 0), classRoster.length, 'every candidate is in exactly one line');
+  assert.equal(lines.find((line) => line.value === '').label, 'Not set');
+});
+
+test('page window shows the first pages, an ellipsis and the last page', () => {
+  assert.deepEqual(pageWindow(1, 1), [1]);
+  assert.deepEqual(pageWindow(3, 6), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(pageWindow(1, 42), [1, 2, 3, 4, 5, 'gap-end', 42]);
+  assert.deepEqual(pageWindow(4, 42), [1, 2, 3, 4, 5, 'gap-end', 42]);
+  assert.deepEqual(pageWindow(20, 42), [1, 'gap-start', 19, 20, 21, 'gap-end', 42]);
+  assert.deepEqual(pageWindow(41, 42), [1, 'gap-start', 38, 39, 40, 41, 42]);
+  assert.deepEqual(pageWindow(99, 42), [1, 'gap-start', 38, 39, 40, 41, 42], 'clamped');
+  for (const [page, total] of [[1, 8], [5, 8], [8, 8], [30, 100]]) {
+    const numbers = pageWindow(page, total).filter((entry) => typeof entry === 'number');
+    assert.ok(numbers.includes(page) && numbers.includes(1) && numbers.includes(total));
+  }
 });

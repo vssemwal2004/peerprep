@@ -382,6 +382,18 @@ export function chartDataTable(type, data = {}) {
       const series = data.series || [];
       return { columns: [textCol('Group'), numCol('Students'), ...series.map((key) => numCol(key)), numCol('Total')], rows: (data.groups || []).map((group) => [group.label, group.students ?? null, ...series.map((key) => group.values[key] || 0), series.reduce((sum, key) => sum + (group.values[key] || 0), 0)]) };
     }
+    case 'scatter':
+      return {
+        columns: [textCol('Student', 24), numCol(data.xLabel || 'X', 'decimal'), numCol(data.yLabel || 'Y', 'decimal'), textCol('Group', 12), textCol('Note', 36)],
+        rows: (data.items || []).map((item) => [item.name, item.x, item.y, item.group || '', item.note || '']),
+      };
+    case 'boxplot': {
+      const unit = data.unit === '%' ? ' %' : '';
+      return {
+        columns: [textCol('Group'), numCol('Students'), numCol(`Lowest${unit}`, 'decimal'), numCol(`Lower quartile${unit}`, 'decimal'), numCol(`Median${unit}`, 'decimal'), numCol(`Upper quartile${unit}`, 'decimal'), numCol(`Highest${unit}`, 'decimal'), numCol(`Average${unit}`, 'decimal')],
+        rows: (data.groups || []).map((group) => [group.label, group.students, group.min, group.q1, group.median, group.q3, group.max, group.mean]),
+      };
+    }
     case 'heatmap': {
       const columns = data.columns || data.topics || [];
       const cells = new Map((data.cells || []).map(([x, y, value]) => [`${x}:${y}`, value]));

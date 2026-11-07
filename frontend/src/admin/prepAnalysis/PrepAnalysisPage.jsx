@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AlertCircle, Crosshair, EyeOff, HelpCircle, LayoutGrid, Loader2, RefreshCw, Users, X } from "lucide-react";
+import { AnalysisScopeContext } from "./analysisScope";
 import { focusOn } from "./chartActions";
 import { buildChartOption } from "./charts/chartOptions";
 import { ALL_STUDENTS } from "./charts/chartParts";
@@ -71,11 +72,16 @@ function PageMessage({ icon: Icon = AlertCircle, title, children, action }) {
   );
 }
 
-export default function PrepAnalysisPage() {
+/**
+ * The analysis itself. `scope` ({ assessmentIds }) limits it to those assessments and `embedded`
+ * lets another page (an assessment report) host it: no page title or feature tabs, no saved
+ * views, and the open chart is kept in memory instead of the address bar.
+ */
+function PrepAnalysisView({ scope, embedded }) {
   const {
     catalog, catalogError, fieldMap, areas, area, chooseArea, state, update, layout, areaCharts, setLayout, updateChart, resetLayout,
     table, setTable, data, loading, error, refresh, refreshTick, focus, setFocus, applyView, compare, setCompare,
-  } = usePrepAnalysis();
+  } = usePrepAnalysis({ scope });
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -86,17 +92,24 @@ export default function PrepAnalysisPage() {
   const showPart = useCallback((chart, part) => setOpenPart({ chart, part }), []);
   // ?chart=<id> opens a chart on its own page; Back returns to every chart.
   const [searchParams, setSearchParams] = useSearchParams();
-  const fullChartId = searchParams.get("chart");
-  const openChart = useCallback((chartId) => setSearchParams((current) => {
-    const next = new URLSearchParams(current);
-    next.set("chart", chartId);
-    return next;
-  }), [setSearchParams]);
-  const closeChart = useCallback(() => setSearchParams((current) => {
-    const next = new URLSearchParams(current);
-    next.delete("chart");
-    return next;
-  }), [setSearchParams]);
+  const [memoryChartId, setMemoryChartId] = useState(null);
+  const fullChartId = embedded ? memoryChartId : searchParams.get("chart");
+  const openChart = useCallback((chartId) => {
+    if (embedded) { setMemoryChartId(chartId); return; }
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("chart", chartId);
+      return next;
+    });
+  }, [embedded, setSearchParams]);
+  const closeChart = useCallback(() => {
+    if (embedded) { setMemoryChartId(null); return; }
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("chart");
+      return next;
+    });
+  }, [embedded, setSearchParams]);
 
   // A chart's own conditions can use the feature's fields and the student fields.
   const chartFields = useMemo(() => (catalog ? [...featureFields(catalog, area), ...studentFields(catalog)] : []), [area, catalog]);
@@ -106,7 +119,7 @@ export default function PrepAnalysisPage() {
   // Charts with nothing to draw for these students (e.g. "Not practising"): hidden, not shown blank.
   const emptyIds = useMemo(() => new Set((data?.charts || []).filter((chart) => !buildChartOption(chart, chartTheme(false), "chart")).map((chart) => chart.id)), [data]);
   const compareBody = useMemo(() => (compare ? compareRequest(compare, fieldMap) : null), [compare, fieldMap]);
-  const analysis = useMemo(() => ({ state, fieldMap, catalog, entryById, focus, compareRequest: compareBody }), [catalog, compareBody, entryById, fieldMap, focus, state]);
+  const analysis = useMemo(() => ({ state, fieldMap, catalog, entryById, focus, compareRequest: compareBody, scope }), [catalog, compareBody, entryById, fieldMap, focus, scope, state]);
   // Each compared group's version of every chart and KPI section, by id / key.
   const sidesFor = useMemo(() => {
     if (!compare || !data?.compare) return () => null;
@@ -130,7 +143,7 @@ export default function PrepAnalysisPage() {
   const activeKpi = (data?.kpiGroups || []).flatMap((group) => group.kpis.map((kpi) => ({ section: group.key, kpi, rule: kpiRule(group.key, kpi.id, fieldMap) })))
     .find((entry) => entry.rule && isKpiActive(entry.rule, state));
   const studentList = (title, actions) => (
-    <StudentTable table={data?.students} area={area} loading={loading} onChange={setTable} onOpen={setStudentId} title={title} actions={actions} />
+    <StudentTable table={data?.students} area={area} loading={loading} onChange={setTable} onOpen={setStudentId} title={title} actions={actions} scoped={Boolean(scope)} />
   );
   const settingsEntry = entryById.get(settingsId);
   const charts = data?.charts || [];
@@ -140,10 +153,10 @@ export default function PrepAnalysisPage() {
 
   return (
     <ToastProvider>
-    <main className="min-h-full bg-slate-50 font-sans text-slate-900 dark:bg-gray-950 dark:text-gray-100">
-      <AnalysisHeader areas={areas} area={area} onArea={chooseArea} period={state.range.preset} onPeriod={(preset) => update({ ...state, range: { preset } })}>
+    <main className={`font-sans text-slate-900 dark:text-gray-100 ${embedded ? "overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-gray-800 dark:bg-gray-950" : "min-h-full bg-slate-50 dark:bg-gray-950"}`}>
+      <AnalysisHeader embedded={embedded} areas={areas} area={area} onArea={chooseArea} period={state.range.preset} onPeriod={(preset) => update({ ...state, range: { preset } })}>
         <CompareControl compare={compare} catalog={catalog} area={area} fieldMap={fieldMap} onApply={setCompare} />
-        <ViewsMenu area={area} state={state} layout={layout} onApply={applyView} />
+        {!embedded && <ViewsMenu area={area} state={state} layout={layout} onApply={applyView} />}
         <Button onClick={() => setCustomizeOpen(true)} title="Choose charts" aria-label="Choose charts"><LayoutGrid className="h-3.5 w-3.5" /><span className="hidden 2xl:inline">Charts</span></Button>
         <DownloadMenu catalog={catalog} area={area} areaLabel={areaLabel} state={state} fieldMap={fieldMap} matched={meta?.matched} table={table} focus={focus} />
         <IconButton label="How Prep Score works" onClick={() => setHelpOpen(true)}><HelpCircle className="h-4 w-4" /></IconButton>
@@ -229,5 +242,14 @@ export default function PrepAnalysisPage() {
       {studentId && <StudentDrawer studentId={studentId} range={state.range.preset} onClose={() => setStudentId(null)} />}
     </main>
     </ToastProvider>
+  );
+}
+
+export default function PrepAnalysisPage({ scope = null, embedded = false }) {
+  // A new scope is a new analysis: start clean instead of carrying filters over.
+  return (
+    <AnalysisScopeContext.Provider value={scope}>
+      <PrepAnalysisView key={scope?.assessmentIds?.join(",") || "all"} scope={scope} embedded={embedded} />
+    </AnalysisScopeContext.Provider>
   );
 }

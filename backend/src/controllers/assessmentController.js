@@ -2,7 +2,13 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
 import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
-import { evaluatedAssessmentExpression, evaluatedScoreExpression } from '../services/assessmentReportSummaryService.js';
+import {
+  assignedCountForAssessment, attemptTallyFields, eligibleStudentsQuery, evaluatedAssessmentExpression, evaluatedScoreExpression,
+  passPercentExpression, perAssessmentValue,
+} from '../services/assessmentReportSummaryService.js';
+import {
+  DEFAULT_PASS_PERCENTAGE, FINISHED_STATUSES, assignedCountOf, attemptCountFields, emptyTally, finalizeCounts, passPercentageOf, summarizeAttempts,
+} from '../services/assessmentAttemptCounts.js';
 import { acquireAssessmentReportSlot, createBoundedReportAggregate, assertAssessmentExportSize, MAX_ASSESSMENT_EXPORT_ROWS } from '../services/assessmentReportLimits.js';
 import AssessmentAttemptArchive from '../models/AssessmentAttemptArchive.js';
 import AssessmentEvent from '../models/AssessmentEvent.js';
@@ -2662,6 +2668,11 @@ export async function listAssessments(req, res) {
         } : {}),
       });
     }
+    // Canonical counts (services/assessmentAttemptCounts): started excludes
+    // 'not_started' documents; scores and pass use graded attempts only, against
+    // each assessment's own pass mark.
+    const passEntries = assessments.map((a) => [a._id, passPercentageOf(a.settings)]).filter(([, value]) => value !== DEFAULT_PASS_PERCENTAGE);
+    const marksEntries = assessments.filter((a) => Number(a.totalMarks) > 0).map((a) => [a._id, Number(a.totalMarks)]);
     const submissionCounts = await AssessmentSubmission.aggregate([
       {
         $match: {
@@ -2671,15 +2682,7 @@ export async function listAssessments(req, res) {
       {
         $group: {
           _id: '$assessmentId',
-          count: { $sum: 1 },
-          submitted: {
-            $sum: {
-              $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0],
-            },
-          },
-          avgScore: { $avg: { $ifNull: ['$score', 0] } },
-          maxScore: { $max: { $ifNull: ['$score', 0] } },
-          minScore: { $min: { $ifNull: ['$score', 0] } },
+          ...attemptTallyFields({ passPercent: perAssessmentValue(passEntries, DEFAULT_PASS_PERCENTAGE), totalMarks: perAssessmentValue(marksEntries, 0) }),
           tabSwitches: { $sum: { $ifNull: ['$tabSwitches', 0] } },
           fullscreenExits: { $sum: { $ifNull: ['$fullscreenExits', 0] } },
           cameraFlags: { $sum: { $ifNull: ['$cameraFlags', 0] } },
@@ -2689,6 +2692,9 @@ export async function listAssessments(req, res) {
     ]);
     const countsByAssessment = new Map(submissionCounts.map((c) => [String(c._id), c]));
     const now = new Date();
+    // candidateCount = assigned (or, for 'all', eligible) students; see finalizeCounts.
+    const needsEligible = assessments.some((a) => a.targetType === 'all' && !assignedCountOf(a, 0));
+    const eligibleCount = needsEligible ? await User.countDocuments(eligibleStudentsQuery()).maxTimeMS(3000) : 0;
     const data = assessments.map((a) => {
       const status = computeStatus(now, a);
       const lifecycleBucket = lifecycleBucketForAssessment(a, now);
@@ -2697,6 +2703,9 @@ export async function listAssessments(req, res) {
         : (a.lifecycleStatus === 'draft'
           ? (a.draftAssignedStudents?.length || 0)
           : (a.assignedStudents?.length || 0));
+      const tally = countsByAssessment.get(String(a._id)) || {};
+      const passPercentage = passPercentageOf(a.settings);
+      const counts = finalizeCounts({ ...emptyTally(), ...tally }, { assignedCount: assignedCountOf(a, eligibleCount), passPercentage });
 
       return {
         ...sanitizeAssessmentForResponse(a),
@@ -2705,19 +2714,17 @@ export async function listAssessments(req, res) {
         totalQuestions: countQuestions(a.sections || []),
         totalMarks: Number(a.totalMarks || computeTotalMarksFromSections(a.sections || [])) || 0,
         assignedCount,
-        attempts: countsByAssessment.get(String(a._id))?.count || 0,
-        submissionCount: countsByAssessment.get(String(a._id))?.count || 0,
-        submissions: countsByAssessment.get(String(a._id))?.submitted || 0,
-        completedCount: countsByAssessment.get(String(a._id))?.submitted || 0,
-        avgScore: countsByAssessment.get(String(a._id))?.avgScore || 0,
-        maxScore: countsByAssessment.get(String(a._id))?.maxScore || 0,
-        minScore: countsByAssessment.get(String(a._id))?.minScore || 0,
-        violationCount: (
-          (countsByAssessment.get(String(a._id))?.tabSwitches || 0)
-          + (countsByAssessment.get(String(a._id))?.fullscreenExits || 0)
-          + (countsByAssessment.get(String(a._id))?.cameraFlags || 0)
-          + (countsByAssessment.get(String(a._id))?.copyPasteCount || 0)
-        ),
+        ...attemptCountFields(counts),
+        attempts: counts.started,
+        submissions: counts.submitted,
+        passPercentage,
+        passRate: counts.passRate,
+        avgPercentage: counts.avgPercentage,
+        // Graded attempts only; 0 (not null) when nothing is graded yet, as before.
+        avgScore: counts.avgScore || 0,
+        maxScore: counts.maxScore || 0,
+        minScore: counts.minScore || 0,
+        violationCount: (tally.tabSwitches || 0) + (tally.fullscreenExits || 0) + (tally.cameraFlags || 0) + (tally.copyPasteCount || 0),
       };
     });
     res.json({
@@ -4424,10 +4431,16 @@ function matchesDateRange(value, from, to) {
   return true;
 }
 
+// Filters that narrow which attempts are counted: the assigned-but-never-started
+// candidates are only added to a summary when none of them is set.
+const ROW_FILTER_KEYS = ['studentId', 'studentQuery', 'status', 'from', 'to', 'scoreMin', 'scoreMax', 'hasViolations'];
+const hasRowFilters = (options = {}) => ROW_FILTER_KEYS.some((key) => options[key] !== undefined && options[key] !== '');
+
 async function respondSharedAssessmentReports(req, res, assessment) {
   const options = req.query || {};
   const totalQuestions = countQuestions(assessment.sections || []);
   const totalMarks = Number(assessment.totalMarks || computeTotalMarksFromSections(assessment.sections || []));
+  const passPercentage = passPercentageOf(assessment.settings);
   const match = { assessmentId: assessment._id };
   if (options.studentId && mongoose.isValidObjectId(options.studentId)) match.studentId = new mongoose.Types.ObjectId(options.studentId);
   if (options.status) match.status = String(options.status);
@@ -4456,18 +4469,14 @@ async function respondSharedAssessmentReports(req, res, assessment) {
     AssessmentSubmission.aggregate([
       { $match: match },
       { $addFields: { __scorePercent: { $cond: [
-        { $and: [{ $isNumber: '$score' }, { $gt: [{ $ifNull: ['$maxMarks', totalMarks] }, 0] }] },
+        { $and: [evaluatedAssessmentExpression, { $gt: [{ $ifNull: ['$maxMarks', totalMarks] }, 0] }] },
         { $multiply: [{ $divide: ['$score', { $ifNull: ['$maxMarks', totalMarks] }] }, 100] }, null,
       ] } } },
       { $group: {
-        _id: null, count: { $sum: 1 },
-        completedCount: { $sum: { $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0] } },
-        gradedCount: { $sum: { $cond: [{ $isNumber: '$score' }, 1, 0] } },
-        pendingEvaluationCount: { $sum: { $cond: [{ $eq: ['$evaluationStatus', 'processing'] }, 1, 0] } },
-        failedEvaluationCount: { $sum: { $cond: [{ $eq: ['$evaluationStatus', 'failed'] }, 1, 0] } },
-        avgScore: { $avg: '$score' }, maxScore: { $max: '$score' }, minScore: { $min: '$score' },
+        _id: null,
+        // Canonical tally, same rules as every other report surface.
+        ...attemptTallyFields({ passPercent: passPercentage, totalMarks }),
         avgTimeSec: { $avg: '$timeTakenSec' }, fastestTime: { $min: '$timeTakenSec' },
-        passCount: { $sum: { $cond: [{ $gte: ['$__scorePercent', 100 * (Number(options.passMark) || 0.4)] }, 1, 0] } },
         score0_25: { $sum: { $cond: [{ $and: [{ $ne: ['$__scorePercent', null] }, { $lte: ['$__scorePercent', 25] }] }, 1, 0] } },
         score26_50: { $sum: { $cond: [{ $and: [{ $gt: ['$__scorePercent', 25] }, { $lte: ['$__scorePercent', 50] }] }, 1, 0] } },
         score51_75: { $sum: { $cond: [{ $and: [{ $gt: ['$__scorePercent', 50] }, { $lte: ['$__scorePercent', 75] }] }, 1, 0] } },
@@ -4493,12 +4502,12 @@ async function respondSharedAssessmentReports(req, res, assessment) {
   });
   const stats = statistics[0] || {};
   const lifecycleBucket = lifecycleBucketForAssessment(assessment, new Date());
-  const summary = { avgScore: stats.avgScore ?? null, maxScore: stats.maxScore ?? null,
-    minScore: stats.minScore ?? null, gradedCount: stats.gradedCount || 0,
-    completedCount: stats.completedCount || 0, passCount: stats.passCount || 0,
-    failCount: Math.max(0, Number(stats.gradedCount || 0) - Number(stats.passCount || 0)),
-    pendingEvaluationCount: stats.pendingEvaluationCount || 0,
-    failedEvaluationCount: stats.failedEvaluationCount || 0,
+  // Unfiltered requests also count assigned students who never opened the exam.
+  const counts = finalizeCounts({ ...emptyTally(), ...stats }, {
+    assignedCount: hasRowFilters(options) ? 0 : await assignedCountForAssessment(assessment), passPercentage,
+  });
+  const summary = { ...attemptCountFields(counts), counts, avgScore: counts.avgScore, maxScore: counts.maxScore,
+    minScore: counts.minScore, passPercentage,
     avgTimeSec: stats.avgTimeSec || 0, fastestTime: stats.fastestTime || 0,
     violationCount: stats.violations || 0,
     totalAssessments: 1, assessmentBuckets: { all: 1, current: lifecycleBucket === 'current' ? 1 : 0, upcoming: lifecycleBucket === 'upcoming' ? 1 : 0, completed: lifecycleBucket === 'completed' ? 1 : 0 },
@@ -4507,7 +4516,7 @@ async function respondSharedAssessmentReports(req, res, assessment) {
   const assessmentCard = { _id: assessment._id, title: assessment.title, assessmentType: assessment.assessmentType,
     lifecycleStatus: assessment.lifecycleStatus, startTime: assessment.startTime, endTime: assessment.endTime,
     duration: assessment.duration, createdAt: assessment.createdAt, totalQuestions, totalMarks,
-    submissionCount: stats.count || 0, completedCount: stats.completedCount || 0, avgScore: stats.avgScore || 0 };
+    ...attemptCountFields(counts), avgScore: counts.avgScore || 0 };
   return res.json({ assessments: [assessmentCard], students: options.view === 'dashboard' ? [] : rows,
     summary, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
 }
@@ -4559,15 +4568,14 @@ async function respondSharedAssessmentExport(req, res, assessment) {
     };
   }).filter((row) => !options.studentQuery || [row.candidateName, row.candidateEmail, row.candidateStudentId]
     .some((value) => String(value).toLowerCase().includes(String(options.studentQuery).toLowerCase())));
-  const graded = rows.filter((row) => row.score !== null && row.completionStatus === 'submitted');
-  const passCount = graded.filter((row) => row.totalMarks > 0 && row.score >= row.totalMarks * (Number(options.passMark) || 0.4)).length;
-  const summary = { totalAssessments: rows.length ? 1 : 0, totalCandidates: rows.length,
-    pendingEvaluationCount: rows.filter((row) => row.evaluationStatus === 'processing').length,
-    failedEvaluationCount: rows.filter((row) => row.evaluationStatus === 'failed').length,
-    avgScore: graded.length ? graded.reduce((sum, row) => sum + Number(row.score), 0) / graded.length : null,
-    maxScore: graded.length ? Math.max(...graded.map((row) => Number(row.score))) : null,
-    minScore: graded.length ? Math.min(...graded.map((row) => Number(row.score))) : null,
-    passCount, failCount: graded.length - passCount,
+  // Canonical counts over the exported attempts (see assessmentAttemptCounts).
+  const sourceById = new Map(submissions.map((submission) => [String(submission._id), submission]));
+  const passPercentage = passPercentageOf(assessment.settings);
+  const counts = summarizeAttempts(rows.map((row) => sourceById.get(row.submissionId)), {
+    passPercentage, totalMarks, assignedCount: hasRowFilters(options) ? 0 : await assignedCountForAssessment(assessment),
+  });
+  const summary = { ...attemptCountFields(counts), counts, totalAssessments: rows.length ? 1 : 0, totalCandidates: counts.candidates,
+    avgScore: counts.avgScore, maxScore: counts.maxScore, minScore: counts.minScore, passPercentage,
     violationCount: rows.reduce((sum, row) => sum + row.violationCount, 0) };
   const selectedColumns = String(options.columns || '').split(',').map((value) => value.trim()).filter(Boolean);
   const filteredRows = selectedColumns.length
@@ -4626,7 +4634,7 @@ export async function getAssessmentReports(req, res) {
       sortDir = 'desc',
       page = 1,
       limit = 25,
-      passMark = 0.4,
+      // `passMark` is accepted but ignored: each assessment's own pass mark decides pass/fail.
     } = req.query || {};
 
     // Query values reach $match: only plain whitelisted strings, never objects
@@ -4661,6 +4669,8 @@ export async function getAssessmentReports(req, res) {
           summary: [{ $group: {
             _id: null,
             total: { $sum: '$summaryRow.submissionCount' },
+            finishedCount: { $sum: '$summaryRow.finishedCount' },
+            candidateCount: { $sum: '$summaryRow.candidateCount' },
             gradedCount: { $sum: '$summaryRow.gradedCount' },
             scoreSum: { $sum: '$summaryRow.scoreSum' },
             passCount: { $sum: '$summaryRow.passCount' },
@@ -4673,7 +4683,7 @@ export async function getAssessmentReports(req, res) {
           } }],
           recent: [
             { $sort: { createdAt: -1 } }, { $limit: 5 },
-            { $project: { title: 1, createdAt: 1, submissionCount: '$summaryRow.submissionCount', avgScore: '$summaryRow.avgScore', summaryAsOf: '$summaryRow.computedAt', pendingEvaluationCount: '$summaryRow.pendingEvaluationCount' } },
+            { $project: { title: 1, createdAt: 1, submissionCount: '$summaryRow.submissionCount', startedCount: '$summaryRow.startedCount', finishedCount: '$summaryRow.finishedCount', candidateCount: '$summaryRow.candidateCount', avgScore: '$summaryRow.avgScore', summaryAsOf: '$summaryRow.computedAt', pendingEvaluationCount: '$summaryRow.pendingEvaluationCount' } },
           ],
         } },
       ]);
@@ -4685,6 +4695,10 @@ export async function getAssessmentReports(req, res) {
         students: [],
         summary: {
           avgScore: row.gradedCount ? row.scoreSum / row.gradedCount : null,
+          // Sums of the stored per-assessment summaries (same definitions as the list and roster).
+          startedCount: total,
+          finishedCount: Number(row.finishedCount || 0),
+          candidateCount: Number(row.candidateCount || 0),
           passCount,
           failCount: Math.max(0, Number(row.gradedCount || 0) - passCount),
           gradedCount: row.gradedCount || 0,
@@ -4772,7 +4786,7 @@ export async function getAssessmentReports(req, res) {
     delete summaryMatch.status; // Remove status filter for summary
     const summaryBaseLookup = [
       { $match: summaryMatch },
-      { $project: { assessmentId: 1, studentId: 1, status: 1, evaluationStatus: 1, startedAt: 1, score: 1, maxMarks: 1, accuracy: 1, timeTakenSec: 1, tabSwitches: 1, fullscreenExits: 1, cameraFlags: 1, copyPasteCount: 1 } },
+      { $project: { assessmentId: 1, studentId: 1, status: 1, evaluationStatus: 1, startedAt: 1, score: 1, maxMarks: 1, isLate: 1, accuracy: 1, timeTakenSec: 1, tabSwitches: 1, fullscreenExits: 1, cameraFlags: 1, copyPasteCount: 1 } },
       { $set: { isGraded: evaluatedAssessmentExpression, score: evaluatedScoreExpression } },
       { $lookup: { from: 'assessments', localField: 'assessmentId', foreignField: '_id', as: 'assessment' } },
       { $unwind: '$assessment' },
@@ -4872,22 +4886,12 @@ export async function getAssessmentReports(req, res) {
       {
         $group: {
           _id: null,
-          avgScore: { $avg: '$score' },
-          maxScore: { $max: '$score' },
-          minScore: { $min: '$score' },
-          total: { $sum: 1 },
-          gradedCount: { $sum: { $cond: ['$isGraded', 1, 0] } },
-          pendingEvaluationCount: { $sum: { $cond: [{ $eq: ['$evaluationStatus', 'processing'] }, 1, 0] } },
-          failedEvaluationCount: { $sum: { $cond: [{ $eq: ['$evaluationStatus', 'failed'] }, 1, 0] } },
-          passCount: {
-            $sum: {
-              $cond: [
-                { $and: ['$isGraded', { $gte: ['$score', { $multiply: [{ $ifNull: ['$maxMarks', '$assessment.totalMarks'] }, Number(passMark) || 0.4] }] }] },
-                1,
-                0,
-              ],
-            },
-          },
+          // Canonical tally; `score` is already null for ungraded rows here, so use the isGraded flag.
+          ...attemptTallyFields({
+            graded: '$isGraded',
+            passPercent: passPercentExpression('$assessment.settings.passPercentage'),
+            totalMarks: '$assessment.totalMarks',
+          }),
           avgTimeSec: { $avg: { $ifNull: ['$timeTakenSec', 0] } },
           fastestTime: { $min: { $ifNull: ['$timeTakenSec', 0] } },
           totalViolations: {
@@ -4988,7 +4992,7 @@ export async function getAssessmentReports(req, res) {
         $group: {
           _id: { $dateToString: { format: '%Y-%m', date: '$startedAt' } },
           attempts: { $sum: 1 },
-          completed: { $sum: { $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0] } },
+          completed: { $sum: { $cond: [{ $in: ['$status', [...FINISHED_STATUSES]] }, 1, 0] } },
           violations: {
             $sum: {
               $add: [
@@ -5030,8 +5034,14 @@ export async function getAssessmentReports(req, res) {
       { $limit: 365 },
     ]);
 
-    const summary = summaryRows?.[0] || { avgScore: 0, maxScore: 0, minScore: 0, total: 0, passCount: 0 };
-    const failCount = Math.max(0, (summary.gradedCount || 0) - (summary.passCount || 0));
+    const summary = summaryRows?.[0] || {};
+    // Canonical counts. Assigned-but-never-started students are only known (and
+    // added) for one unfiltered assessment; multi-assessment totals count students
+    // with a submission document.
+    const reportedAssessment = assessmentId && !hasRowFilters(req.query)
+      ? await Assessment.findById(assessmentId).select('targetType assignedStudents').lean() : null;
+    const reportCounts = finalizeCounts({ ...emptyTally(), ...summary }, { assignedCount: await assignedCountForAssessment(reportedAssessment) });
+    const failCount = reportCounts.failed;
 
     const assessmentSummariesMatch = {
       lifecycleStatus: { $ne: 'draft' },
@@ -5102,6 +5112,9 @@ export async function getAssessmentReports(req, res) {
           pendingEvaluationCount: { $ifNull: [{ $first: '$submissionSummary.pendingEvaluationCount' }, 0] },
           submissionCount: { $ifNull: [{ $first: '$submissionSummary.submissionCount' }, 0] },
           completedCount: { $ifNull: [{ $first: '$submissionSummary.completedCount' }, 0] },
+          // Stored canonical counts (same definitions as the list and roster).
+          ...Object.fromEntries(['candidateCount', 'startedCount', 'inProgressCount', 'finishedCount', 'submittedCount', 'notStartedCount', 'passedCount', 'failedCount', 'gradedCount']
+            .map((field) => [field, { $ifNull: [{ $first: `$submissionSummary.${field}` }, 0] }])),
           violationCount: { $ifNull: [{ $first: '$submissionSummary.violationCount' }, 0] },
         },
       },
@@ -5219,13 +5232,11 @@ export async function getAssessmentReports(req, res) {
       assessments: assessmentSummaries,
       students: studentRows,
       summary: {
-        avgScore: summary.avgScore ?? null,
-        maxScore: summary.maxScore ?? null,
-        minScore: summary.minScore ?? null,
-        pendingEvaluationCount: summary.pendingEvaluationCount || 0,
-        failedEvaluationCount: summary.failedEvaluationCount || 0,
-        gradedCount: summary.gradedCount || 0,
-        passCount: summary.passCount || 0,
+        ...attemptCountFields(reportCounts),
+        counts: reportCounts,
+        avgScore: reportCounts.avgScore,
+        maxScore: reportCounts.maxScore,
+        minScore: reportCounts.minScore,
         failCount,
         avgTimeSec: summary.avgTimeSec || 0,
         fastestTime: summary.fastestTime || 0,
@@ -5370,7 +5381,6 @@ export async function getAssessmentReportsExportData(req, res) {
       to,
       scoreMin,
       scoreMax,
-      passMark = 0.4,
       columns,
     } = req.query || {};
 
@@ -5441,6 +5451,7 @@ export async function getAssessmentReportsExportData(req, res) {
         evaluationStatus: 1,
         score: 1,
         maxMarks: 1,
+        isLate: 1,
         accuracy: 1,
         timeTakenSec: 1,
         startedAt: 1,
@@ -5488,6 +5499,7 @@ export async function getAssessmentReportsExportData(req, res) {
           endTime: '$assessment.endTime',
           duration: '$assessment.duration',
           totalMarks: '$assessment.totalMarks',
+          passPercentage: '$assessment.settings.passPercentage',
           createdAt: '$assessment.createdAt',
           sections: '$assessment.sections',
         },
@@ -5652,17 +5664,23 @@ export async function getAssessmentReportsExportData(req, res) {
       });
     });
 
-    const gradedExportRows = exportRows.filter((row) => row.score !== null && row.completionStatus === 'submitted');
+    // Canonical counts over the raw attempts, each against its own assessment's pass mark.
+    // Assigned-but-never-started students are added only for one unfiltered assessment.
+    const singleAssessment = assessmentId && !hasRowFilters(req.query)
+      ? await Assessment.findById(assessmentId).select('targetType assignedStudents').lean() : null;
+    const counts = summarizeAttempts(rawRows.map((row) => ({
+      studentId: row.studentId, assessmentId: row.assessmentId, status: row.status, evaluationStatus: row.evaluationStatus, score: row.score,
+      maxMarks: row.maxMarks, isLate: row.isLate,
+      totalMarks: row.assessment?.totalMarks, passPercentage: passPercentageOf({ passPercentage: row.assessment?.passPercentage }),
+    })), { assignedCount: await assignedCountForAssessment(singleAssessment) });
     const summary = {
+      ...attemptCountFields(counts),
+      counts,
       totalAssessments: new Set(exportRows.map((row) => row.assessmentId)).size,
-      totalCandidates: exportRows.length,
-      pendingEvaluationCount: exportRows.filter((row) => row.evaluationStatus === 'processing').length,
-      failedEvaluationCount: exportRows.filter((row) => row.evaluationStatus === 'failed').length,
-      avgScore: gradedExportRows.length ? Number((gradedExportRows.reduce((sum, row) => sum + Number(row.score || 0), 0) / gradedExportRows.length).toFixed(2)) : null,
-      maxScore: gradedExportRows.length ? Math.max(...gradedExportRows.map((row) => Number(row.score || 0))) : null,
-      minScore: gradedExportRows.length ? Math.min(...gradedExportRows.map((row) => Number(row.score || 0))) : null,
-      passCount: gradedExportRows.filter((row) => row.totalMarks > 0 && row.score >= row.totalMarks * (Number(passMark) || 0.4)).length,
-      failCount: gradedExportRows.filter((row) => !(row.totalMarks > 0 && row.score >= row.totalMarks * (Number(passMark) || 0.4))).length,
+      totalCandidates: counts.candidates,
+      avgScore: counts.avgScore,
+      maxScore: counts.maxScore,
+      minScore: counts.minScore,
       violationCount: exportRows.reduce((sum, row) => sum + Number(row.violationCount || 0), 0),
     };
 

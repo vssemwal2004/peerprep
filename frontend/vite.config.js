@@ -41,6 +41,11 @@ export default defineConfig({
   esbuild: {
     drop: ['console', 'debugger'],
   },
+  worker: {
+    // The AI proctoring worker lazy-loads TensorFlow.js and MediaPipe; the default IIFE worker
+    // format cannot code-split dynamic imports.
+    format: 'es',
+  },
   server: {
     headers: {
       // Source modules should always be revalidated during development. This

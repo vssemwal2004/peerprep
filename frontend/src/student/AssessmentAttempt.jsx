@@ -38,6 +38,8 @@ import AssessmentMcqOptions from './assessment/AssessmentMcqOptions';
 import { decodeLegacyCodeEntities, getCodeValidationMessage, getStarterCodeForLanguage } from './problemUtils';
 import ProctoringFooter from '../features/assessment/student/components/ProctoringFooter';
 import { ProctoringManager } from '../features/assessment/proctoring';
+import { shouldUseFaceDetection, shouldUseObjectDetection } from '../features/assessment/proctoring/ProctoringManager';
+import { releaseWarmProctoringModels, warmUpProctoringModels } from '../features/assessment/proctoring/warmup';
 import { logAiProctoringViolation } from '../features/assessment/proctoring/services/proctoringApi';
 import { AssessmentSaveProtocol, answerPayloadKey, answerPayloadSignature, isDraftForAttempt, isTransientSaveError, mergeLiveCodingDraft } from './assessment/assessmentSaveProtocol';
 import { readAssessmentDraft, writeAssessmentDraft, deleteAssessmentDraft } from './assessment/assessmentDraftStore';
@@ -688,6 +690,9 @@ export default function AssessmentAttempt() {
   const [phase, setPhase] = useState('validation');
   const [validationStep, setValidationStep] = useState(1);
   const [completedSetupSteps, setCompletedSetupSteps] = useState([]);
+  // Live fullscreen state. The server remembers a completed "fullscreen" setup step across
+  // sessions, but the browser does not, so the setup UI must always trust this value instead.
+  const [fullscreenActive, setFullscreenActive] = useState(() => Boolean(document.fullscreenElement));
   const [validationState, setValidationState] = useState({
     fullscreen: false,
     environment: false,
@@ -946,10 +951,27 @@ export default function AssessmentAttempt() {
     steps.push({ key: 'final', title: 'Final Verification', icon: <ShieldCheck className="h-4 w-4" /> });
     return steps.map((step, index) => ({ ...step, id: index + 1 }));
   }, [cameraRequired, environmentRequired, fullscreenRequired, locationRequired, securityRecheckActive]);
-  const completedSetupStepSet = useMemo(() => new Set(completedSetupSteps), [completedSetupSteps]);
+  const completedSetupStepSet = useMemo(() => {
+    const completed = new Set(completedSetupSteps);
+    // A stored "fullscreen" pass is stale once the student has left fullscreen, so the step
+    // must be re-run instead of being shown as done.
+    if (fullscreenRequired && !fullscreenActive) completed.delete('fullscreen');
+    return completed;
+  }, [completedSetupSteps, fullscreenRequired, fullscreenActive]);
   const setupStepIsDone = useCallback((key) => {
     return completedSetupStepSet.has(key);
   }, [completedSetupStepSet]);
+  // Load the AI models while the student reads the checks/instructions, not at the instant the
+  // test opens (see modelLoader.warmUpProctoringModels). Runs once; safe to call repeatedly.
+  const aiWarmUpReady = aiProctoringEnabled
+    && (phase === 'rules' || (phase === 'validation' && completedSetupStepSet.has('camera')));
+  useEffect(() => {
+    if (!aiWarmUpReady) return;
+    warmUpProctoringModels({
+      face: shouldUseFaceDetection(aiProctoringSettings),
+      object: shouldUseObjectDetection(aiProctoringSettings),
+    });
+  }, [aiWarmUpReady, aiProctoringSettings]);
   const currentSetupStepKey = setupSteps.find((item) => item.id === validationStep)?.key || setupSteps[0]?.key;
   const currentSetupStepNumber = setupSteps.find((item) => item.id === validationStep)?.id || validationStep;
   const resetSecuritySetupProgress = useCallback(() => {
@@ -2502,6 +2524,7 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     const handleFullscreenChange = () => {
       const active = Boolean(document.fullscreenElement);
+      setFullscreenActive(active);
       setValidationState((prev) => ({
         ...prev,
         fullscreen: active,
@@ -2647,6 +2670,7 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     return () => {
       stopAiProctoring();
+      releaseWarmProctoringModels();
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
@@ -3243,12 +3267,20 @@ export default function AssessmentAttempt() {
   // Esc closes Monaco's suggestion/find widgets; without Keyboard Lock the same
   // key also exits fullscreen and starts the auto-submit countdown.
   const requestFullscreen = () => {
+    if (document.fullscreenElement) return Promise.resolve(true);
     if (document.documentElement.requestFullscreen) {
-      return document.documentElement.requestFullscreen().then(lockEscapeKey).catch(() => {
-        toast.info('Fullscreen is not available on this device.');
+      return document.documentElement.requestFullscreen().then(() => {
+        lockEscapeKey();
+        return true;
+      }).catch(() => {
+        // Usually a call/notification overlay or another app holding the screen, not an
+        // unsupported device. Tell the student what to do instead of a dead end.
+        toast.info('Fullscreen could not start. Close any call, notification or overlay on your screen, then click the button again.');
+        return false;
       });
     }
-    return Promise.resolve();
+    toast.info('This browser does not support fullscreen. Use the latest Chrome or Edge on a laptop.');
+    return Promise.resolve(false);
   };
 
   const markSetupStep = (step, meta) => api.markStudentAssessmentSetupStep(assessment._id, step, meta, {
@@ -3460,6 +3492,11 @@ export default function AssessmentAttempt() {
   };
 
   const handleFinalCheck = async () => {
+    // Re-validate fullscreen live. This must be the first await so the click still counts as a
+    // user gesture; otherwise the browser refuses to re-enter fullscreen after the student left it.
+    if (fullscreenRequired && !document.fullscreenElement) {
+      await requestFullscreen();
+    }
     const interference = environmentRequired ? detectBrowserInterference() : [];
     setEnvironmentInterference(interference);
     const fullscreenOk = !fullscreenRequired || Boolean(document.fullscreenElement);
@@ -4860,6 +4897,7 @@ export default function AssessmentAttempt() {
                             <>
                               <li>Your screen switches to fullscreen when you click the button below.</li>
                               <li>Stay in fullscreen until you submit. Leaving it is recorded.</li>
+                              <li>Turn on Do Not Disturb and close WhatsApp, Teams and other apps first. A call or notification pop-up can push you out of fullscreen.</li>
                             </>
                           )}
                           {fullscreenRequired && !isSecureAssessmentTab && (

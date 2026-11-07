@@ -1,14 +1,15 @@
 import { AnimatedNumber } from "./Motion";
 import {
-  Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Bot, BookOpenCheck, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, CircleDashed, ClipboardList,
+  Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Bot, BookOpenCheck, CalendarClock, CheckCircle2, CircleDashed, ClipboardList,
   Flag, Flame, ListChecks, MessagesSquare, PauseCircle, PlayCircle, Target, Trophy, Users, XCircle,
 } from "lucide-react";
 import { DIFFICULTY_COLORS } from "../charts/chartTheme";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
 import { isKpiActive, kpiRule } from "../filterModel";
 import { formatScore } from "../../../student/prepScore/formatScore";
+import PageNav from "../../reports/PageNav";
 import { initials, sectionStyle } from "./sectionStyles";
-import { Dialog, IconButton, focusRing } from "./ui";
+import { Dialog, focusRing } from "./ui";
 
 const KPI_ICONS = {
   students: Users, active: Activity, solved: CheckCircle2, hard: Flame, accuracy: Target, stopped: PauseCircle,
@@ -57,6 +58,9 @@ export function KpiStrip({ section = "coding", kpis, loading, state, fieldMap, o
         const pick = state && onToggle ? kpiRule(section, kpi.id, fieldMap) : null;
         const on = Boolean(pick && isKpiActive(pick, state));
         const warn = kpi.tone === "warning" && kpi.value > 0;
+        // How much of the cohort this is: "42% of 589 students" in the hint, or the value itself for a percentage.
+        const hinted = /^(\d+(?:\.\d+)?)%/.exec(kpi.hint || "");
+        const share = kpi.format === "percent" ? Number(kpi.value) : hinted ? Number(hinted[1]) : null;
         const body = (
           <>
             <div className="flex items-start justify-between gap-2">
@@ -85,6 +89,11 @@ export function KpiStrip({ section = "coding", kpis, loading, state, fieldMap, o
                 ? <span className="font-semibold text-sky-600 dark:text-sky-300">Showing only these · click to undo</span>
                 : <>{kpi.hint || BLANK}{pick && <span className="ml-1 hidden font-semibold text-sky-600 group-hover:inline dark:text-sky-300">· Show them</span>}</>}
             </p>
+            {share !== null && (
+              <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.07]" aria-hidden="true">
+                <span className={`block h-full rounded-full transition-[width] duration-500 ${warn ? "bg-gradient-to-r from-amber-300 to-amber-500" : "bg-gradient-to-r from-sky-400 to-sky-600"}`} style={{ width: `${share > 0 ? Math.max(3, Math.min(100, share)) : 0}%` }} />
+              </span>
+            )}
           </>
         );
         const card = "group relative flex min-w-0 flex-col gap-0.5 overflow-hidden rounded-xl border bg-white px-3.5 py-3 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:bg-gray-900";
@@ -192,15 +201,24 @@ COLUMNS.all = [
   { ...COLUMNS.interview[0], label: "Prep Interview", sort: undefined },
   { ...COLUMNS.assessment[0], label: "Prep Assessment", sort: undefined },
 ];
+// One assessment's page: the stored Prep Score covers every test, so it is left out here.
+const SCOPED_ASSESSMENT_COLUMNS = [
+  { label: "Test score", sort: "testScore", render: (row) => (row.assessment?.taken ? <PercentBar value={row.assessment.averageScore} /> : "—") },
+  { label: "Result", render: (row) => {
+    if (!row.assessment?.taken) return <span className={row.assessment?.missed ? "font-semibold text-amber-600 dark:text-amber-400" : "text-slate-400"}>{row.assessment?.missed ? "Missed" : "Not attempted"}</span>;
+    return row.assessment.passed ? <span className="font-semibold text-emerald-600 dark:text-emerald-400">Passed</span> : <span className="font-semibold text-rose-600 dark:text-rose-400">Failed</span>;
+  } },
+  { label: "Status", render: (row) => <StatusPill status={row.assessment?.status} /> },
+];
 const POSITION_HINT = { coding: "Prep Score", learning: "course completed", interview: "Prep Score", assessment: "Prep Score", all: "overall Prep Score" };
 
 /**
  * The students on the page, sorted and paged on the server. `title` and `actions` (e.g. a
  * download button) let it lead the page when a headline number picked these students.
  */
-export function StudentTable({ table, area, loading, onChange, onOpen, title = "Students", actions = null }) {
+export function StudentTable({ table, area, loading, onChange, onOpen, title = "Students", actions = null, scoped = false }) {
   if (!table) return null;
-  const columns = COLUMNS[area] || COLUMNS.coding;
+  const columns = scoped && area === "assessment" ? SCOPED_ASSESSMENT_COLUMNS : (COLUMNS[area] || COLUMNS.coding);
   const pages = Math.max(1, Math.ceil(table.total / table.limit));
   const sortBy = (key) => onChange({ sort: key, direction: table.sort === key && table.direction === "desc" ? "asc" : "desc", page: 1 });
   const header = (label, sort, align) => {
@@ -220,7 +238,7 @@ export function StudentTable({ table, area, loading, onChange, onOpen, title = "
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 dark:border-white/[0.06]">
         <div>
           <h2 id="students-title" className="flex items-center gap-2 text-[13.5px] font-bold text-slate-900 dark:text-white"><Users className="h-4 w-4 text-sky-500" />{title}</h2>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400"># is the place by {POSITION_HINT[area] || "Prep Score"}. Click a student for their full profile.</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400"># is the place by {scoped && area === "assessment" ? "test score" : (POSITION_HINT[area] || "Prep Score")}. Click a student for their full profile.</p>
         </div>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-slate-600 dark:bg-white/[0.06] dark:text-slate-300">{table.total.toLocaleString()} students</span>
@@ -259,10 +277,9 @@ export function StudentTable({ table, area, loading, onChange, onOpen, title = "
         </table>
       </div>
       {pages > 1 && (
-        <footer className="flex items-center justify-end gap-2 border-t border-slate-100 px-3 py-2 text-[11px] text-slate-500 dark:border-white/[0.06]">
-          Page {table.page} of {pages}
-          <IconButton label="Previous page" disabled={table.page <= 1} onClick={() => onChange({ page: table.page - 1 })}><ChevronLeft className="h-4 w-4" /></IconButton>
-          <IconButton label="Next page" disabled={table.page >= pages} onClick={() => onChange({ page: table.page + 1 })}><ChevronRight className="h-4 w-4" /></IconButton>
+        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-3 py-2 text-[11px] text-slate-500 dark:border-white/[0.06]">
+          <span>Page {table.page} of {pages}</span>
+          <PageNav page={table.page} totalPages={pages} onPage={(page) => onChange({ page })} />
         </footer>
       )}
     </section>

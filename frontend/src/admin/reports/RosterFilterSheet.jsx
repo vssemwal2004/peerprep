@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
-import { Filter, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, Filter, Search, X } from 'lucide-react';
 import {
-  ROSTER_EVALUATION_OPTIONS, ROSTER_STATUS_OPTIONS, ROSTER_TYPE_OPTIONS,
+  ACADEMIC_DIMENSIONS, ROSTER_EVALUATION_OPTIONS, ROSTER_STATUS_OPTIONS, ROSTER_TYPE_OPTIONS, facetOptions,
 } from './rosterModel';
 
 const SCORE_PRESETS = [
@@ -57,12 +57,75 @@ function Toggle({ checked, onChange, label, hint }) {
   );
 }
 
+/** One class detail (course, branch, semester…): pick any number of values; counts follow the other filters. */
+function FacetGroup({ label, options, selected, onChange, defaultOpen }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [search, setSearch] = useState('');
+  const chosen = new Set(selected);
+  const visible = options.filter((option) => option.label.toLowerCase().includes(search.trim().toLowerCase()));
+  const toggle = (value) => {
+    const next = new Set(chosen);
+    if (next.has(value)) next.delete(value); else next.add(value);
+    onChange([...next]);
+  };
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-gray-800">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
+      >
+        <span className="flex items-center gap-2 text-sm font-medium text-slate-800 dark:text-gray-200">
+          {label}
+          {selected.length > 0 && <span className="rounded-full bg-sky-600 px-1.5 text-[10px] font-semibold text-white">{selected.length}</span>}
+        </span>
+        <span className="flex items-center gap-2 text-[11px] text-slate-400">
+          {options.length} {options.length === 1 ? 'value' : 'values'}
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-slate-100 px-3 pb-3 pt-2 dark:border-gray-800">
+          {options.length > 8 && (
+            <div className="relative mb-2">
+              <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400" />
+              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${label.toLowerCase()}`} aria-label={`Search ${label}`} className="h-8 w-full rounded-lg border border-slate-200 bg-white pl-7 pr-2 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+            </div>
+          )}
+          <ul className="max-h-44 space-y-0.5 overflow-y-auto">
+            {visible.length ? visible.map((option) => (
+              <li key={option.value || '__empty'}>
+                <label className={`flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-xs hover:bg-slate-50 dark:hover:bg-gray-800 ${option.count === 0 ? 'text-slate-400' : 'text-slate-700 dark:text-gray-200'}`}>
+                  <input type="checkbox" checked={chosen.has(option.value)} onChange={() => toggle(option.value)} className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                  <span className="tabular-nums text-[11px] text-slate-400">{option.count}</span>
+                </label>
+              </li>
+            )) : <li className="px-2 py-3 text-center text-xs text-slate-400">No matching values</li>}
+          </ul>
+          {selected.length > 0 && (
+            <button type="button" onClick={() => onChange([])} className="mt-2 text-[11px] font-medium text-sky-600 hover:underline dark:text-sky-400">Clear {label.toLowerCase()}</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Candidate filters in a side sheet. Every change applies at once and the sheet
  * stays open; it closes only on Done, the backdrop or Escape.
  */
-export default function RosterFilterSheet({ open, filters, statusCounts, matchCount, totalCount, onChange, onToggleStatus, onClear, onClose }) {
+export default function RosterFilterSheet({ open, filters, rows, statusCounts, matchCount, totalCount, onChange, onAcademicChange, onToggleStatus, onClear, onClose }) {
   const panelRef = useRef(null);
+  // Each class detail with the counts left after every other filter, so combinations are easy to find.
+  const facets = useMemo(() => (open
+    ? ACADEMIC_DIMENSIONS
+      .map((dimension) => ({ ...dimension, options: facetOptions(rows, filters, dimension.key) }))
+      // A detail nobody has filled in (only "Not set") would be a dead control.
+      .filter((facet) => facet.options.some((option) => option.value !== '') || (filters.academic?.[facet.key] || []).length)
+    : []), [filters, open, rows]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -95,6 +158,23 @@ export default function RosterFilterSheet({ open, filters, statusCounts, matchCo
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
+          {facets.length > 0 && (
+            <Section title="Student group">
+              <div className="space-y-2">
+                {facets.map((facet, index) => (
+                  <FacetGroup
+                    key={facet.key}
+                    label={facet.label}
+                    options={facet.options}
+                    selected={filters.academic?.[facet.key] || []}
+                    onChange={(values) => onAcademicChange(facet.key, values)}
+                    defaultOpen={index < 2 || (filters.academic?.[facet.key] || []).length > 0}
+                  />
+                ))}
+              </div>
+            </Section>
+          )}
+
           <Section title="Status">
             <div className="flex flex-wrap gap-1.5">
               {ROSTER_STATUS_OPTIONS.map((option) => {

@@ -19,7 +19,9 @@ import {
 } from './prepAnalysis.export.js';
 import { detailLabel, drillDetail, drillFor, drillStudents, sortItems } from './drill.js';
 import { chartSummary } from './summaries.js';
-import { loadAssessmentFacts, PASS_PERCENT } from './assessmentFacts.js';
+import {
+  loadAssessmentDefinitions, loadAssessmentFacts, PASS_PERCENT, scopeAssessmentDefinitions, scopeStudentsToAssessments,
+} from './assessmentFacts.js';
 import { loadInterviewFacts, RATINGS } from './interviewFacts.js';
 import { loadQuickPrepFacts, sheetVisibleTo } from './quickPrepFacts.js';
 import { attachStoredScores, buildStudentRows } from './studentRows.js';
@@ -28,6 +30,8 @@ export const QUERY_LIMITS = Object.freeze({
   // A large university's first load takes seconds, so loaded data is reused for five minutes
   // across filter changes, popups and downloads; the page's refresh button reloads it.
   maxCharts: 24, maxTableLimit: 100, maxRangeDays: 366 * 3, cacheTtlMs: 5 * 60_000, cacheEntries: 6, maxChartLimit: 100, maxPage: 10_000, maxDrillLimit: 200, maxKeyLength: 200,
+  // "Only these assessments": how many a request may name.
+  maxScopeAssessments: 20,
 });
 const RANGE_PRESETS = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, '365d': 365, all: null };
 const TABLE_SORTS = {
@@ -133,6 +137,36 @@ function normalizeCompare(input, modules) {
   }));
 }
 
+/**
+ * "Only these assessments": { assessmentIds } (at most 20), or null for everyone and every test.
+ * Ids that are not ObjectIds are dropped; ids of tests the admin cannot see are dropped later,
+ * when the tests are loaded. A non-empty list that ends up naming nothing stays a scope (an
+ * empty cohort), it never widens to the whole university. Ids are sorted for a stable cache key.
+ */
+export function normalizeScope(input) {
+  if (input === undefined || input === null) return null;
+  if (typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'Invalid assessment scope.');
+  const raw = input.assessmentIds;
+  if (raw === undefined || raw === null) return null;
+  if (!Array.isArray(raw)) throw new HttpError(400, 'assessmentIds must be a list.');
+  if (raw.length > QUERY_LIMITS.maxScopeAssessments) throw new HttpError(400, `Choose up to ${QUERY_LIMITS.maxScopeAssessments} assessments.`);
+  if (!raw.length) return null;
+  const ids = new Set(raw.filter((id) => typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id.trim())).map((id) => id.trim().toLowerCase()));
+  return { assessmentIds: [...ids].sort() };
+}
+
+/**
+ * The assessment scope of a request body. A chart download already uses `scope: 'chart'`, so
+ * the assessments can also be sent as `assessmentScope`; a string `scope` is never an assessment scope.
+ */
+const scopeFromBody = (body) => normalizeScope(body.assessmentScope ?? (body.scope && typeof body.scope === 'object' ? body.scope : null));
+
+/** `?assessmentIds=a,b` (or repeated) from a query string. */
+export function scopeFromQueryString(value) {
+  const list = [].concat(value ?? []).flatMap((part) => String(part).split(',')).map((part) => part.trim()).filter(Boolean);
+  return normalizeScope({ assessmentIds: list });
+}
+
 /** `module` is the analysis area: 'all' or one licensed module. */
 export function validatePrepAnalysisQuery(body = {}, permissions) {
   const modules = new Set(allowedModules(permissions));
@@ -173,6 +207,7 @@ export function validatePrepAnalysisQuery(body = {}, permissions) {
     rank,
     focus: normalizeFocus(body.focus, modules),
     compare: normalizeCompare(body.compare, modules),
+    scope: scopeFromBody(body),
     // With compare: which side a drill or download is about (0 or 1).
     group: [0, 1].includes(body.group) ? body.group : null,
     // KPI changes against the previous period of the same length (presets other than "all").
@@ -192,14 +227,23 @@ export function validatePrepAnalysisQuery(body = {}, permissions) {
 
 const contextCache = new Map();
 
-function cacheKey(user, range, modules, parts) {
+export function cacheKey(user, range, modules, parts, assessmentScope = null) {
   const scope = user?.role === 'coordinator' && user.coordinatorDataScope !== 'all' ? `c:${user.coordinatorId}` : user?.role === 'coordinator' ? `ca:${user.coordinatorId}` : 'all';
   const period = range.preset === 'custom' ? `${range.from?.toISOString() || ''}..${range.to?.toISOString() || ''}` : range.preset;
-  return `${currentTenant()?.universityId || 'platform'}|${scope}|${period}|${[...modules].sort().join(',')}|${parts.peer ? 'p' : ''}${parts.ai ? 'a' : ''}`;
+  // A scoped context holds other tests and a narrower cohort: it must never be served for an unscoped request.
+  const assessments = assessmentScope ? `|as:${[...assessmentScope.assessmentIds].sort().join(',') || 'none'}` : '';
+  return `${currentTenant()?.universityId || 'platform'}|${scope}|${period}|${[...modules].sort().join(',')}|${parts.peer ? 'p' : ''}${parts.ai ? 'a' : ''}${assessments}`;
 }
 
-async function buildContext(user, range, modules, parts) {
-  const cohort = await loadCohort(user);
+async function buildContext(user, range, modules, parts, assessmentScope) {
+  const loaded = await loadCohort(user);
+  let cohort = loaded;
+  let tests = null;
+  if (assessmentScope) {
+    // Only the requested tests this admin can see, and only the students who were given or took one.
+    tests = scopeAssessmentDefinitions(await loadAssessmentDefinitions(user), assessmentScope.assessmentIds);
+    cohort = { ...loaded, students: await scopeStudentsToAssessments(loaded.students, tests) };
+  }
   const studentIds = cohort.students.map((student) => String(student._id));
   const empty = { byStudent: new Map(), days: new Map(), problems: new Map(), topics: new Map() };
   const [coding, learning, quickprep, assessment, interview, stored] = await Promise.all([
@@ -207,7 +251,7 @@ async function buildContext(user, range, modules, parts) {
     modules.has('learning') ? loadLearningFacts({ studentIds, range }) : null,
     // Quick Prep sheets are part of Prep Coding.
     modules.has('coding') ? loadQuickPrepFacts({ studentIds, range }) : null,
-    modules.has('assessment') ? loadAssessmentFacts({ user, studentIds, range }) : null,
+    modules.has('assessment') ? loadAssessmentFacts({ user, studentIds, range, tests }) : null,
     modules.has('interview') ? loadInterviewFacts({ studentIds, range, ...parts }) : null,
     storedScoresFor(studentIds),
   ]);
@@ -227,11 +271,11 @@ async function buildContext(user, range, modules, parts) {
 }
 
 /** Cohort rows for a period, shared by every filter change for 60 s (concurrent callers share one load). */
-export async function getAnalysisContext(user, range, { refresh = false, modules = new Set(['coding']), parts = { peer: true, ai: true } } = {}) {
-  const key = cacheKey(user, range, modules, parts);
+export async function getAnalysisContext(user, range, { refresh = false, modules = new Set(['coding']), parts = { peer: true, ai: true }, scope = null } = {}) {
+  const key = cacheKey(user, range, modules, parts, scope);
   const cached = contextCache.get(key);
   if (!refresh && cached && Date.now() - cached.at < QUERY_LIMITS.cacheTtlMs) return cached.promise;
-  const promise = buildContext(user, range, modules, parts);
+  const promise = buildContext(user, range, modules, parts, scope);
   contextCache.set(key, { at: Date.now(), promise });
   promise.catch(() => contextCache.delete(key));
   while (contextCache.size > QUERY_LIMITS.cacheEntries) contextCache.delete(contextCache.keys().next().value);
@@ -294,7 +338,7 @@ const genericColumns = (module) => (DEFAULT_EXPORT_COLUMNS[module] || DEFAULT_EX
 async function chartContext({ user, query, chartId }) {
   const entry = query.charts.find((chart) => chart.id === chartId);
   if (!entry) throw new HttpError(400, 'Choose a chart that is on the page.');
-  const context = await getAnalysisContext(user, query.range, { modules: query.modules, parts: query.parts });
+  const context = await getAnalysisContext(user, query.range, { modules: query.modules, parts: query.parts, scope: query.scope });
   const { selected } = selectStudents(context, query);
   return { context, entry, chart: CHART_BY_ID.get(chartId), selected, rows: chartRows(selected, entry.filter) };
 }
@@ -452,7 +496,7 @@ async function previousKpis({ user, query, ids }) {
   const range = previousRange(query.range);
   if (!query.previous || !range) return null;
   try {
-    const context = await getAnalysisContext(user, range, { modules: query.modules, parts: query.parts });
+    const context = await getAnalysisContext(user, range, { modules: query.modules, parts: query.parts, scope: query.scope });
     const { selected } = selectStudents(context, query, ids);
     return { groups: buildKpiGroups(query.module, query.modules, selected), label: range.label };
   } catch (error) {
@@ -463,7 +507,7 @@ async function previousKpis({ user, query, ids }) {
 }
 
 export async function runPrepAnalysis({ user, query }) {
-  const context = await getAnalysisContext(user, query.range, { refresh: query.refresh, modules: query.modules, parts: query.parts });
+  const context = await getAnalysisContext(user, query.range, { refresh: query.refresh, modules: query.modules, parts: query.parts, scope: query.scope });
   const { selected, ids } = selectStudents(context, query);
   const previous = await previousKpis({ user, query, ids });
   const kpiGroups = buildKpiGroups(query.module, query.modules, selected);
@@ -499,7 +543,7 @@ export async function runPrepAnalysis({ user, query }) {
 
 /** A CSV / Excel / PDF file of every student matching the filters, in the table's order. */
 export async function exportPrepAnalysis({ user, query, options }) {
-  const context = await getAnalysisContext(user, query.range, { modules: query.modules, parts: query.parts });
+  const context = await getAnalysisContext(user, query.range, { modules: query.modules, parts: query.parts, scope: query.scope });
   const { selected } = selectStudents(context, query);
   const sortKey = TABLE_SORTS[query.table.sort] ? query.table.sort : DEFAULT_SORT[query.module];
   const direction = query.table.direction === 'asc' ? 1 : -1;
@@ -519,7 +563,7 @@ export async function exportPrepAnalysis({ user, query, options }) {
 }
 
 export async function countPrepAnalysis({ user, query }) {
-  const context = await getAnalysisContext(user, query.range, { modules: query.modules, parts: query.parts });
+  const context = await getAnalysisContext(user, query.range, { modules: query.modules, parts: query.parts, scope: query.scope });
   return { cohortSize: context.rows.length, matched: selectStudents(context, query).selected.length };
 }
 
@@ -656,11 +700,13 @@ export function buildStudentProfile(row, { range, modules, sheets = new Map(), t
 }
 
 /** One student's row in the admin's own scope, for the period. */
-async function studentInScope({ user, permissions, studentId, range: rangeInput }) {
+async function studentInScope({ user, permissions, studentId, range: rangeInput, scope = null }) {
   if (!/^[a-f0-9]{24}$/i.test(String(studentId || ''))) throw new HttpError(400, 'Unknown student.');
   const modules = new Set(allowedModules(permissions));
   const range = normalizeRange(rangeInput);
-  const context = await getAnalysisContext(user, range, { modules, parts: interviewParts(permissions) });
+  // With an assessment scope the profile's test section covers those tests only, and a student
+  // who has nothing to do with them is not found.
+  const context = await getAnalysisContext(user, range, { modules, parts: interviewParts(permissions), scope: normalizeScope(scope) });
   const row = context.rows.find((entry) => entry.id === String(studentId));
   if (!row) throw new HttpError(404, 'This student is not in your list.');
   return { row, range, modules, context };
@@ -703,17 +749,23 @@ function distinctFromRows(rows, read) {
 }
 
 /** Values for one field's picker, searched by `q`. Dynamic lists come from the admin's own cohort. */
-export async function listFieldOptions({ user, permissions, optionsKey, q = '' }) {
+export async function listFieldOptions({ user, permissions, optionsKey, q = '', scope = null }) {
   const modules = new Set(allowedModules(permissions));
   const owner = [...FIELDS.values()].find((field) => field.options === optionsKey);
   if (!owner && !QUALIFIER_LISTS[optionsKey] && optionsKey !== 'students') throw new HttpError(400, 'Unknown option list.');
   const module = owner?.module || QUALIFIER_LISTS[optionsKey] || 'student';
   if (!modules.has(module)) throw new HttpError(403, 'This option list belongs to a module that is not enabled.');
   const needle = String(q || '').trim().toLowerCase().slice(0, 80);
-  const context = () => getAnalysisContext(user, normalizeRange({ preset: 'all' }), { modules, parts: interviewParts(permissions) });
+  // With an assessment scope, lists are built from the scoped cohort and the scoped tests only.
+  const assessmentScope = normalizeScope(scope);
+  const context = () => getAnalysisContext(user, normalizeRange({ preset: 'all' }), { modules, parts: interviewParts(permissions), scope: assessmentScope });
 
   let options;
-  if (STATIC_OPTIONS[optionsKey]) {
+  if (optionsKey === 'semesters' && assessmentScope) {
+    const { rows } = await context();
+    const present = new Set(rows.map((row) => row.student.semester));
+    options = STATIC_OPTIONS.semesters.filter((option) => present.has(option.value));
+  } else if (STATIC_OPTIONS[optionsKey]) {
     options = STATIC_OPTIONS[optionsKey];
   } else if (optionsKey === 'students') {
     // Most active students first, so pickers open on useful names.

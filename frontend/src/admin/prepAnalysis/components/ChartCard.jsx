@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
-  BarChart3, BarChartHorizontal, CalendarDays, Columns3, EyeOff, FileSpreadsheet, Filter, Funnel, Grid3x3, Image as ImageIcon, Info, LineChart,
-  ListOrdered, Maximize2, MoreHorizontal, Percent, PieChart, Radar, Sheet, SlidersHorizontal, Sparkles, Table2, TrendingUp, Users,
+  Activity, Aperture, BarChart3, BarChartHorizontal, CalendarDays, CalendarRange, ChartCandlestick, ChartScatter, CircleDot, Columns3, EyeOff,
+  FileSpreadsheet, Filter, Funnel, Grid3x3, Image as ImageIcon, Info, Layers, LayoutGrid, LineChart, ListOrdered, Maximize2, MoreHorizontal,
+  Percent, PieChart, Radar, Sheet, SlidersHorizontal, Sparkles, Spline, Table2, Target, TrendingDown, TrendingUp, Users,
 } from "lucide-react";
 import EChart from "../charts/EChart";
 import { chartInsight } from "../charts/chartInsights";
@@ -22,8 +23,14 @@ const SIZE_SPANS = {
 };
 const SIZES = [{ value: "sm", label: "Small" }, { value: "md", label: "Half" }, { value: "lg", label: "Wide" }, { value: "full", label: "Full" }];
 // Each way of showing a chart as an icon; the label is its tooltip.
-const CHART_ICONS = { rankedStackedBar: BarChartHorizontal, barList: BarChartHorizontal, donut: PieChart, trend: LineChart, funnel: ListOrdered, histogram: BarChart3, stackedBar: BarChart3, heatmap: Grid3x3, calendar: CalendarDays, radar: Radar };
-const VIEW_ICONS = { table: Table2, bars: BarChartHorizontal, funnel: Funnel, percent: Percent, grouped: Columns3, weekly: TrendingUp };
+const CHART_ICONS = {
+  rankedStackedBar: BarChartHorizontal, barList: BarChartHorizontal, donut: PieChart, trend: LineChart, funnel: ListOrdered, histogram: BarChart3, stackedBar: BarChart3,
+  heatmap: Grid3x3, calendar: CalendarDays, radar: Radar, scatter: ChartScatter, boxplot: ChartCandlestick,
+};
+const VIEW_ICONS = {
+  table: Table2, bars: BarChartHorizontal, funnel: Funnel, percent: Percent, grouped: Columns3, weekly: TrendingUp,
+  mix: Layers, lollipop: CircleDot, treemap: LayoutGrid, rose: Aperture, combo: Activity, drop: TrendingDown, curve: Spline, heat: Grid3x3, weekday: CalendarRange, polar: Target,
+};
 const viewIcon = (type, view) => (view === "chart" ? CHART_ICONS[type] : VIEW_ICONS[view]) || BarChart3;
 
 // Student rows of ranked lists open the student; every other click is about a part.
@@ -103,15 +110,21 @@ const rowView = (chart, view) => ROW_CHARTS.has(chart.type) && (chart.type !== "
 export function ChartBody({ chart, height, view = "chart", onStudent, onPart, onBlank, instanceRef, search }) {
   const buildOption = useCallback((theme) => buildChartOption(chart, theme, view), [chart, view]);
   const hasData = useMemo(() => Boolean(buildChartOption(chart, chartTheme(false), view === "table" ? "chart" : view)), [chart, view]);
-  const legend = useMemo(() => (view === "chart" || view === "percent" || view === "grouped" ? legendParts(chart) : []), [chart, view]);
+  // The colour chips that open a part: on every view whose colours mean something (not on a treemap or heat grid, which label themselves).
+  const legend = useMemo(() => (["chart", "percent", "grouped", "rose", "mix"].includes(view) ? legendParts(chart) : []), [chart, view]);
   const partClick = chart.drillable ? onPart : undefined;
   const openRow = useCallback((row) => {
     if (row?.studentId && onStudent) { onStudent(row.studentId); return true; }
     if (row?.part && partClick) { partClick(row.part); return true; }
     return false;
   }, [onStudent, partClick]);
-  const onClick = useCallback((params) => {
+  const onClick = useCallback((clicked) => {
+    // A treemap box reports its own row (its dataIndex is shifted by the chart's hidden root).
+    const params = view === "treemap" ? { ...clicked, dataIndex: clicked.data?.rowIndex } : clicked;
     if (params.componentType === "yAxis" && openRow(rowAt(chart, view, Number(params.value)))) return;
+    // A dot of a scatter chart is one student.
+    const dotId = chart.type === "scatter" && view !== "table" ? params.data?.item?.id : null;
+    if (dotId && onStudent) { onStudent(dotId); return; }
     const id = studentIdAt(chart, params.dataIndex);
     if (id && onStudent) { onStudent(id); return; }
     const part = partClick ? chartPartAt(chart, view, params) : null;

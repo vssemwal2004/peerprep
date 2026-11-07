@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { DonutChart, HorizontalProgress } from './ReportCharts';
 import { assessmentEvaluationLabel } from '../../utils/assessmentEvaluation';
-import { isSubmittedRow, rowPercentage, rowViolationCount } from './rosterModel';
+import { ACADEMIC_DIMENSIONS, isSubmittedRow, rowPercentage, rowViolationCount } from './rosterModel';
 
 /* ═════════════════ FORMATTERS ═════════════════ */
 export const formatDateTime = (value) => {
@@ -37,9 +37,10 @@ export const formatClockTime = (value) => {
 
 /* ═════════════════ STATUS METADATA ═════════════════ */
 export const statusMeta = {
-  submitted: { label: 'Completed', tone: 'emerald', icon: Trophy },
+  // Same words as the filters, tabs and overview so one status never has two names.
+  submitted: { label: 'Submitted', tone: 'emerald', icon: Trophy },
   violation: { label: 'Violation', tone: 'rose', icon: ShieldAlert },
-  in_progress: { label: 'In Progress', tone: 'sky', icon: Clock },
+  in_progress: { label: 'In progress', tone: 'sky', icon: Clock },
   expired: { label: 'Expired', tone: 'amber', icon: Timer },
   incomplete: { label: 'Incomplete', tone: 'slate', icon: BookOpen },
   not_started: { label: 'Not started', tone: 'slate', icon: CircleDashed },
@@ -225,6 +226,9 @@ export function TableRow({ row, visibleColumns, highlighted = false, openStudent
           </div>
         </td>
       )}
+      {ACADEMIC_DIMENSIONS.map(({ key }) => visibleColumns[key] && (
+        <td key={key} className="whitespace-nowrap px-3 py-3 text-xs text-slate-600 dark:text-gray-300">{row[key] === null || row[key] === undefined || row[key] === '' ? <span className="text-slate-300 dark:text-gray-600">—</span> : row[key]}</td>
+      ))}
       {visibleColumns.status && (
         <td className="px-4 py-3 text-center">
           <div className="inline-flex items-center gap-1">

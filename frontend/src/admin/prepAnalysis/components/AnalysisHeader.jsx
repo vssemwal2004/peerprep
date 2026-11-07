@@ -8,16 +8,19 @@ import { focusRing } from "./ui";
  * The page header: feature tabs (Prep Coding, Learning…), the period, and the page actions
  * (`children`). Changing a tab or the period applies at once.
  */
-export default function AnalysisHeader({ areas, area, onArea, period, onPeriod, children }) {
+export default function AnalysisHeader({ areas, area, onArea, period, onPeriod, children, embedded = false }) {
   const reduced = useReducedMotion();
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur-md dark:border-gray-800 dark:bg-gray-950/90">
-      <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-sky-700 text-white shadow-sm shadow-sky-600/30"><Sigma className="h-[18px] w-[18px]" /></span>
-          <h1 className="text-[16px] font-bold tracking-tight text-slate-950 dark:text-white">Prep Analysis</h1>
-        </div>
-        <nav aria-label="Feature" className="flex max-w-full overflow-x-auto rounded-xl bg-slate-100 p-1 [scrollbar-width:none] dark:bg-white/[0.06]">
+    <header className={`sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur-md dark:border-gray-800 dark:bg-gray-950/90 ${embedded ? "rounded-t-xl" : ""}`}>
+      <div className={`mx-auto flex max-w-[1680px] flex-wrap items-center gap-x-3 gap-y-2 ${embedded ? "px-3 py-2" : "px-4 py-2.5"}`}>
+        {/* Inside a report the page already says what is analysed, and there is one feature only. */}
+        {!embedded && (
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-sky-700 text-white shadow-sm shadow-sky-600/30"><Sigma className="h-[18px] w-[18px]" /></span>
+            <h1 className="text-[16px] font-bold tracking-tight text-slate-950 dark:text-white">Prep Analysis</h1>
+          </div>
+        )}
+        {!embedded && <nav aria-label="Feature" className="flex max-w-full overflow-x-auto rounded-xl bg-slate-100 p-1 [scrollbar-width:none] dark:bg-white/[0.06]">
           {areas.map((entry) => {
             const Icon = AREA_ICONS[entry.key] || LayoutGrid;
             const active = entry.key === area;
@@ -30,7 +33,7 @@ export default function AnalysisHeader({ areas, area, onArea, period, onPeriod, 
               </button>
             );
           })}
-        </nav>
+        </nav>}
         <label className="relative inline-flex items-center">
           <span className="sr-only">Period</span>
           <CalendarRange className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-400" />

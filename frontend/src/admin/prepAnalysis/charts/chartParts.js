@@ -61,17 +61,24 @@ export function chartPartAt(chart, view, params) {
       const day = view === "chart" ? params?.value?.[0] : null;
       return day ? { key: day, label: day, value: params.value[1], unit: data.unit } : null;
     }
+    case "boxplot": {
+      // A box (or its average diamond) is that group's students.
+      const group = data.groups?.[index];
+      return group ? { key: group.label, label: group.label, value: group.students, unit: "students", students: group.students } : null;
+    }
     case "radar": {
-      // The bar view's bars, or a topic name on the radar itself.
-      const name = view === "bars" ? data.indicators?.[index]?.name : params?.componentType === "radar" ? params.name : null;
+      // The bar and radial views' bars, or a topic name on the radar itself.
+      const name = view === "bars" || view === "polar" ? data.indicators?.[index]?.name : params?.componentType === "radar" ? params.name : null;
       if (!name) return null;
       const topic = (data.topics || []).find((entry) => entry.name === name);
       return { key: name, label: name, value: topic?.students, unit: "students solved", students: topic?.students };
     }
     case "stackedBar": {
-      const group = data.groups?.[index];
+      // The heat grid's cells are [series, group, count]: the click knows both.
+      const cell = view === "heat" && Array.isArray(params?.value) ? params.value : null;
+      const group = cell ? data.groups?.[cell[1]] : data.groups?.[index];
       if (!group) return null;
-      const series = params?.seriesName;
+      const series = cell ? (data.series || DIFFICULTIES)[cell[0]] : params?.seriesName;
       return series
         ? { key: `${group.label}|${series}`, label: `${group.label} · ${series}`, color: keyColor(series, (data.series || DIFFICULTIES).indexOf(series)), value: group.values?.[series], unit: data.unit || "" }
         : { key: group.label, label: group.label, students: group.students };
@@ -107,7 +114,8 @@ export function rowAt(chart, view, index) {
 /** Charts drawn as one row per item, which a card scrolls when there are many rows. */
 export function rowCount(chart, view) {
   const data = chart?.data || {};
-  if (view === "table") return 0;
+  // A treemap fills its card; every other view of these charts is one row per item.
+  if (view === "table" || view === "treemap") return 0;
   if (chart?.type === "rankedStackedBar" || chart?.type === "barList") return data.items?.length || 0;
   if (chart?.type === "stackedBar" && data.horizontal && view !== "grouped") return data.groups?.length || 0;
   if (chart?.type === "heatmap") return data.students?.length || 0;
@@ -162,6 +170,7 @@ export function chartTableKeys(chart) {
     case "radar": return (data.indicators || []).map((indicator) => indicator.name);
     case "stackedBar": return (data.groups || []).map((group) => group.label);
     case "calendar": return [...(data.days || [])].sort(([left], [right]) => right.localeCompare(left)).map(([day]) => day);
+    case "boxplot": return (data.groups || []).map((group) => group.label);
     default: return [];
   }
 }
@@ -174,5 +183,6 @@ export function fullPageHeight(chart) {
   if (chart?.type === "stackedBar" && chart.data?.horizontal) return Math.max(420, 70 + (chart.data?.groups?.length || 0) * 32);
   if (chart?.type === "calendar") return 220;
   if (chart?.type === "radar") return 520;
+  if (chart?.type === "scatter") return 560;
   return 480;
 }
