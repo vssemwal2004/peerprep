@@ -35,6 +35,7 @@ import { validateAssessmentInvitationTemplate } from '../services/assessmentInvi
 import { reconcileExpiredAssessmentSubmissions } from '../services/assessmentExpiryService.js';
 import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js';
 import { studentFeatureQuery } from '../services/studentFeatureAccess.js';
+import { isStudentAssignedToAssessment } from '../utils/assessmentAssignment.js';
 import { claimAssessmentDraftProblems } from '../services/assessmentProblemCloneService.js';
 import {
   getCodingQuestionScore,
@@ -289,19 +290,6 @@ async function findAssessmentForStudentRoute(id, { lean = false, select = '' } =
   if (lean) request = request.lean();
   const local = await request;
   return local || (query._id ? sharedAssessment(query._id) : null);
-}
-
-function isStudentAssignedToAssessment(assessment = {}, student = {}) {
-  const studentObjectId = String(student?._id || '');
-  const studentCode = String(student?.studentId || '').trim().toLowerCase();
-  if (assessment.targetType === 'all' && (!Array.isArray(assessment.assignedStudents) || assessment.assignedStudents.length === 0)) {
-    return assessment.platformShared === true || student?.accessScope !== 'assessment_only';
-  }
-  return (assessment.assignedStudents || []).some((entry) => {
-    const rawId = String(entry?._id || entry || '');
-    const rawStudentCode = String(entry?.studentId || '').trim().toLowerCase();
-    return rawId === studentObjectId || Boolean(studentCode && (rawId.toLowerCase() === studentCode || rawStudentCode === studentCode));
-  });
 }
 
 function stableDeliveryHash(value = '') {

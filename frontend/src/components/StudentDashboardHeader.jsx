@@ -31,7 +31,7 @@ import { featureForStudentPath, hasStudentFeature } from '../student/studentFeat
 const modules = [
   { label: 'Dashboard', hint: 'Your placement overview', to: '/student/dashboard', icon: LayoutDashboard },
   { label: 'QuickPrep', hint: 'Question sheets prepared by your admin', to: '/student/quickprep', icon: Sparkles },
-  { label: 'Analysis', hint: 'Progress and skill insights', to: '/student/analysis', icon: BarChart3 },
+  { label: 'Prep Analysis', hint: 'Progress and skill insights', to: '/student/analysis', icon: BarChart3 },
   { label: 'Rankings', hint: 'Your university and global rank', to: '/student/rankings', icon: BarChart3 },
   { label: 'Interviews', hint: 'Peer interview sessions', to: '/student/interview', icon: User },
   { label: 'AI Interviews', hint: 'Practice with AI', to: '/student/ai-interviews', icon: Bot },

@@ -11,6 +11,7 @@ import { HttpError } from '../utils/errors.js';
 import { validateObjectId } from '../utils/validators.js';
 import { logSecurityEvent } from '../utils/logger.js';
 import { currentTenant } from '../platform/tenantContext.js';
+import { studentInsightAccess } from '../modules/studentInsights/access.js';
 import {
   ANALYTICS_CONTRACT_VERSION,
   upsertStudentAnalytics,
@@ -186,17 +187,17 @@ export async function getStudentAnalysis(req, res) {
     auditAnalyticsAccess(req, 'forced-refresh', { cacheStatus: meta.cacheStatus, cacheReason: meta.cacheReason });
   }
   res.set('Cache-Control', 'private, max-age=30');
-  res.json({ analysis: scopeStudentAnalysis(redactSensitiveAnalytics(analysis), req.platformPermissions), meta });
+  res.json({ analysis: scopeStudentAnalysis(redactSensitiveAnalytics(analysis), req.platformPermissions, req.user), meta });
 }
 
-export function scopeStudentAnalysis(analysis, permissions) {
-  if (!permissions) return analysis;
-  const enabled = {
-    problems: permissions.questions === true,
-    assessments: permissions.assessments === true,
-    interviews: permissions.interviews === true,
-    learning: permissions.learning === true,
-  };
+/** The university's modules AND the features the admin gave this student; peer interviews are "events". */
+function enabledAnalysisParts(permissions, user) {
+  const access = studentInsightAccess(user, permissions);
+  return { problems: access.coding, assessments: access.assessment, interviews: access.mock, learning: access.learning };
+}
+
+export function scopeStudentAnalysis(analysis, permissions, user = null) {
+  const enabled = enabledAnalysisParts(permissions, user);
   if (Object.values(enabled).every(Boolean)) return analysis;
   return {
     contractVersion: analysis.contractVersion,
@@ -242,8 +243,7 @@ export async function getStudentAnalysisHistory(req, res) {
 
   res.set('Cache-Control', 'private, max-age=60');
   res.json({
-    history: req.platformPermissions && ['questions', 'assessments', 'interviews', 'learning']
-      .some((moduleName) => req.platformPermissions[moduleName] !== true) ? [] : history,
+    history: Object.values(enabledAnalysisParts(req.platformPermissions, req.user)).every(Boolean) ? history : [],
     meta: {
       days,
       count: history.length,
@@ -254,9 +254,8 @@ export async function getStudentAnalysisHistory(req, res) {
 }
 
 export async function getCompanyReadiness(req, res) {
-  if (req.platformPermissions && ['questions', 'assessments', 'interviews', 'learning']
-    .some((moduleName) => req.platformPermissions[moduleName] !== true)) {
-    throw new HttpError(403, 'Placement analysis requires all contributing modules.');
+  if (!studentInsightAccess(req.user, req.platformPermissions).company) {
+    throw new HttpError(403, 'Company readiness needs PrepCoding, tests, mock interviews and learning.');
   }
   const studentId = req.user?._id;
   const companyId = req.query.companyId || req.body?.companyId;

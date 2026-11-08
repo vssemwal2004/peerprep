@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Building2, Layers3, LoaderCircle, Search, Shapes, Shuffle, SlidersHorizontal, Star, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
@@ -85,11 +85,13 @@ export default function ProblemsPage() {
   const toast = useToast();
   const navigationTimerRef = useRef(null);
   const listTopRef = useRef(null);
+  // Links from elsewhere (the student's Analysis) can open the list on a topic and difficulty: ?topic=Array&difficulty=Easy.
+  const [linkParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
-  const [difficulty, setDifficulty] = useState('');
+  const [difficulty, setDifficulty] = useState(() => (DIFFICULTY_OPTIONS.includes(linkParams.get('difficulty') || '') ? linkParams.get('difficulty') || '' : ''));
   const [activeQuestion, setActiveQuestion] = useState(null);
   const [refreshQuestions, setRefreshQuestions] = useState(0);
-  const [selectedTags, setSelectedTags] = useState([]);
+  const [selectedTags, setSelectedTags] = useState(() => { const topic = (linkParams.get('topic') || '').trim().slice(0, 120); return topic ? [topic] : []; });
   const [selectedCompany, setSelectedCompany] = useState('');
   const [sortValue, setSortValue] = useState(PROBLEM_SORT_OPTIONS[0].value);
   const [debouncedSearch, setDebouncedSearch] = useState('');

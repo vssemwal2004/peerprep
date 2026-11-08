@@ -361,7 +361,7 @@ function AppContent() {
     && !isFeedbackForm
     && !isAssessmentAttempt
     && !isProblemSolver;
-  const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges)\/?$/.test(location.pathname);
+  const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges|analysis(\/[^/]+)?)\/?$/.test(location.pathname);
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
   // Admin and coordinator shells key their own page area (see ShellPage); keying this
   // boundary per navigation remounted the whole shell and hid the sidebar on every click.

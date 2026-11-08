@@ -676,7 +676,7 @@ function assessmentProfile(row, tests, range) {
     averageScore: assessment.averageScore, bestScore: assessment.bestScore, lastScore: assessment.lastScore, passRate: assessment.passRate,
     minutes: assessment.minutes, daysSinceActive: assessment.daysSinceActive, passPercent: PASS_PERCENT,
     tests: [...assessment.byTest.values()].sort((left, right) => new Date(right.at) - new Date(left.at)).map((attempt) => ({
-      id: attempt.testId, title: tests.get(attempt.testId)?.title || 'Test', percent: attempt.percent, score: attempt.score, maxMarks: attempt.maxMarks,
+      id: attempt.testId, title: tests.get(attempt.testId)?.title || 'Test', percent: attempt.percent, score: attempt.score, maxMarks: attempt.maxMarks, minutes: attempt.minutes,
       passed: attempt.percent >= PASS_PERCENT, at: new Date(attempt.at).toISOString(),
     })),
     missedTests: assessment.missedIds.map((id) => tests.get(id)?.title || 'Test'),

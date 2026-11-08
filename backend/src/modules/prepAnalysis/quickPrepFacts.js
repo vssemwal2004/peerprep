@@ -16,10 +16,11 @@ const IN_LIST_LIMIT = 5000;
 export async function loadQuickPrepSheets() {
   const definitions = isUniversity()
     ? (await sharedQuests()) || []
-    : await Quest.find({ status: { $ne: 'archived' } }).select('_id title semesters status items').maxTimeMS(MAX_QUERY_MS).lean();
+    : await Quest.find({ status: { $ne: 'archived' } }).select('_id title slug semesters status items').maxTimeMS(MAX_QUERY_MS).lean();
   return new Map(definitions.map((quest) => [String(quest._id), {
     id: String(quest._id),
     title: String(quest.title || 'Quick Prep sheet').trim(),
+    slug: quest.slug ? String(quest.slug) : null,
     semesters: (quest.semesters || []).map(Number).filter((value) => value > 0),
     published: quest.status === undefined || quest.status === 'published',
     items: (quest.items || []).length,

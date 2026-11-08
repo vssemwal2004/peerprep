@@ -21,7 +21,8 @@ function hasAnalysisAccess(path, permissions = {}) {
     ? ['questions', 'assessments', 'learning', 'events', 'interviews']
     : path.startsWith('/admin/')
       ? ['questions', 'assessments', 'learning']
-      : ['questions', 'assessments', 'interviews', 'learning'];
+      // A student's analysis covers coding, tests, lessons, mock interviews (events) and AI interviews.
+      : ['questions', 'assessments', 'interviews', 'events', 'learning'];
   return modules.some((name) => permissions[name] === true);
 }
 

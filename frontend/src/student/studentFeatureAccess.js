@@ -6,7 +6,7 @@ import {
 export const STUDENT_FEATURE_CATALOG = Object.freeze([
   { key: 'dashboard', label: 'Dashboard', description: 'Personal overview, progress cards and next actions.', icon: LayoutDashboard, path: '/student/dashboard' },
   { key: 'quickprep', label: 'QuickPrep', description: 'Curated quests, challenges and guided preparation.', icon: Zap, path: '/student/quickprep' },
-  { key: 'analysis', label: 'Performance Analysis', description: 'Detailed progress, strengths and improvement insights.', icon: BarChart3, path: '/student/analysis' },
+  { key: 'analysis', label: 'Prep Analysis', description: 'Topic coverage, progress, strengths and next steps.', icon: BarChart3, path: '/student/analysis' },
   { key: 'rankings', label: 'Rankings', description: 'University and global leaderboard visibility.', icon: Trophy, path: '/student/rankings' },
   { key: 'interviews', label: 'Peer Interviews', description: 'One-to-one interview schedules, sessions and feedback.', icon: CalendarDays, path: '/student/interview' },
   { key: 'ai_interviews', label: 'AI Interviews', description: 'AI interview assignments, practice rooms and reports.', icon: Bot, path: '/student/ai-interviews' },

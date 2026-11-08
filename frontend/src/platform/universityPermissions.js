@@ -48,16 +48,12 @@ export function pathAllowed(pathname, permissions, role = 'admin', search = '', 
   if (!moduleName) return true;
   if (moduleName !== 'analysis') return moduleEnabled(permissions, moduleName);
   const student = role === 'student';
-  const contributors = student ? ['questions', 'assessments', 'interviews', 'learning'] : ['questions', 'assessments', 'learning'];
+  // A student's analysis is one page that shows only the parts their university and admin allow
+  // (the server enforces that too), so any contributing module opens it, at any section address.
+  const contributors = student ? ['questions', 'assessments', 'interviews', 'events', 'learning'] : ['questions', 'assessments', 'learning'];
   if (!contributors.some((name) => moduleEnabled(permissions, name))) return false;
-  if (student) {
-    const section = /^\/student\/(?:analysis|analytics)\/([^/]+)/.exec(pathname)?.[1];
-    if (section === 'coding' || section === 'dsa') return moduleEnabled(permissions, 'questions');
-    if (section === 'assessments' || section === 'assessment') return moduleEnabled(permissions, 'assessments');
-    if (section === 'interviews' || section === 'interview') return moduleEnabled(permissions, 'interviews');
-    if (section === 'learning') return moduleEnabled(permissions, 'learning');
-    if (section === 'overview' || section === 'placement' || section === 'readiness') return contributors.every((name) => moduleEnabled(permissions, name));
-  } else if (/^\/admin\/analysis\/assessments(?:\/|$)/.test(pathname)) {
+  if (student) return true;
+  if (/^\/admin\/analysis\/assessments(?:\/|$)/.test(pathname)) {
     return moduleEnabled(permissions, 'assessments');
   } else if (new URLSearchParams(search || pathname.split('?')[1] || '').get('source') === 'coding') {
     return moduleEnabled(permissions, 'questions');

@@ -45,19 +45,21 @@ function allTopics(row) {
 /**
  * The report model: { title, details, sections: [{ title, columns, rows }] }. `profile` is
  * buildStudentProfile's output for the same row and period; `times` comes from loadProblemTimes.
+ * `forStudent`: the student's own copy, which shows their overall Prep Score only (students never
+ * see how the score is made up) and leaves out admin-only details such as uploaded lists.
  */
-export function buildStudentReport({ row, profile, times = new Map(), range, generatedAt = new Date() }) {
+export function buildStudentReport({ row, profile, times = new Map(), range, generatedAt = new Date(), forStudent = false }) {
   const { student } = profile;
   const sections = [];
   sections.push(pairs('Profile', [
     ['Name', student.name], ['Student ID', student.studentId || '—'], ['Email', student.email || '—'],
     ['Semester', student.semester ?? '—'], ['Course', student.course || '—'], ['Branch', student.branch || '—'],
     ['College / University', student.college || '—'], ['Group / Section', student.group || '—'],
-    ['Uploaded lists', (student.batchNames || []).join(', ') || '—'], ['Account', student.status === 'inactive' ? 'Disabled' : 'Active'],
+    ...(forStudent ? [] : [['Uploaded lists', (student.batchNames || []).join(', ') || '—'], ['Account', student.status === 'inactive' ? 'Disabled' : 'Active']]),
     ['Period', periodText(range)], ['Generated', generatedAt.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })],
   ]));
 
-  const features = profile.prepScore?.features || {};
+  const features = forStudent ? {} : profile.prepScore?.features || {};
   sections.push({
     title: 'Prep Score', columns: [col('Part', 'text', 22), col('Score', 'decimal', 12)],
     rows: [['Overall', profile.prepScore?.total ?? 0], ...Object.entries(features).map(([key, feature]) => [MODULE_LABELS[key] || key, feature?.score ?? 0])],
@@ -70,7 +72,7 @@ export function buildStudentReport({ row, profile, times = new Map(), range, gen
     sections.push(pairs('Prep Coding', [
       ['Status', STATUS.coding[coding.practiceStatus] || coding.practiceStatus], ['Last practice', daysAgo(coding.daysSinceActive)],
       ['Problems solved (period)', `${coding.solved.total} · Easy ${coding.solved.Easy} · Medium ${coding.solved.Medium} · Hard ${coding.solved.Hard}`],
-      ['Problems solved behind the Prep Score (all time)', `Easy ${counts.Easy || 0} · Medium ${counts.Medium || 0} · Hard ${counts.Hard || 0}`],
+      ...(forStudent ? [] : [['Problems solved behind the Prep Score (all time)', `Easy ${counts.Easy || 0} · Medium ${counts.Medium || 0} · Hard ${counts.Hard || 0}`]]),
       ['Problems attempted', coding.attempted], ['Submissions', coding.submissions], ['Accepted submissions', coding.accepted],
       ['Accuracy', `${coding.accuracy}%`], ['Days practised', coding.activeDays],
       ['Languages', coding.languages.map((entry) => `${language(entry.language)} (${entry.submissions})`).join(', ') || '—'],

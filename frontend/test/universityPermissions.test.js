@@ -61,9 +61,12 @@ test('disabled university modules are hidden on admin, coordinator and student r
 });
 
 test('analysis sections follow the contributing module permissions', () => {
-  assert.equal(pathAllowed('/student/analysis/assessments', policy, 'student', '', university), true);
-  assert.equal(pathAllowed('/student/analysis/coding', policy, 'student', '', university), false);
-  assert.equal(pathAllowed('/student/analysis/overview', policy, 'student', '', university), false);
+  // The student page hides the parts a university lacks itself; every section address opens it.
+  for (const section of ['assessments', 'coding', 'overview', 'topics', 'activity']) {
+    assert.equal(pathAllowed(`/student/analysis/${section}`, policy, 'student', '', university), true, section);
+  }
+  assert.equal(pathAllowed('/student/analysis', {}, 'student', '', university), false, 'no contributing module, no analysis');
+  assert.equal(pathAllowed('/student/analysis', { events: true }, 'student', '', university), true, 'mock interviews alone open it');
   assert.equal(pathAllowed('/admin/analysis', policy, 'admin', '?source=coding', university), false);
   assert.equal(pathAllowed('/admin/analysis', policy, 'admin', '', university), true);
 });

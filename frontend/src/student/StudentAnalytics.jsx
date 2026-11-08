@@ -1,1 +1,1 @@
-export { default } from "./analysis/StudentAnalyticsPage";
+export { default } from "./insights/StudentInsightsPage";
