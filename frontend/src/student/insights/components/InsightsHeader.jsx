@@ -101,7 +101,7 @@ export function ProfileBanner({ insights, badges }) {
       <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-cyan-300/30 blur-3xl" aria-hidden="true" />
       <div className="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-blue-400/25 blur-3xl" aria-hidden="true" />
       <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
+        <div className="flex min-w-0 items-center gap-5 sm:gap-4">
           <div className="relative shrink-0">
             {student.avatarUrl
               ? <img src={student.avatarUrl} alt="" className="h-16 w-16 rounded-2xl object-cover ring-4 ring-white/25 sm:h-[72px] sm:w-[72px]" />
@@ -143,7 +143,7 @@ export function ProfileBanner({ insights, badges }) {
 /** Tabs to each Prep Analysis page the student may open. */
 export function PageTabs({ sections, active }) {
   return (
-    <div className="sticky top-[calc(4rem+1px)] z-30-mx-3 border-b border-[#e9eaee]/80 bg-[#f6f7f9]/85 px-3 py-2 backdrop-blur-md sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8 dark:border-white/[0.06] dark:bg-[#1a1a1a]/85">
+    <div className="sticky top-[calc(3rem+1px)] z-30 -mx-3 border-b lg:top-[calc(4rem+1px)] border-[#e9eaee]/80 bg-[#f6f7f9]/85 px-3 py-2 backdrop-blur-md sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8 dark:border-white/[0.06] dark:bg-[#1a1a1a]/85">
       <div>
         <nav aria-label="Prep Analysis pages" className="min-w-0">
           <ul className="flex gap-1 overflow-x-auto [scrollbar-width:none]">

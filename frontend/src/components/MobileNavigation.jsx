@@ -94,7 +94,7 @@ export default function MobileNavigation({
       {/* Backdrop + drawer. Kept mounted for the slide animation; inert while closed. */}
       <div className={`fixed inset-0 z-[80] bg-slate-950/40 backdrop-blur-[2px] transition-opacity duration-300 ${open ? 'opacity-100' : 'pointer-events-none opacity-0'}`} onClick={() => setOpen(false)} aria-hidden="true" />
       <nav id="mobile-navigation" aria-label={`${roleLabel} navigation`} inert={!open}
-        className={`fixed inset-y-0 left-0 z-[90] flex w-[86vw] max-w-[320px] flex-col bg-white shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] dark:bg-slate-950 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+        className={`fixed inset-y-0 left-0 z-[90] flex w-[86vw] max-w-[320px] flex-col bg-white transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] dark:bg-slate-950 ${open ? 'translate-x-0 shadow-2xl' : '-translate-x-full shadow-none'}`}>
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-100 px-3 dark:border-white/10">
           <img src={logo} alt="PeerPrep" className="h-8 w-auto max-w-[150px] object-contain" />
           <button type="button" onClick={() => setOpen(false)} aria-label="Close menu" className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:hover:bg-white/10">

@@ -144,11 +144,13 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
 
   return (
     <header aria-label="Student header" className="sticky top-0 z-[60] border-b border-slate-200 bg-white px-3 dark:border-zinc-800 dark:bg-[#202020] sm:px-5">
-      <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-2 sm:gap-3">
+      {/* Phones/tablets: the mobile top bar already has the menu and the account, so this row is
+          compact and shows only search, challenges, Prep Coins and notifications. */}
+      <div className="mx-auto flex h-12 w-full max-w-[1600px] items-center gap-2 sm:gap-3 lg:h-16">
         {!sidebarPinned && <button
           type="button"
           onClick={onToggleSidebar}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-slate-400 dark:hover:bg-sky-950/50 dark:hover:text-sky-300"
+          className="hidden h-9 w-9 shrink-0 lg:flex items-center justify-center rounded-xl text-slate-400 transition hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-slate-400 dark:hover:bg-sky-950/50 dark:hover:text-sky-300"
           aria-label="Expand and pin navigation"
           title="Expand navigation"
         >
@@ -206,8 +208,8 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
           <button type="button" onClick={toggleTheme} className="hidden h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:flex" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title="Change theme">{theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}</button>
 
           <NotificationBell buttonClassName="shrink-0" />
-          <span className="mx-0.5 hidden h-6 w-px bg-slate-200 dark:bg-slate-800 sm:block" aria-hidden="true" />
-          <div ref={profileRef} className="relative">
+          <span className="mx-0.5 hidden h-6 w-px bg-slate-200 dark:bg-slate-800 lg:block" aria-hidden="true" />
+          <div ref={profileRef} className="relative hidden lg:block">
             <button type="button" onClick={() => { setProfileOpen((open) => !open); setAppsOpen(false); }} className="flex h-10 items-center gap-2 rounded-xl border border-transparent p-1 pr-1 transition hover:border-sky-100 hover:bg-sky-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:hover:border-sky-900 dark:hover:bg-sky-950/40 sm:pr-2" aria-label="Open profile menu" aria-expanded={profileOpen}>
               <InitialAvatar name={displayName} avatarUrl={avatarUrl} className="h-8 w-8 rounded-xl ring-1 ring-sky-100 dark:ring-sky-900" />
               <span className="hidden max-w-28 text-left lg:block"><span className="block truncate text-xs font-bold text-slate-800 dark:text-white">{displayName}</span><span className="block text-[10px] font-medium text-slate-500 dark:text-slate-400">Student</span></span>

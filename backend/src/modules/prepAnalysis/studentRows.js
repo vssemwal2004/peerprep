@@ -65,8 +65,12 @@ function learningRow(student, facts, now, totalsCache) {
  * review threshold. Never a verdict: a person decides after looking.
  */
 export function reviewSummary(entries, difficultyOf = () => null) {
-  const items = entries.map((entry) => ({ ...entry, review: reviewOf(entry.effort, difficultyOf(entry), entry.at) }))
-    .sort((left, right) => new Date(right.at) - new Date(left.at));
+  return summarizeReview(entries.map((entry) => ({ ...entry, review: reviewOf(entry.effort, difficultyOf(entry), entry.at) })));
+}
+
+/** The counts of a review summary from items that already carry their `review`. */
+export function summarizeReview(reviewed) {
+  const items = [...reviewed].sort((left, right) => new Date(right.at) - new Date(left.at));
   const tracked = items.filter((item) => item.review);
   const flagged = tracked.filter((item) => item.review.reasons.length);
   const minutes = tracked.map((item) => item.review.activeMs / 60000).sort((left, right) => left - right);
@@ -112,12 +116,20 @@ function quickPrepDays(entries, range) {
 /** Quick Prep figures for one student across the sheets open to them. */
 function quickPrepRow(student, facts, now, range) {
   const entries = facts.byStudent.get(String(student._id)) || [];
+  const visible = [...facts.sheets.values()].filter((sheet) => sheet.published && sheetVisibleTo(sheet, student.semester));
+  return buildQuickPrep(entries, visible, now, range);
+}
+
+/**
+ * Quick Prep figures from a student's sheet entries and the sheets open to them. Shared by the
+ * cohort rows and the "only these sheets" view (quickPrepScope.js), so both count alike.
+ */
+export function buildQuickPrep(entries, visible, now, range) {
   const solved = entries.reduce((sum, entry) => sum + entry.solved, 0);
   const total = entries.reduce((sum, entry) => sum + entry.total, 0);
   const finished = entries.filter((entry) => entry.finished).length;
   const lastActive = entries.map((entry) => entry.lastViewedAt).filter(Boolean).sort((left, right) => new Date(right) - new Date(left))[0] || null;
   const days = daysSince(lastActive, now);
-  const visible = [...facts.sheets.values()].filter((sheet) => sheet.published && sheetVisibleTo(sheet, student.semester));
   const startedIds = new Set(entries.map((entry) => entry.sheetId));
   const startedVisible = visible.filter((sheet) => startedIds.has(sheet.id)).length;
   return {

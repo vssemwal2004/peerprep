@@ -45,9 +45,9 @@ export function PageSkeleton() {
     <div className="min-h-screen bg-white dark:bg-gray-900">
       <div className="max-w-7xl mx-auto px-4 py-8 mt-16">
         {/* Page title skeleton */}
-        <Shimmer className="w-64 h-8 mb-2" />
-        <Shimmer className="w-96 h-4 mb-8" />
-        
+        <Shimmer className="w-64 max-w-full h-8 mb-2" />
+        <Shimmer className="w-96 max-w-full h-4 mb-8" />
+
         {/* Stats cards skeleton */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           {[1, 2, 3].map(i => (
@@ -90,7 +90,7 @@ export function DashboardSkeleton() {
     <div className="min-h-screen bg-white dark:bg-gray-900 py-8 px-4">
       <div className="max-w-7xl mx-auto mt-16">
         <Shimmer className="w-56 h-8 mb-2" />
-        <Shimmer className="w-80 h-4 mb-8" />
+        <Shimmer className="w-80 max-w-full h-4 mb-8" />
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3, 4, 5, 6].map(i => (

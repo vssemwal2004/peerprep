@@ -25,6 +25,7 @@ import {
 import { loadInterviewFacts, RATINGS } from './interviewFacts.js';
 import { loadQuickPrepFacts, sheetVisibleTo } from './quickPrepFacts.js';
 import { attachStoredScores, buildStudentRows } from './studentRows.js';
+import { narrowToSheets, normalizeSheetIds } from './quickPrepScope.js';
 import QuestionLibrary from '../../models/QuestionLibrary.js';
 import { sharedQuestions } from '../../platform/sharedContent.js';
 import { reviewOf } from '../../services/solveEffort.js';
@@ -217,6 +218,8 @@ export function validatePrepAnalysisQuery(body = {}, permissions) {
     focus: normalizeFocus(body.focus, modules),
     compare: normalizeCompare(body.compare, modules),
     scope: scopeFromBody(body),
+    // Quick Prep page: only these sheets (empty = every sheet).
+    sheets: area === 'quickprep' ? normalizeSheetIds(body.sheets) : [],
     // With compare: which side a drill or download is about (0 or 1).
     group: [0, 1].includes(body.group) ? body.group : null,
     // KPI changes against the previous period of the same length (presets other than "all").
@@ -295,6 +298,12 @@ export async function getAnalysisContext(user, range, { refresh = false, modules
   return promise;
 }
 
+/** The page's data for a query: the cached cohort context, narrowed to the chosen Quick Prep sheets. */
+async function queryContext(user, query, range = query.range, { refresh = false } = {}) {
+  const context = await getAnalysisContext(user, range, { refresh, modules: query.modules, parts: query.parts, scope: query.scope });
+  return query.sheets?.length ? narrowToSheets(context, query.sheets, range) : context;
+}
+
 // ---------------------------------------------------------------- queries
 
 function selectRows(rows, filter, rank) {
@@ -351,7 +360,7 @@ const genericColumns = (module) => (DEFAULT_EXPORT_COLUMNS[module] || DEFAULT_EX
 async function chartContext({ user, query, chartId }) {
   const entry = query.charts.find((chart) => chart.id === chartId);
   if (!entry) throw new HttpError(400, 'Choose a chart that is on the page.');
-  const context = await getAnalysisContext(user, query.range, { modules: query.modules, parts: query.parts, scope: query.scope });
+  const context = await queryContext(user, query);
   const { selected } = selectStudents(context, query);
   return { context, entry, chart: CHART_BY_ID.get(chartId), selected, rows: chartRows(selected, entry.filter) };
 }
@@ -517,7 +526,7 @@ async function previousKpis({ user, query, ids }) {
   const range = previousRange(query.range);
   if (!query.previous || !range) return null;
   try {
-    const context = await getAnalysisContext(user, range, { modules: query.modules, parts: query.parts, scope: query.scope });
+    const context = await queryContext(user, query, range);
     const { selected } = selectStudents(context, query, ids);
     return { groups: buildKpiGroups(query.module, query.modules, selected), label: range.label };
   } catch (error) {
@@ -528,7 +537,7 @@ async function previousKpis({ user, query, ids }) {
 }
 
 export async function runPrepAnalysis({ user, query }) {
-  const context = await getAnalysisContext(user, query.range, { refresh: query.refresh, modules: query.modules, parts: query.parts, scope: query.scope });
+  const context = await queryContext(user, query, query.range, { refresh: query.refresh });
   const { selected, ids } = selectStudents(context, query);
   const previous = await previousKpis({ user, query, ids });
   const kpiGroups = buildKpiGroups(query.module, query.modules, selected);
@@ -553,6 +562,8 @@ export async function runPrepAnalysis({ user, query }) {
       matched: selected.length,
       truncated: context.truncated,
       focus: query.focus ? { chartId: query.focus.chartId, key: query.focus.key, label: query.focus.label, students: selected.length } : null,
+      // Quick Prep: the sheets this page is limited to (null = every sheet).
+      sheets: context.sheetScope ? context.sheetScope.map((id) => ({ id, title: context.sheets.get(id)?.title || 'Sheet' })) : null,
       previous: previous ? { label: previous.label } : null,
     },
     kpiGroups: previous ? withDeltas(kpiGroups, previous.groups, previous.label) : kpiGroups,
@@ -564,7 +575,7 @@ export async function runPrepAnalysis({ user, query }) {
 
 /** A CSV / Excel / PDF file of every student matching the filters, in the table's order. */
 export async function exportPrepAnalysis({ user, query, options }) {
-  const context = await getAnalysisContext(user, query.range, { modules: query.modules, parts: query.parts, scope: query.scope });
+  const context = await queryContext(user, query);
   const { selected } = selectStudents(context, query);
   const sortKey = TABLE_SORTS[query.table.sort] ? query.table.sort : DEFAULT_SORT[query.module];
   const direction = query.table.direction === 'asc' ? 1 : -1;
@@ -584,7 +595,7 @@ export async function exportPrepAnalysis({ user, query, options }) {
 }
 
 export async function countPrepAnalysis({ user, query }) {
-  const context = await getAnalysisContext(user, query.range, { modules: query.modules, parts: query.parts, scope: query.scope });
+  const context = await queryContext(user, query);
   return { cohortSize: context.rows.length, matched: selectStudents(context, query).selected.length };
 }
 
@@ -872,8 +883,16 @@ export async function listFieldOptions({ user, permissions, optionsKey, q = '', 
     options = [...tests.values()].sort((left, right) => new Date(right.startTime || 0) - new Date(left.startTime || 0) || left.title.localeCompare(right.title))
       .map((test) => ({ value: test.id, label: test.title }));
   } else if (optionsKey === 'sheets') {
-    const { sheets } = await context();
-    options = [...sheets.values()].filter((sheet) => sheet.published).sort((left, right) => left.title.localeCompare(right.title)).map((sheet) => ({ value: sheet.id, label: sheet.title }));
+    // Most-started sheets first (one pass over the rows), so a long catalogue opens on the useful ones.
+    const { sheets, rows } = await context();
+    const starters = new Map();
+    for (const row of rows) for (const sheetId of row.quickprep?.bySheet.keys() || []) starters.set(sheetId, (starters.get(sheetId) || 0) + 1);
+    options = [...sheets.values()].filter((sheet) => sheet.published)
+      .sort((left, right) => (starters.get(right.id) || 0) - (starters.get(left.id) || 0) || left.title.localeCompare(right.title))
+      .map((sheet) => ({
+        value: sheet.id, label: sheet.title, count: starters.get(sheet.id) || 0,
+        hint: `${sheet.items} question${sheet.items === 1 ? '' : 's'} · ${sheet.semesters.length ? `Sem ${sheet.semesters.join(', ')}` : 'All semesters'}`,
+      }));
   } else if (optionsKey === 'topics') {
     const topics = await CodingTopic.find({ status: 'active' }).select('name parentId').sort({ depth: 1, displayOrder: 1, name: 1 }).lean();
     options = topics.map((topic) => ({ value: topic.name, label: topic.name, parent: Boolean(topic.parentId) }));

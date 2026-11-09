@@ -533,6 +533,27 @@ test('Quick Prep question-level charts: sheet health, solve rate by difficulty, 
   assert.equal(pace.bins[3].count, 1, '28 Sep to 8 Oct: 10 days, the 1–2 weeks band');
 });
 
+test('Quick Prep "only these sheets": every figure is rebuilt from the chosen sheets', async () => {
+  const { narrowToSheets, normalizeSheetIds } = await import('../src/modules/prepAnalysis/quickPrepScope.js');
+  const { rows, sheets } = learningAndQuickPrep();
+  const context = { rows, sheets };
+  const onlyGraphs = narrowToSheets(context, ['q2'], { preset: 'all' });
+  const asha = onlyGraphs.rows.find((row) => row.name === 'Asha');
+  assert.deepEqual([asha.quickprep.started, asha.quickprep.finished, asha.quickprep.solved, asha.quickprep.status], [1, 0, 1, 'inProgress'], 'only Graphs sprint: 1 of 4 solved, not finished');
+  assert.equal(onlyGraphs.rows.find((row) => row.name === 'Bilal').quickprep.status, 'none', 'Bilal never started Graphs sprint');
+  assert.deepEqual([...onlyGraphs.sheets.keys()], ['q2']);
+  assert.equal(narrowToSheets(context, ['q2'], { preset: 'all' }), onlyGraphs, 'the same choice reuses one narrowed copy');
+  assert.equal(narrowToSheets(context, ['nope'], { preset: 'all' }), context, 'unknown sheets change nothing');
+  assert.equal(rows.find((row) => row.name === 'Asha').quickprep.started, 2, 'the cached cohort rows are untouched');
+
+  const health = CHARTS.find((chart) => chart.id === 'quickprep-sheet-health').build({ rows: onlyGraphs.rows, options: {}, range: {}, sheets: onlyGraphs.sheets });
+  assert.deepEqual(health.categories.map((category) => category.label), ['Graphs sprint'], 'charts show only the chosen sheets');
+
+  assert.deepEqual(normalizeSheetIds(['6acc859bcef81f03ebecbe3f', 'bad', '6acc859bcef81f03ebecbe3f']), ['6acc859bcef81f03ebecbe3f']);
+  assert.deepEqual(validatePrepAnalysisQuery({ module: 'coding', sheets: ['6acc859bcef81f03ebecbe3f'] }, undefined).sheets, [], 'only the Quick Prep page is limited by sheets');
+  assert.deepEqual(validatePrepAnalysisQuery({ module: 'quickprep', sheets: ['6acc859bcef81f03ebecbe3f'] }, undefined).sheets, ['6acc859bcef81f03ebecbe3f']);
+});
+
 const STUDENT_STACKS = new Set(['learning-subjects', 'quickprep-sheets', 'quickprep-by-class', 'assessment-tests', 'assessment-scores']);
 function partsOf(chart, data) {
   const right = (index) => data.series?.find((series) => series.axis === 'right')?.values?.[index];

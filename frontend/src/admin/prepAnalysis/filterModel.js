@@ -51,8 +51,23 @@ export const newGroup = (rules = []) => ({ id: nodeId(), rules });
 export const newRankRule = (metric, direction = "top") => ({ id: nodeId(), direction, value: 10, unit: "count", metric });
 
 export function defaultFilterState(area = "coding") {
-  return { area, range: { preset: "all" }, groups: [newGroup()], rank: { join: "and", rules: [] } };
+  return { area, range: { preset: "all" }, groups: [newGroup()], rank: { join: "and", rules: [] }, sheets: [] };
 }
+
+// Quick Prep "only these sheets": [{ id, title }]. Empty means every sheet. Titles are kept for chips.
+export const MAX_SHEETS = 500;
+export function cleanSheets(list) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  return list.filter((entry) => {
+    const id = String(entry?.id || "");
+    if (!/^[a-f0-9]{24}$/i.test(id) || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).slice(0, MAX_SHEETS).map((entry) => ({ id: String(entry.id), title: String(entry.title || "Sheet") }));
+}
+/** The sheets that apply to the request: only on the Quick Prep page. */
+export const scopedSheets = (state) => (state.area === "quickprep" ? state.sheets || [] : []);
 
 // ---------------------------------------------------------------- features and fields
 
@@ -206,6 +221,7 @@ export function normalizeState(stored, fallbackArea = "coding") {
     range: stored.range?.preset ? stored.range : base.range,
     groups: groups.length ? groups : [newGroup()],
     rank,
+    sheets: cleanSheets(stored.sheets),
   };
 }
 
@@ -277,9 +293,11 @@ export function toRequestRank(rank) {
 
 /** The /query (and /count, /export) body for the filters, the chart layout and the table view. */
 export function toQueryRequest({ state, layout = [], table }, fieldMap) {
+  const sheets = scopedSheets(state);
   return {
     module: state.area,
     range: state.range,
+    ...(sheets.length ? { sheets: sheets.map((sheet) => sheet.id) } : {}),
     filter: toRequestFilter(state, fieldMap),
     rank: toRequestRank(state.rank),
     charts: layout.map((entry) => {
@@ -366,6 +384,8 @@ export function rankText(rank, metricLabel) {
 /** The whole filter in plain sentences, for the top of a downloaded file. */
 export function summaryLines(state, fieldMap, metricLabel, lookup) {
   const lines = [];
+  const sheets = scopedSheets(state);
+  if (sheets.length) lines.push(`Quick Prep sheets: ${sheets.slice(0, 20).map((sheet) => sheet.title).join(", ")}${sheets.length > 20 ? ` and ${sheets.length - 20} more` : ""}`);
   const groups = state.groups.map((group) => groupText(group, fieldMap, lookup, { max: 20 })).filter(Boolean);
   if (groups.length === 1) lines.push(`Students: ${groups[0]}`);
   if (groups.length > 1) groups.forEach((text, index) => lines.push(`${index ? "Or " : ""}${groupName(index)}: ${text}`));

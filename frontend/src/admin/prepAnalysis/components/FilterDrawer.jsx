@@ -100,7 +100,7 @@ export function FilterDrawer({ open, state, catalog, fieldMap, matched, onApply,
     <Drawer open onClose={onClose} width="max-w-[920px]" title="Filters" subtitle="Choose filters, then press Show. Nothing changes on the page until then."
       footer={(
         <div className="flex items-center gap-2">
-          <Button tone="ghost" disabled={!changes} aria-label="Clear all" onClick={() => { const fresh = defaultFilterState(draft.area); setDraft(fresh); setOpenGroup(fresh.groups[0].id); }}>
+          <Button tone="ghost" disabled={!changes} aria-label="Clear all" onClick={() => { const fresh = { ...defaultFilterState(draft.area), sheets: draft.sheets || [] }; setDraft(fresh); setOpenGroup(fresh.groups[0].id); }}>
             <RotateCcw className="h-3.5 w-3.5" /><span className="hidden sm:inline">Clear all</span>
           </Button>
           <div className="ml-auto flex items-center gap-2">

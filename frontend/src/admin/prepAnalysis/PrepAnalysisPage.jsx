@@ -15,6 +15,7 @@ import { ChartSettingsDialog, CustomizeDrawer } from "./components/ChartPanels";
 import DownloadMenu from "./components/DownloadMenu";
 import { FilterDrawer, FilterToolbar } from "./components/FilterDrawer";
 import { KpiStrip, ScoreHelpDialog, StudentTable } from "./components/Insights";
+import SheetScope from "./components/SheetScope";
 import StudentDrawer from "./components/StudentDrawer";
 import ViewsMenu from "./components/ViewsMenu";
 import CompareControl, { CompareChip } from "./components/CompareBar";
@@ -150,6 +151,11 @@ function PrepAnalysisView({ scope, embedded }) {
   const groups = data?.kpiGroups || [];
   // A chart opened from a link that is not on this area's page falls back to every chart.
   const fullChart = fullChartId && entryById.has(fullChartId) ? fullChartId : null;
+  // Quick Prep: which sheets everything on the page counts. A focus was a part of the old charts.
+  const sheetScope = area === "quickprep" && !scope ? (
+    <SheetScope value={state.sheets || []} applied={meta ? meta.sheets ?? null : undefined} loading={loading}
+      onChange={(sheets) => { setFocus(null); update({ ...state, sheets }); }} />
+  ) : null;
 
   return (
     <ToastProvider>
@@ -164,7 +170,8 @@ function PrepAnalysisView({ scope, embedded }) {
       </AnalysisHeader>
 
       {fullChart ? (
-        <div className="mx-auto max-w-[1680px] px-4 py-4">
+        <div className="mx-auto max-w-[1680px] space-y-4 px-4 py-4">
+          {sheetScope}
           <ChartFullPage key={fullChart} chartId={fullChart} cardChart={charts.find((chart) => chart.id === fullChart)} entry={entryById.get(fullChart)}
             analysis={analysis} meta={meta} refreshTick={refreshTick}
             onBack={closeChart} onStudent={setStudentId} onPart={showPart} onOpenFilters={() => setFiltersOpen(true)} onFilterChange={update} filterExtra={filterChips}
@@ -172,6 +179,7 @@ function PrepAnalysisView({ scope, embedded }) {
         </div>
       ) : (
       <div className="mx-auto max-w-[1680px] space-y-4 px-4 py-4">
+        {sheetScope}
         <FilterToolbar state={state} catalog={catalog} fieldMap={fieldMap} meta={meta} loading={loading} onOpen={() => setFiltersOpen(true)} onChange={update} extra={filterChips} />
 
         {error && (
