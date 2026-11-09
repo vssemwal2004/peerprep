@@ -14,19 +14,21 @@ import {
 
 // Module -> university policy permission key. 'student' is always available.
 // Every module except 'student' is also an analysis area the admin can pick.
-// Quick Prep sheets are part of Prep Coding (same licence, same area).
+// Quick Prep has its own area but no licence of its own: sheets reach every
+// university with coding ("questions") enabled, so it shares that permission.
 // A module with several permission keys is on when any of them is on (Prep
 // Interview covers mock interviews, licensed as "events", and AI interviews).
 export const MODULES = Object.freeze({
   student: { label: 'Student details', permission: null },
   coding: { label: 'Prep Coding', permission: 'questions' },
+  quickprep: { label: 'Quick Prep', permission: 'questions' },
   learning: { label: 'Prep Learning', permission: 'learning' },
   interview: { label: 'Prep Interview', permission: ['events', 'interviews'] },
   assessment: { label: 'Prep Assessment', permission: 'assessments' },
 });
 
 // Which module each "Only count" set belongs to.
-const QUALIFIER_MODULE = Object.freeze({ coding: 'coding', quickprep: 'coding', learning: 'learning', assessment: 'assessment' });
+const QUALIFIER_MODULE = Object.freeze({ coding: 'coding', quickprep: 'quickprep', learning: 'learning', assessment: 'assessment' });
 
 export const KIND_OPERATORS = Object.freeze({
   enum: ['anyOf', 'noneOf', 'is', 'isNot'],
@@ -93,9 +95,15 @@ const FIELD_LIST = [
   { key: 'coding.solvedEasy', module: 'coding', group: 'Results', label: 'Easy problems solved', kind: 'number', qualifiers: 'coding', rankable: true, get: codingMetric('solved', { difficulties: ['Easy'] }) },
   { key: 'coding.solvedMedium', module: 'coding', group: 'Results', label: 'Medium problems solved', kind: 'number', qualifiers: 'coding', rankable: true, get: codingMetric('solved', { difficulties: ['Medium'] }) },
   { key: 'coding.solvedHard', module: 'coding', group: 'Results', label: 'Hard problems solved', kind: 'number', qualifiers: 'coding', rankable: true, get: codingMetric('solved', { difficulties: ['Hard'] }) },
-  { key: 'coding.accuracy', module: 'coding', group: 'Results', label: 'Accuracy', kind: 'percent', qualifiers: 'coding', rankable: true, get: codingMetric('accuracy') },
+  // Scores/rates are "no value" (null) without any attempt, so "under 25%" never matches students who never tried.
+  { key: 'coding.accuracy', module: 'coding', group: 'Results', label: 'Accuracy', kind: 'percent', qualifiers: 'coding', rankable: true, get: (row, qualifiers) => (row.coding.submissions ? codingMetric('accuracy')(row, qualifiers) : null) },
   { key: 'coding.attempted', module: 'coding', group: 'Results', label: 'Problems attempted', kind: 'number', qualifiers: 'coding', rankable: true, get: codingMetric('attempted') },
   { key: 'coding.submissions', module: 'coding', group: 'Results', label: 'Code submissions', kind: 'number', qualifiers: 'coding', rankable: true, get: codingMetric('submissions') },
+
+  // ---- Prep Coding: own work (first solves since tracking started; see services/solveEffort.js)
+  { key: 'coding.solvesToReview', module: 'coding', group: 'Own work', label: 'Solves to review (very fast or mostly pasted)', kind: 'number', rankable: true, get: (row) => row.coding.review.flagged },
+  { key: 'coding.solvesTracked', module: 'coding', group: 'Own work', label: 'Solves with time tracked', kind: 'number', get: (row) => row.coding.review.tracked },
+  { key: 'coding.medianSolveMinutes', module: 'coding', group: 'Own work', label: 'Median solve time (active)', kind: 'number', unit: 'min', rankable: true, get: (row) => row.coding.review.medianActiveMin },
 
   // ---- Prep Learning
   { key: 'learning.status', module: 'learning', group: 'Learning', label: 'Learning status', kind: 'enum', options: 'learningStatuses', quick: true, get: (row) => row.learning?.status },
@@ -106,22 +114,30 @@ const FIELD_LIST = [
   { key: 'learning.videoMinutes', module: 'learning', group: 'Learning', label: 'Video minutes watched', kind: 'number', unit: 'min', rankable: true, get: (row) => row.learning?.videoMinutes ?? 0 },
   { key: 'learning.daysSinceActive', module: 'learning', group: 'Learning', label: 'Days since last lesson', kind: 'number', unit: 'days', get: (row) => row.learning?.daysSinceActive ?? null },
 
-  // ---- Quick Prep
-  { key: 'quickprep.status', module: 'coding', group: 'Quick Prep sheets', label: 'Quick Prep status', kind: 'enum', options: 'quickprepStatuses', quick: true, get: (row) => row.quickprep?.status },
-  { key: 'quickprep.sheets', module: 'coding', group: 'Quick Prep sheets', label: 'Sheet started', kind: 'set', options: 'sheets', quick: true, get: (row) => row.quickprep?.sheets || [] },
-  { key: 'quickprep.sheetsFinished', module: 'coding', group: 'Quick Prep sheets', label: 'Sheet finished', kind: 'set', options: 'sheets', get: (row) => row.quickprep?.sheetsFinished || [] },
-  { key: 'quickprep.progress', module: 'coding', group: 'Quick Prep sheets', label: 'Sheet progress', kind: 'percent', qualifiers: 'quickprep', rankable: true, get: quickPrepMetric('progress') },
-  { key: 'quickprep.solved', module: 'coding', group: 'Quick Prep sheets', label: 'Sheet questions solved', kind: 'number', qualifiers: 'quickprep', rankable: true, get: quickPrepMetric('solved') },
-  { key: 'quickprep.finished', module: 'coding', group: 'Quick Prep sheets', label: 'Sheets finished', kind: 'number', rankable: true, get: (row) => row.quickprep?.finished ?? 0 },
-  { key: 'quickprep.daysSinceActive', module: 'coding', group: 'Quick Prep sheets', label: 'Days since last sheet activity', kind: 'number', unit: 'days', get: (row) => row.quickprep?.daysSinceActive ?? null },
+  // ---- Quick Prep (its own area)
+  { key: 'quickprep.status', module: 'quickprep', group: 'Sheets', label: 'Quick Prep status', kind: 'enum', options: 'quickprepStatuses', quick: true, get: (row) => row.quickprep?.status },
+  { key: 'quickprep.activity', module: 'quickprep', group: 'Activity', label: 'Sheet activity', kind: 'enum', options: 'quickprepActivity', quick: true, get: (row) => row.quickprep?.activity },
+  { key: 'quickprep.sheets', module: 'quickprep', group: 'Sheets', label: 'Sheet started', kind: 'set', options: 'sheets', quick: true, get: (row) => row.quickprep?.sheets || [] },
+  { key: 'quickprep.sheetsFinished', module: 'quickprep', group: 'Sheets', label: 'Sheet finished', kind: 'set', options: 'sheets', get: (row) => row.quickprep?.sheetsFinished || [] },
+  { key: 'quickprep.sheetsNotStarted', module: 'quickprep', group: 'Sheets', label: 'Sheet not started (open to them)', kind: 'set', options: 'sheets', get: (row) => row.quickprep?.notStarted || [] },
+  { key: 'quickprep.progress', module: 'quickprep', group: 'Results', label: 'Sheet progress', kind: 'percent', qualifiers: 'quickprep', rankable: true, // Overall progress is of the sheets they started (none: no value); for named sheets, 0% of a sheet is a real value.
+    get: (row, qualifiers) => (row.quickprep?.started || qualifiers?.sheets?.length ? quickPrepMetric('progress')(row, qualifiers) : null) },
+  { key: 'quickprep.solved', module: 'quickprep', group: 'Results', label: 'Sheet questions solved', kind: 'number', qualifiers: 'quickprep', rankable: true, get: quickPrepMetric('solved') },
+  { key: 'quickprep.started', module: 'quickprep', group: 'Results', label: 'Sheets started', kind: 'number', rankable: true, get: (row) => row.quickprep?.started ?? 0 },
+  { key: 'quickprep.finished', module: 'quickprep', group: 'Results', label: 'Sheets finished', kind: 'number', rankable: true, get: (row) => row.quickprep?.finished ?? 0 },
+  { key: 'quickprep.coverage', module: 'quickprep', group: 'Results', label: 'Open sheets started', kind: 'percent', rankable: true, get: (row) => (row.quickprep?.visibleSheets ? row.quickprep.coverage : null) },
+  { key: 'quickprep.daysSinceActive', module: 'quickprep', group: 'Activity', label: 'Days since last sheet activity', kind: 'number', unit: 'days', get: (row) => row.quickprep?.daysSinceActive ?? null },
+  { key: 'quickprep.solvesToReview', module: 'quickprep', group: 'Own work', label: 'Sheet solves to review (very fast or mostly pasted)', kind: 'number', rankable: true, get: (row) => row.quickprep?.review?.flagged ?? 0 },
+  { key: 'quickprep.solvesTracked', module: 'quickprep', group: 'Own work', label: 'Sheet solves with time tracked', kind: 'number', get: (row) => row.quickprep?.review?.tracked ?? 0 },
+  { key: 'quickprep.medianSolveMinutes', module: 'quickprep', group: 'Own work', label: 'Median sheet solve time (active)', kind: 'number', unit: 'min', rankable: true, get: (row) => row.quickprep?.review?.medianActiveMin ?? null },
 
   // ---- Prep Interview (mock interviews and AI interviews)
   { key: 'interview.status', module: 'interview', group: 'Activity', label: 'Interview status', kind: 'enum', options: 'interviewStatuses', quick: true, get: (row) => row.interview?.status },
   { key: 'interview.done', module: 'interview', group: 'Activity', label: 'Interviews done (mock + AI)', kind: 'number', rankable: true, get: (row) => row.interview?.done ?? 0 },
   { key: 'interview.mockDone', module: 'interview', group: 'Mock interviews', label: 'Mock interviews done', kind: 'number', rankable: true, get: (row) => row.interview?.mockDone ?? 0 },
-  { key: 'interview.mockScore', module: 'interview', group: 'Mock interviews', label: 'Mock interview score (their average)', kind: 'percent', rankable: true, get: (row) => row.interview?.mockScore ?? 0 },
-  { key: 'interview.bestMockScore', module: 'interview', group: 'Mock interviews', label: 'Best mock interview score', kind: 'percent', rankable: true, get: (row) => row.interview?.bestMockScore ?? 0 },
-  { key: 'interview.lastMockScore', module: 'interview', group: 'Mock interviews', label: 'Latest mock interview score', kind: 'percent', rankable: true, get: (row) => row.interview?.lastMockScore ?? 0 },
+  { key: 'interview.mockScore', module: 'interview', group: 'Mock interviews', label: 'Mock interview score (their average)', kind: 'percent', rankable: true, get: (row) => (row.interview?.mockDone ? row.interview.mockScore : null) },
+  { key: 'interview.bestMockScore', module: 'interview', group: 'Mock interviews', label: 'Best mock interview score', kind: 'percent', rankable: true, get: (row) => (row.interview?.mockDone ? row.interview.bestMockScore : null) },
+  { key: 'interview.lastMockScore', module: 'interview', group: 'Mock interviews', label: 'Latest mock interview score', kind: 'percent', rankable: true, get: (row) => (row.interview?.mockDone ? row.interview.lastMockScore : null) },
   ...RATINGS.map(({ key, label }) => ({ key: `interview.${key}`, module: 'interview', group: 'Mock interview ratings (1-5)', label: `${label} rating`, kind: 'number', unit: '/ 5', rankable: true, get: interviewRating(key) })),
   { key: 'interview.given', module: 'interview', group: 'Mock interviews', label: 'Interviews taken as interviewer', kind: 'number', rankable: true, get: (row) => row.interview?.given ?? 0 },
   { key: 'interview.scheduled', module: 'interview', group: 'Mock interviews', label: 'Mock interviews scheduled', kind: 'number', get: (row) => row.interview?.scheduled ?? 0 },
@@ -135,19 +151,19 @@ const FIELD_LIST = [
   { key: 'assessment.takenTests', module: 'assessment', group: 'Tests', label: 'Test taken', kind: 'set', options: 'tests', get: (row) => row.assessment?.takenIds || [] },
   { key: 'assessment.passedTests', module: 'assessment', group: 'Tests', label: `Test passed (${PASS_PERCENT}%+)`, kind: 'set', options: 'tests', get: (row) => row.assessment?.passedIds || [] },
   { key: 'assessment.missedTests', module: 'assessment', group: 'Tests', label: 'Test missed', kind: 'set', options: 'tests', get: (row) => row.assessment?.missedIds || [] },
-  { key: 'assessment.averageScore', module: 'assessment', group: 'Scores', label: 'Test score (their average)', kind: 'percent', qualifiers: 'assessment', rankable: true, get: assessmentMetric('averageScore') },
-  { key: 'assessment.bestScore', module: 'assessment', group: 'Scores', label: 'Best test score', kind: 'percent', rankable: true, get: (row) => row.assessment?.bestScore ?? 0 },
-  { key: 'assessment.lastScore', module: 'assessment', group: 'Scores', label: 'Latest test score', kind: 'percent', rankable: true, get: (row) => row.assessment?.lastScore ?? 0 },
+  { key: 'assessment.averageScore', module: 'assessment', group: 'Scores', label: 'Test score (their average)', kind: 'percent', qualifiers: 'assessment', rankable: true, get: (row, qualifiers) => (row.assessment?.taken ? assessmentMetric('averageScore')(row, qualifiers) : null) },
+  { key: 'assessment.bestScore', module: 'assessment', group: 'Scores', label: 'Best test score', kind: 'percent', rankable: true, get: (row) => (row.assessment?.taken ? row.assessment.bestScore : null) },
+  { key: 'assessment.lastScore', module: 'assessment', group: 'Scores', label: 'Latest test score', kind: 'percent', rankable: true, get: (row) => (row.assessment?.taken ? row.assessment.lastScore : null) },
   { key: 'assessment.taken', module: 'assessment', group: 'Tests', label: 'Tests taken', kind: 'number', qualifiers: 'assessment', rankable: true, get: assessmentMetric('taken') },
   { key: 'assessment.passed', module: 'assessment', group: 'Tests', label: `Tests passed (${PASS_PERCENT}%+)`, kind: 'number', qualifiers: 'assessment', rankable: true, get: assessmentMetric('passed') },
-  { key: 'assessment.passRate', module: 'assessment', group: 'Scores', label: 'Pass rate (of their tests)', kind: 'percent', rankable: true, get: (row) => row.assessment?.passRate ?? 0 },
+  { key: 'assessment.passRate', module: 'assessment', group: 'Scores', label: 'Pass rate (of their tests)', kind: 'percent', rankable: true, get: (row) => (row.assessment?.taken ? row.assessment.passRate : null) },
   { key: 'assessment.missed', module: 'assessment', group: 'Tests', label: 'Tests missed', kind: 'number', rankable: true, get: (row) => row.assessment?.missed ?? 0 },
   { key: 'assessment.daysSinceActive', module: 'assessment', group: 'Activity', label: 'Days since last test', kind: 'number', unit: 'days', get: (row) => row.assessment?.daysSinceActive ?? null },
 ];
 
 // The measure "Who to show: Top / Bottom N" ranks by in each area.
 export const DEFAULT_RANK_METRIC = Object.freeze({
-  coding: 'coding.prepScore', learning: 'learning.progress', interview: 'interview.prepScore', assessment: 'assessment.prepScore', all: 'student.prepScore',
+  coding: 'coding.prepScore', quickprep: 'quickprep.progress', learning: 'learning.progress', interview: 'interview.prepScore', assessment: 'assessment.prepScore', all: 'student.prepScore',
 });
 
 export const FIELDS = new Map(FIELD_LIST.map((field) => [field.key, field]));
@@ -184,6 +200,11 @@ export const STATIC_OPTIONS = Object.freeze({
     { value: 'finished', label: 'Finished a sheet' },
     { value: 'inProgress', label: 'Started, none finished' },
     { value: 'none', label: 'Not started' },
+  ],
+  quickprepActivity: [
+    { value: 'active', label: `Used sheets (last ${INACTIVE_AFTER_DAYS} days)` },
+    { value: 'inactive', label: `No sheet activity for ${INACTIVE_AFTER_DAYS}+ days` },
+    { value: 'never', label: 'Never opened a sheet' },
   ],
   difficulties: DIFFICULTIES.map((value) => ({ value, label: value })),
   languages: SUPPORTED_LANGUAGES.map((value) => ({ value, label: LANGUAGE_LABELS[value] || value })),

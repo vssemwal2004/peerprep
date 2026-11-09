@@ -61,7 +61,8 @@ export default function StudentDirectory() {
   const [students, setStudents] = useState([]);
   const [specialStudents, setSpecialStudents] = useState([]);
   const [filteredStudents, setFilteredStudents] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
+  // `?search=` (e.g. from the overview header) pre-fills the search.
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || "");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("students"); // "students" or "special"
@@ -103,7 +104,7 @@ export default function StudentDirectory() {
     }
   });
   const [facets, setFacets] = useState({});
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState(() => (searchParams.get('search') || '').trim());
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 25 });
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
   const [selectedStudentMap, setSelectedStudentMap] = useState({});

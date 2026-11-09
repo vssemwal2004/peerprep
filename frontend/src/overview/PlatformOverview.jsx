@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Activity, AlertCircle, ArrowRight, BellRing, BookOpen, Bot, Building2, CalendarClock, Check, CheckCircle2, ClipboardList, Code2, Coins,
-  Database, FileQuestion, Gauge, Image, Layers, Library, Mail, Plus, RefreshCw, Route, Sparkles, Trophy, UserX, Users, X,
+  Activity, AlertCircle, ArrowRight, BarChart3, BellRing, BookOpen, Bot, Building2, CalendarClock, Check, CheckCircle2, ClipboardList, Code2, Coins,
+  Crown, Database, FileQuestion, Gauge, History, Image, Layers, Library, Mail, Megaphone, Route, Tag, Trophy, UserX, Users, X,
 } from 'lucide-react';
+import OverviewHeader from './OverviewHeader';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { ActivityTrendChart, BandChart, BarRows, DonutChart, StackedBars } from './charts';
@@ -191,26 +192,40 @@ export default function PlatformOverview() {
 
   return (
     <OverviewShell>
-      <Glass as="header" className="p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300"><Sparkles className="h-3.5 w-3.5" />Master Admin · Platform command centre</p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">{greeting()}, {firstName}</h1>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Students, universities, content and Prep Coins across PeerPrep{insights ? ` · updated ${relativeTime(insights.generatedAt)}` : ''}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link to="/admin/universities/new" className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-sky-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-sky-600/20 transition hover:bg-sky-700"><Plus className="h-4 w-4" />Add university</Link>
-            <Link to="/admin/quickprep/new" className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-3.5 text-xs font-semibold text-slate-700 transition hover:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-200"><Route className="h-4 w-4" />New QuickPrep</Link>
-            <Link to="/admin/assessment/create" className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-3.5 text-xs font-semibold text-slate-700 transition hover:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-200"><ClipboardList className="h-4 w-4" />New assessment</Link>
-            <button type="button" onClick={() => load(true)} aria-label="Refresh overview" className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white/80 text-slate-600 transition hover:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-300"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
-          </div>
-        </div>
-        <nav aria-label="Overview sections" className="mt-4 flex gap-1 overflow-x-auto border-t border-slate-100 pt-3 [scrollbar-width:none] dark:border-white/5 [&::-webkit-scrollbar]:hidden">
-          {SECTIONS.map((section) => (
-            <a key={section.id} href={`#${section.id}`} className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-900/[0.05] hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/[0.06] dark:hover:text-white">{section.label}</a>
-          ))}
-        </nav>
-      </Glass>
+      <OverviewHeader
+        badge="Master Admin"
+        BadgeIcon={Crown}
+        title={`${greeting()}, ${firstName}`}
+        subtitle="Platform command centre: universities, students, content and Prep Coins"
+        updatedAt={insights?.generatedAt}
+        loading={loading}
+        onRefresh={() => load(true)}
+        search={{ to: '/admin/students', placeholder: 'Search students by name, ID or email' }}
+        createItems={[
+          { label: 'Add university', hint: 'New workspace with its own database', to: '/admin/universities/new', Icon: Building2 },
+          { label: 'New QuickPrep', hint: 'A sheet every university can use', to: '/admin/quickprep/new', Icon: Route },
+          { label: 'Shared assessment', hint: 'Publish one test to many universities', to: '/admin/universities/assessments', Icon: ClipboardList },
+          { label: 'Coding problem', hint: 'Add to the shared catalogue', to: '/admin/library/coding/create', Icon: Code2 },
+          { label: 'Issue Prep Coins', hint: 'To a university or an account', to: '/admin/prep-coins/issue', Icon: Coins },
+          { label: 'Announcement', hint: 'Notify students', to: '/admin/announcements/add', Icon: Megaphone },
+        ]}
+        stats={showSkeleton ? [] : [
+          { label: 'Universities live', value: `${model.live} / ${model.registrations.length}`, hint: model.notSetUp ? `${model.notSetUp} not connected` : 'all connected', Icon: Building2, tone: model.notSetUp ? 'rose' : 'emerald', to: '/admin/universities/all' },
+          { label: 'Need your attention', value: formatNumber(model.attention.length), hint: model.attention.length ? 'open items' : 'all clear', Icon: BellRing, tone: model.attention.length ? 'rose' : 'emerald', href: '#needs-attention' },
+          { label: 'Active this week', value: formatNumber(model.activeWeek), hint: `${percent(model.activeWeek, model.students)}% of ${formatNumber(model.students)} students`, Icon: Activity, tone: 'sky' },
+          { label: 'Prep Coins held', value: formatNumber(model.coinsHeld), hint: 'by universities', Icon: Coins, tone: 'amber', to: '/admin/prep-coins/wallets' },
+        ]}
+        shortcuts={[
+          ...SECTIONS.map((section) => ({ label: section.label, href: `#${section.id}` })),
+          { label: 'Universities', to: '/admin/universities/all', Icon: Building2 },
+          { label: 'Prep Analysis', to: '/admin/analysis', Icon: BarChart3 },
+          { label: 'Prep Score policy', to: '/admin/settings/prep-score-adjustment', Icon: Gauge },
+          { label: 'Coin pricing', to: '/admin/prep-coins/pricing', Icon: Tag },
+          { label: 'Question library', to: '/admin/library', Icon: Library },
+          { label: 'Email queue', to: '/admin/email-queue', Icon: Mail },
+          { label: 'Activity log', to: '/admin/universities/activity', Icon: History },
+        ]}
+      />
 
       {error ? <div className="mt-4 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div> : null}
 
@@ -219,7 +234,7 @@ export default function PlatformOverview() {
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-12">
-        <Glass className="p-5 xl:col-span-8">
+        <Glass id="needs-attention" className="scroll-mt-24 p-5 xl:col-span-8">
           <CardHeader title="Needs attention" subtitle="Open items across the platform, most urgent first" Icon={BellRing} />
           {showSkeleton ? <SkeletonRows rows={4} /> : model.attention.length ? (
             <ul className="grid gap-1.5 md:grid-cols-2">

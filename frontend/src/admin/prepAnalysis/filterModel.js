@@ -61,7 +61,7 @@ export const areaModules = (area, catalog) => (area === "all"
   ? (catalog?.areas || []).map((entry) => entry.key).filter((key) => key !== "all")
   : [area]);
 
-/** The chosen feature's own fields (Quick Prep fields belong to Prep Coding). */
+/** The chosen feature's own fields. */
 export function featureFields(catalog, area) {
   const modules = new Set(areaModules(area, catalog));
   return catalog.fields.filter((field) => field.module !== "student" && modules.has(field.module));
@@ -78,7 +78,8 @@ export const rankMetrics = (catalog, area) => [
 const MAIN_FIELDS = new Set([
   "student.semester", "student.branch", "student.course", "student.group", "student.prepScore",
   "learning.prepScore", "interview.prepScore", "assessment.prepScore",
-  "coding.practiceStatus", "coding.prepScore", "coding.solved", "coding.solvedHard", "coding.solvedTopics", "quickprep.status", "quickprep.progress",
+  "coding.practiceStatus", "coding.prepScore", "coding.solved", "coding.solvedHard", "coding.solvedTopics", "coding.solvesToReview",
+  "quickprep.status", "quickprep.activity", "quickprep.progress", "quickprep.sheets", "quickprep.finished", "quickprep.solvesToReview",
   "learning.status", "learning.progress", "learning.subjects",
   "interview.status", "interview.done", "interview.mockScore", "interview.aiCompleted",
   "assessment.status", "assessment.averageScore", "assessment.missed", "assessment.takenTests",
@@ -379,8 +380,12 @@ const KPI_RULES = Object.freeze({
   "coding.active": { field: "coding.practiceStatus", operator: "anyOf", value: ["active"] },
   "coding.stopped": { field: "coding.practiceStatus", operator: "anyOf", value: ["inactive", "never"] },
   "coding.hard": { field: "coding.solvedHard", operator: "gte", value: "1" },
-  "coding.sheetStarted": { field: "quickprep.status", operator: "anyOf", value: ["finished", "inProgress"] },
-  "coding.sheetFinished": { field: "quickprep.status", operator: "anyOf", value: ["finished"] },
+  "quickprep.sheetStarted": { field: "quickprep.status", operator: "anyOf", value: ["finished", "inProgress"] },
+  "quickprep.sheetActive": { field: "quickprep.activity", operator: "anyOf", value: ["active"] },
+  "quickprep.sheetFinished": { field: "quickprep.status", operator: "anyOf", value: ["finished"] },
+  "quickprep.never": { field: "quickprep.status", operator: "anyOf", value: ["none"] },
+  "quickprep.review": { field: "quickprep.solvesToReview", operator: "gte", value: "1" },
+  "coding.review": { field: "coding.solvesToReview", operator: "gte", value: "1" },
   "learning.active": { field: "learning.status", operator: "anyOf", value: ["active"] },
   "learning.halfway": { field: "learning.progress", operator: "gte", value: "50" },
   "assessment.passedStudents": { field: "assessment.passed", operator: "gte", value: "1" },

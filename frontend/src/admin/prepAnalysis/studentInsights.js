@@ -85,10 +85,19 @@ function assessmentLines(assessment) {
   return lines;
 }
 
+/** First solves that were very fast or mostly pasted (Prep Coding and Quick Prep sheets). */
+function ownWorkLines(review, where) {
+  if (!review?.flagged) return [];
+  const why = [review.fast ? `${review.fast} very fast` : "", review.pasted ? `${review.pasted} mostly pasted` : ""].filter(Boolean).join(", ");
+  return [{ tone: "warn", text: `${plural(review.flagged, `${where} solve`)} to review (${why}). See the submission history below.` }];
+}
+
 /** Up to `limit` lines, problems first, then tips, then good news. */
 export function studentHighlights(profile, limit = 7) {
   if (!profile) return [];
   const lines = [
+    ...ownWorkLines(profile.coding?.review, "coding"),
+    ...ownWorkLines(profile.quickprep?.review, "Quick Prep"),
     ...(profile.coding ? codingLines(profile.coding) : []),
     ...quickPrepLines(profile.quickprep),
     ...learningLines(profile.learning),

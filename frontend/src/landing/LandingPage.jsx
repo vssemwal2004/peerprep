@@ -4,7 +4,7 @@ import { hideGlobalLoader } from "../utils/globalLoader";
 
 // Keep the standalone landing package out of stale browser/CDN caches. The
 // release token also versions its CSS, scripts, and image references below.
-const LANDING_RELEASE = "2026-10-29-2";
+const LANDING_RELEASE = "2026-11-09-2";
 const LANDING_DOCUMENT_URL = `/landing-page/index.html?release=${LANDING_RELEASE}`;
 const LANDING_ASSET_BASE = "/landing-page/";
 const LANDING_MARKUP_READY = "peerprep:landing-markup-ready";

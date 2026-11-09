@@ -19,6 +19,7 @@ import { focusRing, languageLabel } from '../student/profile/format';
 import BadgesGallery from '../student/profile/BadgesGallery';
 import AdminProfileSidebar from './studentProfile/AdminProfileSidebar';
 import OverviewStrip from './studentProfile/OverviewStrip';
+import PrepScoreCard from './studentProfile/PrepScoreCard';
 import ProfileTabs from './studentProfile/ProfileTabs';
 import OverviewTab from './studentProfile/OverviewTab';
 import CodingTab from './studentProfile/CodingTab';
@@ -73,6 +74,7 @@ export default function AdminStudentProfile() {
 
   const [loading, setLoading] = useState(true);
   const [student, setStudent] = useState(null);
+  const [prepScore, setPrepScore] = useState(null);
   const [stats, setStats] = useState(null);
   const [activity, setActivity] = useState({});
   const [activityStats, setActivityStats] = useState(null);
@@ -138,7 +140,9 @@ export default function AdminStudentProfile() {
 
       if (studentResult.status === 'fulfilled') {
         setStudent(studentResult.value.student || null);
+        setPrepScore(studentResult.value.prepScore || null);
       } else {
+        setPrepScore(null);
         setError(studentResult.reason?.message || 'Failed to load student profile.');
       }
 
@@ -490,6 +494,8 @@ export default function AdminStudentProfile() {
           </StickySidebar>
 
           <main className="min-w-0 space-y-4">
+            <PrepScoreCard prepScore={prepScore} visible={visible} />
+
             <OverviewStrip
               visible={visible}
               headline={visible.questions ? headline : 'Student performance in enabled modules'}

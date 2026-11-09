@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Activity, AlertCircle, BellRing, BookOpen, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, Code2,
-  Gauge, MessageSquare, Plus, RefreshCw, Sparkles, Trophy, UserPlus, Users,
+  Activity, AlertCircle, BarChart3, BellRing, BookOpen, Bot, Building2, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, Code2,
+  Gauge, Library, Megaphone, MessageSquare, ShieldCheck, Trophy, UserCog, UserPlus, Users,
 } from 'lucide-react';
+import OverviewHeader from './OverviewHeader';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { ActivityTrendChart, BandChart, BarRows, DonutChart } from './charts';
@@ -167,11 +168,43 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
   const people = data?.people || {};
   const showSkeleton = loading && !data;
 
-  const actions = [
-    can('coordinator.students.create') && links.onboarding && { label: 'Add students', to: links.onboarding, Icon: UserPlus },
-    data?.assessments && can('coordinator.assessment.create') && links.assessmentCreate && { label: 'New assessment', to: links.assessmentCreate, Icon: Plus, primary: true },
-    data?.mockInterviews && can('coordinator.interviews.create') && links.interviewCreate && { label: 'New interview', to: links.interviewCreate, Icon: CalendarDays },
+  // Header: only what this role may open (links are already limited to licensed modules).
+  const isAdmin = role === 'admin';
+  const allowed = (to) => Boolean(to) && allowPath(to);
+  const createItems = [
+    can('coordinator.students.create') && links.onboarding && { label: 'Add students', hint: 'One student or a CSV list', to: links.onboarding, Icon: UserPlus },
+    data?.assessments && can('coordinator.assessment.create') && links.assessmentCreate && { label: 'New assessment', hint: 'Coding, MCQ and written tests', to: links.assessmentCreate, Icon: ClipboardList },
+    data?.mockInterviews && can('coordinator.interviews.create') && links.interviewCreate && { label: 'New interview event', hint: 'Peer mock interviews', to: links.interviewCreate, Icon: CalendarDays },
+    isAdmin && data?.aiInterviews && allowed('/admin/ai-interviews/new') && { label: 'New AI interview', hint: 'Practice interview with AnvI', to: '/admin/ai-interviews/new', Icon: Bot },
+    (isAdmin ? allowed('/admin/announcements/add') : can('coordinator.announcements.create')) && { label: 'Announcement', hint: 'Notify students', to: isAdmin ? '/admin/announcements/add' : '/coordinator/announcements/add', Icon: Megaphone },
+    isAdmin && { label: 'Add coordinator', hint: 'Give a faculty member access', to: '/admin/coordinators', Icon: UserCog },
   ].filter(Boolean);
+  const shortcuts = (isAdmin ? [
+    { label: 'Students', to: links.students, Icon: Users },
+    { label: 'Prep Analysis', to: links.analysis, Icon: BarChart3 },
+    { label: 'Assessment reports', to: links.reports, Icon: ClipboardList },
+    { label: 'Question library', to: allowed('/admin/library') ? '/admin/library' : null, Icon: Library },
+    { label: 'Interviews', to: links.interviews, Icon: MessageSquare },
+    { label: 'Learning', to: links.learning, Icon: BookOpen },
+    { label: 'Coordinators', to: links.coordinators, Icon: UserCog },
+    { label: 'Activity log', to: links.activity, Icon: Activity },
+    { label: 'Student access', to: allowed('/admin/settings/student-access') ? '/admin/settings/student-access' : null, Icon: ShieldCheck },
+  ] : [
+    can('coordinator.students.view') && { label: 'My students', to: links.students, Icon: Users },
+    can('coordinator.assessment.reports') && { label: 'Assessment reports', to: links.reports, Icon: ClipboardList },
+    can('coordinator.library.view') && { label: 'Question library', to: allowed('/coordinator/library') ? '/coordinator/library' : null, Icon: Library },
+    can('coordinator.interviews.view') && { label: 'Interviews', to: links.interviews, Icon: MessageSquare },
+    can('coordinator.learning.manage') && { label: 'Learning', to: links.learning, Icon: BookOpen },
+    can('coordinator.announcements.manage') && { label: 'Announcements', to: links.announcements, Icon: Megaphone },
+    can('coordinator.activity.view') && { label: 'My activity', to: links.activity, Icon: Activity },
+  ]).filter((item) => item && item.to);
+  const headerStats = data && view ? [
+    { label: 'Need your attention', value: formatNumber(view.pending.length), hint: view.pending.length ? 'open items' : 'all clear', Icon: BellRing, tone: view.pending.length ? 'rose' : 'emerald', href: '#needs-attention' },
+    (data.assessments || data.mockInterviews) && { label: 'Coming up', value: formatNumber(data.upcoming?.length || 0), hint: 'tests and interviews', Icon: CalendarDays, tone: 'amber', href: '#upcoming' },
+    { label: 'Active today', value: formatNumber(people.activeToday), hint: `${percent(people.activeToday, people.students)}% of students`, Icon: Activity, tone: 'emerald' },
+    data.access?.students && { label: 'Joined in 30 days', value: formatNumber(people.newStudents), hint: data.ownScope ? 'your students' : 'new students', Icon: UserPlus, tone: 'sky', to: links.students },
+  ].filter(Boolean) : [];
+  const canSearch = links.students && (isAdmin || can('coordinator.students.view'));
 
   const kpis = data ? [
     data.access?.students && { label: data.ownScope ? 'My students' : 'Students', value: formatNumber(people.students), helper: `+${formatNumber(people.newStudents)} joined in 30 days`, Icon: Users, color: '#0284c7', to: links.students },
@@ -195,27 +228,23 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
 
   return (
     <OverviewShell>
-      <Glass as="header" className="mb-4 flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300"><Sparkles className="h-3.5 w-3.5" />{role === 'admin' ? 'University overview' : 'Coordinator overview'}</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">{greeting()}, {firstName}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {data?.ownScope ? <span className="rounded-full bg-slate-900/[0.05] px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-white/[0.06] dark:text-slate-300">Your assigned students</span> : null}
-            {view?.series.map((key) => <span key={key} className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${MODULE_META[key].soft}`}>{MODULE_META[key].label}</span>)}
-            <span className="text-[11px] text-slate-400">{data ? `Updated ${relativeTime(data.generatedAt)}` : 'Loading…'}</span>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {actions.map(({ label, to, Icon, primary }) => (
-            <Link key={label} to={to} className={`inline-flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold transition ${primary ? 'bg-sky-600 text-white shadow-sm shadow-sky-600/20 hover:bg-sky-700' : 'border border-slate-200 bg-white/80 text-slate-700 hover:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10'}`}>
-              <Icon className="h-4 w-4" />{label}
-            </Link>
-          ))}
-          <button type="button" onClick={reload} aria-label="Refresh overview" className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white/80 text-slate-600 transition hover:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-      </Glass>
+      <OverviewHeader
+        badge={isAdmin ? 'University Admin' : 'Coordinator'}
+        BadgeIcon={isAdmin ? Building2 : UserCog}
+        title={`${greeting()}, ${firstName}`}
+        subtitle={isAdmin ? 'Your university at a glance: students, practice, tests and interviews' : data?.ownScope ? 'Your assigned students at a glance' : 'Your students at a glance'}
+        chips={[
+          ...(data?.ownScope ? [{ label: 'Your assigned students' }] : []),
+          ...(view?.series || []).map((key) => ({ label: MODULE_META[key].label, className: MODULE_META[key].soft })),
+        ]}
+        updatedAt={data?.generatedAt}
+        loading={loading}
+        onRefresh={reload}
+        search={canSearch ? { to: links.students, placeholder: isAdmin ? 'Search students by name, ID or email' : 'Search my students' } : null}
+        createItems={createItems}
+        stats={headerStats}
+        shortcuts={shortcuts}
+      />
 
       {error ? <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div> : null}
       {data?.partial?.length ? <div className="mb-4 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200"><AlertCircle className="h-4 w-4 shrink-0" />Some figures could not be loaded ({data.partial.join(', ')}). The rest are current.</div> : null}
@@ -244,7 +273,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
               </ul>
             )}
           </Glass>
-          <Glass className="p-5">
+          <Glass id="needs-attention" className="scroll-mt-24 p-5">
             <CardHeader title="Needs attention" subtitle="Open items you can act on" Icon={BellRing} />
             {showSkeleton ? <SkeletonRows rows={3} /> : view.pending.length ? (
               <ul className="space-y-1.5">
@@ -265,7 +294,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {(data?.assessments || data?.mockInterviews || showSkeleton) ? (
-          <Glass className="p-5">
+          <Glass id="upcoming" className="scroll-mt-24 p-5">
             <CardHeader title="Upcoming schedule" subtitle="Assessments and interview events" Icon={CalendarDays} />
             {showSkeleton ? <SkeletonRows /> : data.upcoming?.length ? (
               <ol className="relative space-y-3 before:absolute before:bottom-2 before:left-[5px] before:top-2 before:w-px before:bg-slate-200 dark:before:bg-white/10">

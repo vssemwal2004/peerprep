@@ -8,6 +8,7 @@ import useStickySidebar from './profile/useStickySidebar';
 import { DailyChallengeCard } from './engagement/EngagementCards';
 import QuestsCard from './dashboard/QuestsCard';
 import BadgesCard from './profile/BadgesCard';
+import PrepScoreSummary from './profile/PrepScoreSummary';
 import AchievementCelebration from './engagement/AchievementCelebration';
 import BadgesGallery from './profile/BadgesGallery';
 import ProfileSidebar from './profile/ProfileSidebar';
@@ -987,6 +988,8 @@ export default function StudentProfile() {
 
           {/* Summary and Coding keep their existing design. Activity is immediately below them. */}
           <main className="min-w-0 space-y-4">
+            {canRanking && <PrepScoreSummary ranking={ranking} loading={loadingRanking && !ranking} />}
+
             <div className="grid gap-4 xl:grid-cols-2">
               {canQuestions && <StudentSummary
                 className="h-full"

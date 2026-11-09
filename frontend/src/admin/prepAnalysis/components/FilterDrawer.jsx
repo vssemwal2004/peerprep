@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { LayoutGrid, Loader2, Plus, RotateCcw, SlidersHorizontal, Users, X } from "lucide-react";
-import { useAnalysisApi } from "../analysisScope";
+import { useAnalysisApi, useAnalysisScope } from "../analysisScope";
 import {
   MAX_GROUPS, RANGE_PRESETS, countActive, countRules, defaultFilterState, featureFields, groupName, groupText, isRuleComplete, newGroup, nodeId,
   optionLookup, rankMetrics, rankText, setRule, studentFields, switchArea, toQueryRequest, valueParts,
@@ -11,7 +11,8 @@ import { Button, Drawer, fieldSelectClass, focusRing } from "./ui";
 
 const AREA_HINTS = {
   all: "Every feature together",
-  coding: "Problems, Prep Score and Quick Prep sheets",
+  coding: "Problems, topics and Prep Score",
+  quickprep: "Quick Prep sheets: started, progress, finished",
   learning: "Course topics and subjects",
   interview: "Mock and AI interviews",
   assessment: "Tests and their results",
@@ -46,6 +47,8 @@ const withoutEmptyGroups = (state, fieldMap) => {
  */
 export function FilterDrawer({ open, state, catalog, fieldMap, matched, onApply, onClose }) {
   const api = useAnalysisApi();
+  const scope = useAnalysisScope();
+  const scoped = Boolean(scope?.assessmentIds?.length);
   const [draft, setDraft] = useState(state);
   const [openGroup, setOpenGroup] = useState(state.groups[0]?.id);
   const [count, setCount] = useState({ value: matched ?? null, loading: false });
@@ -119,7 +122,13 @@ export function FilterDrawer({ open, state, catalog, fieldMap, matched, onApply,
               </select>
             </label>
           )}>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5" role="radiogroup" aria-label="Feature">
+          {/* Inside an assessment report the area is fixed: switching it would drop the test filters. */}
+          {scoped ? (
+            <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-[12px] text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
+              This analysis covers only {scope.assessmentIds.length === 1 ? "this assessment" : `these ${scope.assessmentIds.length} assessments`}. Choose students below.
+            </p>
+          ) : (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" role="radiogroup" aria-label="Feature">
             {areas.map((entry) => {
               const Icon = AREA_ICONS[entry.key] || LayoutGrid;
               const active = entry.key === draft.area;
@@ -135,6 +144,7 @@ export function FilterDrawer({ open, state, catalog, fieldMap, matched, onApply,
               );
             })}
           </div>
+          )}
         </Step>
 
         <Step number={2} title="Which students?"

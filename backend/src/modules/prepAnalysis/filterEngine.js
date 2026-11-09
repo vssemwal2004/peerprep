@@ -202,15 +202,18 @@ export function applyRankCuts(rows, rank) {
   if (!rank?.cuts?.length || !rows.length) return rows;
   const selections = rank.cuts.map((cut) => {
     const field = FIELDS.get(cut.metric);
-    const valueOf = (row) => Number(field.get(row, cut.qualifiers)) || 0;
+    // Students with no value (e.g. no test taken for "test score") are not ranked at all, so
+    // "Bottom 10 by test score" means the 10 lowest scorers, not 10 students who never took one.
+    const values = new Map(rows.map((row) => [row, field.get(row, cut.qualifiers)]));
+    const ranked = rows.filter((row) => { const value = values.get(row); return value !== null && value !== undefined && Number.isFinite(Number(value)); });
     const sign = cut.direction === 'top' ? -1 : 1;
-    const ordered = [...rows].sort((left, right) => (
-      sign * (valueOf(left) - valueOf(right))
+    const ordered = ranked.sort((left, right) => (
+      sign * (Number(values.get(left)) - Number(values.get(right)))
       || left.name.localeCompare(right.name)
       || left.id.localeCompare(right.id)
     ));
-    const size = cut.unit === 'percent' ? Math.ceil((rows.length * cut.value) / 100) : cut.value;
-    return ordered.slice(0, Math.min(rows.length, size));
+    const size = cut.unit === 'percent' ? Math.ceil((ranked.length * cut.value) / 100) : cut.value;
+    return ordered.slice(0, Math.min(ranked.length, size));
   });
   const sets = selections.map((selection) => new Set(selection));
   const keep = rank.join === 'or'

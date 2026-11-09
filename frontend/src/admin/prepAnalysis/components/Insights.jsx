@@ -13,11 +13,26 @@ import { Dialog, focusRing } from "./ui";
 
 const KPI_ICONS = {
   students: Users, active: Activity, solved: CheckCircle2, hard: Flame, accuracy: Target, stopped: PauseCircle,
-  sheetStarted: ListChecks, sheetFinished: BadgeCheck, topics: BookOpenCheck, halfway: Flag, video: PlayCircle,
+  sheetStarted: ListChecks, sheetActive: Activity, sheetFinished: BadgeCheck, review: Flag, topics: BookOpenCheck, halfway: Flag, video: PlayCircle,
   mocks: MessagesSquare, ai: Bot, strong: Trophy, scheduled: CalendarClock, never: CircleDashed,
   taken: ClipboardList, passed: CheckCircle2, passedStudents: CheckCircle2, passRate: Target, missed: XCircle, subjectDone: BadgeCheck,
 };
 const BLANK = String.fromCharCode(160);
+
+/** "Own work": first solves that were very fast or mostly pasted. Untracked is shown as such, never as fine. */
+function ReviewCell({ review }) {
+  if (!review?.tracked) return <span className="text-slate-400" title="No solve has been timed yet (tracking started recently)">Not tracked</span>;
+  if (!review.flagged) {
+    return <span className="whitespace-nowrap text-emerald-700 dark:text-emerald-400" title={`${review.tracked} timed solve${review.tracked === 1 ? "" : "s"}, none flagged`}>OK · {review.tracked} timed</span>;
+  }
+  const why = [review.fast ? `${review.fast} very fast` : "", review.pasted ? `${review.pasted} mostly pasted` : ""].filter(Boolean).join(", ");
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-800 dark:bg-amber-500/10 dark:text-amber-300" title={`${why}. Open the student to see which questions.`}>
+      <Flag className="h-3 w-3" aria-hidden="true" />{review.flagged} to review
+    </span>
+  );
+}
+const lastSeenLabel = (days) => (days === null || days === undefined ? "Never" : days === 0 ? "Today" : `${days}d ago`);
 
 const formatKpi = (kpi) => (kpi.format === "percent" ? `${kpi.value}%` : Number(kpi.value).toLocaleString());
 
@@ -160,10 +175,17 @@ const COLUMNS = {
     { label: "Solved (Easy · Medium · Hard)", sort: "solved", render: solvedCell },
     { label: "Accuracy", sort: "accuracy", align: "right", render: (row) => (row.submissions ? `${row.accuracy}%` : "—") },
     { label: "Coding", render: (row) => <StatusPill status={row.practiceStatus} /> },
-    { label: "Quick Prep sheets", sort: "sheetProgress", render: (row) => (row.quickprep?.started
-      ? <span className="flex items-center gap-2"><PercentBar value={row.quickprep.progress} /><span className="whitespace-nowrap text-[10.5px] text-slate-400">{row.quickprep.finished} of {row.quickprep.started} done</span></span>
-      : <StatusPill status="none" />) },
+    { label: "Own work", sort: "solvesToReview", render: (row) => <ReviewCell review={row.review} /> },
     { label: "Languages", render: (row) => <span className="block max-w-[150px] truncate text-slate-500">{row.languages.map((language) => LANGUAGE_LABELS[language] || language).join(", ") || "—"}</span> },
+  ],
+  quickprep: [
+    { label: "Sheet progress", sort: "sheetProgress", render: (row) => (row.quickprep?.started ? <PercentBar value={row.quickprep.progress} /> : "—") },
+    { label: "Sheets started", sort: "sheetsStarted", render: (row) => <span className="whitespace-nowrap tabular-nums">{row.quickprep ? `${row.quickprep.started} of ${row.quickprep.visibleSheets} open` : "—"}</span> },
+    { label: "Finished", sort: "sheetsFinished", align: "right", render: (row) => <span className="tabular-nums">{row.quickprep?.finished ?? 0}</span> },
+    { label: "Questions solved", sort: "sheetQuestions", align: "right", render: (row) => <span className="tabular-nums">{row.quickprep?.started ? `${row.quickprep.solved} of ${row.quickprep.total}` : "—"}</span> },
+    { label: "Last activity", render: (row) => <span className="whitespace-nowrap text-slate-500">{lastSeenLabel(row.quickprep?.daysSinceActive)}</span> },
+    { label: "Own work", sort: "sheetSolvesToReview", render: (row) => <ReviewCell review={row.quickprep?.review} /> },
+    { label: "Quick Prep", render: (row) => <StatusPill status={row.quickprep?.status || "none"} /> },
   ],
   learning: [
     { label: "Course completed", sort: "learningProgress", render: (row) => <PercentBar value={row.learning?.progress || 0} /> },
@@ -180,7 +202,7 @@ const COLUMNS = {
   ],
   assessment: [
     { label: "Test score", sort: "testScore", render: (row) => (row.assessment?.taken ? <PercentBar value={row.assessment.averageScore} /> : "—") },
-    { label: "Tests taken", sort: "testsTaken", align: "right", render: (row) => <span className="tabular-nums">{row.assessment?.taken ?? 0}</span> },
+    { label: "Tests taken", sort: "testsTaken", align: "right", render: (row) => <span className="tabular-nums" title={row.assessment?.awaiting ? `${row.assessment.awaiting} more awaiting evaluation` : undefined}>{row.assessment?.taken ?? 0}{row.assessment?.awaiting ? <span className="text-sky-600 dark:text-sky-300"> +{row.assessment.awaiting}</span> : null}</span> },
     { label: "Passed", align: "right", render: (row) => <span className="tabular-nums">{row.assessment?.taken ? `${row.assessment.passed} of ${row.assessment.taken}` : "—"}</span> },
     { label: "Missed", sort: "testsMissed", align: "right", render: (row) => <span className={`tabular-nums ${row.assessment?.missed ? "font-semibold text-amber-600 dark:text-amber-400" : ""}`}>{row.assessment?.missed ?? 0}</span> },
     { label: "Tests", render: (row) => <StatusPill status={row.assessment?.status} /> },
@@ -197,6 +219,7 @@ for (const area of ["interview", "assessment"]) {
 COLUMNS.all = [
   { label: "Prep Score (overall)", sort: "overallScore", render: (row) => scoreCell(row.scores?.total) },
   { ...COLUMNS.coding[0], label: "Prep Coding" },
+  { ...COLUMNS.quickprep[0], label: "Quick Prep", sort: undefined },
   { label: "Prep Learning", render: (row) => scoreCell(row.scores?.features?.learning) },
   { ...COLUMNS.interview[0], label: "Prep Interview", sort: undefined },
   { ...COLUMNS.assessment[0], label: "Prep Assessment", sort: undefined },
@@ -205,12 +228,13 @@ COLUMNS.all = [
 const SCOPED_ASSESSMENT_COLUMNS = [
   { label: "Test score", sort: "testScore", render: (row) => (row.assessment?.taken ? <PercentBar value={row.assessment.averageScore} /> : "—") },
   { label: "Result", render: (row) => {
+    if (!row.assessment?.taken && row.assessment?.awaiting) return <span className="font-semibold text-sky-700 dark:text-sky-300">Awaiting evaluation</span>;
     if (!row.assessment?.taken) return <span className={row.assessment?.missed ? "font-semibold text-amber-600 dark:text-amber-400" : "text-slate-400"}>{row.assessment?.missed ? "Missed" : "Not attempted"}</span>;
     return row.assessment.passed ? <span className="font-semibold text-emerald-600 dark:text-emerald-400">Passed</span> : <span className="font-semibold text-rose-600 dark:text-rose-400">Failed</span>;
   } },
   { label: "Status", render: (row) => <StatusPill status={row.assessment?.status} /> },
 ];
-const POSITION_HINT = { coding: "Prep Score", learning: "course completed", interview: "Prep Score", assessment: "Prep Score", all: "overall Prep Score" };
+const POSITION_HINT = { coding: "Prep Score", quickprep: "sheet progress", learning: "course completed", interview: "Prep Score", assessment: "Prep Score", all: "overall Prep Score" };
 
 /**
  * The students on the page, sorted and paged on the server. `title` and `actions` (e.g. a

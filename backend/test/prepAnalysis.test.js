@@ -20,7 +20,7 @@ import { mockScore } from '../src/modules/prepAnalysis/interviewFacts.js';
 import { scoreFromLevelCounts } from '../src/services/prepScore/engine.js';
 import { attachStoredScores, buildStudentRows, indexProblemMeta, qualifiedCodingMetric } from '../src/modules/prepAnalysis/studentRows.js';
 
-const ALL_MODULES = { allowedModules: new Set(['student', 'coding', 'learning', 'interview', 'assessment']) };
+const ALL_MODULES = { allowedModules: new Set(['student', 'coding', 'quickprep', 'learning', 'interview', 'assessment']) };
 
 /** Stand-in for the StudentPrepScore store: what the sync would have saved for each row's coding solves. */
 function storedFromCoding(rows) {
@@ -207,13 +207,17 @@ test('a university without the questions module gets no Prep Coding or Quick Pre
   assert.deepEqual(catalog.areas.map((area) => area.key), ['learning'], 'one area only, so no "All"');
   assert.ok(catalog.fields.every((field) => field.module === 'student' || field.module === 'learning'));
   assert.deepEqual(Object.keys(catalog.qualifiers), ['learning']);
-  assert.deepEqual(publicFieldCatalog(undefined).areas.map((area) => area.key), ['all', 'coding', 'learning', 'interview', 'assessment'], 'Quick Prep lives inside Prep Coding');
+  assert.deepEqual(publicFieldCatalog(undefined).areas.map((area) => area.key), ['all', 'coding', 'quickprep', 'learning', 'interview', 'assessment'], 'Quick Prep is its own area');
   assert.deepEqual(publicFieldCatalog({ events: true }).areas.map((area) => area.key), ['interview'], 'mock interviews alone turn on Prep Interview');
   assert.deepEqual(publicFieldCatalog({ interviews: true, assessments: true }).areas.map((area) => area.key), ['all', 'interview', 'assessment']);
-  assert.ok(publicFieldCatalog(undefined).fields.filter((field) => field.key.startsWith('quickprep.')).every((field) => field.module === 'coding' && field.group === 'Quick Prep sheets'));
-  assert.throws(() => validatePrepAnalysisQuery({ module: 'quickprep' }, undefined), /Unknown analysis area/);
+  assert.ok(publicFieldCatalog(undefined).fields.filter((field) => field.key.startsWith('quickprep.')).every((field) => field.module === 'quickprep'));
+  assert.throws(() => validatePrepAnalysisQuery({ module: 'quickprep' }, { questions: false, learning: true }), /not enabled/, 'Quick Prep is licensed with coding');
   assert.throws(() => validatePrepAnalysisQuery({ module: 'coding' }, { questions: false, learning: true }), /not enabled/);
-  assert.ok(validatePrepAnalysisQuery({ module: 'coding' }, undefined).charts.some((chart) => chart.id === 'quickprep-sheets'), 'Prep Coding includes the Quick Prep sheet charts');
+  const codingCharts = validatePrepAnalysisQuery({ module: 'coding' }, undefined).charts;
+  assert.ok(codingCharts.every((chart) => !chart.id.startsWith('quickprep-')), 'Prep Coding no longer carries the Quick Prep charts');
+  const quickprepCharts = validatePrepAnalysisQuery({ module: 'quickprep' }, { questions: true }).charts;
+  assert.ok(quickprepCharts.length >= 10 && quickprepCharts.every((chart) => chart.id.startsWith('quickprep-')), 'Quick Prep has its own charts');
+  assert.ok(validatePrepAnalysisQuery({ module: 'quickprep', charts: [{ id: 'top-students' }, { id: 'quickprep-sheets' }] }, undefined).charts.map((chart) => chart.id).join() === 'quickprep-sheets', 'a coding chart never lands on the Quick Prep page');
   const all = validatePrepAnalysisQuery({ module: 'all' }, { questions: false, learning: true });
   assert.ok(all.charts.every((chart) => chart.id.startsWith('learning-')), '"All" drops charts of unlicensed areas');
   assert.ok(catalog.fields.every((field) => !('get' in field)), 'server getters never leave the API');
@@ -251,15 +255,22 @@ function learningAndQuickPrep() {
       ['s3', { subjects: [{ semesterId: 'sem3', subjectId: 'db3', completed: 1, started: 1, videoSeconds: 0 }, { semesterId: 'sem5', subjectId: 'os5', completed: 3, started: 3, videoSeconds: 0 }], days: new Map(), lastAccessedAt: new Date('2026-08-01T00:00:00Z') }],
     ]),
   };
+  // Question level: q1 has 10 questions (4 Easy, 4 Medium, 2 Hard), q2 has 4 Hard.
+  const question = (sheet, index, difficulty) => ({ key: `coding:local:${sheet}-${index}`, title: `${sheet} question ${index}`, difficulty });
+  const q1Questions = Array.from({ length: 10 }, (_, index) => question('q1', index + 1, index < 4 ? 'Easy' : index < 8 ? 'Medium' : 'Hard'));
+  const q2Questions = Array.from({ length: 4 }, (_, index) => question('q2', index + 1, 'Hard'));
   const sheets = new Map([
-    ['q1', { id: 'q1', title: 'Placement essentials', semesters: [], published: true, items: 10 }],
-    ['q2', { id: 'q2', title: 'Graphs sprint', semesters: [5], published: true, items: 4 }],
+    ['q1', { id: 'q1', title: 'Placement essentials', semesters: [], published: true, items: 10, questions: q1Questions }],
+    ['q2', { id: 'q2', title: 'Graphs sprint', semesters: [5], published: true, items: 4, questions: q2Questions }],
   ]);
   const quickprep = {
     sheets,
     byStudent: new Map([
-      ['s1', [{ sheetId: 'q1', solved: 10, total: 10, finished: true, lastViewedAt: new Date('2026-10-09T00:00:00Z') }, { sheetId: 'q2', solved: 1, total: 4, finished: false, lastViewedAt: new Date('2026-10-09T00:00:00Z') }]],
-      ['s2', [{ sheetId: 'q1', solved: 2, total: 10, finished: false, lastViewedAt: new Date('2026-09-01T00:00:00Z') }]],
+      ['s1', [
+        { sheetId: 'q1', solved: 10, total: 10, solvedKeys: q1Questions.map((entry) => entry.key), finished: true, startedAt: new Date('2026-09-28T00:00:00Z'), completedAt: new Date('2026-10-08T00:00:00Z'), lastViewedAt: new Date('2026-10-09T00:00:00Z') },
+        { sheetId: 'q2', solved: 1, total: 4, solvedKeys: [q2Questions[0].key], finished: false, startedAt: new Date('2026-10-08T00:00:00Z'), completedAt: null, lastViewedAt: new Date('2026-10-09T00:00:00Z') },
+      ]],
+      ['s2', [{ sheetId: 'q1', solved: 2, total: 10, solvedKeys: [q1Questions[0].key, q1Questions[1].key], finished: false, startedAt: new Date('2026-08-20T00:00:00Z'), completedAt: null, lastViewedAt: new Date('2026-09-01T00:00:00Z') }]],
     ]),
   };
   const base = cohort();
@@ -304,14 +315,17 @@ test('Quick Prep: sheets started and finished, progress, and sheet-level narrowi
   const matrix = CHARTS.find((chart) => chart.id === 'quickprep-matrix').build({ rows, options: { limit: 20 }, range: {}, sheets });
   assert.deepEqual(matrix.students, ['Asha', 'Bilal']);
   assert.equal(matrix.cells.find((cell) => cell[1] === 0 && matrix.columns[cell[0]] === 'Placement essentials')[2], 100);
-  const groups = buildKpiGroups('all', new Set(['student', 'coding', 'learning']), rows);
+  const groups = buildKpiGroups('all', new Set(['student', 'coding', 'quickprep', 'learning']), rows);
   const kpis = Object.fromEntries(groups.map((group) => [group.key, Object.fromEntries(group.kpis.map((kpi) => [kpi.id, kpi.value]))]));
-  assert.deepEqual(groups.map((group) => group.label), ['Prep Coding', 'Prep Learning'], '"All" shows each feature side by side');
-  assert.deepEqual(buildKpiGroups('coding', new Set(['student', 'coding']), rows).map((group) => group.key), ['coding'], 'Quick Prep is part of Prep Coding, not its own section');
+  assert.deepEqual(groups.map((group) => group.label), ['Prep Coding', 'Quick Prep', 'Prep Learning'], '"All" shows each feature side by side');
+  assert.deepEqual(buildKpiGroups('coding', new Set(['student', 'coding', 'quickprep']), rows).map((group) => group.key), ['coding'], 'the Prep Coding page has only its own numbers');
+  assert.deepEqual(buildKpiGroups('quickprep', new Set(['student', 'coding', 'quickprep']), rows).map((group) => group.key), ['quickprep']);
   assert.equal(kpis.learning.subjectDone, 1, 'only Asha finished a subject');
   assert.ok(groups.every((group) => group.kpis.length <= 5), 'a few useful numbers per feature, one row');
-  assert.equal(kpis.coding.sheetFinished, 1, 'Quick Prep numbers sit among the Prep Coding numbers');
-  assert.equal(kpis.coding.sheetStarted, 2);
+  assert.ok(!('sheetFinished' in kpis.coding), 'Quick Prep numbers are no longer among the Prep Coding numbers');
+  assert.equal(kpis.quickprep.sheetFinished, 1);
+  assert.equal(kpis.quickprep.sheetStarted, 2);
+  assert.equal(kpis.quickprep.never, rows.length - 2);
 });
 
 test('downloads: CSV, Excel and PDF carry the filters and the ticked columns for every matching student', async () => {
@@ -462,7 +476,64 @@ test('the students behind each part of a chart add up to what the chart shows', 
 
 // The parts a chart shows and how many students each stands for (undefined: the chart counts
 // something else there, such as solves or ratings, so only the drill running is checked).
-const STUDENT_STACKS = new Set(['learning-subjects', 'quickprep-sheets', 'assessment-tests', 'assessment-scores']);
+test('Quick Prep rows: activity, open sheets started, and dated starts and finishes for the trend and calendar', () => {
+  const { rows, sheets } = learningAndQuickPrep();
+  const asha = rows.find((row) => row.name === 'Asha');
+  const bilal = rows.find((row) => row.name === 'Bilal');
+  assert.equal(asha.quickprep.activity, 'active', 'opened a sheet yesterday');
+  assert.equal(bilal.quickprep.activity, 'inactive', 'last opened 39 days ago');
+  assert.equal(rows.find((row) => row.name === 'Dev').quickprep.activity, 'never');
+  assert.equal(asha.quickprep.coverage, 100, 'semester 5: both sheets open, both started');
+  assert.deepEqual([...asha.quickprep.days].sort(), [['2026-09-28', [1, 0]], ['2026-10-08', [1, 1]]]);
+  assert.deepEqual(pick(rows, { children: [{ field: 'quickprep.activity', operator: 'anyOf', value: ['inactive'] }] }), ['Bilal']);
+
+  const chartOf = (id) => CHARTS.find((chart) => chart.id === id);
+  const trend = chartOf('quickprep-trend').build({ rows, options: {}, range: {}, sheets });
+  const sum = (name) => trend.series.find((series) => series.name === name).values.reduce((total, value) => total + value, 0);
+  assert.equal(sum('Sheets started'), 3);
+  assert.equal(sum('Sheets finished'), 1);
+  const byClass = chartOf('quickprep-by-class').build({ rows, options: { groupBy: 'semester' }, range: {}, sheets });
+  const counted = byClass.groups.reduce((total, group) => total + Object.values(group.values).reduce((a, b) => a + b, 0), 0);
+  assert.equal(counted, rows.length, 'every student sits in exactly one status');
+
+  // A period starting 2026-10-01 keeps only that window's starts and finishes.
+  const recent = buildStudentRows({
+    students: [{ _id: 's1', name: 'Asha', semester: 5 }], facts: { byStudent: new Map(), days: new Map() }, problems: new Map(),
+    quickprep: { sheets, byStudent: new Map([['s1', [{ sheetId: 'q1', solved: 10, total: 10, finished: true, startedAt: new Date('2026-09-28T00:00:00Z'), completedAt: new Date('2026-10-08T00:00:00Z'), lastViewedAt: new Date('2026-10-09T00:00:00Z') }]]]) },
+    range: { from: new Date('2026-10-01T00:00:00Z'), to: null }, now: new Date('2026-10-10T00:00:00Z'),
+  });
+  assert.deepEqual([...recent[0].quickprep.days], [['2026-10-08', [0, 1]]]);
+});
+
+test('Quick Prep question-level charts: sheet health, solve rate by difficulty, where students get stuck, pace', () => {
+  const { rows, sheets } = learningAndQuickPrep();
+  const build = (id) => CHARTS.find((chart) => chart.id === id).build({ rows, options: { limit: 10 }, range: {}, sheets });
+
+  const health = build('quickprep-sheet-health');
+  const essentials = health.categories.findIndex((category) => category.label === 'Placement essentials');
+  assert.equal(health.categories[essentials].students, 2, 'Asha and Bilal started it');
+  assert.deepEqual(health.bars.map((bar) => bar.values[essentials]), [1, 1], 'one finished, one in progress');
+  assert.equal(health.lines[0].values[essentials], 60, 'average progress of the two starters: (100% + 20%) / 2');
+
+  const mix = build('quickprep-difficulty-mix');
+  const at = (level) => mix.categories.findIndex((category) => category.key === level);
+  // Asha: q1 all 10 + q2 1 of 4 Hard; Bilal: q1 Easy 1 and 2.
+  assert.deepEqual([mix.bars[0].values[at('Easy')], mix.bars[1].values[at('Easy')]], [6, 2], 'Easy: Asha 4 + Bilal 2 solved, Bilal has 2 open');
+  assert.deepEqual([mix.bars[0].values[at('Hard')], mix.bars[1].values[at('Hard')]], [3, 5], 'Hard: Asha 2 + 1, open: Bilal 2 + Asha 3');
+  assert.equal(mix.lines[0].values[at('Hard')], 37.5);
+
+  const stuck = build('quickprep-hardest-questions');
+  // q2's questions 2-4: only Asha started q2 and she has not solved them: 0% solved, 1 student stuck.
+  assert.deepEqual([stuck.items[0].value, stuck.items[0].students], [0, 1], 'unsolved questions come first, with who is stuck');
+  const q1Third = stuck.items.find((item) => item.name === 'q1 question 3');
+  assert.deepEqual([q1Third.value, q1Third.students], [50, 1], 'Asha solved it, Bilal (who started q1) did not');
+
+  const pace = build('quickprep-pace');
+  assert.equal(pace.bins.reduce((sum, bin) => sum + bin.count, 0), 1, 'only Asha finished a sheet');
+  assert.equal(pace.bins[3].count, 1, '28 Sep to 8 Oct: 10 days, the 1–2 weeks band');
+});
+
+const STUDENT_STACKS = new Set(['learning-subjects', 'quickprep-sheets', 'quickprep-by-class', 'assessment-tests', 'assessment-scores']);
 function partsOf(chart, data) {
   const right = (index) => data.series?.find((series) => series.axis === 'right')?.values?.[index];
   switch (chart.type) {
@@ -475,6 +546,10 @@ function partsOf(chart, data) {
     case 'histogram': return (data.bins || []).map((bin, index) => ({ key: bin.key ?? String(index), expected: bin.count }));
     case 'funnel': return (data.stages || []).map((stage, index) => ({ key: String(index), expected: stage.value }));
     case 'trend': return (data.labels || []).map((week, index) => ({ key: week, expected: right(index) }));
+    case 'combo': return (data.categories || []).flatMap((category, index) => [
+      { key: category.key, expected: category.students },
+      ...(data.bars || []).map((bar) => ({ key: `${category.key}|${bar.name}`, expected: bar.students ? bar.values[index] : undefined })),
+    ]);
     case 'stackedBar': return (data.groups || []).flatMap((group) => [
       { key: group.label, expected: group.students },
       ...(data.series || []).map((series) => ({ key: `${group.label}|${series}`, expected: STUDENT_STACKS.has(chart.id) ? group.values[series] : undefined })),
@@ -711,10 +786,11 @@ test('a student profile shows only that student\'s own work, per licensed area',
   assert.equal(bilal.coding.languages[0].language, 'python');
 
   const extra = learningAndQuickPrep();
-  const withAreas = buildStudentProfile(extra.rows.find((row) => row.name === 'Asha'), { range, modules: new Set(['student', 'coding', 'learning']), sheets: extra.sheets });
+  const withAreas = buildStudentProfile(extra.rows.find((row) => row.name === 'Asha'), { range, modules: new Set(['student', 'coding', 'quickprep', 'learning']), sheets: extra.sheets });
   assert.deepEqual(withAreas.quickprep.sheets.map((sheet) => [sheet.title, sheet.progress, sheet.finished]), [['Placement essentials', 100, true], ['Graphs sprint', 25, false]]);
   assert.deepEqual(withAreas.quickprep.notStarted, []);
   assert.deepEqual(withAreas.learning.subjects.map((subject) => [subject.name, subject.completed, subject.total]), [['DSA', 4, 4], ['Operating Systems', 1, 4], ['DBMS', 0, 2]]);
-  const bilalSheets = buildStudentProfile(extra.rows.find((row) => row.name === 'Bilal'), { range, modules: new Set(['student', 'coding']), sheets: extra.sheets });
+  const bilalSheets = buildStudentProfile(extra.rows.find((row) => row.name === 'Bilal'), { range, modules: new Set(['student', 'coding', 'quickprep']), sheets: extra.sheets });
+  assert.equal(buildStudentProfile(extra.rows.find((row) => row.name === 'Bilal'), { range, modules: new Set(['student', 'coding']), sheets: extra.sheets }).quickprep, null, 'no Quick Prep module, no Quick Prep section');
   assert.deepEqual(bilalSheets.quickprep.notStarted, ['Graphs sprint'], 'sheets open to the student but not started');
 });

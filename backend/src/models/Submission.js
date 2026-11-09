@@ -2,6 +2,7 @@ import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 import { SUPPORTED_LANGUAGES } from './Problem.js';
 import { attachAdminAnalyticsInvalidation } from '../modules/adminAnalytics/adminAnalytics.invalidation.js';
+import { effortSchema } from './solveEffortSchema.js';
 
 const submissionCaseResultSchema = new mongoose.Schema({
   index: Number,
@@ -128,8 +129,11 @@ const submissionSchema = new mongoose.Schema({
   failedCase: failedCaseSchema,
   testCaseResults: [submissionCaseResultSchema],
   queuedAt: Date,
+  // Judge execution times (not the student's work time; see `effort`).
   startedAt: Date,
   completedAt: Date,
+  // Practice only: how the student worked before this submission (services/solveEffort.js).
+  effort: { type: effortSchema, default: undefined },
 }, { timestamps: true });
 
 submissionSchema.index({ createdAt: -1 });

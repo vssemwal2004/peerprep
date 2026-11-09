@@ -491,7 +491,7 @@ export const api = {
   submitPracticeAnswer: (source, id, answer, language = '') => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}/attempts`, { method: 'POST', body: { answer, language }, skipCache: true }),
   getSharedStudentProblem: (id) => request(`/student/questions/shared/${encodeURIComponent(id)}/problem`, { skipCache: true }),
   runSharedStudentProblem: (id, body) => request(`/student/questions/shared/${encodeURIComponent(id)}/run`, { method: 'POST', body, timeoutMs: 0 }),
-  submitSharedStudentProblem: (id, { sourceCode, language }) => request(`/student/questions/shared/${encodeURIComponent(id)}/attempts`, { method: 'POST', body: { answer: sourceCode, language }, timeoutMs: 0 }),
+  submitSharedStudentProblem: (id, { sourceCode, language, effort }) => request(`/student/questions/shared/${encodeURIComponent(id)}/attempts`, { method: 'POST', body: { answer: sourceCode, language, ...(effort ? { effort } : {}) }, timeoutMs: 0 }),
   listSharedStudentSubmissions: (id) => request(`/student/questions/shared/${encodeURIComponent(id)}/submissions`, { skipCache: true }),
   copySharedQuestion: (id) => request(`/admin/library/questions/${encodeURIComponent(id)}/copy`, { method: 'POST', skipCache: true }),
   runSharedCodingPreview: (id, body) => request(`/admin/library/questions/${encodeURIComponent(id)}/shared-coding/run`, { method: 'POST', body, timeoutMs: 0 }),
@@ -1998,7 +1998,7 @@ export const api = {
   },
   submitStudentProblem: (
     problemId,
-    { language, sourceCode, assessmentId = "" },
+    { language, sourceCode, assessmentId = "", effort = null },
   ) => {
     return request("/compiler/submit", {
       method: "POST",
@@ -2007,6 +2007,7 @@ export const api = {
         source_code: sourceCode,
         language_id: getJudge0LanguageId(language),
         ...(assessmentId ? { assessmentId } : {}),
+        ...(effort && !assessmentId ? { effort } : {}),
       },
       timeoutMs: 0,
     });

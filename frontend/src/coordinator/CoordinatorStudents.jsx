@@ -14,7 +14,8 @@ export default function CoordinatorStudents() {
   const uploadBatchName = searchParams.get('batchName') || '';
   const [students, setStudents] = useState([]);
   const [filteredStudents, setFilteredStudents] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
+  // `?search=` (e.g. from the overview header) pre-fills the search.
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || "");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedStudent, setSelectedStudent] = useState(null);

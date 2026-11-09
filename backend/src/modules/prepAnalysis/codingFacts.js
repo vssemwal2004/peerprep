@@ -9,6 +9,7 @@
 import mongoose from 'mongoose';
 import CodingTopic from '../../models/CodingTopic.js';
 import Problem from '../../models/Problem.js';
+import QuestionPracticeAttempt from '../../models/QuestionPracticeAttempt.js';
 import StudentUploadBatch from '../../models/StudentUploadBatch.js';
 import Submission from '../../models/Submission.js';
 import User from '../../models/User.js';
@@ -66,6 +67,70 @@ export async function loadProblemTimes({ studentId, range }) {
 }
 
 const countStatus = (status) => ({ $sum: { $cond: [{ $eq: ['$status', status] }, 1, 0] } });
+
+/**
+ * Each student's FIRST accepted practice solve of each question, with how they worked on it
+ * (Submission for library problems, QuestionPracticeAttempt for shared questions):
+ * Map(studentId -> [{ key: 'local:<problemId>' | 'shared:<questionId>', at, effort | null }]).
+ * The first solve is used on purpose: re-solving a problem already solved before tracking existed
+ * is quick for honest reasons, so such a question is "not tracked", never "needs review".
+ * All-time on purpose too; solves outside the period are dropped by the caller.
+ */
+export async function loadSolveEfforts({ studentIds, includeShared = true }) {
+  const byStudent = new Map();
+  if (!studentIds.length) return byStudent;
+  const cohort = new Set(studentIds);
+  const ids = studentIds.length <= FACT_LIMITS.inListLimit ? studentIds.map((id) => new mongoose.Types.ObjectId(id)) : null;
+  const [local, shared] = await Promise.all([
+    Submission.aggregate([
+      { $match: { mode: 'submit', status: 'AC', assessmentId: null, ...(ids ? { user: { $in: ids } } : {}) } },
+      { $sort: { createdAt: 1 } },
+      { $group: { _id: { user: '$user', problem: '$problem' }, at: { $first: '$createdAt' }, effort: { $first: '$effort' } } },
+    ]).option({ maxTimeMS: FACT_LIMITS.maxQueryMs, allowDiskUse: true }),
+    includeShared ? QuestionPracticeAttempt.aggregate([
+      { $match: { source: 'shared', questionType: 'coding', result: 'correct', ...(ids ? { studentId: { $in: ids } } : {}) } },
+      { $sort: { createdAt: 1 } },
+      { $group: { _id: { user: '$studentId', problem: '$questionId' }, at: { $first: '$createdAt' }, effort: { $first: '$effort' } } },
+    ]).option({ maxTimeMS: FACT_LIMITS.maxQueryMs, allowDiskUse: true }) : [],
+  ]);
+  for (const [prefix, rows] of [['local', local], ['shared', shared]]) {
+    for (const row of rows) {
+      const studentId = String(row._id.user);
+      if (!cohort.has(studentId)) continue;
+      const list = byStudent.get(studentId) || [];
+      list.push({ key: `${prefix}:${row._id.problem}`, problemId: String(row._id.problem), at: row.at, effort: row.effort || null });
+      byStudent.set(studentId, list);
+    }
+  }
+  return byStudent;
+}
+
+/**
+ * One student's latest practice submissions (library problems and shared questions), newest
+ * first, with how they worked on each: the drawer's submission history.
+ */
+export async function loadSubmissionLog({ studentId, range, limit = 60 }) {
+  const user = new mongoose.Types.ObjectId(String(studentId));
+  const when = range?.from || range?.to
+    ? { createdAt: { ...(range.from ? { $gte: range.from } : {}), ...(range.to ? { $lte: range.to } : {}) } }
+    : {};
+  const [local, shared] = await Promise.all([
+    Submission.find({ user, mode: 'submit', status: { $in: GRADED_STATUSES }, assessmentId: null, ...when })
+      .select('problem problemSnapshot language status createdAt effort').sort({ createdAt: -1 }).limit(limit).maxTimeMS(FACT_LIMITS.maxQueryMs).lean(),
+    QuestionPracticeAttempt.find({ studentId: user, source: 'shared', questionType: 'coding', ...when })
+      .select('questionId language result failureStatus createdAt effort').sort({ createdAt: -1 }).limit(limit).maxTimeMS(FACT_LIMITS.maxQueryMs).lean(),
+  ]);
+  return [
+    ...local.map((row) => ({
+      key: `local:${row.problem}`, problemId: String(row.problem), title: row.problemSnapshot?.title || 'Problem', difficulty: row.problemSnapshot?.difficulty || '',
+      status: row.status, language: row.language || '', at: row.createdAt, effort: row.effort || null,
+    })),
+    ...shared.map((row) => ({
+      key: `shared:${row.questionId}`, problemId: String(row.questionId), title: '', difficulty: '',
+      status: row.result === 'correct' ? 'AC' : row.failureStatus || 'WA', language: row.language || '', at: row.createdAt, effort: row.effort || null,
+    })),
+  ].sort((left, right) => new Date(right.at) - new Date(left.at)).slice(0, limit);
+}
 
 export async function loadCodingFacts({ studentIds, range }) {
   const cohort = new Set(studentIds);

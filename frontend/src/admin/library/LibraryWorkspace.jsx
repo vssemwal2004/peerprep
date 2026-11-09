@@ -9,14 +9,13 @@ import {
   CircleDot,
   Code2,
   FilePenLine,
-  HelpCircle,
-  Library,
   ListChecks,
   Plus,
   Sparkles,
   X,
 } from 'lucide-react';
 import QuestionLibrary from '../QuestionLibrary';
+import LibraryRail from './LibraryRail';
 import { useAuth } from '../../context/AuthContext';
 import { hasPermission } from '../coordinatorPermissions';
 import { api } from '../../utils/api';
@@ -329,57 +328,23 @@ export default function LibraryWorkspace({ view = 'questions' }) {
 
   return (
     <div className="min-h-screen bg-white pt-[var(--app-navbar-height,5rem)] font-['Manrope'] dark:bg-gray-900">
-      <div className="grid min-h-[calc(100vh-var(--app-navbar-height,5rem))] md:grid-cols-[210px_minmax(0,1fr)]">
-        <aside className="hidden border-r border-slate-200 bg-slate-50/60 md:block dark:border-gray-800 dark:bg-gray-950/30">
-          <div className="sticky top-[var(--app-navbar-height,5rem)] flex h-[calc(100vh-var(--app-navbar-height,5rem))] flex-col overflow-y-auto px-3 py-5">
-            <div className="px-3 pb-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-600 text-white"><Library className="h-5 w-5" /></div>
-              <h2 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">{pickerMode ? 'Choose questions' : assessmentCreationMode ? 'Create for assessment' : 'Question Library'}</h2>
-              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-gray-400">{assessmentSelectionMode ? `Select content for ${assessmentTitle}.` : quickprepMode ? `Select coding questions for ${quickprepTitle}.` : assessmentCreationMode ? `Create and attach content to ${assessmentTitle}.` : 'Create, organize and reuse assessment content.'}</p>
-            </div>
-
-            {canViewQuestions && <div className="border-t border-slate-200 pt-3 dark:border-gray-800">
-              <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Question bank</p>
-              <nav className="space-y-1">
-                {navigableQuestionTypes.map(({ type, label, Icon }) => {
-                  const active = view === 'questions' && !selectedStatus && selectedType === type;
-                  const to = questionBankUrl(type);
-                  return (
-                    <Link key={type} to={to} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
-                      <Icon className="h-4 w-4" />
-                      <span className="min-w-0 flex-1 truncate">{label}</span>
-                      <span className={`shrink-0 text-[11px] tabular-nums ${active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-400 dark:text-gray-500'}`}>({displayedQuestionCounts[type].toLocaleString()})</span>
-                    </Link>
-                  );
-                })}
-                {!pickerMode && <Link to={questionBankUrl('all', 'draft')} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${view === 'questions' && selectedStatus === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
-                  <FilePenLine className="h-4 w-4" />
-                  <span className="min-w-0 flex-1 truncate">Drafts</span>
-                  <span className={`shrink-0 text-[11px] tabular-nums ${view === 'questions' && selectedStatus === 'draft' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-400 dark:text-gray-500'}`}>({questionCounts.draft.toLocaleString()})</span>
-                </Link>}
-              </nav>
-            </div>}
-
-            {codingItems.length > 0 && <div className="mt-5 border-t border-slate-200 pt-3 dark:border-gray-800">
-              <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                {rolePrefix === '/admin' ? 'Insights' : 'Coding workspace'}
-              </p>
-              <nav className="space-y-1">
-                {codingItems.map(({ id, label, Icon, to }) => (
-                  <Link key={id} to={to} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${view === id ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
-                    <Icon className="h-4 w-4" />
-                    <span>{label}</span>
-                  </Link>
-                ))}
-              </nav>
-            </div>}
-
-            <div className="mt-auto rounded-xl border border-slate-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-white"><HelpCircle className="h-4 w-4 text-sky-600" /> Library tip</div>
-              <p className="mt-1.5 text-[11px] leading-4 text-slate-500 dark:text-gray-400">Use tags and difficulty filters to find reusable questions faster.</p>
-            </div>
-          </div>
-        </aside>
+      <div className="grid min-h-[calc(100vh-var(--app-navbar-height,5rem))] md:grid-cols-[60px_minmax(0,1fr)]">
+        <LibraryRail
+          title={pickerMode ? 'Choose questions' : assessmentCreationMode ? 'Create for assessment' : 'Question Library'}
+          subtitle={assessmentSelectionMode ? `Select content for ${assessmentTitle}.` : quickprepMode ? `Select coding questions for ${quickprepTitle}.` : assessmentCreationMode ? `Create and attach content to ${assessmentTitle}.` : 'Create, organize and reuse assessment content.'}
+          canViewQuestions={canViewQuestions}
+          questionTypes={navigableQuestionTypes}
+          isTypeActive={(type) => view === 'questions' && !selectedStatus && selectedType === type}
+          typeUrl={(type) => questionBankUrl(type)}
+          typeCounts={displayedQuestionCounts}
+          showDrafts={!pickerMode}
+          draftsActive={view === 'questions' && selectedStatus === 'draft'}
+          draftsUrl={questionBankUrl('all', 'draft')}
+          draftCount={questionCounts.draft}
+          codingItems={codingItems}
+          codingTitle={rolePrefix === '/admin' ? 'Insights' : 'Coding workspace'}
+          activeView={view}
+        />
 
         <main className="min-w-0">
           {view !== 'coding-analytics' && <nav className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-slate-50 px-4 py-3 md:hidden dark:border-gray-800 dark:bg-gray-950/40" aria-label="Library sections">

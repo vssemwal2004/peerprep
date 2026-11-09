@@ -1,6 +1,6 @@
 import { defaultFilterState, newGroup, nodeId } from "./filterModel.js";
 
-const ANALYSIS_AREAS = new Set(["all", "coding", "learning", "interview", "assessment"]);
+const ANALYSIS_AREAS = new Set(["all", "coding", "quickprep", "learning", "interview", "assessment"]);
 
 const valuesFrom = (params, key) => params.getAll(key)
   .flatMap((value) => String(value || "").split(","))

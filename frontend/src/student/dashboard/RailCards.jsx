@@ -2,7 +2,7 @@ import { useState } from 'react';
 import GlobalRankCard from '../profile/GlobalRankCard';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, CalendarClock, ChevronDown, Megaphone, Trophy } from 'lucide-react';
-import { ScoreValue } from '../prepScore/PrepScore';
+import { formatScore } from '../prepScore/formatScore';
 import { formatRelativeTime, formatSchedule, isImportantAnnouncement, numeric } from './dashboardUtils';
 import { card, CardTitle, focusRing, Skeleton, textLink, Unavailable } from './ui';
 
@@ -27,29 +27,29 @@ export function RankCard({ ranking, loading, error, onRetry }) {
       action={!loading && topPercent ? <span className="rounded-full bg-sky-600 px-2.5 py-0.5 text-[11.5px] font-semibold text-white">Top {topPercent}%</span> : null} />
     {loading ? <Skeleton className="mt-3 h-[72px]" />
       : error ? <Unavailable className="mt-3" message="Your university rank could not be loaded." onRetry={onRetry} />
-        : unranked ? <div className="mt-3 flex items-center gap-3 rounded-xl bg-sky-50/70 px-3.5 py-3 ring-1 ring-inset ring-sky-100 dark:bg-sky-500/[0.07] dark:ring-white/[0.06]">
-          <span className="text-[22px] font-bold leading-none tracking-[-0.04em] text-sky-300 dark:text-sky-500/60" aria-hidden="true">#–</span>
-          <div className="min-w-0">
-            <h3 className="text-[13.5px] font-semibold text-slate-900 dark:text-zinc-100">Not ranked yet</h3>
-            <p className="text-[12.5px] leading-snug text-slate-600 dark:text-zinc-400">{unrankedMessage}</p>
-          </div>
-        </div>
-          : <>
-            <div className="mt-3 flex items-end justify-between gap-3">
-              <p className="flex items-baseline gap-1.5 tabular-nums">
-                <span className="text-[30px] font-bold leading-none tracking-[-0.04em] text-slate-950 dark:text-zinc-50"><span className="text-sky-600 dark:text-sky-400">#</span>{rank.toLocaleString()}</span>
-                <span className="text-[12.5px] text-slate-500 dark:text-zinc-400">of {total.toLocaleString()} students{ranking.tied ? ' · tied' : ''}</span>
-              </p>
-              <p className="text-right leading-none">
-                <ScoreValue value={score} />
-                <span className="mt-1 block text-[11.5px] text-slate-500 dark:text-zinc-400">Prep Score</span>
+        : <>
+          {/* The Prep Score always leads, ranked or not; the rank sits beside it. */}
+          <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3">
+            <div className="rounded-xl bg-gradient-to-br from-sky-500 to-sky-700 px-3.5 py-3 text-white shadow-[0_6px_18px_-10px_rgba(2,132,199,0.8)]">
+              <p className="text-[11.5px] font-medium text-sky-100">Your Prep Score</p>
+              <p className="mt-1 text-[30px] font-bold leading-none tracking-[-0.04em] tabular-nums" aria-label={`Prep Score ${ranking ? formatScore(score) : 'unavailable'}`}>
+                {ranking ? formatScore(score) : '—'}
               </p>
             </div>
-            <div className="relative mt-3 h-2 rounded-full bg-[#eef0f3] dark:bg-white/[0.08]" role="progressbar" aria-label="University rank position" aria-valuemin={1} aria-valuemax={total} aria-valuenow={rank} aria-valuetext={`Rank ${rank} of ${total} students`}>
+            <div className="flex min-w-[96px] flex-col justify-center rounded-xl bg-[#f4f5f8] px-3.5 py-3 text-right dark:bg-white/[0.05]">
+              <p className="text-[11.5px] font-medium text-slate-500 dark:text-zinc-400">University rank</p>
+              {rank ? <p className="mt-1 tabular-nums leading-none">
+                <span className="text-[22px] font-bold tracking-[-0.04em] text-slate-950 dark:text-zinc-50"><span className="text-sky-600 dark:text-sky-400">#</span>{rank.toLocaleString()}</span>
+                <span className="mt-1 block text-[11px] text-slate-500 dark:text-zinc-400">of {total.toLocaleString()}{ranking.tied ? ' · tied' : ''}</span>
+              </p> : <p className="mt-1 text-[13px] font-semibold text-slate-400 dark:text-zinc-500">Not ranked yet</p>}
+            </div>
+          </div>
+          {unranked ? <p className="mt-2.5 text-[12.5px] leading-snug text-slate-600 dark:text-zinc-400">{unrankedMessage}</p>
+            : <div className="relative mt-3 h-2 rounded-full bg-[#eef0f3] dark:bg-white/[0.08]" role="progressbar" aria-label="University rank position" aria-valuemin={1} aria-valuemax={total} aria-valuenow={rank} aria-valuetext={`Rank ${rank} of ${total} students`}>
               <div className="h-full rounded-full bg-gradient-to-r from-sky-300 to-sky-600 transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${position}%` }} />
               <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white bg-sky-600 shadow-[0_2px_6px_rgba(2,132,199,0.45)] dark:border-[#242424]" style={{ left: `clamp(7px, ${position}%, calc(100% - 7px))` }} aria-hidden="true" />
-            </div>
-          </>}
+            </div>}
+        </>}
     {!loading && !error && <>
       <div className="mt-3 flex items-center justify-between gap-3 text-[12px]">
         <span className="min-w-0 truncate text-slate-500 dark:text-zinc-400">{ranking?.universityName || ''}</span>

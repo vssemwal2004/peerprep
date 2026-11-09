@@ -9,6 +9,7 @@ import { ToastProvider } from './components/CustomToast';
 import AdminProtectedRoute from './admin/AdminProtectedRoute';
 import CoordinatorProtectedRoute from './coordinator/CoordinatorProtectedRoute';
 import StudentProtectedRoute from './student/StudentProtectedRoute';
+import DesktopOnly from './components/DesktopOnly';
 import { LandingPageSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
 import { hideGlobalLoader } from './utils/globalLoader';
 import { useAuth } from './context/AuthContext';
@@ -368,6 +369,7 @@ function AppContent() {
   const routeBoundaryKey = isAdmin ? 'admin' : isCoordinator ? 'coordinator' : navigationKey;
   return (
     <div
+      data-app-shell={isStudentShell ? true : undefined}
       className={`${isStudentShell ? 'h-screen overflow-hidden' : 'min-h-screen'} w-full flex flex-col`}
       style={isStudentShell ? {
         '--admin-sidebar-width': isStudentSidebarPinned ? STUDENT_SIDEBAR_PANEL_WIDTH : STUDENT_SIDEBAR_RAIL_WIDTH,
@@ -436,7 +438,7 @@ function AppContent() {
         <Route path="/student/dashboard" element={<StudentProtectedRoute><StudentDashboard /></StudentProtectedRoute>} />
         <Route path="/student/interview" element={<StudentProtectedRoute><StudentInterview /></StudentProtectedRoute>} />
         <Route path="/student/ai-interviews" element={<StudentProtectedRoute><StudentAIInterview /></StudentProtectedRoute>} />
-        <Route path="/student/ai-interviews/room/:sessionId" element={<StudentProtectedRoute><StudentAIInterview /></StudentProtectedRoute>} />
+        <Route path="/student/ai-interviews/room/:sessionId" element={<StudentProtectedRoute><DesktopOnly feature="interview"><StudentAIInterview /></DesktopOnly></StudentProtectedRoute>} />
         <Route path="/student/session" element={<StudentProtectedRoute><SessionAndFeedback /></StudentProtectedRoute>} />
         <Route path="/student/feedback/:pairId" element={<StudentProtectedRoute><FeedbackForm /></StudentProtectedRoute>} />
         <Route path="/student/learning" element={<StudentProtectedRoute><StudentLearning /></StudentProtectedRoute>} />
@@ -449,7 +451,7 @@ function AppContent() {
         <Route path="/assessments" element={<StudentProtectedRoute><StudentAssessmentList /></StudentProtectedRoute>} />
         <Route path="/assessment-reports" element={<StudentProtectedRoute><AssessmentReportsPage /></StudentProtectedRoute>} />
         <Route path="/assessment-history" element={<StudentProtectedRoute><AssessmentHistoryPage /></StudentProtectedRoute>} />
-        <Route path="/student/assessment/:id" element={<StudentProtectedRoute><AssessmentAttempt /></StudentProtectedRoute>} />
+        <Route path="/student/assessment/:id" element={<StudentProtectedRoute><DesktopOnly feature="assessment"><AssessmentAttempt /></DesktopOnly></StudentProtectedRoute>} />
         <Route path="/student/analytics" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
         <Route path="/student/analytics/:section" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
         <Route path="/student/analysis" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />

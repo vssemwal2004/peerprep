@@ -1,5 +1,6 @@
 import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
+import { effortSchema } from './solveEffortSchema.js';
 
 const schema = new mongoose.Schema({
   studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -19,6 +20,8 @@ const schema = new mongoose.Schema({
     status: { type: String, enum: ['AC', 'WA', 'CE', 'RE', 'TLE'] }, executionTimeMs: Number }],
   // The first failing case (grading stops there), already capped for display by studentFailedCase.
   failedCase: { type: new mongoose.Schema({ index: Number, input: String, expectedOutput: String, actualOutput: String, truncated: Boolean }, { _id: false }), default: undefined },
+  // Coding practice only: how the student worked before this attempt (services/solveEffort.js).
+  effort: { type: effortSchema, default: undefined },
 }, { timestamps: true });
 
 schema.index({ studentId: 1, source: 1, questionId: 1, createdAt: -1 });

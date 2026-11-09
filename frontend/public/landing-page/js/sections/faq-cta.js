@@ -93,6 +93,35 @@
         a.setAttribute('href', document.getElementById('features') ? '#features' : '#top');
       }
     });
+
+    // Journey track: draw the line + stagger stages in once it is on screen.
+    // Armed only when motion is allowed and IO exists, so content is never left hidden.
+    var journey = document.querySelector('[data-footer-journey]');
+    if (journey && !PP.reducedMotion && 'IntersectionObserver' in window) {
+      journey.classList.add('is-armed');
+      var io = new IntersectionObserver(function (entries) {
+        if (entries.some(function (e) { return e.isIntersecting; })) {
+          journey.classList.add('is-in');
+          io.disconnect();
+        }
+      }, { threshold: 0.25 });
+      io.observe(journey);
+    }
+
+    // Light / Dark segmented switch — reuses PP.setTheme so it stays in sync with the nav toggle.
+    var group = document.querySelector('[data-footer-theme]');
+    if (!group) return;
+    var btns = group.querySelectorAll('[data-set-theme]');
+    function sync(theme) {
+      btns.forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.getAttribute('data-set-theme') === theme));
+      });
+    }
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () { PP.setTheme(b.getAttribute('data-set-theme'), b); });
+    });
+    window.addEventListener('pp:themechange', function (e) { sync(e.detail.theme); });
+    sync(PP.theme());
   }
 
   PP.ready(function () {

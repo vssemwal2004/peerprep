@@ -14,6 +14,7 @@ export default function CoordinatorLayout({ children }) {
 
   return (
     <div
+      data-app-shell
       className="h-screen overflow-hidden bg-slate-50 dark:bg-gray-900"
       style={{ '--admin-sidebar-width': sidebarWidth, '--app-navbar-height': '0rem' }}
     >

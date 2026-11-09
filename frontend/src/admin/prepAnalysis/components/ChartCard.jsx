@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
-  Activity, Aperture, BarChart3, BarChartHorizontal, CalendarDays, CalendarRange, ChartCandlestick, ChartScatter, CircleDot, Columns3, EyeOff,
+  Activity, Aperture, BarChart3, BarChartHorizontal, CalendarDays, CalendarRange, ChartCandlestick, ChartColumnBig, ChartScatter, CircleDot, Columns3, EyeOff,
   FileSpreadsheet, Filter, Funnel, Grid3x3, Image as ImageIcon, Info, Layers, LayoutGrid, LineChart, ListOrdered, Maximize2, MoreHorizontal,
   Percent, PieChart, Radar, Sheet, SlidersHorizontal, Sparkles, Spline, Table2, Target, TrendingDown, TrendingUp, Users,
 } from "lucide-react";
@@ -25,7 +25,7 @@ const SIZES = [{ value: "sm", label: "Small" }, { value: "md", label: "Half" }, 
 // Each way of showing a chart as an icon; the label is its tooltip.
 const CHART_ICONS = {
   rankedStackedBar: BarChartHorizontal, barList: BarChartHorizontal, donut: PieChart, trend: LineChart, funnel: ListOrdered, histogram: BarChart3, stackedBar: BarChart3,
-  heatmap: Grid3x3, calendar: CalendarDays, radar: Radar, scatter: ChartScatter, boxplot: ChartCandlestick,
+  heatmap: Grid3x3, calendar: CalendarDays, radar: Radar, scatter: ChartScatter, boxplot: ChartCandlestick, combo: ChartColumnBig,
 };
 const VIEW_ICONS = {
   table: Table2, bars: BarChartHorizontal, funnel: Funnel, percent: Percent, grouped: Columns3, weekly: TrendingUp,

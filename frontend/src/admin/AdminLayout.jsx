@@ -15,6 +15,7 @@ export default function AdminLayout({ children }) {
 
   return (
     <div
+      data-app-shell
       className={`h-screen overflow-hidden bg-slate-50 dark:bg-gray-900${isCompilerPreview ? ' overflow-x-hidden' : ''}`}
       style={{ '--admin-sidebar-width': sidebarWidth, '--app-navbar-height': '0rem' }}
     >

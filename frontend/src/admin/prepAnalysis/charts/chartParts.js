@@ -57,6 +57,15 @@ export function chartPartAt(chart, view, params) {
     }
     case "trend":
       return trendPart(chart, index);
+    case "combo": {
+      // A bar segment is that category's students in that series; a line point (or the column) is the whole category.
+      const category = data.categories?.[index];
+      if (!category) return null;
+      const bar = (data.bars || []).find((entry) => entry.name === params?.seriesName);
+      return bar
+        ? { key: `${category.key}|${bar.name}`, label: `${category.label} · ${bar.name}`, color: keyColor(bar.name), value: bar.values[index], unit: data.barLabel, students: bar.students ? bar.values[index] : undefined }
+        : { key: category.key, label: category.label, value: category.students, unit: "students", students: category.students };
+    }
     case "calendar": {
       const day = view === "chart" ? params?.value?.[0] : null;
       return day ? { key: day, label: day, value: params.value[1], unit: data.unit } : null;
@@ -171,6 +180,7 @@ export function chartTableKeys(chart) {
     case "stackedBar": return (data.groups || []).map((group) => group.label);
     case "calendar": return [...(data.days || [])].sort(([left], [right]) => right.localeCompare(left)).map(([day]) => day);
     case "boxplot": return (data.groups || []).map((group) => group.label);
+    case "combo": return (data.categories || []).map((category) => category.key);
     default: return [];
   }
 }

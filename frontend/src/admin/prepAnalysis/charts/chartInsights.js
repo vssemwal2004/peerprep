@@ -119,6 +119,44 @@ const BY_ID = {
   "score-spread": ({ bins, label }) => largestBand(bins, label || "Prep Score"),
   "learning-spread": ({ bins, label }) => largestBand(bins, label || "Course completed"),
   "quickprep-spread": ({ bins, label }) => largestBand(bins, label || "Sheet progress"),
+  "quickprep-coverage": ({ bins, label }) => largestBand(bins, label || "Open sheets started"),
+  "quickprep-sheet-health": ({ categories, bars, lines }) => {
+    if (!categories?.length) return null;
+    const progress = lines?.[0]?.values || [];
+    const best = progress.indexOf(Math.max(...progress));
+    const worst = progress.indexOf(Math.min(...progress));
+    const finished = (bars?.[0]?.values || []).reduce((sum, value) => sum + value, 0);
+    const parts = [`${plural(finished, "sheet completion")} across ${plural(categories.length, "sheet")}.`];
+    if (categories.length > 1 && best !== worst) parts.push(`Starters go furthest in ${categories[best].label} (${progress[best]}%) and least far in ${categories[worst].label} (${progress[worst]}%).`);
+    return parts.join(" ");
+  },
+  "quickprep-difficulty-mix": ({ categories, lines }) => {
+    const rates = lines?.[0]?.values || [];
+    if (!categories?.length) return null;
+    return categories.map((category, index) => `${category.label} ${rates[index]}%`).join(" · ").replace(/^/, "Solve rate in started sheets: ") + ".";
+  },
+  "quickprep-hardest-questions": ({ items }) => (items?.[0] ? `“${items[0].name}” is the hardest: ${items[0].value}% of starters solved it, ${plural(items[0].students, "student")} stuck.` : null),
+  "quickprep-pace": ({ bins }) => largestBand(bins, "Time to finish"),
+  "quickprep-own-work": ({ items }) => {
+    const total = (items || []).reduce((sum, item) => sum + item.value, 0);
+    const flagged = (items || []).filter((item) => item.key === "fast" || item.key === "pasted").reduce((sum, item) => sum + item.value, 0);
+    if (!total) return null;
+    return flagged ? `${plural(flagged, "first solve")} of ${number(total)} look too fast or mostly pasted: worth a look.` : `No sheet solve was very fast or mostly pasted (${number(total)} first solves).`;
+  },
+  "quickprep-trend": weekChange,
+  "quickprep-calendar": (data) => calendarLine(data),
+  "quickprep-class-spread": ({ groups }) => boxLine(groups, "sheet progress", "%"),
+  "quickprep-by-class": ({ groups }) => {
+    const rated = (groups || []).filter((group) => group.students > 0)
+      .map((group) => ({ label: group.label, students: group.students, finished: group.values["Finished a sheet"] || 0, untouched: group.values["Not started"] || 0 }));
+    if (!rated.length) return null;
+    const best = maxBy(rated, (group) => group.finished / group.students);
+    const worst = maxBy(rated, (group) => group.untouched / group.students);
+    const parts = [];
+    if (best.finished) parts.push(`${best.label} has the highest share finishing a sheet (${percentOf(best.finished, best.students)}%).`);
+    if (worst.untouched) parts.push(`${worst.label} has the most not started (${percentOf(worst.untouched, worst.students)}%).`);
+    return parts.join(" ") || null;
+  },
   "tough-problems": ({ items }) => (items?.[0] ? `“${items[0].name}” has the most failed attempts (${number(items[0].value)})${items[0].note ? `; ${items[0].note}` : ""}.` : null),
   "group-breakdown": ({ groups }) => {
     const totals = (groups || []).map((group) => ({ label: group.label, total: Object.values(group.values).reduce((sum, value) => sum + value, 0), students: group.students }));

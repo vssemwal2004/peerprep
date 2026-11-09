@@ -13,7 +13,21 @@ function summary(cohort, students, studentsLabel, extra = {}) {
   return { cohort, students, studentsLabel, pct: percentOne(students, cohort), ...extra };
 }
 
+const sheetStarters = (rows) => rows.filter((row) => row.quickprep?.started > 0).length;
+
 const SUMMARIES = {
+  'quickprep-sheet-health': (rows) => summary(rows.length, sheetStarters(rows), 'started a sheet', {
+    average: perStudent(rows.reduce((sum, row) => sum + (row.quickprep?.finished || 0), 0), rows.length), averageLabel: 'sheets finished per student',
+  }),
+  'quickprep-difficulty-mix': (rows, data) => {
+    const solved = (data.bars?.[0]?.values || []).reduce((sum, value) => sum + value, 0);
+    return summary(rows.length, sheetStarters(rows), 'started a sheet', { total: solved, totalLabel: 'sheet questions solved', average: perStudent(solved, rows.length), averageLabel: 'solved per student' });
+  },
+  'quickprep-hardest-questions': (rows) => summary(rows.length, sheetStarters(rows), 'started a sheet'),
+  'quickprep-pace': (rows, data) => summary(rows.length, (data.bins || []).reduce((sum, bin) => sum + bin.count, 0), 'finished a sheet'),
+  'quickprep-own-work': (rows, data) => summary(rows.length, rows.filter((row) => row.quickprep?.review?.solved > 0).length, 'solved a sheet question', {
+    total: (data.items || []).reduce((sum, item) => sum + item.value, 0), totalLabel: 'first solves',
+  }),
   'top-students': (rows) => {
     const active = practising(rows);
     return summary(rows.length, active.length, 'practised', { average: mean(active.map((row) => row.coding.prepScore)), averageLabel: 'average Prep Score of those who practised' });

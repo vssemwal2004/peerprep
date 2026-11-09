@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, AlertTriangle, CheckCircle2, FileSpreadsheet, FileText, Lightbulb, Loader2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AlertCircle, AlertTriangle, CheckCircle2, FileSpreadsheet, FileText, Flag, Lightbulb, Loader2, UserRound } from "lucide-react";
 import { useAnalysisApi } from "../analysisScope";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
 import { DIFFICULTY_COLORS, OUTCOME_COLORS } from "../charts/chartTheme";
@@ -11,7 +12,21 @@ import { ScoreValue } from "../../../student/prepScore/PrepScore";
 import ModuleScores from "./ModuleScores";
 import { StatusPill } from "./Insights";
 import { initials, sectionStyle } from "./sectionStyles";
-import { Button, Drawer } from "./ui";
+import { Button, Drawer, focusRing } from "./ui";
+
+/** Opens the student's full profile page (same role prefix as the page we are on). */
+function ProfileLink({ studentId }) {
+  const prefix = window.location.pathname.startsWith("/coordinator") ? "/coordinator" : "/admin";
+  return (
+    <Link
+      to={`${prefix}/students/${encodeURIComponent(studentId)}`}
+      title="Open this student's full profile"
+      className={`inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-2.5 text-[11.5px] font-semibold text-white transition-colors hover:bg-sky-700 ${focusRing}`}
+    >
+      <UserRound className="h-3.5 w-3.5" aria-hidden="true" />View profile
+    </Link>
+  );
+}
 
 const TONES = {
   warn: { Icon: AlertTriangle, className: "bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-100", icon: "text-amber-500" },
@@ -70,7 +85,7 @@ function CodingScore({ coding }) {
 
 const calendarChart = (id, section, calendar) => ({ id, section, type: "calendar", title: "Daily activity", question: "", data: calendar, size: "full" });
 
-function CodingSection({ coding, quickprep }) {
+function CodingSection({ coding }) {
   const verdictTotal = coding.verdicts.reduce((sum, verdict) => sum + verdict.value, 0);
   const verdictColor = { AC: OUTCOME_COLORS.AC, WA: OUTCOME_COLORS.WA, TLE: OUTCOME_COLORS.TLE, RE: OUTCOME_COLORS.RE, CE: OUTCOME_COLORS.CE };
   return (
@@ -151,16 +166,20 @@ function CodingSection({ coding, quickprep }) {
           <ChartBody chart={calendarChart("profile-coding", "coding", coding.calendar)} height={170} />
         </div>
       )}
-      {quickprep && <QuickPrepBlock quickprep={quickprep} />}
     </Section>
   );
 }
 
-/** Quick Prep sheets, shown inside Prep Coding. */
-function QuickPrepBlock({ quickprep }) {
+/** Quick Prep sheets: its own section, separate from Prep Coding. */
+function QuickPrepSection({ quickprep }) {
+  const lastSeen = quickprep.daysSinceActive === null || quickprep.daysSinceActive === undefined ? "never opened"
+    : quickprep.daysSinceActive === 0 ? "active today" : `last active ${quickprep.daysSinceActive}d ago`;
   return (
-    <div className="space-y-2.5 border-t border-slate-100 pt-3 dark:border-gray-800">
-      <p className="flex items-center justify-between text-[12px] font-bold text-slate-800 dark:text-slate-100">Quick Prep sheets <StatusPill status={quickprep.status} /></p>
+    <Section section="quickprep" title="Quick Prep" aside={<StatusPill status={quickprep.status} />}>
+      <div className="space-y-2.5">
+      <p className="text-[12px] text-slate-600 dark:text-slate-300">
+        <b className="text-slate-900 dark:text-white">{quickprep.sheets.length}</b> started · <b className="text-slate-900 dark:text-white">{quickprep.finished}</b> finished · <b className="text-slate-900 dark:text-white">{quickprep.solved}</b> of {quickprep.total} questions solved ({quickprep.progress}%) · {lastSeen}
+      </p>
       {quickprep.sheets.length ? (
         <div className="space-y-2.5">
           {quickprep.sheets.map((sheet) => (
@@ -176,11 +195,91 @@ function QuickPrepBlock({ quickprep }) {
           {quickprep.notStarted.map((title) => <span key={title} className="rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-slate-600 dark:border-gray-700 dark:text-slate-300">{title}</span>)}
         </div>
       )}
-    </div>
+      </div>
+    </Section>
   );
 }
 
 const shortDate = (iso) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const dateTime = (iso) => new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+const clockTime = (iso) => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+function duration(ms) {
+  if (ms === null || ms === undefined) return "—";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds} s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+const VERDICTS = { AC: ["Accepted", "text-emerald-700 dark:text-emerald-400"], WA: ["Wrong answer", "text-rose-600"], TLE: ["Time limit", "text-amber-700"], RE: ["Runtime error", "text-rose-600"], CE: ["Compile error", "text-slate-600"] };
+const REASON_TEXT = { fast: "Very fast", pasted: "Mostly pasted" };
+
+/**
+ * Every recent practice submission with its date and time, when the question was opened, how long
+ * the student actively worked and how much was pasted from outside the editor. "Needs review" is
+ * judged on the first accepted solve of a question only, and is a prompt to look, not a verdict.
+ */
+function SubmissionHistorySection({ submissions }) {
+  const [onlyReview, setOnlyReview] = useState(false);
+  const flagged = submissions.filter((row) => row.reasons.length).length;
+  const shown = onlyReview ? submissions.filter((row) => row.reasons.length) : submissions;
+  return (
+    <Section
+      section="coding"
+      title="Submission history"
+      aside={flagged > 0 ? (
+        <button type="button" onClick={() => setOnlyReview((value) => !value)} aria-pressed={onlyReview}
+          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${onlyReview ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300"}`}>
+          <Flag className="h-3 w-3" aria-hidden="true" />{flagged} to review
+        </button>
+      ) : <span className="text-[11px] text-slate-500">Latest {submissions.length}</span>}
+    >
+      {submissions.length === 0 ? <p className="text-[12px] text-slate-500">No practice submissions in this period.</p> : (
+        <div className="max-h-[360px] overflow-auto rounded-lg border border-slate-100 dark:border-gray-800">
+          <table className="w-full min-w-[640px] text-left text-[11.5px]">
+            <thead className="sticky top-0 bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500 dark:bg-gray-800 dark:text-gray-400">
+              <tr>
+                <th className="px-2.5 py-2 font-semibold">Submitted</th>
+                <th className="px-2.5 py-2 font-semibold">Question</th>
+                <th className="px-2.5 py-2 font-semibold">Result</th>
+                <th className="px-2.5 py-2 font-semibold" title="When the question was opened in that visit">Started</th>
+                <th className="px-2.5 py-2 text-right font-semibold" title="Active time (tab in use) · total time open">Time taken</th>
+                <th className="px-2.5 py-2 text-right font-semibold" title="Share of the submitted code pasted from outside the editor">Pasted</th>
+                <th className="px-2.5 py-2 font-semibold">Own work</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
+              {shown.map((row, index) => {
+                const [verdict, tone] = VERDICTS[row.status] || [row.status, "text-slate-600"];
+                return (
+                  <tr key={`${row.submittedAt}-${index}`} className={row.reasons.length ? "bg-amber-50/60 dark:bg-amber-500/[0.06]" : ""}>
+                    <td className="whitespace-nowrap px-2.5 py-2 tabular-nums text-slate-700 dark:text-slate-200">{dateTime(row.submittedAt)}</td>
+                    <td className="max-w-[200px] px-2.5 py-2">
+                      <span className="block truncate font-semibold text-slate-900 dark:text-white" title={row.title}>{row.title}</span>
+                      {row.quickprep && <span className="mt-0.5 inline-block rounded bg-sky-50 px-1.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">Quick Prep · {row.quickprep}</span>}
+                    </td>
+                    <td className={`whitespace-nowrap px-2.5 py-2 font-semibold ${tone}`}>{verdict}</td>
+                    <td className="whitespace-nowrap px-2.5 py-2 tabular-nums text-slate-600 dark:text-slate-300">{row.startedAt ? clockTime(row.startedAt) : <span className="text-slate-400" title="Submitted before time tracking started">—</span>}</td>
+                    <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums text-slate-700 dark:text-slate-200">
+                      {row.activeMs === null ? "—" : <>{duration(row.activeMs)}<span className="text-slate-400"> · {duration(row.solveMs)}</span></>}
+                    </td>
+                    <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums text-slate-700 dark:text-slate-200">{row.pastedShare === null ? "—" : `${row.pastedShare}%`}</td>
+                    <td className="whitespace-nowrap px-2.5 py-2">
+                      {row.reasons.length
+                        ? <span className="inline-flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-300"><Flag className="h-3 w-3" aria-hidden="true" />{row.reasons.map((reason) => REASON_TEXT[reason]).join(" · ")}</span>
+                        : row.firstSolve ? <span className="text-emerald-700 dark:text-emerald-400">OK</span> : <span className="text-slate-400">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="mt-2 text-[10.5px] text-slate-400">Flags mark first solves that were very fast for their difficulty or mostly pasted. They are a reason to look, not proof of copying.</p>
+    </Section>
+  );
+}
 
 function InterviewSection({ interview }) {
   const rated = interview.ratings.filter((rating) => rating.value);
@@ -288,7 +387,8 @@ function ReportDownload({ studentId, range }) {
   };
   return (
     <div className="ml-auto flex flex-col items-end gap-1">
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <ProfileLink studentId={studentId} />
         <Button size="sm" disabled={Boolean(status.busy)} onClick={() => run("xlsx")} title="Every topic, every problem with first try and first solve, each day of practice, and every feature's details">
           {status.busy === "xlsx" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />}Full report (Excel)
         </Button>
@@ -366,7 +466,9 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
             </section>
           )}
 
-          {profile.coding && <CodingSection coding={profile.coding} quickprep={profile.quickprep} />}
+          {profile.coding && <CodingSection coding={profile.coding} />}
+          {profile.quickprep && <QuickPrepSection quickprep={profile.quickprep} />}
+          {Array.isArray(profile.submissions) && <SubmissionHistorySection submissions={profile.submissions} />}
           {profile.learning && <LearningSection learning={profile.learning} />}
           {profile.interview && <InterviewSection interview={profile.interview} />}
           {profile.assessment && <AssessmentSection assessment={profile.assessment} />}

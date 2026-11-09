@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import useSolveEffort from './useSolveEffort';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   Check,
@@ -13,6 +14,7 @@ import {
   PanelRightOpen,
   Maximize2,
   BookOpenText,
+  Clock3,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
@@ -434,6 +436,10 @@ function ProblemDescriptionPanel({ problem, language, verifiedCompanies }) {
         </div>
         <p className="mt-3 text-xs text-slate-400 dark:text-gray-500">
             {Number(problem.acceptanceRate || 0).toFixed(1)}% acceptance | {problem.totalSubmissions || 0} submissions
+        </p>
+        <p className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-gray-500">
+          <Clock3 className="h-3 w-3 shrink-0" aria-hidden="true" />
+          Time spent on this question and code pasted from outside the editor are recorded for your mentors.
         </p>
         {activeMetaPanel && activeMetaPanel !== 'anvi' && (
           <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/70">
@@ -1343,6 +1349,12 @@ export default function ProblemSolver() {
     return drafts[language] ?? problem.codeTemplates?.[language] ?? '';
   }, [drafts, language, problem]);
 
+  // Time on this question and outside pastes, sent with each practice submission.
+  const activeCodeRef = useRef('');
+  activeCodeRef.current = activeCode;
+  const readActiveCode = useCallback(() => activeCodeRef.current, []);
+  const solveEffort = useSolveEffort(problem?._id ? `${isSharedProblem ? 'shared' : 'local'}:${problem._id}` : '', readActiveCode);
+
   const hasEditorial = useMemo(
     () => Boolean(String(problem?.editorial || '').trim()),
     [problem?.editorial],
@@ -1532,7 +1544,7 @@ export default function ProblemSolver() {
     setIsSubmitting(true);
 
     if (isSharedProblem) {
-      void api.submitSharedStudentProblem(problem._id, { language, sourceCode })
+      void api.submitSharedStudentProblem(problem._id, { language, sourceCode, effort: solveEffort.snapshot() })
         .then(async (response) => {
           if (!isMountedRef.current) return;
           setResult({ mode: 'submit', status: response.result === 'correct' ? 'AC'
@@ -1563,6 +1575,7 @@ export default function ProblemSolver() {
     void api.submitStudentProblem(problem._id, {
       language,
       sourceCode,
+      effort: solveEffort.snapshot(),
     }).then(async (queuedJob) => {
       if (!isMountedRef.current) {
         return;
@@ -1939,7 +1952,7 @@ export default function ProblemSolver() {
             <div className="absolute inset-y-4 left-1/2 w-1 -translate-x-1/2 rounded-full bg-zinc-300 transition group-hover:bg-[#ffa116] dark:bg-zinc-700" />
           </button>
 
-          <section className="min-h-0 min-w-0 overflow-hidden">
+          <section className="min-h-0 min-w-0 overflow-hidden" {...solveEffort.pasteProps}>
             <CodeEditor
               supportedLanguages={problem.supportedLanguages || []}
               language={language}
@@ -2002,7 +2015,7 @@ export default function ProblemSolver() {
             </div>
           </div>
 
-          <div className={`${mobileView === 'editor' ? 'block' : 'hidden'}`}>
+          <div className={`${mobileView === 'editor' ? 'block' : 'hidden'}`} {...solveEffort.pasteProps}>
             <CodeEditor
               supportedLanguages={problem.supportedLanguages || []}
               language={language}

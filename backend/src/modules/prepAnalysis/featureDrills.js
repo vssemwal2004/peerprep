@@ -4,7 +4,9 @@
 // the number the chart shows. `context` carries the sheet and test catalogues.
 
 import { PASS_PERCENT } from './assessmentFacts.js';
-import { ATTENTION_GROUPS, GROUP_BY, weekStart } from './charts.js';
+import {
+  ATTENTION_GROUPS, GROUP_BY, OWN_WORK_KINDS, QP_PACE_BANDS, levelOf, ownWorkKind, paceBandOf, paceDaysOf, quickPrepStatusLabel, startedQuestions, weekStart,
+} from './charts.js';
 import { RATINGS } from './interviewFacts.js';
 
 const text = (key, label, width = 16) => ({ key, label, kind: 'text', width });
@@ -40,8 +42,8 @@ const LEARNING = {
 const subjectStatus = (subject) => (subject.completed >= subject.total ? 'Finished' : subject.started > 0 || subject.completed > 0 ? 'In progress' : 'Not started');
 
 const QUICKPREP = {
-  columns: [count('started', 'Sheets started'), count('finished', 'Sheets finished'), count('solved', 'Questions solved'), percent('progress', 'Progress in started sheets %'), text('lastOpened', 'Last opened', 12)],
-  values: (row) => ({ started: row.quickprep.started, finished: row.quickprep.finished, solved: row.quickprep.solved, progress: row.quickprep.progress, lastOpened: daysAgo(row.quickprep.daysSinceActive) }),
+  columns: [count('started', 'Sheets started'), count('finished', 'Sheets finished'), count('solved', 'Questions solved'), percent('progress', 'Progress in started sheets %'), text('lastOpened', 'Last opened', 12), count('toReview', 'Solves to review', 10)],
+  values: (row) => ({ started: row.quickprep.started, finished: row.quickprep.finished, solved: row.quickprep.solved, progress: row.quickprep.progress, lastOpened: daysAgo(row.quickprep.daysSinceActive), toReview: row.quickprep.review?.flagged ?? 0 }),
   detail(rows, context, test = () => true) {
     const items = [];
     for (const row of rows) {
@@ -169,6 +171,7 @@ function attentionDrill(feature, chartId, labels) {
 
 // ---------------------------------------------------------------- per chart
 
+const classOf = (row, options) => (GROUP_BY[options?.groupBy] || GROUP_BY.semester).get(row) || 'Not set';
 const hasLearning = (row) => Boolean(row.learning);
 const hasQuickPrep = (row) => Boolean(row.quickprep);
 const hasAssessment = (row) => Boolean(row.assessment);
@@ -266,6 +269,107 @@ export const FEATURE_DRILLS = {
     { name: 'Finished a sheet', test: (row) => row.quickprep.finished > 0 },
   ]),
   'quickprep-spread': bandDrill(QUICKPREP, (row) => row.quickprep?.started > 0, (row) => row.quickprep.progress, 'Sheet progress'),
+  'quickprep-coverage': bandDrill(QUICKPREP, (row) => row.quickprep?.visibleSheets > 0, (row) => row.quickprep.coverage, 'Open sheets started'),
+  'quickprep-trend': timeDrill(QUICKPREP, hasQuickPrep, (row) => [...row.quickprep.days].map(([day, [started, finished]]) => [day, started + finished]), 'Sheets started or finished', true),
+  'quickprep-calendar': timeDrill(QUICKPREP, hasQuickPrep, (row) => [...row.quickprep.days].map(([day, [started, finished]]) => [day, started + finished]), 'Sheets started or finished', false),
+  // Combo chart parts: "<sheetId>" (its starters) or "<sheetId>|Finished" / "|In progress".
+  'quickprep-sheet-health': {
+    label: (key, rows, context) => {
+      const [sheetId, series] = splitKey(key);
+      return [context?.sheets?.get(sheetId)?.title || (sheetId ? 'Sheet' : 'Every sheet'), series].filter(Boolean).join(' · ');
+    },
+    students(rows, key, options, context) {
+      const [sheetId, series] = splitKey(key);
+      const test = (row) => {
+        const entry = sheetId ? row.quickprep?.bySheet.get(sheetId) : null;
+        if (!sheetId) return row.quickprep?.started > 0;
+        if (!entry) return false;
+        return !series || (series === 'Finished') === Boolean(entry.finished);
+      };
+      return {
+        sort: 'sheetSolved', columns: [count('sheetSolved', 'Solved in this sheet'), count('sheetTotal', 'Questions'), ...QUICKPREP.columns],
+        items: rows.filter(test).map((row) => {
+          const entry = sheetId ? row.quickprep.bySheet.get(sheetId) : null;
+          return { row, values: { sheetSolved: entry?.solved ?? null, sheetTotal: entry?.total ?? null, ...QUICKPREP.values(row) } };
+        }),
+      };
+    },
+    detail: (rows, key, options, context) => {
+      const [sheetId] = splitKey(key);
+      return QUICKPREP.detail(rows.filter(hasQuickPrep), context, (row, entrySheetId) => !sheetId || entrySheetId === sheetId);
+    },
+  },
+  // "<level>": students who solved a question of that difficulty; "<level>|Not solved yet": who have one open.
+  'quickprep-difficulty-mix': {
+    label: (key) => { const [level, series] = splitKey(key); return [level || 'Every difficulty', series].filter(Boolean).join(' · '); },
+    students(rows, key, options, context) {
+      const [level, series] = splitKey(key);
+      const wantOpen = series === 'Not solved yet';
+      const tally = (row) => {
+        let solved = 0; let open = 0;
+        for (const question of startedQuestions(row, context?.sheets).values()) {
+          if (level && levelOf(question.difficulty) !== level) continue;
+          if (question.solved) solved += 1; else open += 1;
+        }
+        return { solved, open };
+      };
+      return {
+        sort: wantOpen ? 'openHere' : 'solvedHere', columns: [count('solvedHere', 'Solved here'), count('openHere', 'Not solved yet'), ...QUICKPREP.columns],
+        items: rows.map((row) => ({ row, counts: tally(row) })).filter(({ counts }) => (wantOpen ? counts.open > 0 : counts.solved > 0))
+          .map(({ row, counts }) => ({ row, values: { solvedHere: counts.solved, openHere: counts.open, ...QUICKPREP.values(row) } })),
+      };
+    },
+  },
+  // A question: the students who started a sheet with it but have not solved it.
+  'quickprep-hardest-questions': {
+    label: (key, rows, context) => {
+      if (!key) return 'Every sheet question';
+      const title = [...(context?.sheets?.values() || [])].flatMap((sheet) => sheet.questions || []).find((question) => question.key === key)?.title;
+      return `Stuck on ${title || 'this question'}`;
+    },
+    students(rows, key, options, context) {
+      return {
+        sort: QUICKPREP.columns[0].key, columns: QUICKPREP.columns,
+        items: rows.filter((row) => {
+          const questions = startedQuestions(row, context?.sheets);
+          return key ? questions.has(key) && !questions.get(key).solved : questions.size > 0;
+        }).map((row) => ({ row, values: QUICKPREP.values(row) })),
+      };
+    },
+  },
+  'quickprep-pace': {
+    label: (key) => (key === '' || key === null ? 'Every finisher' : `Finished in ${QP_PACE_BANDS[Number(key)]?.label.toLowerCase() || 'this band'}`),
+    students(rows, key) {
+      const index = key === '' || key === null ? null : Number(key);
+      return {
+        sort: 'paceDays', columns: [{ key: 'paceDays', label: 'Average days to finish', kind: 'decimal', width: 12 }, ...QUICKPREP.columns],
+        items: rows.map((row) => ({ row, days: paceDaysOf(row) })).filter(({ days }) => days !== null && (index === null || paceBandOf(days) === index))
+          .map(({ row, days }) => ({ row, values: { paceDays: Math.round(days * 10) / 10, ...QUICKPREP.values(row) } })),
+      };
+    },
+  },
+  // A kind of first solve: the students with at least one such solve, and how many.
+  'quickprep-own-work': {
+    label: (key) => OWN_WORK_KINDS.find((kind) => kind.key === key)?.name || 'Every sheet solve',
+    students(rows, key) {
+      return {
+        sort: 'ofKind', columns: [count('ofKind', 'Solves of this kind'), ...QUICKPREP.columns],
+        items: rows.map((row) => ({ row, items: (row.quickprep?.review?.items || []).filter((item) => !key || ownWorkKind(item) === key) }))
+          .filter(({ items }) => items.length > 0)
+          .map(({ row, items }) => ({ row, values: { ofKind: items.length, ...QUICKPREP.values(row) } })),
+      };
+    },
+  },
+  'quickprep-by-class': groupDrill(QUICKPREP, {
+    groups: (rows, context, options) => [...new Set(rows.filter(hasQuickPrep).map((row) => classOf(row, options)))],
+    test: (row, label, series, context, options) => hasQuickPrep(row) && classOf(row, options) === label && (!series || quickPrepStatusLabel(row) === series),
+    columns: [text('status', 'Quick Prep status', 16)],
+    values: (row) => ({ status: quickPrepStatusLabel(row) }),
+  }),
+  'quickprep-class-spread': groupDrill(QUICKPREP, {
+    groups: (rows, context, options) => [...new Set(rows.filter((row) => row.quickprep?.started > 0).map((row) => classOf(row, options)))],
+    test: (row, label, series, context, options) => row.quickprep?.started > 0 && classOf(row, options) === label,
+  }),
 
   'assessment-tests': testsDrill(false),
   'assessment-scores': testsDrill(true),
@@ -335,6 +439,6 @@ export const FEATURE_DRILLS = {
 
 // Which detail table each feature drill's second tab shows.
 export const FEATURE_DETAIL_LABELS = Object.freeze({
-  'learning-subjects': 'Subjects', 'quickprep-sheets': 'Sheets', 'quickprep-matrix': 'Sheets', 'assessment-tests': 'Tests', 'assessment-scores': 'Tests',
+  'learning-subjects': 'Subjects', 'quickprep-sheets': 'Sheets', 'quickprep-matrix': 'Sheets', 'quickprep-sheet-health': 'Sheets', 'assessment-tests': 'Tests', 'assessment-scores': 'Tests',
   'interview-ratings': 'Mock interviews', 'interview-mix': 'Mock interviews',
 });

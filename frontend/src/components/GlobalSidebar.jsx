@@ -59,6 +59,8 @@ import { hasPermission } from '../admin/coordinatorPermissions';
 import { getInterviewNavigation, getInterviewSection } from './interviews/interviewNavigation';
 import { getSidebarWidth, STUDENT_SIDEBAR_PANEL_WIDTH, STUDENT_SIDEBAR_RAIL_WIDTH } from './sidebarLayout';
 import { firstStudentFeaturePath, hasStudentFeature } from '../student/studentFeatureAccess';
+import MobileNavigation from './MobileNavigation';
+import useIsMobileNav from './useIsMobileNav';
 
 const buildNavItems = (role = 'admin', accessScope = 'full') => {
   if (role === 'student') {
@@ -224,204 +226,217 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
     ];
   }
 
+  const overview = {
+    type: 'link',
+    label: 'Overview',
+    to: '/admin/overview',
+    icon: LayoutDashboard,
+    match: (loc) => loc.pathname === '/admin' || loc.pathname.startsWith('/admin/overview') || loc.pathname.startsWith('/admin/dashboard'),
+  };
+  // University and Prep Coins exist only on the central (control) platform.
+  const university = {
+    type: 'group',
+    key: 'universities',
+    label: 'University',
+    icon: Building2,
+    items: [
+      { label: 'Overview', description: 'See platform-wide university activity and key totals.', to: '/admin/universities', icon: LayoutDashboard, match: (loc) => loc.pathname === '/admin/universities' },
+      // A single university's page belongs to the list it was opened from.
+      { label: 'All Universities', description: 'Browse and manage every connected institution.', to: '/admin/universities/all', icon: Building2, match: (loc) => loc.pathname === '/admin/universities/all' || (/^\/admin\/universities\/[^/]+\/?$/.test(loc.pathname) && !UNIVERSITY_SECTIONS.has(loc.pathname.split('/')[3])) },
+      { label: 'Add University', description: 'Create and configure a new university workspace.', to: '/admin/universities/new', icon: CirclePlus },
+      { label: 'Shared Assessments', description: 'Publish assessments for multiple universities.', to: '/admin/universities/assessments', icon: ClipboardList },
+      { label: 'New-University Defaults', description: 'Set the modules and preferences used at creation.', to: '/admin/universities/defaults', icon: SlidersHorizontal },
+      { label: 'Activity Log', description: 'Review recent platform administration changes.', to: '/admin/universities/activity', icon: History },
+    ],
+  };
+  const prepCoins = {
+    type: 'group',
+    key: 'prep-coins',
+    label: 'Prep Coins',
+    icon: Coins,
+    items: [
+      { label: 'Overview', description: 'Live balances, coin flow and spending.', to: '/admin/prep-coins', icon: LayoutDashboard, match: (loc) => loc.pathname === '/admin/prep-coins' || loc.pathname === '/admin/wallet' },
+      { label: 'Issue Coins', description: 'Add coins to a university or a PeerPrep account.', to: '/admin/prep-coins/issue', icon: Send },
+      { label: 'Wallets', description: 'University wallets and PeerPrep account balances.', to: '/admin/prep-coins/wallets', icon: Wallet },
+      { label: 'Ledger', description: 'Every coin movement, filterable.', to: '/admin/prep-coins/ledger', icon: ReceiptText },
+      { label: 'Pricing', description: 'What paid features cost students.', to: PREP_COIN_PRICING_PATH, icon: Tag },
+    ],
+  };
+  const prepAnalysis = { type: 'link', label: 'Prep Analysis', to: '/admin/analysis', icon: BarChart3 };
+  const prepInterview = {
+    type: 'group',
+    key: 'interviews',
+    label: 'Prep Interview',
+    icon: CalendarDays,
+    items: [
+      {
+        label: 'One-to-One Interviews',
+        to: '/admin/interviews/one-to-one',
+        icon: Users,
+        match: (loc) => loc.pathname.startsWith('/admin/interviews')
+          || loc.pathname.startsWith('/admin/event')
+          || loc.pathname === '/admin/feedback',
+        children: getInterviewNavigation('/admin').map((item) => ({
+          ...item,
+          icon: { all: CalendarDays, active: Activity, scheduled: CalendarClock, past: History, feedback: MessageSquare, create: CalendarPlus }[item.id],
+          match: (loc) => getInterviewSection(loc.pathname, loc.search) === item.id,
+        })),
+      },
+      {
+        label: 'AI Interviews',
+        to: '/admin/ai-interviews',
+        icon: Bot,
+        children: [
+          { label: 'All AI Interviews', to: '/admin/ai-interviews', icon: ClipboardList, match: (loc) => loc.pathname === '/admin/ai-interviews' },
+          { label: 'Create AI Interview', to: '/admin/ai-interviews/new', icon: CalendarPlus },
+          { label: 'Schedules', to: '/admin/ai-interviews/schedules', icon: CalendarClock },
+          { label: 'Avatars', to: '/admin/ai-interviews/avatars', icon: UserCog },
+          { label: 'Reports', to: '/admin/ai-interviews/reports', icon: BarChart3 },
+        ],
+      },
+    ],
+  };
+  const coordinator = {
+    type: 'group',
+    key: 'coordinator-management',
+    label: 'Coordinator',
+    icon: UserCog,
+    items: [
+      { label: 'Add Coordinators', to: '/admin/coordinators', icon: GraduationCap },
+      { label: 'Coordinator List', to: '/admin/coordinator-directory', icon: Users },
+      { label: 'Coordinator Overview', to: '/admin/coordinator-overview', icon: LayoutDashboard },
+      { label: 'Coordinator Access', to: '/admin/coordinator-access', icon: ShieldCheck },
+    ],
+  };
+  const students = {
+    type: 'group',
+    key: 'student-management',
+    label: 'Students',
+    icon: GraduationCap,
+    items: [
+      { label: 'Student List', to: '/admin/students', icon: Users, match: (currentLocation) => currentLocation.pathname === '/admin/students' },
+      { label: 'Add Student', to: '/admin/onboarding', icon: UserPlus },
+    ],
+  };
+  const prepLearning = { type: 'link', label: 'Prep Learning', to: '/admin/learning', icon: BookOpen };
+  const prepAssessment = {
+    type: 'group',
+    key: 'assessment',
+    label: 'Prep Assessment',
+    icon: ClipboardList,
+    items: [
+      { label: 'All Assessments', to: '/admin/assessment', icon: ClipboardList },
+      { label: 'Create Assessment', to: '/admin/assessment/create', icon: CalendarPlus },
+      { label: 'Reports', to: '/admin/assessment/reports', icon: ClipboardList },
+      { label: 'Feedback', to: '/admin/assessment-feedback', icon: MessageSquareText },
+    ],
+  };
+  const prepLibrary = {
+    type: 'group',
+    key: 'library',
+    label: 'Prep Library',
+    icon: Library,
+    items: [
+      { label: 'View Library', to: '/admin/library', icon: Library, match: (loc) => loc.pathname === '/admin/library' },
+    ],
+  };
+  const quickPrep = {
+    type: 'group',
+    key: 'quickprep',
+    label: 'QuickPrep',
+    icon: Zap,
+    items: [
+      { label: 'All QuickPreps', to: '/admin/quickprep', icon: ListChecks, match: (loc) => /^\/admin\/quickprep(\/(?!new$|insights$)[^/]+(\/(edit|questions\/add))?)?\/?$/.test(loc.pathname) },
+      { label: 'Create QuickPrep', to: '/admin/quickprep/new', icon: CirclePlus },
+      // Student progress lives in each university, so the central platform has no QuickPrep insights.
+      ...(isControlDeployment ? [] : [{ label: 'Insights', to: '/admin/quickprep/insights', icon: BarChart3 }]),
+    ],
+  };
+  const announcements = {
+    type: 'group',
+    key: 'announcements',
+    label: 'Announcements',
+    icon: Megaphone,
+    items: [
+      { label: 'Add Announcement', to: '/admin/announcements/add', icon: Megaphone },
+      { label: 'Manage Announcements', to: '/admin/announcements/manage', icon: Megaphone },
+    ],
+  };
+  const companyInsights = {
+    type: 'group',
+    key: 'company-insights',
+    label: 'Company Insights',
+    icon: Building2,
+    items: [
+      { label: 'Add Benchmark', to: '/admin/company-insights/add', icon: Building2 },
+      { label: 'View Benchmarks', to: '/admin/company-insights', icon: Building2 },
+    ],
+  };
+  const settings = {
+    type: 'group',
+    key: 'settings',
+    label: 'Settings',
+    icon: Settings,
+    // Folders keep related settings together; Master-Admin-only settings exist only on the central platform.
+    items: [
+      {
+        label: 'Scoring & Rewards',
+        icon: Trophy,
+        folder: true,
+        children: [
+          ...(isControlDeployment ? [
+            { label: 'Prep Score Adjustment', to: '/admin/settings/prep-score-adjustment', icon: SlidersHorizontal },
+          ] : []),
+          { label: 'Challenges & Badges', to: '/admin/settings/student-progression', icon: Activity },
+        ],
+      },
+      {
+        label: 'Students',
+        icon: GraduationCap,
+        folder: true,
+        children: [
+          { label: 'Student Access', to: '/admin/settings/student-access', icon: ShieldCheck },
+          { label: 'Bulk Uploads', to: '/admin/settings/bulk-uploads', icon: FileSpreadsheet },
+          { label: 'Promote Students', to: '/admin/settings/promote-students', icon: GraduationCap },
+        ],
+      },
+      {
+        label: 'Communication',
+        icon: Mail,
+        folder: true,
+        children: [
+          { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
+          { label: 'Email Queue', to: '/admin/email-queue', icon: Inbox },
+        ],
+      },
+      {
+        label: 'Reference Data',
+        icon: Database,
+        folder: true,
+        children: [
+          { label: 'Master Data', to: '/admin/settings/master-data', icon: Database },
+          ...(canManageInterviewCompanies ? [{ label: 'Suggested Companies', to: SUGGESTED_COMPANIES_PATH, icon: BadgeCheck }] : []),
+        ],
+      },
+    ],
+  };
+
+  // Admin menu order (set by the product owner, 2026-11-09).
   return [
-    {
-      type: 'link',
-      label: 'Overview',
-      to: '/admin/overview',
-      icon: LayoutDashboard,
-      match: (loc) => loc.pathname === '/admin' || loc.pathname.startsWith('/admin/overview') || loc.pathname.startsWith('/admin/dashboard'),
-    },
-    ...(isControlDeployment
-      ? [
-        {
-          type: 'group',
-          key: 'universities',
-          label: 'Universities',
-          icon: Building2,
-          items: [
-            { label: 'Overview', description: 'See platform-wide university activity and key totals.', to: '/admin/universities', icon: LayoutDashboard, match: (loc) => loc.pathname === '/admin/universities' },
-            // A single university's page belongs to the list it was opened from.
-            { label: 'All Universities', description: 'Browse and manage every connected institution.', to: '/admin/universities/all', icon: Building2, match: (loc) => loc.pathname === '/admin/universities/all' || (/^\/admin\/universities\/[^/]+\/?$/.test(loc.pathname) && !UNIVERSITY_SECTIONS.has(loc.pathname.split('/')[3])) },
-            { label: 'Add University', description: 'Create and configure a new university workspace.', to: '/admin/universities/new', icon: CirclePlus },
-            { label: 'Shared Assessments', description: 'Publish assessments for multiple universities.', to: '/admin/universities/assessments', icon: ClipboardList },
-            { label: 'New-University Defaults', description: 'Set the modules and preferences used at creation.', to: '/admin/universities/defaults', icon: SlidersHorizontal },
-            { label: 'Activity Log', description: 'Review recent platform administration changes.', to: '/admin/universities/activity', icon: History },
-          ],
-        },
-        {
-          type: 'group',
-          key: 'prep-coins',
-          label: 'Prep Coins',
-          icon: Coins,
-          items: [
-            { label: 'Overview', description: 'Live balances, coin flow and spending.', to: '/admin/prep-coins', icon: LayoutDashboard, match: (loc) => loc.pathname === '/admin/prep-coins' || loc.pathname === '/admin/wallet' },
-            { label: 'Issue Coins', description: 'Add coins to a university or a PeerPrep account.', to: '/admin/prep-coins/issue', icon: Send },
-            { label: 'Wallets', description: 'University wallets and PeerPrep account balances.', to: '/admin/prep-coins/wallets', icon: Wallet },
-            { label: 'Ledger', description: 'Every coin movement, filterable.', to: '/admin/prep-coins/ledger', icon: ReceiptText },
-            { label: 'Pricing', description: 'What paid features cost students.', to: PREP_COIN_PRICING_PATH, icon: Tag },
-          ],
-        },
-      ]
-      : []),
-    { type: 'link', label: 'Prep Analysis', to: '/admin/analysis', icon: BarChart3 },
-    {
-      type: 'group',
-      key: 'interviews',
-      label: 'Interviews',
-      icon: CalendarDays,
-      items: [
-        {
-          label: 'One-to-One Interviews',
-          to: '/admin/interviews/one-to-one',
-          icon: Users,
-          match: (loc) => loc.pathname.startsWith('/admin/interviews')
-            || loc.pathname.startsWith('/admin/event')
-            || loc.pathname === '/admin/feedback',
-          children: getInterviewNavigation('/admin').map((item) => ({
-            ...item,
-            icon: { all: CalendarDays, active: Activity, scheduled: CalendarClock, past: History, feedback: MessageSquare, create: CalendarPlus }[item.id],
-            match: (loc) => getInterviewSection(loc.pathname, loc.search) === item.id,
-          })),
-        },
-        {
-          label: 'AI Interviews',
-          to: '/admin/ai-interviews',
-          icon: Bot,
-          children: [
-            { label: 'All AI Interviews', to: '/admin/ai-interviews', icon: ClipboardList, match: (loc) => loc.pathname === '/admin/ai-interviews' },
-            { label: 'Create AI Interview', to: '/admin/ai-interviews/new', icon: CalendarPlus },
-            { label: 'Schedules', to: '/admin/ai-interviews/schedules', icon: CalendarClock },
-            { label: 'Avatars', to: '/admin/ai-interviews/avatars', icon: UserCog },
-            { label: 'Reports', to: '/admin/ai-interviews/reports', icon: BarChart3 },
-          ],
-        },
-      ],
-    },
-    {
-      type: 'group',
-      key: 'coordinator-management',
-      label: 'Coordinator',
-      icon: UserCog,
-      items: [
-        { label: 'Add Coordinators', to: '/admin/coordinators', icon: GraduationCap },
-        { label: 'Coordinator List', to: '/admin/coordinator-directory', icon: Users },
-        { label: 'Coordinator Overview', to: '/admin/coordinator-overview', icon: LayoutDashboard },
-        { label: 'Coordinator Access', to: '/admin/coordinator-access', icon: ShieldCheck },
-      ],
-    },
-    {
-      type: 'group',
-      key: 'student-management',
-      label: 'Student',
-      icon: GraduationCap,
-      items: [
-        { label: 'Student List', to: '/admin/students', icon: Users, match: (currentLocation) => currentLocation.pathname === '/admin/students' },
-        { label: 'Add Student', to: '/admin/onboarding', icon: UserPlus },
-      ],
-    },
-    { type: 'link', label: 'Learning Modules', to: '/admin/learning', icon: BookOpen },
-    {
-      type: 'group',
-      key: 'assessment',
-      label: 'Assessments',
-      icon: ClipboardList,
-      items: [
-        { label: 'All Assessments', to: '/admin/assessment', icon: ClipboardList },
-        { label: 'Create Assessment', to: '/admin/assessment/create', icon: CalendarPlus },
-        { label: 'Reports', to: '/admin/assessment/reports', icon: ClipboardList },
-        { label: 'Feedback', to: '/admin/assessment-feedback', icon: MessageSquareText },
-      ],
-    },
-    {
-      type: 'group',
-      key: 'library',
-      label: 'Library',
-      icon: Library,
-      items: [
-        { label: 'View Library', to: '/admin/library', icon: Library, match: (loc) => loc.pathname === '/admin/library' },
-      ],
-    },
-    {
-      type: 'group',
-      key: 'quickprep',
-      label: 'QuickPrep',
-      icon: Zap,
-      items: [
-        { label: 'All QuickPreps', to: '/admin/quickprep', icon: ListChecks, match: (loc) => /^\/admin\/quickprep(\/(?!new$|insights$)[^/]+(\/(edit|questions\/add))?)?\/?$/.test(loc.pathname) },
-        { label: 'Create QuickPrep', to: '/admin/quickprep/new', icon: CirclePlus },
-        // Student progress lives in each university, so the central platform has no QuickPrep insights.
-        ...(isControlDeployment ? [] : [{ label: 'Insights', to: '/admin/quickprep/insights', icon: BarChart3 }]),
-      ],
-    },
-    {
-      type: 'group',
-      key: 'announcements',
-      label: 'Announcements',
-      icon: Megaphone,
-      items: [
-        { label: 'Add Announcement', to: '/admin/announcements/add', icon: Megaphone },
-        { label: 'Manage Announcements', to: '/admin/announcements/manage', icon: Megaphone },
-      ],
-    },
-    {
-      type: 'group',
-      key: 'company-insights',
-      label: 'Company Insights',
-      icon: Building2,
-      items: [
-        { label: 'Add Benchmark', to: '/admin/company-insights/add', icon: Building2 },
-        { label: 'View Benchmarks', to: '/admin/company-insights', icon: Building2 },
-      ],
-    },
-    {
-      type: 'group',
-      key: 'settings',
-      label: 'Settings',
-      icon: Settings,
-      // Folders keep related settings together; Master-Admin-only settings exist only on the central platform.
-      items: [
-        {
-          label: 'Scoring & Rewards',
-          icon: Trophy,
-          folder: true,
-          children: [
-            ...(isControlDeployment ? [
-              { label: 'Prep Score Adjustment', to: '/admin/settings/prep-score-adjustment', icon: SlidersHorizontal },
-            ] : []),
-            { label: 'Challenges & Badges', to: '/admin/settings/student-progression', icon: Activity },
-          ],
-        },
-        {
-          label: 'Students',
-          icon: GraduationCap,
-          folder: true,
-          children: [
-            { label: 'Student Access', to: '/admin/settings/student-access', icon: ShieldCheck },
-            { label: 'Bulk Uploads', to: '/admin/settings/bulk-uploads', icon: FileSpreadsheet },
-            { label: 'Promote Students', to: '/admin/settings/promote-students', icon: GraduationCap },
-          ],
-        },
-        {
-          label: 'Communication',
-          icon: Mail,
-          folder: true,
-          children: [
-            { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
-            { label: 'Email Queue', to: '/admin/email-queue', icon: Inbox },
-          ],
-        },
-        {
-          label: 'Reference Data',
-          icon: Database,
-          folder: true,
-          children: [
-            { label: 'Master Data', to: '/admin/settings/master-data', icon: Database },
-            ...(canManageInterviewCompanies ? [{ label: 'Suggested Companies', to: SUGGESTED_COMPANIES_PATH, icon: BadgeCheck }] : []),
-          ],
-        },
-      ],
-    },
+    overview,
+    ...(isControlDeployment ? [university] : []),
+    prepLibrary,
+    prepAssessment,
+    prepAnalysis,
+    prepInterview,
+    quickPrep,
+    coordinator,
+    students,
+    prepLearning,
+    companyInsights,
+    announcements,
+    ...(isControlDeployment ? [prepCoins] : []),
+    settings,
   ];
 };
 
@@ -448,6 +463,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const { user, logout } = useAuth();
   const { allowsPath } = useUniversityPolicy();
   const { theme, toggleTheme } = useTheme();
+  const isMobileNav = useIsMobileNav();
   const profileOpenRef = useRef(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const isCoordinator = role === 'coordinator';
@@ -591,6 +607,32 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
     }
   };
 
+  // Phones and tablets: top bar + slide-in menu with the same items (desktop keeps the rail below).
+  if (isMobileNav) {
+    return (
+      <MobileNavigation
+        navItems={navItems}
+        isRouteActive={isRouteActive}
+        homePath={homePath}
+        logo={isStudent ? '/images/peerprep-wordmark.png' : '/images/logo.png'}
+        roleLabel={roleLabel}
+        displayName={displayName}
+        displayEmail={displayEmail}
+        avatarUrl={avatarUrl}
+        initials={initials || (isCoordinator ? 'CO' : isStudent ? 'ST' : 'AD')}
+        accent={accent}
+        accountLinks={[
+          ...((isCoordinator || (isStudent && !isAssessmentCandidate)) ? [{ label: 'My profile', to: isStudent ? '/student/profile' : '/coordinator/profile', Icon: User }] : []),
+          ...(!isStudent ? [{ label: 'Activity log', to: isCoordinator ? '/coordinator/activity' : '/admin/activity', Icon: Activity }] : []),
+          { label: 'Change password', to: isCoordinator ? '/coordinator/change-password' : isStudent ? '/student/change-password' : '/admin/change-password', Icon: Lock },
+        ]}
+        theme={theme}
+        toggleTheme={toggleTheme}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   return (
     <aside
       onMouseEnter={handleSidebarEnter}
@@ -708,46 +750,40 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                   id={groupPanelId}
                   role="dialog"
                   aria-label={`${item.label} navigation`}
-                  className="fixed z-[9998] flex w-[21rem] flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_24px_70px_rgba(15,23,42,0.22)] ring-1 ring-white/80 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95 dark:ring-slate-800"
+                  className="fixed z-[9998] flex w-[15rem] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18),0_2px_6px_rgba(15,23,42,0.05)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/40"
                   style={{
-                    left: `calc(${resolvedSidebarWidth} + 0.75rem)`,
+                    left: `calc(${resolvedSidebarWidth} + 0.5rem)`,
                     top: `${groupPanelTop}px`,
-                    maxWidth: `calc(100vw - ${resolvedSidebarWidth} - 1.5rem)`,
+                    maxWidth: `calc(100vw - ${resolvedSidebarWidth} - 1rem)`,
                     maxHeight: `calc(100vh - ${groupPanelTop + 12}px)`,
                   }}
                 >
-                  <header className="relative shrink-0 overflow-hidden border-b border-sky-100 bg-gradient-to-br from-sky-50 via-white to-cyan-50 px-4 py-4 dark:border-sky-950 dark:from-slate-800 dark:via-slate-900 dark:to-sky-950/60">
-                    <div className="absolute -right-8 -top-10 h-28 w-28 rounded-full bg-sky-200/35 blur-2xl dark:bg-sky-600/10" />
-                    <div className="relative flex items-start gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-[0_8px_20px_rgba(2,132,199,0.24)]">
-                        <GroupIcon className="h-5 w-5" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-600 dark:text-sky-400">Sub navigation</p>
-                        <h2 className="mt-0.5 truncate text-base font-bold text-slate-900 dark:text-white">{item.label}</h2>
-                        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Choose one of {item.items.length} available sections.</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => { setOpenGroup(null); setOpenNestedGroup(null); }}
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700 hover:shadow-sm dark:hover:bg-slate-800 dark:hover:text-white"
-                        aria-label={`Close ${item.label} navigation`}
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
+                  <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 py-2 pl-3.5 pr-1.5 dark:border-slate-800">
+                    <h2 className="truncate text-[11.5px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">{item.label}</h2>
+                    <button
+                      type="button"
+                      onClick={() => { setOpenGroup(null); setOpenNestedGroup(null); }}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white"
+                      aria-label={`Close ${item.label} navigation`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </header>
 
-                  <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2.5 [scrollbar-width:thin]">
+                  <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-1.5 [scrollbar-width:thin]">
                   {item.items.map((child) => {
                     const ChildIcon = child.icon;
                     const childActive = isRouteActive(child);
+                    const rowTone = childActive
+                      ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300'
+                      : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white';
+                    const iconTone = childActive ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 group-hover/flyout:text-slate-600 dark:text-slate-500 dark:group-hover/flyout:text-slate-300';
                     if (child.children?.length) {
                       const nestedKey = `${item.key}:${child.label}`;
                       const nestedOpen = openNestedGroup === nestedKey;
                       const nestedPanelId = `${groupPanelId}-${child.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
                       return (
-                        <div key={child.label} className="overflow-hidden rounded-xl border border-transparent transition-colors hover:border-slate-100 dark:hover:border-slate-700">
+                        <div key={child.label}>
                           {child.folder ? (
                             <button
                               type="button"
@@ -755,27 +791,30 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                               aria-expanded={nestedOpen}
                               aria-controls={nestedPanelId}
                               data-platform-disclosure="navigation"
+                              title={child.description || undefined}
                               onClick={() => setOpenNestedGroup(nestedOpen ? null : nestedKey)}
-                              className={`flex w-full items-center gap-3 rounded-xl p-3 text-left transition-colors ${childActive ? 'bg-sky-50 text-sky-800 dark:bg-sky-950/60 dark:text-sky-200' : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800'}`}
+                              className={`group/flyout relative flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium transition-colors ${rowTone}`}
                             >
-                              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${childActive ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'}`}><ChildIcon className="h-4 w-4" /></span>
-                              <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold leading-tight">{child.label}</span><span className="mt-1 block text-[11px] font-normal leading-snug text-slate-500 dark:text-slate-400">{child.description || `Explore ${child.label.toLowerCase()} options.`}</span></span>
-                              <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${nestedOpen ? 'rotate-180' : ''}`} />
+                              <ChildIcon className={`h-4 w-4 shrink-0 ${iconTone}`} strokeWidth={1.8} />
+                              <span className="min-w-0 flex-1 truncate">{child.label}</span>
+                              <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${nestedOpen ? 'rotate-180' : ''}`} />
                             </button>
                           ) : (
-                            <div className={`flex items-center rounded-xl transition-colors ${childActive ? 'bg-sky-50 text-sky-800 dark:bg-sky-950/60 dark:text-sky-200' : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800'}`}>
+                            <div className={`group/flyout relative flex h-9 items-center rounded-lg transition-colors ${rowTone}`}>
+                              {childActive && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-sky-600 dark:bg-sky-400" aria-hidden="true" />}
                               <NavLink
                                 to={child.to}
                                 aria-label={child.label}
+                                title={child.description || undefined}
                                 data-submenu-trigger="true"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   setOpenNestedGroup(nestedOpen ? null : nestedKey);
                                 }}
-                                className="flex min-w-0 flex-1 items-center gap-3 p-3"
+                                className="flex h-full min-w-0 flex-1 items-center gap-2.5 px-2.5 text-[13px] font-medium"
                               >
-                                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${childActive ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'}`}><ChildIcon className="h-4 w-4" /></span>
-                                <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold leading-tight">{child.label}</span><span className="mt-1 block text-[11px] font-normal leading-snug text-slate-500 dark:text-slate-400">{child.description || `Open ${child.label.toLowerCase()} and related tools.`}</span></span>
+                                <ChildIcon className={`h-4 w-4 shrink-0 ${iconTone}`} strokeWidth={1.8} />
+                                <span className="min-w-0 flex-1 truncate">{child.label}</span>
                               </NavLink>
                               <button
                                 type="button"
@@ -784,21 +823,19 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                                 aria-controls={nestedPanelId}
                                 data-platform-disclosure="navigation"
                                 onClick={() => setOpenNestedGroup(nestedOpen ? null : nestedKey)}
-                                className="mr-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-sky-700 hover:shadow-sm dark:hover:bg-slate-700 dark:hover:text-sky-300"
+                                className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-sky-700 dark:hover:bg-slate-700 dark:hover:text-sky-300"
                               >
                                 <ChevronDown className={`h-3.5 w-3.5 transition-transform ${nestedOpen ? 'rotate-180' : ''}`} />
                               </button>
                             </div>
                           )}
                           <div id={nestedPanelId} inert={!nestedOpen} className={`overflow-hidden transition-[max-height,opacity] duration-200 ${nestedOpen ? 'max-h-72 opacity-100' : 'max-h-0 opacity-0'}`}>
-                            <div className="mb-2 ml-[3.75rem] mr-2 space-y-1 border-l border-slate-200 pl-3 dark:border-slate-700">
+                            <div className="mb-1 ml-[1.15rem] mt-0.5 space-y-0.5 border-l border-slate-200 pl-2 dark:border-slate-700">
                               {child.children.map((nestedChild) => {
-                                const NestedIcon = nestedChild.icon;
                                 const nestedActive = isRouteActive(nestedChild);
                                 return (
-                                  <Link key={nestedChild.label} to={nestedChild.to} aria-label={nestedChild.label} aria-current={nestedActive ? 'page' : undefined} className={`flex min-h-9 items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] font-medium transition ${nestedActive ? 'bg-white text-sky-700 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:text-sky-300 dark:ring-slate-700' : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'}`}>
-                                    <NestedIcon className="h-3 w-3 shrink-0" />
-                                    <span className="min-w-0 leading-tight">{nestedChild.label}</span>
+                                  <Link key={nestedChild.label} to={nestedChild.to} aria-label={nestedChild.label} aria-current={nestedActive ? 'page' : undefined} className={`flex h-8 items-center rounded-md px-2.5 text-[12.5px] transition-colors ${nestedActive ? 'bg-sky-50 font-medium text-sky-700 dark:bg-sky-950/50 dark:text-sky-300' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'}`}>
+                                    <span className="min-w-0 truncate">{nestedChild.label}</span>
                                   </Link>
                                 );
                               })}
@@ -812,22 +849,16 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                         key={child.label}
                         to={child.to}
                         aria-label={child.label}
-                        className={`group/flyout flex items-center gap-3 rounded-xl border p-3 transition-all ${
-                          childActive
-                            ? 'border-sky-200 bg-sky-50 text-sky-800 shadow-sm dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-200'
-                            : 'border-transparent text-slate-700 hover:border-slate-100 hover:bg-slate-50 hover:text-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-white'
-                        }`}
+                        title={child.description || undefined}
+                        className={`group/flyout relative flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors ${rowTone}`}
                       >
-                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${childActive ? 'bg-sky-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 group-hover/flyout:bg-white group-hover/flyout:text-sky-700 dark:bg-slate-700 dark:text-slate-300 dark:group-hover/flyout:bg-slate-700'}`}><ChildIcon className="h-4 w-4" /></span>
-                        <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold leading-tight">{child.label}</span><span className="mt-1 block text-[11px] font-normal leading-snug text-slate-500 dark:text-slate-400">{child.description || `Open ${child.label.toLowerCase()} and related tools.`}</span></span>
-                        <ChevronRight className={`h-4 w-4 shrink-0 transition-transform group-hover/flyout:translate-x-0.5 ${childActive ? 'text-sky-600 dark:text-sky-400' : 'text-slate-300 dark:text-slate-600'}`} />
+                        {childActive && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-sky-600 dark:bg-sky-400" aria-hidden="true" />}
+                        <ChildIcon className={`h-4 w-4 shrink-0 ${iconTone}`} strokeWidth={1.8} />
+                        <span className="min-w-0 flex-1 truncate">{child.label}</span>
                       </NavLink>
                     );
                   })}
                   </div>
-                  <footer className="shrink-0 border-t border-slate-100 bg-slate-50/80 px-4 py-2.5 text-[10px] font-medium text-slate-400 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-500">
-                    Press Esc or click outside to close
-                  </footer>
                 </section>,
                 document.body,
               )}

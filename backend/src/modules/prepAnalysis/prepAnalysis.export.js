@@ -17,6 +17,7 @@ const STATUS_LABELS = {
   practice: { active: 'Practising', inactive: 'Stopped', never: 'Never practised' },
   learning: { active: 'Learning', inactive: 'Stopped', never: 'Never started' },
   quickprep: { finished: 'Finished a sheet', inProgress: 'In progress', none: 'Not started' },
+  quickprepActivity: { active: 'Using sheets', inactive: 'Stopped', never: 'Never opened a sheet' },
   interview: { active: 'Interviewing', inactive: 'Stopped', never: 'Never interviewed' },
   assessment: { active: 'Taking tests', inactive: 'Stopped', never: 'Never took a test' },
 };
@@ -58,12 +59,25 @@ export const EXPORT_COLUMNS = [
   { key: 'practiceStatus', label: 'Practice status', group: 'Prep Coding', module: 'coding', width: 14, get: (row) => STATUS_LABELS.practice[row.coding.practiceStatus] },
   { key: 'languages', label: 'Languages used', group: 'Prep Coding', module: 'coding', width: 18, get: (row) => list(row.coding.languages.map((language) => LANGUAGE_LABELS[language] || language)) },
   { key: 'topicsSolved', label: 'Topics solved', group: 'Prep Coding', module: 'coding', width: 30, get: (row) => list(row.coding.solvedTopics) },
+  { key: 'solvesTracked', label: 'Solves with time tracked', group: 'Prep Coding', module: 'coding', kind: 'number', width: 11, get: (row) => row.coding.review.tracked },
+  { key: 'solvesToReview', label: 'Solves to review', group: 'Prep Coding', module: 'coding', kind: 'number', width: 10, get: (row) => row.coding.review.flagged },
+  { key: 'solvesFast', label: 'Very fast solves', group: 'Prep Coding', module: 'coding', kind: 'number', width: 9, get: (row) => row.coding.review.fast },
+  { key: 'solvesPasted', label: 'Mostly pasted solves', group: 'Prep Coding', module: 'coding', kind: 'number', width: 10, get: (row) => row.coding.review.pasted },
+  { key: 'medianSolveMinutes', label: 'Median solve time (min)', group: 'Prep Coding', module: 'coding', kind: 'decimal', width: 11, get: (row) => row.coding.review.medianActiveMin },
 
-  { key: 'sheetsStarted', label: 'Sheets started', group: 'Prep Coding', module: 'coding', kind: 'number', width: 9, get: (row) => row.quickprep?.started ?? null },
-  { key: 'sheetsFinished', label: 'Sheets finished', group: 'Prep Coding', module: 'coding', kind: 'number', width: 9, get: (row) => row.quickprep?.finished ?? null },
-  { key: 'sheetQuestionsSolved', label: 'Sheet questions solved', group: 'Prep Coding', module: 'coding', kind: 'number', width: 11, get: (row) => row.quickprep?.solved ?? null },
-  { key: 'sheetProgress', label: 'Sheet progress %', group: 'Prep Coding', module: 'coding', kind: 'percent', width: 10, get: (row) => (row.quickprep?.started ? row.quickprep.progress : null) },
-  { key: 'quickPrepStatus', label: 'Quick Prep status', group: 'Prep Coding', module: 'coding', width: 15, get: (row) => STATUS_LABELS.quickprep[row.quickprep?.status] },
+  { key: 'sheetsStarted', label: 'Sheets started', group: 'Quick Prep', module: 'quickprep', kind: 'number', width: 9, get: (row) => row.quickprep?.started ?? null },
+  { key: 'sheetsFinished', label: 'Sheets finished', group: 'Quick Prep', module: 'quickprep', kind: 'number', width: 9, get: (row) => row.quickprep?.finished ?? null },
+  { key: 'sheetsOpen', label: 'Sheets open to them', group: 'Quick Prep', module: 'quickprep', kind: 'number', width: 9, get: (row) => row.quickprep?.visibleSheets ?? null },
+  { key: 'sheetCoverage', label: 'Open sheets started %', group: 'Quick Prep', module: 'quickprep', kind: 'percent', width: 10, get: (row) => (row.quickprep?.visibleSheets ? row.quickprep.coverage : null) },
+  { key: 'sheetQuestionsSolved', label: 'Sheet questions solved', group: 'Quick Prep', module: 'quickprep', kind: 'number', width: 11, get: (row) => row.quickprep?.solved ?? null },
+  { key: 'sheetQuestions', label: 'Questions in started sheets', group: 'Quick Prep', module: 'quickprep', kind: 'number', width: 11, get: (row) => row.quickprep?.total ?? null },
+  { key: 'sheetProgress', label: 'Sheet progress %', group: 'Quick Prep', module: 'quickprep', kind: 'percent', width: 10, get: (row) => (row.quickprep?.started ? row.quickprep.progress : null) },
+  { key: 'quickPrepStatus', label: 'Quick Prep status', group: 'Quick Prep', module: 'quickprep', width: 15, get: (row) => STATUS_LABELS.quickprep[row.quickprep?.status] },
+  { key: 'quickPrepActivity', label: 'Sheet activity', group: 'Quick Prep', module: 'quickprep', width: 14, get: (row) => STATUS_LABELS.quickprepActivity[row.quickprep?.activity] },
+  { key: 'daysSinceSheet', label: 'Days since last sheet activity', group: 'Quick Prep', module: 'quickprep', kind: 'number', width: 12, get: (row) => row.quickprep?.daysSinceActive ?? null },
+  { key: 'sheetSolvesTracked', label: 'Sheet solves with time tracked', group: 'Quick Prep', module: 'quickprep', kind: 'number', width: 11, get: (row) => row.quickprep?.review?.tracked ?? null },
+  { key: 'sheetSolvesToReview', label: 'Sheet solves to review', group: 'Quick Prep', module: 'quickprep', kind: 'number', width: 10, get: (row) => row.quickprep?.review?.flagged ?? null },
+  { key: 'sheetMedianSolveMinutes', label: 'Median sheet solve time (min)', group: 'Quick Prep', module: 'quickprep', kind: 'decimal', width: 11, get: (row) => row.quickprep?.review?.medianActiveMin ?? null },
 
   { key: 'learningProgress', label: 'Course completed %', group: 'Prep Learning', module: 'learning', kind: 'percent', width: 11, get: (row) => row.learning?.progress ?? null },
   { key: 'topicsCompleted', label: 'Topics completed', group: 'Prep Learning', module: 'learning', kind: 'number', width: 10, get: (row) => row.learning?.completedTopics ?? null },
@@ -100,7 +114,8 @@ export const COLUMN_BY_KEY = new Map(EXPORT_COLUMNS.map((column) => [column.key,
 // Ticked when the download popup opens; the admin can add or remove any column.
 export const DEFAULT_EXPORT_COLUMNS = Object.freeze({
   // Each default fits on a PDF page (EXPORT_LIMITS.maxPdfColumns).
-  coding: ['position', 'name', 'studentId', 'semester', 'branch', 'sheetProgress', 'prepScore', 'solvedEasy', 'solvedMedium', 'solvedHard', 'accuracy', 'practiceStatus'],
+  coding: ['position', 'name', 'studentId', 'semester', 'branch', 'prepScore', 'solvedTotal', 'solvedEasy', 'solvedMedium', 'solvedHard', 'accuracy', 'practiceStatus'],
+  quickprep: ['position', 'name', 'studentId', 'semester', 'branch', 'sheetProgress', 'sheetsStarted', 'sheetsFinished', 'sheetCoverage', 'sheetQuestionsSolved', 'quickPrepStatus', 'daysSinceSheet'],
   learning: ['position', 'name', 'studentId', 'semester', 'branch', 'learningPrepScore', 'learningProgress', 'topicsCompleted', 'topicsAvailable', 'videoMinutes', 'learningStatus', 'daysSinceLesson'],
   interview: ['position', 'name', 'studentId', 'semester', 'branch', 'interviewPrepScore', 'interviewsDone', 'mockDone', 'mockScore', 'bestMockScore', 'aiInterviews', 'interviewStatus'],
   assessment: ['position', 'name', 'studentId', 'semester', 'branch', 'assessmentPrepScore', 'testsTaken', 'testsPassed', 'testsMissed', 'testScore', 'bestTestScore', 'testStatus'],
@@ -112,7 +127,7 @@ export function publicExportColumns(permissions) {
   return EXPORT_COLUMNS.filter((column) => modules.has(column.module)).map(({ get, ...column }) => column);
 }
 
-const AREA_LABELS = { all: 'All features', coding: 'Prep Coding', learning: 'Prep Learning', interview: 'Prep Interview', assessment: 'Prep Assessment' };
+const AREA_LABELS = { all: 'All features', coding: 'Prep Coding', quickprep: 'Quick Prep', learning: 'Prep Learning', interview: 'Prep Interview', assessment: 'Prep Assessment' };
 const PERIOD_LABELS = { '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days', '180d': 'Last 6 months', '365d': 'Last year', all: 'All time' };
 const cleanText = (value, max = 240) => String(value ?? '').replace(/[\u0000-\u001f]+/g, ' ').trim().slice(0, max);
 export const periodText = (range) => (range.preset === 'custom'

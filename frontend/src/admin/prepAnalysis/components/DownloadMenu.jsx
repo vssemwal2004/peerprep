@@ -9,13 +9,14 @@ const FORMATS = [
   { value: "xlsx", label: "Excel", hint: "Sort and filter in Excel", Icon: FileSpreadsheet },
   { value: "csv", label: "CSV", hint: "Plain data for any tool", Icon: Sheet },
 ];
-// Which column groups make sense for each feature (Quick Prep columns are part of Prep Coding).
+// Which column groups make sense for each feature.
 const AREA_GROUPS = {
   coding: ["Student details", "Prep Coding"],
+  quickprep: ["Student details", "Quick Prep"],
   learning: ["Student details", "Prep Learning"],
   interview: ["Student details", "Prep Interview"],
   assessment: ["Student details", "Prep Assessment"],
-  all: ["Student details", "Prep Coding", "Prep Learning", "Prep Interview", "Prep Assessment"],
+  all: ["Student details", "Prep Coding", "Quick Prep", "Prep Learning", "Prep Interview", "Prep Assessment"],
 };
 
 function ExportDialog({ open, initialFormat, onClose, catalog, area, areaLabel, state, fieldMap, matched, table, focus }) {

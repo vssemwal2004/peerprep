@@ -210,6 +210,21 @@
   }
 }
 
+/* App shells (student, admin, coordinator) on phones and tablets: the desktop sidebar becomes the
+   top bar + menu (components/MobileNavigation.jsx), so pages take the full width and start below
+   the 3.5rem bar. The page area keeps its own scroll, so sticky page headers still work. */
+@media (max-width: 1023.98px) {
+  [data-app-shell] {
+    --admin-sidebar-width: 0px !important;
+    --mobile-bar-height: 3.5rem;
+  }
+  [data-app-shell] > main[data-app-scroll-container] {
+    padding-left: 0 !important;
+    margin-top: var(--mobile-bar-height);
+    height: calc(100dvh - var(--mobile-bar-height)) !important;
+  }
+}
+
 /* Additional global styles for consistency */
 img {
   @apply object-cover w-full h-full;

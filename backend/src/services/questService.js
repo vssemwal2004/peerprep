@@ -447,10 +447,22 @@ export async function removeQuest(admin, college, id) {
   return { archived: true };
 }
 
+/**
+ * The judging record behind a QuickPrep item: 'local:<problemId>' (Submission) or 'shared:<questionId>'
+ * (QuestionPracticeAttempt). Off a university a shared item is judged through its linked local problem
+ * (`localProblemId` in the index), exactly as questionStates does for one student.
+ */
+const evidenceOf = (index) => (key) => {
+  const localId = key.startsWith('coding:local:') ? key.split(':').at(-1) : index.get(key)?.localProblemId || null;
+  return localId ? `local:${localId}` : `shared:${key.split(':').at(-1)}`;
+};
+
 /** Per-student and per-question solve state for a set of students, from verified submissions and attempts. */
-async function cohortStates(studentIds, keys) {
-  const local = keys.filter((key) => key.startsWith('coding:local:')).map((key) => objectId(key.split(':').at(-1)));
-  const shared = keys.filter((key) => key.startsWith('coding:shared:')).map((key) => objectId(key.split(':').at(-1)));
+async function cohortStates(studentIds, keys, index = new Map()) {
+  const evidence = evidenceOf(index);
+  const markers = new Map(keys.map((key) => [key, evidence(key)]));
+  const local = [...new Set([...markers.values()].filter((marker) => marker.startsWith('local:')))].map((marker) => objectId(marker.slice(6)));
+  const shared = [...new Set([...markers.values()].filter((marker) => marker.startsWith('shared:')))].map((marker) => objectId(marker.slice(7)));
   const [localRows, sharedRows] = await Promise.all([
     local.length && studentIds.length ? Submission.aggregate([
       { $match: { user: { $in: studentIds }, problem: { $in: local }, assessmentId: null } },
@@ -461,11 +473,40 @@ async function cohortStates(studentIds, keys) {
       { $group: { _id: { student: '$studentId', question: '$questionId' }, solved: { $max: { $cond: [{ $eq: ['$result', 'correct'] }, 1, 0] } } } },
     ]).option({ maxTimeMS: 10000 }) : [],
   ]);
+  const byEvidence = new Map();
+  for (const [prefix, rows] of [['local', localRows], ['shared', sharedRows]]) {
+    for (const row of rows) byEvidence.set(`${String(row._id.student)}|${prefix}:${String(row._id.question)}`, row.solved ? 'solved' : 'attempted');
+  }
+  // Keyed by the item key the callers use, whichever record judged it.
   const states = new Map();
-  for (const [prefix, rows] of [['coding:local', localRows], ['coding:shared', sharedRows]]) {
-    for (const row of rows) states.set(`${String(row._id.student)}|${prefix}:${String(row._id.question)}`, row.solved ? 'solved' : 'attempted');
+  for (const [key, marker] of markers) {
+    for (const studentId of studentIds) {
+      const state = byEvidence.get(`${String(studentId)}|${marker}`);
+      if (state) states.set(`${String(studentId)}|${key}`, state);
+    }
   }
   return states;
+}
+
+/**
+ * Live QuickPrep progress for many students, by the same rules as each student's own sheet page:
+ * only questions students can open count, and a shared item is judged where students solve it.
+ * Returns { sheets: Map(questId -> { keys, evidence }), isSolved(studentId, key) }. `evidence` are the
+ * 'local:<id>' / 'shared:<id>' records behind the sheet (used to match solve times to sheets).
+ * Stored enrollment counts are refreshed only when a student opens the sheet, so they are not used.
+ */
+export async function cohortQuestProgress(studentIds, quests) {
+  const index = await studentLibraryIndex(quests);
+  const evidence = evidenceOf(index);
+  const sheets = new Map(quests.map((quest) => {
+    const keys = (quest.items || []).map(itemKey).filter((key) => index.has(key));
+    return [String(quest._id), { keys, evidence: keys.map(evidence) }];
+  }));
+  const allKeys = [...new Set([...sheets.values()].flatMap((sheet) => sheet.keys))];
+  const states = studentIds.length && allKeys.length ? await cohortStates(studentIds.map(objectId), allKeys, index) : new Map();
+  // Title and difficulty of every openable question, read live from the library.
+  const meta = new Map(allKeys.map((key) => [key, { title: index.get(key)?.title || 'Question', difficulty: index.get(key)?.difficulty || '' }]));
+  return { sheets, meta, isSolved: (studentId, key) => states.get(`${String(studentId)}|${key}`) === 'solved' };
 }
 
 /** Admin "View": how every student and every question is doing in one QuickPrep. */
@@ -478,7 +519,7 @@ export async function questInsights(admin, id) {
   const keys = quest.items.map(itemKey).filter((key) => index.has(key));
   const [users, states] = await Promise.all([
     studentIds.length ? User.find({ _id: { $in: studentIds } }).select('name studentId semester').maxTimeMS(8000).lean() : [],
-    cohortStates(studentIds, keys),
+    cohortStates(studentIds, keys, index),
   ]);
   const people = new Map(users.map((user) => [String(user._id), user]));
   const students = enrollments.map((row) => {

@@ -8,6 +8,7 @@ import { RATINGS } from './interviewFacts.js';
 import { accessibleSemesters } from './learningFacts.js';
 import { DIFFICULTIES } from './ranking.js';
 import { sheetVisibleTo } from './quickPrepFacts.js';
+import { reviewOf } from '../../services/solveEffort.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 // A student with no activity for this many days counts as stopped.
@@ -58,26 +59,85 @@ function learningRow(student, facts, now, totalsCache) {
   };
 }
 
-/** Quick Prep figures for one student across the sheets they started. */
-function quickPrepRow(student, facts, now) {
+/**
+ * "Own work" for a set of first solves: how many were tracked (solved after tracking started),
+ * how many need review and why, and the median active solve time. `difficultyOf(entry)` picks the
+ * review threshold. Never a verdict: a person decides after looking.
+ */
+export function reviewSummary(entries, difficultyOf = () => null) {
+  const items = entries.map((entry) => ({ ...entry, review: reviewOf(entry.effort, difficultyOf(entry), entry.at) }))
+    .sort((left, right) => new Date(right.at) - new Date(left.at));
+  const tracked = items.filter((item) => item.review);
+  const flagged = tracked.filter((item) => item.review.reasons.length);
+  const minutes = tracked.map((item) => item.review.activeMs / 60000).sort((left, right) => left - right);
+  const middle = Math.floor(minutes.length / 2);
+  return {
+    solved: items.length,
+    tracked: tracked.length,
+    flagged: flagged.length,
+    fast: flagged.filter((item) => item.review.reasons.includes('fast')).length,
+    pasted: flagged.filter((item) => item.review.reasons.includes('pasted')).length,
+    medianActiveMin: minutes.length ? round1(minutes.length % 2 ? minutes[middle] : (minutes[middle - 1] + minutes[middle]) / 2) : null,
+    items,
+  };
+}
+export const emptyReview = () => reviewSummary([]);
+
+const inWindow = (date, range) => {
+  if (!date) return false;
+  const time = new Date(date).getTime();
+  return (!range?.from || time >= range.from.getTime()) && (!range?.to || time <= range.to.getTime());
+};
+
+/**
+ * Sheet starts and finishes per day ("YYYY-MM-DD" -> [started, finished]) inside the period.
+ * Enrollments keep only their start, finish and last-opened times, so these are the dated events.
+ */
+function quickPrepDays(entries, range) {
+  const days = new Map();
+  const add = (date, index) => {
+    if (!inWindow(date, range)) return;
+    const key = new Date(date).toISOString().slice(0, 10);
+    const counts = days.get(key) || [0, 0];
+    counts[index] += 1;
+    days.set(key, counts);
+  };
+  for (const entry of entries) {
+    add(entry.startedAt, 0);
+    add(entry.completedAt, 1);
+  }
+  return days;
+}
+
+/** Quick Prep figures for one student across the sheets open to them. */
+function quickPrepRow(student, facts, now, range) {
   const entries = facts.byStudent.get(String(student._id)) || [];
   const solved = entries.reduce((sum, entry) => sum + entry.solved, 0);
   const total = entries.reduce((sum, entry) => sum + entry.total, 0);
   const finished = entries.filter((entry) => entry.finished).length;
   const lastActive = entries.map((entry) => entry.lastViewedAt).filter(Boolean).sort((left, right) => new Date(right) - new Date(left))[0] || null;
   const days = daysSince(lastActive, now);
-  const visible = [...facts.sheets.values()].filter((sheet) => sheet.published && sheetVisibleTo(sheet, student.semester)).length;
+  const visible = [...facts.sheets.values()].filter((sheet) => sheet.published && sheetVisibleTo(sheet, student.semester));
+  const startedIds = new Set(entries.map((entry) => entry.sheetId));
+  const startedVisible = visible.filter((sheet) => startedIds.has(sheet.id)).length;
   return {
     started: entries.length,
     finished,
     solved,
     total,
-    visibleSheets: visible,
+    visibleSheets: visible.length,
+    // Share of the sheets open to this student that they have started.
+    coverage: visible.length ? round1((startedVisible / visible.length) * 100) : 0,
+    notStarted: visible.filter((sheet) => !startedIds.has(sheet.id)).map((sheet) => sheet.id),
     progress: total ? round1((solved / total) * 100) : 0,
     sheets: entries.map((entry) => entry.sheetId),
     sheetsFinished: entries.filter((entry) => entry.finished).map((entry) => entry.sheetId),
     bySheet: new Map(entries.map((entry) => [entry.sheetId, entry])),
+    days: quickPrepDays(entries, range),
+    lastActiveAt: lastActive,
     daysSinceActive: days,
+    // A started sheet with no recorded visit time counts as inactive, not active.
+    activity: !entries.length ? 'never' : days === null || days > INACTIVE_AFTER_DAYS ? 'inactive' : 'active',
     status: !entries.length ? 'none' : finished ? 'finished' : 'inProgress',
   };
 }
@@ -100,12 +160,18 @@ function assessmentRow(student, facts, now, range) {
   const passedIds = attempts.filter((attempt) => attempt.percent >= PASS_PERCENT).map((attempt) => attempt.testId);
   // Report navigation must also work for a completed test that an admin later hides.
   const assignedIds = [...facts.tests.values()].filter((test) => test.forEveryone || test.assigned.has(id)).map((test) => test.id);
-  // A missed test: meant for the student, over, (started in the period) and not taken.
-  const inPeriod = (test) => !range?.from || !test.startTime || new Date(test.startTime) >= range.from;
-  const missedIds = [...facts.tests.values()].filter((test) => test.ended && inPeriod(test) && testAssignedTo(test, id) && !latest.has(test.id)).map((test) => test.id);
+  // Finished but not yet scored: the student took it, so it is never "missed" (and never "never took a test").
+  const awaitingIds = [...(facts.awaiting?.get(id) || [])].filter((testId) => !latest.has(testId));
+  // A missed test: meant for the student, over, started within the period and not taken.
+  const inPeriod = (test) => !test.startTime || ((!range?.from || new Date(test.startTime) >= range.from) && (!range?.to || new Date(test.startTime) <= range.to));
+  const missedIds = [...facts.tests.values()]
+    .filter((test) => test.ended && inPeriod(test) && testAssignedTo(test, id) && !latest.has(test.id) && !awaitingIds.includes(test.id))
+    .map((test) => test.id);
   const lastAt = attempts.length ? attempts.at(-1).at : null;
   const days = daysSince(lastAt, now);
   return {
+    awaiting: awaitingIds.length,
+    awaitingIds,
     taken: attempts.length,
     passed: passedIds.length,
     failed: attempts.length - passedIds.length,
@@ -122,7 +188,8 @@ function assessmentRow(student, facts, now, range) {
     byTest: latest,
     days: dailyCounts(attempts.map((attempt) => attempt.at)),
     daysSinceActive: days,
-    status: activityStatus(attempts.length > 0, days),
+    // Only awaiting evaluation (no graded attempt yet) still counts as having taken a test.
+    status: !attempts.length && awaitingIds.length ? 'active' : activityStatus(attempts.length > 0, days),
   };
 }
 
@@ -177,6 +244,7 @@ function emptyCoding() {
     lastActiveAt: null, daysSinceActive: null, practiceStatus: 'never',
     languages: [], solvedTopics: [], solvedTags: [], solvedDifficulties: [],
     prepScore: 0, points: { Easy: 0, Medium: 0, Hard: 0 }, scoredCounts: { Easy: 0, Medium: 0, Hard: 0 },
+    review: emptyReview(),
   };
 }
 
@@ -204,10 +272,14 @@ export function attachStoredScores(rows, stored, { features = {}, points = { Eas
  */
 export function buildStudentRows({
   students, facts, problems, batchNames = new Map(), now = new Date(), learning = null, quickprep = null, assessment = null, interview = null, range = null,
+  efforts = null,
 }) {
   const learningTotals = new Map();
+  const difficultyOf = (entry) => (entry.key.startsWith('local:') ? problems.get(entry.problemId)?.difficulty || null : null);
   const rows = students.map((student) => {
     const id = String(student._id);
+    // First solves in the period, with how the student worked on them (null before tracking).
+    const solves = (efforts?.get(id) || []).filter((entry) => inWindow(entry.at, range));
     const entries = (facts.byStudent.get(id) || [])
       .map((entry) => ({ ...entry, meta: problems.get(String(entry.problemId)) }))
       .filter((entry) => entry.meta);
@@ -246,6 +318,13 @@ export function buildStudentRows({
     coding.solvedTopics = [...solvedTopics];
     coding.solvedTags = [...solvedTags];
     coding.solvedDifficulties = [...solvedDifficulties];
+    // Prep Coding: library problems. Quick Prep: questions of the sheets this student started.
+    coding.review = reviewSummary(solves.filter((entry) => entry.key.startsWith('local:')), difficultyOf);
+    const quickprepRow = quickprep ? quickPrepRow(student, quickprep, now, range) : null;
+    if (quickprepRow) {
+      const sheetKeys = new Set(quickprepRow.sheets.flatMap((sheetId) => [...(quickprep.sheets.get(sheetId)?.itemKeys || [])]));
+      quickprepRow.review = reviewSummary(solves.filter((entry) => sheetKeys.has(entry.key)), difficultyOf);
+    }
     return {
       id,
       name: student.name || 'Unnamed student',
@@ -264,7 +343,7 @@ export function buildStudentRows({
       },
       coding,
       learning: learning ? learningRow(student, learning, now, learningTotals) : null,
-      quickprep: quickprep ? quickPrepRow(student, quickprep, now) : null,
+      quickprep: quickprepRow,
       assessment: assessment ? assessmentRow(student, assessment, now, range) : null,
       interview: interview ? interviewRow(student, interview, now) : null,
       entries,

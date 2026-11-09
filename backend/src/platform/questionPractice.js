@@ -24,6 +24,7 @@ import { universityPolicy, controlRequest } from './client.js';
 import { problemUsedInAssessment, serializeProblem, studentFailedCase } from '../controllers/compilerHelpers.js';
 import { interviewReportOptions, interviewReportSummaries, reporterKey, saveInterviewReport } from './interviewQuestionReports.js';
 import { questionQuickPreps } from '../services/questService.js';
+import { sanitizeEffort } from '../services/solveEffort.js';
 import { matchesSerialSearch, parseSerialSearch, serialSearchClause } from '../utils/problemSerial.js';
 
 const router = Router();
@@ -570,6 +571,8 @@ router.post('/:source/:id/attempts', compilerExecutionLimiter, asyncRoute(async 
   if (!valid) throw new HttpError(400, 'Enter an answer before submitting');
   if (question.questionType === 'mcq' && !passageSet && !Array.isArray(answer)) throw new HttpError(400, 'Select an option');
   const language = question.questionType === 'coding' ? String(req.body?.language || '').trim().toLowerCase() : '';
+  // Taken on arrival, before judging, so judge time is not counted as the student's work time.
+  const effort = question.questionType === 'coding' ? sanitizeEffort(req.body?.effort, { now: new Date(), sourceCode: answer }) : undefined;
   const graded = question.questionType === 'coding'
     ? await judgeCodingQuestion(question, req.params.source, answer, language)
     : { result: gradePracticeAnswer(question, answer) };
@@ -578,7 +581,7 @@ router.post('/:source/:id/attempts', compilerExecutionLimiter, asyncRoute(async 
     totalTestCases: graded.totalTestCases || 0, passedTestCases: graded.passedTestCases || 0,
     executionTimeMs: graded.executionTimeMs || 0, memoryUsedKb: graded.memoryUsedKb || 0,
     failureStatus: graded.failureStatus, testCaseResults: graded.testCaseResults || [], failedCase: graded.failedCase || undefined,
-    compileOutput: graded.compileOutput || '' });
+    compileOutput: graded.compileOutput || '', ...(effort ? { effort } : {}) });
   if (req.params.source === 'shared' && question.questionType === 'coding') {
     const [totalSubmissions, acceptedSubmissions] = await Promise.all([
       QuestionPracticeAttempt.countDocuments({ source: 'shared', questionId: question._id, questionType: 'coding' }),

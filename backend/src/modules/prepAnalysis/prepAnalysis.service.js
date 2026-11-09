@@ -6,7 +6,7 @@ import { HttpError } from '../../utils/errors.js';
 import {
   buildKpiGroups, calendarPayload, CHART_BY_ID, CHARTS, DEFAULT_LAYOUT, GROUP_BY,
 } from './charts.js';
-import { loadCodingFacts, loadCohort, loadProblemTimes } from './codingFacts.js';
+import { loadCodingFacts, loadCohort, loadProblemTimes, loadSolveEfforts, loadSubmissionLog } from './codingFacts.js';
 import { buildStudentReport, STUDENT_REPORT_TYPES } from './studentReport.js';
 import { allowedModules, FIELDS, MODULES, STATIC_OPTIONS } from './fields.js';
 import { applyRankCuts, evaluateFilterTree, normalizeFilterTree, normalizeRankCuts } from './filterEngine.js';
@@ -25,6 +25,9 @@ import {
 import { loadInterviewFacts, RATINGS } from './interviewFacts.js';
 import { loadQuickPrepFacts, sheetVisibleTo } from './quickPrepFacts.js';
 import { attachStoredScores, buildStudentRows } from './studentRows.js';
+import QuestionLibrary from '../../models/QuestionLibrary.js';
+import { sharedQuestions } from '../../platform/sharedContent.js';
+import { reviewOf } from '../../services/solveEffort.js';
 
 export const QUERY_LIMITS = Object.freeze({
   // A large university's first load takes seconds, so loaded data is reused for five minutes
@@ -42,6 +45,11 @@ const TABLE_SORTS = {
   topicsCompleted: (row) => row.learning?.completedTopics ?? -1,
   sheetProgress: (row) => row.quickprep?.progress ?? -1,
   sheetsFinished: (row) => row.quickprep?.finished ?? -1,
+  sheetsStarted: (row) => row.quickprep?.started ?? -1,
+  sheetQuestions: (row) => row.quickprep?.solved ?? -1,
+  sheetCoverage: (row) => row.quickprep?.coverage ?? -1,
+  solvesToReview: (row) => row.coding.review.flagged,
+  sheetSolvesToReview: (row) => row.quickprep?.review?.flagged ?? -1,
   interviewsDone: (row) => row.interview?.done ?? -1,
   mockScore: (row) => row.interview?.mockScore ?? -1,
   testScore: (row) => row.assessment?.averageScore ?? -1,
@@ -53,12 +61,13 @@ const TABLE_SORTS = {
 // The order "#" uses in the table, per area.
 const POSITION_BY = {
   coding: (row) => row.coding.prepScore,
+  quickprep: (row) => row.quickprep?.progress ?? 0,
   learning: (row) => row.learning?.progress ?? 0,
   interview: (row) => row.scores?.features.interview?.score ?? 0,
   assessment: (row) => row.scores?.features.assessment?.score ?? 0,
   all: (row) => row.scores?.total ?? 0,
 };
-const DEFAULT_SORT = { coding: 'prepScore', learning: 'learningProgress', interview: 'featureScore', assessment: 'featureScore', all: 'overallScore' };
+const DEFAULT_SORT = { coding: 'prepScore', quickprep: 'sheetProgress', learning: 'learningProgress', interview: 'featureScore', assessment: 'featureScore', all: 'overallScore' };
 
 /** Which interview data a university may see: mock interviews ("events") and AI interviews ("interviews"). */
 export const interviewParts = (permissions) => ({ peer: !permissions || permissions.events === true, ai: !permissions || permissions.interviews === true });
@@ -246,17 +255,21 @@ async function buildContext(user, range, modules, parts, assessmentScope) {
   }
   const studentIds = cohort.students.map((student) => String(student._id));
   const empty = { byStudent: new Map(), days: new Map(), problems: new Map(), topics: new Map() };
-  const [coding, learning, quickprep, assessment, interview, stored] = await Promise.all([
+  const [coding, learning, quickprep, assessment, interview, stored, efforts] = await Promise.all([
     modules.has('coding') ? loadCodingFacts({ studentIds, range }) : empty,
     modules.has('learning') ? loadLearningFacts({ studentIds, range }) : null,
-    // Quick Prep sheets are part of Prep Coding.
-    modules.has('coding') ? loadQuickPrepFacts({ studentIds, range }) : null,
+    modules.has('quickprep') ? loadQuickPrepFacts({ studentIds, range }) : null,
     modules.has('assessment') ? loadAssessmentFacts({ user, studentIds, range, tests }) : null,
     modules.has('interview') ? loadInterviewFacts({ studentIds, range, ...parts }) : null,
     storedScoresFor(studentIds),
+    // "Own work": first solves with start time, active time and outside pastes.
+    modules.has('coding') || modules.has('quickprep') ? loadSolveEfforts({ studentIds, includeShared: modules.has('quickprep') }) : null,
   ]);
   const rows = buildStudentRows({
-    students: cohort.students, facts: coding, problems: coding.problems, batchNames: cohort.batchNames, learning, quickprep, assessment, interview, range,
+    students: cohort.students, facts: coding, problems: coding.problems, batchNames: cohort.batchNames, learning, quickprep, assessment, interview, range, efforts,
+    // "Days since active" and statuses are measured at the end of the period: for the previous
+    // period's comparison that is its own end, not today (else everyone looked inactive then).
+    now: range.to ? new Date(range.to) : new Date(),
   });
   // The same stored Prep Score each student sees and ranks on, whatever period is selected here.
   const policy = await getPrepScorePolicyVersion(stored.version);
@@ -415,6 +428,11 @@ export async function exportPrepAnalysisChart({ user, query, drill, options }) {
   };
 }
 
+// Counts only for the table; the per-question detail is in the student drawer.
+const reviewCounts = (review) => (review ? {
+  solved: review.solved, tracked: review.tracked, flagged: review.flagged, fast: review.fast, pasted: review.pasted, medianActiveMin: review.medianActiveMin,
+} : null);
+
 function tableRow(row, position) {
   return {
     id: row.id, name: row.name, studentId: row.studentId, email: row.email,
@@ -424,20 +442,23 @@ function tableRow(row, position) {
     solved: row.coding.solved, accuracy: row.coding.accuracy, submissions: row.coding.submissions,
     activeDays: row.coding.activeDays, daysSinceActive: row.coding.daysSinceActive, practiceStatus: row.coding.practiceStatus,
     languages: row.coding.languages,
+    review: reviewCounts(row.coding.review),
     learning: row.learning ? {
       progress: row.learning.progress, completedTopics: row.learning.completedTopics, availableTopics: row.learning.availableTopics,
       videoMinutes: row.learning.videoMinutes, status: row.learning.status, daysSinceActive: row.learning.daysSinceActive,
     } : null,
     quickprep: row.quickprep ? {
       progress: row.quickprep.progress, started: row.quickprep.started, finished: row.quickprep.finished, solved: row.quickprep.solved,
-      status: row.quickprep.status, daysSinceActive: row.quickprep.daysSinceActive,
+      total: row.quickprep.total, visibleSheets: row.quickprep.visibleSheets, coverage: row.quickprep.coverage,
+      status: row.quickprep.status, activity: row.quickprep.activity, daysSinceActive: row.quickprep.daysSinceActive,
+      review: reviewCounts(row.quickprep.review),
     } : null,
     interview: row.interview ? {
       done: row.interview.done, mockDone: row.interview.mockDone, mockScore: row.interview.mockScore, aiCompleted: row.interview.aiCompleted,
       scheduled: row.interview.scheduled, status: row.interview.status, daysSinceActive: row.interview.daysSinceActive,
     } : null,
     assessment: row.assessment ? {
-      taken: row.assessment.taken, passed: row.assessment.passed, missed: row.assessment.missed, averageScore: row.assessment.averageScore,
+      taken: row.assessment.taken, passed: row.assessment.passed, missed: row.assessment.missed, awaiting: row.assessment.awaiting || 0, averageScore: row.assessment.averageScore,
       bestScore: row.assessment.bestScore, status: row.assessment.status, daysSinceActive: row.assessment.daysSinceActive,
     } : null,
     scores: {
@@ -625,6 +646,7 @@ function codingProfile(row, range) {
     topics: topicBreakdown(row),
     unsolved: unsolvedProblems(row),
     calendar: calendarPayload(daily, range, 'submissions'),
+    review: reviewCounts(coding.review),
   };
 }
 
@@ -642,6 +664,7 @@ function quickPrepProfile(row, sheets) {
   return {
     status: quickprep.status, progress: quickprep.progress, solved: quickprep.solved, total: quickprep.total,
     finished: quickprep.finished, daysSinceActive: quickprep.daysSinceActive, sheets: started, notStarted,
+    review: reviewCounts(quickprep.review),
   };
 }
 
@@ -691,7 +714,7 @@ export function buildStudentProfile(row, { range, modules, sheets = new Map(), t
     range: { preset: range.preset, from: range.from?.toISOString() || null, to: range.to?.toISOString() || null },
     student: { id: row.id, name: row.name, studentId: row.studentId, email: row.email, semester, course, branch, college, group, batchNames, status },
     coding: modules.has('coding') ? codingProfile(row, range) : null,
-    quickprep: modules.has('coding') && row.quickprep ? quickPrepProfile(row, sheets) : null,
+    quickprep: modules.has('quickprep') && row.quickprep ? quickPrepProfile(row, sheets) : null,
     learning: modules.has('learning') && row.learning ? learningProfile(row, range) : null,
     interview: modules.has('interview') && row.interview ? interviewProfile(row, range) : null,
     assessment: modules.has('assessment') && row.assessment ? assessmentProfile(row, tests, range) : null,
@@ -712,10 +735,60 @@ async function studentInScope({ user, permissions, studentId, range: rangeInput,
   return { row, range, modules, context };
 }
 
+const sharedTitleOf = (question) => question?.questionData?.problemDataSnapshot?.title || question?.title || question?.questionText || '';
+
+/** Titles of shared questions: the cached central feed on a university, the local library elsewhere. */
+async function sharedQuestionTitles(ids) {
+  if (!ids.length) return new Map();
+  try {
+    const feed = await sharedQuestions();
+    if (feed) return new Map(feed.filter((question) => ids.includes(String(question._id))).map((question) => [String(question._id), sharedTitleOf(question)]));
+    const rows = await QuestionLibrary.find({ _id: { $in: ids } }).select('questionText questionData.problemDataSnapshot.title').maxTimeMS(8000).lean();
+    return new Map(rows.map((question) => [String(question._id), sharedTitleOf(question)]));
+  } catch (error) {
+    console.warn('[prep-analysis] shared question titles unavailable:', error.message);
+    return new Map();
+  }
+}
+
+/**
+ * The student's latest practice submissions, each with its date and time, when the question was
+ * opened, active time, share pasted from outside the editor and why it needs review (if it does).
+ * `quickprep` names the sheet a question belongs to.
+ */
+async function submissionHistory(row, range, sheets, modules) {
+  const log = await loadSubmissionLog({ studentId: row.id, range });
+  const sheetOf = new Map();
+  for (const sheet of sheets.values()) for (const key of sheet.itemKeys || []) if (!sheetOf.has(key)) sheetOf.set(key, sheet.title);
+  const titles = await sharedQuestionTitles([...new Set(log.filter((entry) => entry.key.startsWith('shared:')).map((entry) => entry.problemId))]);
+  // "Needs review" is judged on the first accepted solve only (see loadSolveEfforts).
+  const firstSolves = new Map([...(row.coding.review?.items || []), ...(row.quickprep?.review?.items || [])].map((item) => [item.key, item]));
+  return log
+    .filter((entry) => (entry.key.startsWith('local:') ? modules.has('coding') || sheetOf.has(entry.key) : modules.has('quickprep')))
+    .map((entry) => {
+      const review = reviewOf(entry.effort, entry.difficulty || null, entry.at);
+      const first = firstSolves.get(entry.key);
+      const isFirstSolve = entry.status === 'AC' && first && new Date(first.at).getTime() === new Date(entry.at).getTime();
+      return {
+        title: entry.title || titles.get(entry.problemId) || 'Shared question',
+        difficulty: entry.difficulty, status: entry.status, language: entry.language,
+        submittedAt: new Date(entry.at).toISOString(),
+        startedAt: entry.effort?.startedAt ? new Date(entry.effort.startedAt).toISOString() : null,
+        solveMs: review?.solveMs ?? null, activeMs: review?.activeMs ?? null,
+        pastes: review?.pastes ?? null, pastedShare: review?.pastedShare ?? null,
+        firstSolve: Boolean(isFirstSolve),
+        reasons: isFirstSolve ? review?.reasons || [] : [],
+        quickprep: sheetOf.get(entry.key) || null,
+      };
+    });
+}
+
 /** Everything Prep Analysis knows about one student in the admin's own scope, for the period. */
 export async function getStudentProfile(input) {
   const { row, range, modules, context } = await studentInScope(input);
-  return buildStudentProfile(row, { range, modules, sheets: context.sheets, tests: context.tests });
+  const profile = buildStudentProfile(row, { range, modules, sheets: context.sheets, tests: context.tests });
+  if (modules.has('coding') || modules.has('quickprep')) profile.submissions = await submissionHistory(row, range, context.sheets, modules);
+  return profile;
 }
 
 /** One student's full report (every topic, problem and day) as Excel or PDF. */
@@ -737,7 +810,7 @@ export async function exportStudentReport({ format, ...input }) {
 // ---------------------------------------------------------------- option lists
 
 const OPTION_LIMIT = 60;
-const QUALIFIER_LISTS = { topics: 'coding', tags: 'coding', companies: 'coding', languages: 'coding', difficulties: 'coding', subjects: 'learning', sheets: 'coding', tests: 'assessment' };
+const QUALIFIER_LISTS = { topics: 'coding', tags: 'coding', companies: 'coding', languages: 'coding', difficulties: 'coding', subjects: 'learning', sheets: 'quickprep', tests: 'assessment' };
 
 function distinctFromRows(rows, read) {
   const counts = new Map();

@@ -8,13 +8,14 @@ import Assessment from '../../models/Assessment.js';
 import AssessmentSubmission from '../../models/AssessmentSubmission.js';
 import { sharedAssessments } from '../../platform/sharedContent.js';
 import { authorizedOwnedFilter } from '../adminAnalytics/adminAnalytics.authorization.js';
+import { ATTEMPT_BUCKETS, FINISHED_STATUSES, attemptBucketOf } from '../../services/assessmentAttemptCounts.js';
 
 export const PASS_PERCENT = 40;
 const MAX_QUERY_MS = 30000;
 const IN_LIST_LIMIT = 5000;
 const MAX_DEFINITIONS = 5000;
 const MAX_SUBMISSIONS = 200000;
-const FINAL_STATUSES = ['submitted', 'violation', 'expired'];
+const FINAL_STATUSES = ['submitted', 'violation', 'expired']; // graded rows (see TERMINAL_STATUSES)
 
 const isEnded = (test, now) => Boolean(test.manuallyCompletedAt) || (test.endTime && new Date(test.endTime) <= now);
 
@@ -60,27 +61,58 @@ const gradedMatch = (tests) => ({
 });
 
 /**
- * The students a scoped analysis is about: assigned to at least one of `tests`, or with a graded
- * submission on one (in any period, so the cohort does not change with the date range).
+ * The students a scoped analysis is about: assigned to at least one of `tests`, or who started or
+ * finished one, graded or not (in any period, so the cohort does not change with the date range).
+ * Counting only graded attempts left out everyone whose answers were still being evaluated.
  */
 export async function scopeStudentsToAssessments(students, tests) {
   if (!tests.size || !students.length) return [];
-  const graded = new Set((await AssessmentSubmission.aggregate([
-    { $match: gradedMatch(tests) },
-    { $group: { _id: '$studentId' } },
-  ]).option({ maxTimeMS: MAX_QUERY_MS })).map((row) => String(row._id)));
+  const rows = await AssessmentSubmission.aggregate([
+    { $match: { assessmentId: { $in: [...tests.keys()].map((id) => new mongoose.Types.ObjectId(id)) } } },
+    { $group: { _id: '$studentId', statuses: { $addToSet: '$status' } } },
+  ]).option({ maxTimeMS: MAX_QUERY_MS });
+  const started = new Set(rows
+    .filter((row) => row.statuses.some((status) => attemptBucketOf(status) !== ATTEMPT_BUCKETS.NOT_STARTED))
+    .map((row) => String(row._id)));
   const list = [...tests.values()];
   return students.filter((student) => {
     const id = String(student._id);
-    return graded.has(id) || list.some((test) => testAssignedTo(test, id));
+    return started.has(id) || list.some((test) => testAssignedTo(test, id));
   });
+}
+
+/**
+ * Finished attempts that have no score yet (evaluation pending or failed): Map(studentId -> Set(testId)).
+ * They are neither scored nor "missed", and the student did take the test.
+ */
+async function loadAwaitingEvaluation({ tests, studentIds, range }) {
+  const match = {
+    assessmentId: { $in: [...tests.keys()].map((id) => new mongoose.Types.ObjectId(id)) },
+    status: { $in: FINISHED_STATUSES },
+    $nor: [{ evaluationStatus: 'completed', score: { $type: 'number' }, maxMarks: { $gt: 0 } }],
+  };
+  if (studentIds.length <= IN_LIST_LIMIT) match.studentId = { $in: studentIds.map((id) => new mongoose.Types.ObjectId(id)) };
+  if (range.from || range.to) {
+    const window = { ...(range.from ? { $gte: range.from } : {}), ...(range.to ? { $lte: range.to } : {}) };
+    match.$or = [{ submittedAt: window }, { submittedAt: null, updatedAt: window }];
+  }
+  const rows = await AssessmentSubmission.find(match).select('studentId assessmentId').limit(MAX_SUBMISSIONS).maxTimeMS(MAX_QUERY_MS).lean();
+  const awaiting = new Map();
+  for (const row of rows) {
+    const studentId = String(row.studentId);
+    if (!tests.has(String(row.assessmentId))) continue;
+    if (!awaiting.has(studentId)) awaiting.set(studentId, new Set());
+    awaiting.get(studentId).add(String(row.assessmentId));
+  }
+  return awaiting;
 }
 
 /** `tests`: already-loaded (and possibly scoped) definitions; they are loaded for `user` when omitted. */
 export async function loadAssessmentFacts({ user, studentIds, range, tests: loaded = null }) {
   const cohort = new Set(studentIds);
   const tests = loaded || await loadAssessmentDefinitions(user);
-  if (!studentIds.length || !tests.size) return { tests, byStudent: new Map() };
+  if (!studentIds.length || !tests.size) return { tests, byStudent: new Map(), awaiting: new Map() };
+  const awaitingRequest = loadAwaitingEvaluation({ tests, studentIds, range });
   const match = gradedMatch(tests);
   if (studentIds.length <= IN_LIST_LIMIT) match.studentId = { $in: studentIds.map((id) => new mongoose.Types.ObjectId(id)) };
   if (range.from || range.to) {
@@ -103,5 +135,5 @@ export async function loadAssessmentFacts({ user, studentIds, range, tests: load
     list.push({ testId: test.id, status: row.status, percent: Math.round(percent * 10) / 10, score: Number(row.score), maxMarks: Number(row.maxMarks), minutes: Math.round((Number(row.timeTakenSec) || 0) / 60), at });
     byStudent.set(studentId, list);
   }
-  return { tests, byStudent };
+  return { tests, byStudent, awaiting: await awaitingRequest };
 }

@@ -207,6 +207,8 @@ const CODING_CHARTS = [
           // `counts` are the all-time solves behind the stored score; `solved` is the selected period.
           counts: row.coding.scoredCounts,
           solved: row.coding.solved,
+          // First solves that were very fast or mostly pasted: worth a look before trusting the rank.
+          toReview: row.coding.review?.flagged || 0,
         })),
       };
     },
@@ -630,6 +632,53 @@ const LEARNING_CHARTS = [
 // ---------------------------------------------------------------- Quick Prep
 
 const sheetStarters = (rows) => rows.filter((row) => row.quickprep?.started > 0);
+// ---- Question-level Quick Prep helpers, shared with featureDrills.js so parts and drills count alike.
+const round1q = (value) => Math.round(value * 10) / 10;
+export const openSheets = (sheets) => [...(sheets?.values() || [])].filter((sheet) => sheet.published);
+export const sheetOpenTo = (row, sheet) => Boolean(row.quickprep) && (!sheet.semesters.length || sheet.semesters.includes(Number(row.student.semester)));
+export const QP_LEVELS = ['Easy', 'Medium', 'Hard', 'Other'];
+export const levelOf = (difficulty) => (['Easy', 'Medium', 'Hard'].includes(difficulty) ? difficulty : 'Other');
+
+/** Each question in the sheets a student started: Map(key -> { solved, difficulty, title, sheets[] }). */
+export function startedQuestions(row, sheets) {
+  const questions = new Map();
+  if (!row.quickprep) return questions;
+  for (const entry of row.quickprep.bySheet.values()) {
+    const sheet = sheets?.get(entry.sheetId);
+    if (!sheet?.questions) continue;
+    const solved = new Set(entry.solvedKeys || []);
+    for (const question of sheet.questions) {
+      const current = questions.get(question.key) || { solved: false, difficulty: question.difficulty, title: question.title, sheets: [] };
+      current.solved = current.solved || solved.has(question.key);
+      current.sheets.push(sheet.title);
+      questions.set(question.key, current);
+    }
+  }
+  return questions;
+}
+
+// Time from starting a sheet to finishing it, averaged over the sheets a student finished.
+export const QP_PACE_BANDS = Object.freeze([
+  { label: 'Same day', max: 0 }, { label: '1–3 days', max: 3 }, { label: '4–7 days', max: 7 },
+  { label: '1–2 weeks', max: 14 }, { label: '2–4 weeks', max: 30 }, { label: 'Over a month', max: Infinity },
+]);
+export function paceDaysOf(row) {
+  const spans = [...(row.quickprep?.bySheet.values() || [])]
+    .filter((entry) => entry.finished && entry.startedAt && entry.completedAt && new Date(entry.completedAt) >= new Date(entry.startedAt))
+    .map((entry) => (new Date(entry.completedAt) - new Date(entry.startedAt)) / 86400000);
+  return spans.length ? spans.reduce((sum, days) => sum + days, 0) / spans.length : null;
+}
+export const paceBandOf = (days) => QP_PACE_BANDS.findIndex((band) => Math.floor(days) <= band.max);
+
+// How each first solve of a sheet question was done (services/solveEffort.js).
+export const OWN_WORK_KINDS = Object.freeze([
+  { key: 'ok', name: 'Solved on their own' }, { key: 'fast', name: 'Very fast' }, { key: 'pasted', name: 'Mostly pasted' }, { key: 'untracked', name: 'Not timed yet' },
+]);
+export const ownWorkKind = (item) => (!item.review ? 'untracked' : item.review.reasons.includes('pasted') ? 'pasted' : item.review.reasons.includes('fast') ? 'fast' : 'ok');
+
+// Each student's Quick Prep status as a chart series (one series per student).
+export const QUICKPREP_STATUS_SERIES = Object.freeze(['Finished a sheet', 'Started, none finished', 'Not started']);
+export const quickPrepStatusLabel = (row) => ({ finished: QUICKPREP_STATUS_SERIES[0], inProgress: QUICKPREP_STATUS_SERIES[1] })[row.quickprep?.status] || QUICKPREP_STATUS_SERIES[2];
 const lastSheetVisit = (row) => (row.quickprep.daysSinceActive === null ? 'Not opened yet'
   : row.quickprep.daysSinceActive === 0 ? 'Opened today' : `Last opened ${row.quickprep.daysSinceActive} day${row.quickprep.daysSinceActive === 1 ? '' : 's'} ago`);
 
@@ -689,7 +738,11 @@ const QUICKPREP_CHARTS = [
       valueLabel: 'sheets finished',
       items: sheetStarters(rows).sort((left, right) => right.quickprep.finished - left.quickprep.finished || right.quickprep.solved - left.quickprep.solved || left.name.localeCompare(right.name))
         .slice(0, clampLimit(options.limit, 10, 50))
-        .map((row) => ({ id: row.id, name: row.name, value: row.quickprep.finished, note: `${row.quickprep.solved} questions solved · ${row.quickprep.progress}% of started sheets` })),
+        .map((row) => ({
+          id: row.id, name: row.name, value: row.quickprep.finished,
+          note: `${row.quickprep.solved} questions solved · ${row.quickprep.progress}% of started sheets${row.quickprep.review?.flagged ? ` · ${row.quickprep.review.flagged} to review` : ''}`,
+          toReview: row.quickprep.review?.flagged || 0,
+        })),
     }),
   },
   {
@@ -730,6 +783,167 @@ const QUICKPREP_CHARTS = [
       item: (row) => ({ value: row.quickprep.progress, note: lastSheetVisit(row), daysSinceActive: row.quickprep.daysSinceActive }),
       chips: { listed: 'Started a sheet', never: 'Never opened a sheet' },
     }),
+  },
+  {
+    id: 'quickprep-sheet-health', type: 'combo', size: 'full',
+    title: 'Sheet health',
+    question: 'For each sheet: how many students started and finished it, how far starters get on average, and what share of the students it is open to have started?',
+    build: ({ rows, sheets }) => {
+      const list = openSheets(sheets).map((sheet) => {
+        const open = rows.filter((row) => sheetOpenTo(row, sheet));
+        const starters = rows.filter((row) => row.quickprep?.bySheet.has(sheet.id));
+        const finished = starters.filter((row) => row.quickprep.bySheet.get(sheet.id).finished).length;
+        const progress = starters.map((row) => { const entry = row.quickprep.bySheet.get(sheet.id); return entry.total ? (entry.solved / entry.total) * 100 : 0; });
+        return {
+          key: sheet.id, label: sheet.title, students: starters.length, open: open.length, finished, inProgress: starters.length - finished,
+          progress: progress.length ? round1q(progress.reduce((sum, value) => sum + value, 0) / progress.length) : 0,
+          reach: open.length ? round1q((starters.length / open.length) * 100) : 0,
+        };
+      }).filter((sheet) => sheet.open > 0 || sheet.students > 0)
+        .sort((left, right) => right.students - left.students || left.label.localeCompare(right.label)).slice(0, 12);
+      return {
+        barLabel: 'students',
+        categories: list.map(({ key, label, students, open }) => ({ key, label, students, note: `${students} of ${open} students it is open to` })),
+        bars: [
+          { name: 'Finished', values: list.map((sheet) => sheet.finished), stack: 'students', students: true },
+          { name: 'In progress', values: list.map((sheet) => sheet.inProgress), stack: 'students', students: true },
+        ],
+        lines: [
+          { name: 'Average progress', values: list.map((sheet) => sheet.progress), unit: '%' },
+          // Share of the students the sheet is open to who started it (the tooltip note says "x of y").
+          { name: 'Start rate', values: list.map((sheet) => sheet.reach), unit: '%' },
+        ],
+      };
+    },
+  },
+  {
+    id: 'quickprep-difficulty-mix', type: 'combo', size: 'md',
+    title: 'Solve rate by difficulty',
+    question: 'Across the sheets students started: how many Easy, Medium and Hard questions are solved, and what share of them?',
+    build: ({ rows, sheets }) => {
+      const levels = new Map(QP_LEVELS.map((level) => [level, { solved: 0, open: 0, students: new Set() }]));
+      for (const row of rows) {
+        for (const question of startedQuestions(row, sheets).values()) {
+          const level = levels.get(levelOf(question.difficulty));
+          if (question.solved) { level.solved += 1; level.students.add(row.id); } else level.open += 1;
+        }
+      }
+      const used = QP_LEVELS.filter((level) => levels.get(level).solved + levels.get(level).open > 0);
+      return {
+        barLabel: 'questions',
+        categories: used.map((level) => ({ key: level, label: level, students: levels.get(level).students.size, note: `${levels.get(level).students.size} students solved one` })),
+        bars: [
+          { name: 'Solved', values: used.map((level) => levels.get(level).solved), stack: 'questions' },
+          { name: 'Not solved yet', values: used.map((level) => levels.get(level).open), stack: 'questions' },
+        ],
+        lines: [{ name: 'Solve rate', unit: '%', values: used.map((level) => { const entry = levels.get(level); return round1q((entry.solved / (entry.solved + entry.open)) * 100); }) }],
+      };
+    },
+  },
+  {
+    id: 'quickprep-hardest-questions', type: 'barList', size: 'md',
+    title: 'Where students get stuck',
+    question: 'Which sheet questions have the lowest solve rate among the students who started their sheet?',
+    options: { limit: 10 },
+    build: ({ rows, sheets, options }) => {
+      const questions = new Map();
+      for (const row of rows) {
+        for (const [key, question] of startedQuestions(row, sheets)) {
+          const entry = questions.get(key) || { ...question, starters: 0, solved: 0, sheets: new Set() };
+          entry.starters += 1;
+          if (question.solved) entry.solved += 1;
+          question.sheets.forEach((title) => entry.sheets.add(title));
+          questions.set(key, entry);
+        }
+      }
+      const items = [...questions.entries()].map(([key, entry]) => ({ key, ...entry, rate: round1q((entry.solved / entry.starters) * 100) }))
+        .sort((left, right) => left.rate - right.rate || right.starters - left.starters || left.title.localeCompare(right.title))
+        .slice(0, clampLimit(options.limit, 10, 50));
+      return {
+        valueLabel: '% of starters solved', unit: '%',
+        items: items.map((entry) => ({
+          key: entry.key, name: entry.title, value: entry.rate, difficulty: ['Easy', 'Medium', 'Hard'].includes(entry.difficulty) ? entry.difficulty : undefined,
+          students: entry.starters - entry.solved,
+          note: `${entry.solved} of ${entry.starters} solved · ${entry.starters - entry.solved} stuck · ${[...entry.sheets].join(', ')}`,
+        })),
+      };
+    },
+  },
+  {
+    id: 'quickprep-pace', type: 'histogram', size: 'md',
+    title: 'Time to finish a sheet',
+    question: 'How long do students take from starting a sheet to finishing it (their average over finished sheets)?',
+    build: ({ rows }) => {
+      const bins = QP_PACE_BANDS.map((band, index) => ({ key: String(index), label: band.label, count: 0 }));
+      for (const row of rows) { const days = paceDaysOf(row); if (days !== null) bins[paceBandOf(days)].count += 1; }
+      return { label: 'Time to finish', bins };
+    },
+  },
+  {
+    id: 'quickprep-own-work', type: 'donut', size: 'sm',
+    title: 'Own work in sheets',
+    question: 'Of the sheet questions students solved (first solves), how many were solved on their own, very fast, or mostly pasted?',
+    build: ({ rows }) => {
+      const kinds = new Map(OWN_WORK_KINDS.map((kind) => [kind.key, { value: 0, students: new Set() }]));
+      for (const row of rows) {
+        for (const item of row.quickprep?.review?.items || []) {
+          const kind = kinds.get(ownWorkKind(item));
+          kind.value += 1;
+          kind.students.add(row.id);
+        }
+      }
+      return { centerLabel: 'sheet solves', items: OWN_WORK_KINDS.map((kind) => ({ key: kind.key, name: kind.name, value: kinds.get(kind.key).value, students: kinds.get(kind.key).students.size })) };
+    },
+  },
+  {
+    id: 'quickprep-trend', type: 'trend', size: 'lg',
+    title: 'Sheets started and finished week by week',
+    question: 'Is Quick Prep use picking up or slowing down?',
+    build: ({ rows }) => weeklySeries(rows.filter((row) => row.quickprep), (row) => [...row.quickprep.days], ['Sheets started', 'Sheets finished']),
+  },
+  {
+    id: 'quickprep-by-class', type: 'stackedBar', size: 'md',
+    title: 'Quick Prep by class',
+    question: 'In each semester, branch or section, how many students finished a sheet, are working on one, or have not started?',
+    options: { groupBy: 'semester' },
+    build: ({ rows, options }) => ({
+      groupBy: options.groupBy || 'semester',
+      series: QUICKPREP_STATUS_SERIES,
+      groups: groupRows(rows.filter((row) => row.quickprep), options.groupBy).map(([label, members]) => ({
+        label, students: members.length,
+        values: Object.fromEntries(QUICKPREP_STATUS_SERIES.map((name) => [name, members.filter((row) => quickPrepStatusLabel(row) === name).length])),
+      })),
+    }),
+  },
+  {
+    id: 'quickprep-class-spread', type: 'boxplot', size: 'md',
+    title: 'Sheet progress by class',
+    question: 'Among students who started a sheet, how does progress differ between classes, and how wide is the spread?',
+    options: { groupBy: 'semester' },
+    build: ({ rows, options }) => ({
+      groupBy: options.groupBy || 'semester', label: 'Sheet progress', unit: '%',
+      groups: groupRows(sheetStarters(rows), options.groupBy).map(([label, members]) => ({ label, students: members.length, ...boxStats(members.map((row) => row.quickprep.progress)) })),
+    }),
+  },
+  {
+    id: 'quickprep-coverage', type: 'histogram', size: 'md',
+    title: 'How many open sheets students have started',
+    question: 'Of the sheets open to each student, what share have they started?',
+    build: ({ rows }) => {
+      const bins = Array.from({ length: 10 }, (_, index) => ({ label: `${index * 10}–${index * 10 + 10}%`, count: 0 }));
+      rows.filter((row) => row.quickprep?.visibleSheets > 0).forEach((row) => { bins[Math.min(9, Math.floor(row.quickprep.coverage / 10))].count += 1; });
+      return { label: 'Open sheets started', bins };
+    },
+  },
+  {
+    id: 'quickprep-calendar', type: 'calendar', size: 'full',
+    title: 'Daily Quick Prep',
+    question: 'On which days do students start or finish sheets?',
+    build: ({ rows, range }) => {
+      const totals = new Map();
+      for (const row of rows) if (row.quickprep) for (const [day, [started, finished]] of row.quickprep.days) totals.set(day, (totals.get(day) || 0) + started + finished);
+      return calendarPayload(totals, range, 'sheets started or finished');
+    },
   },
 ];
 
@@ -1048,9 +1262,10 @@ const INTERVIEW_CHARTS = [
   },
 ];
 
-// One section per feature. Quick Prep sheets are part of Prep Coding.
+// One section per feature. Quick Prep has its own section, separate from Prep Coding.
 export const SECTIONS = Object.freeze({
   coding: { label: 'Prep Coding', module: 'coding' },
+  quickprep: { label: 'Quick Prep', module: 'quickprep' },
   learning: { label: 'Prep Learning', module: 'learning' },
   interview: { label: 'Prep Interview', module: 'interview' },
   assessment: { label: 'Prep Assessment', module: 'assessment' },
@@ -1058,7 +1273,7 @@ export const SECTIONS = Object.freeze({
 
 export const CHARTS = [
   ...CODING_CHARTS.map((chart) => ({ module: 'coding', section: 'coding', ...chart })),
-  ...QUICKPREP_CHARTS.map((chart) => ({ module: 'coding', section: 'coding', ...chart })),
+  ...QUICKPREP_CHARTS.map((chart) => ({ module: 'quickprep', section: 'quickprep', ...chart })),
   ...LEARNING_CHARTS.map((chart) => ({ module: 'learning', section: 'learning', ...chart })),
   ...INTERVIEW_CHARTS.map((chart) => ({ module: 'interview', section: 'interview', ...chart })),
   ...ASSESSMENT_CHARTS.map((chart) => ({ module: 'assessment', section: 'assessment', ...chart })),
@@ -1069,13 +1284,15 @@ export const CHART_BY_ID = new Map(CHARTS.map((chart) => [chart.id, chart]));
 // What a fresh page shows per area; admins add or remove charts from that area's catalogue.
 export const DEFAULT_LAYOUT = Object.freeze({
   coding: ['top-students', 'difficulty-split', 'practice-trend', 'practice-funnel', 'topic-strength', 'needs-attention',
-    'activity-calendar', 'student-profile', 'failure-reasons', 'language-usage', 'score-spread', 'class-spread', 'student-map', 'tough-problems',
-    'quickprep-sheets', 'quickprep-funnel', 'quickprep-matrix', 'quickprep-leaders', 'quickprep-needs-attention'],
+    'activity-calendar', 'student-profile', 'failure-reasons', 'language-usage', 'score-spread', 'class-spread', 'student-map', 'tough-problems'],
+  quickprep: ['quickprep-sheet-health', 'quickprep-difficulty-mix', 'quickprep-funnel', 'quickprep-hardest-questions', 'quickprep-trend', 'quickprep-own-work',
+    'quickprep-pace', 'quickprep-leaders', 'quickprep-needs-attention', 'quickprep-by-class', 'quickprep-class-spread', 'quickprep-spread',
+    'quickprep-coverage', 'quickprep-sheets', 'quickprep-matrix', 'quickprep-calendar'],
   learning: ['learning-subjects', 'learning-funnel', 'learning-trend', 'learning-leaders', 'learning-needs-attention', 'learning-spread', 'learning-calendar'],
   interview: ['interview-trend', 'interview-funnel', 'interview-ratings', 'interview-mix', 'interview-leaders', 'interview-needs-attention', 'interview-spread', 'interview-calendar'],
   assessment: ['assessment-tests', 'assessment-funnel', 'assessment-scores', 'assessment-by-class', 'assessment-class-spread', 'assessment-score-time', 'assessment-leaders', 'assessment-needs-attention', 'assessment-trend', 'assessment-spread', 'assessment-calendar'],
   // "All": a short view of each feature, side by side.
-  all: ['top-students', 'practice-funnel', 'quickprep-sheets', 'learning-subjects', 'learning-funnel', 'interview-funnel', 'interview-trend', 'assessment-tests', 'assessment-funnel'],
+  all: ['top-students', 'practice-funnel', 'quickprep-sheet-health', 'learning-subjects', 'learning-funnel', 'interview-funnel', 'interview-trend', 'assessment-tests', 'assessment-funnel'],
 });
 
 // Headline numbers: only a few per feature, each a count of students the admin can
@@ -1116,23 +1333,37 @@ const assessmentKpis = (rows) => {
   ];
 };
 
+const quickPrepKpis = (rows) => {
+  const withData = rows.filter((row) => row.quickprep);
+  return [
+    studentKpi('sheetStarted', 'Started a sheet', withData, (row) => row.quickprep.started > 0),
+    studentKpi('sheetActive', 'Used sheets recently', withData, (row) => row.quickprep.activity === 'active'),
+    studentKpi('sheetFinished', 'Finished a sheet', withData, (row) => row.quickprep.finished > 0),
+    studentKpi('never', 'Never opened a sheet', withData, (row) => row.quickprep.status === 'none', { tone: 'warning' }),
+    // Shown once solve times exist, so "0" never means "not tracked yet".
+    ...(withData.some((row) => row.quickprep.review?.tracked) ? [
+      studentKpi('review', 'Sheet solves to review', withData, (row) => row.quickprep.review?.flagged > 0, { tone: 'warning' }),
+    ] : []),
+  ];
+};
+
 /** Headline counts per feature for the students in view (never cohort averages). */
 export function buildKpiGroups(area, modules, rows) {
-  const builders = { coding: buildKpis, learning: learningKpis, interview: interviewKpis, assessment: assessmentKpis };
+  const builders = { coding: buildKpis, quickprep: quickPrepKpis, learning: learningKpis, interview: interviewKpis, assessment: assessmentKpis };
   return Object.entries(SECTIONS)
     .filter(([, section]) => modules.has(section.module) && (area === 'all' || section.module === area))
     .map(([key, section]) => ({ key, module: section.module, label: section.label, kpis: builders[key](rows) }));
 }
 
-/** Headline counts for Prep Coding, Quick Prep sheets included. */
+/** Headline counts for Prep Coding (Quick Prep has its own). */
 export function buildKpis(rows) {
   return [
     studentKpi('active', 'Practising now', rows, (row) => row.coding.practiceStatus === 'active'),
     studentKpi('hard', 'Solved a Hard problem', rows, (row) => row.coding.solved.Hard > 0),
-    ...(rows.some((row) => row.quickprep) ? [
-      studentKpi('sheetStarted', 'Using Quick Prep sheets', rows, (row) => row.quickprep?.started > 0),
-      studentKpi('sheetFinished', 'Finished a sheet', rows, (row) => row.quickprep?.finished > 0),
-    ] : []),
     studentKpi('stopped', 'Not practising', rows, (row) => row.coding.practiceStatus !== 'active', { tone: 'warning' }),
+    // Very fast or mostly pasted first solves. Shown once solve times exist.
+    ...(rows.some((row) => row.coding.review?.tracked) ? [
+      studentKpi('review', 'Solves to review', rows, (row) => row.coding.review.flagged > 0, { tone: 'warning' }),
+    ] : []),
   ];
 }

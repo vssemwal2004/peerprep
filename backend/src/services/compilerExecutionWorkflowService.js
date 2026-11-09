@@ -8,6 +8,7 @@ import ExecutionJob from '../models/ExecutionJob.js';
 import Problem from '../models/Problem.js';
 import QuestionLibrary from '../models/QuestionLibrary.js';
 import Submission from '../models/Submission.js';
+import { sanitizeEffort } from './solveEffort.js';
 import TestCase from '../models/TestCase.js';
 import { HttpError } from '../utils/errors.js';
 import { validateObjectId } from '../utils/validators.js';
@@ -345,6 +346,7 @@ async function createTrackedSubmission({
   customInput = '',
   assessmentId = null,
   assessmentAttemptGeneration,
+  effort,
 }) {
   const submission = await Submission.create({
     jobId,
@@ -369,6 +371,7 @@ async function createTrackedSubmission({
     status: 'PENDING',
     provider: 'judge0-ce',
     queuedAt: new Date(),
+    ...(effort ? { effort } : {}),
   });
 
   emitSubmissionUpdate(submission);
@@ -1196,6 +1199,8 @@ export async function enqueueCompilerSubmitJob({ user, body }) {
     sourceCode,
     assessmentId: assessmentId || null,
     assessmentAttemptGeneration: activeAttempt ? Number(activeAttempt.attemptGeneration || 1) : undefined,
+    // Practice only: assessments have their own timing and proctoring.
+    effort: assessmentId ? undefined : sanitizeEffort(body.effort, { sourceCode }),
   });
   submission.jobId = submission._id.toString();
   await submission.save();

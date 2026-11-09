@@ -18,6 +18,7 @@ import { resolveNewStudentFeatureAccess } from './studentAccessController.js';
 import { normalizeStudentFeatureAccess } from '../services/studentFeatureAccess.js';
 import { exactEmailPattern, normalizeEmailAddress } from '../utils/emailIdentity.js';
 import { currentTenant } from '../platform/tenantContext.js';
+import { storedScoresFor } from '../services/prepScore/sync.js';
 
 // Generate random password (7-8 characters)
 function generateRandomPassword() {
@@ -499,6 +500,26 @@ export async function promoteStudents(req, res) {
   }
 }
 
+/**
+ * The student's stored Prep Score (same rows ranks and Prep Analysis read), or null when it cannot
+ * be read — the profile must still load if the score store is unavailable.
+ */
+async function storedPrepScoreFor(studentId) {
+  try {
+    const { scores } = await storedScoresFor([studentId]);
+    const saved = scores.get(String(studentId));
+    return {
+      total: saved?.total ?? 0,
+      hasProgress: Boolean(saved?.hasProgress),
+      features: Object.fromEntries(Object.entries(saved?.modules || {})
+        .map(([key, module]) => [key, { score: module?.score ?? 0 }])),
+    };
+  } catch (err) {
+    console.warn('[students] Prep Score unavailable for profile:', err.message);
+    return null;
+  }
+}
+
 export async function getStudentById(req, res) {
   try {
     const user = req.user;
@@ -520,6 +541,8 @@ export async function getStudentById(req, res) {
         ...student,
         teacherId: Array.isArray(student.teacherIds) ? student.teacherIds.join(', ') : (student.teacherIds || ''),
       },
+      // Staff-only route (admin / coordinator with profile permission), so module scores may be included.
+      prepScore: await storedPrepScoreFor(student._id),
     });
   } catch (err) {
     console.error('Error fetching student:', err);

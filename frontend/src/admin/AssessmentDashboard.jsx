@@ -1352,7 +1352,7 @@ export default function AssessmentDashboard() {
           </div>
         </header>
 
-        <div className="mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 overflow-y-auto lg:grid-cols-[228px_minmax(0,1fr)] lg:overflow-hidden">
+        <div className="mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 overflow-y-auto lg:grid-cols-[60px_minmax(0,1fr)] lg:overflow-hidden">
           <AssessmentLifecycleSidebar
             active={activeTab}
             counts={summary}
