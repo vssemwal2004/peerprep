@@ -1,4 +1,5 @@
 import { getApiBase } from "../../utils/apiBase";
+import { reportSessionEnded } from "../../auth/sessionNotice";
 
 const API_BASE = getApiBase();
 
@@ -12,6 +13,7 @@ async function request(path, { method = "GET", body, signal, headers } = {}) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    reportSessionEnded(response.status, payload);
     const error = new Error(payload.message || payload.error || "Prep Analysis request failed.");
     error.status = response.status;
     throw error;

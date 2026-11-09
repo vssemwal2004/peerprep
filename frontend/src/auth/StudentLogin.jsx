@@ -7,6 +7,7 @@ import ForgotPasswordModal from './ForgotPasswordModal';
 import { isUniversityDeployment } from '../platform/universityPermissions';
 import { useToast } from '../components/CustomToast';
 import { consumeSessionNotice } from './sessionNotice';
+import { SessionConflictDialog } from './SessionDialogs';
 import { firstStudentFeaturePath } from '../student/studentFeatureAccess';
 
 // Small delay to ensure cookie is set before navigation
@@ -52,7 +53,10 @@ export default function StudentLoginPage() {
     if (notice) toast.info(notice);
   }, [toast]);
 
-  const handleLogin = async () => {
+  // The account is still signed in elsewhere: { session } until the person continues or cancels.
+  const [conflict, setConflict] = useState(null);
+
+  const handleLogin = async ({ replaceSession = false } = {}) => {
     if (loading) return;
     const trimmedEmail = email.trim();
     const trimmedPassword = password.trim();
@@ -66,7 +70,14 @@ export default function StudentLoginPage() {
     setLoading(true);
 
     try {
-      const res = await api.login(trimmedEmail, trimmedPassword);
+      const res = await api.login(trimmedEmail, trimmedPassword, { replaceSession });
+      // Nothing changed yet: ask before signing the other device out.
+      if (res?.sessionConflict) {
+        setConflict({ session: res.sessionConflict });
+        setLoading(false);
+        return;
+      }
+      setConflict(null);
       const role = res.user?.role;
 
       if (rememberMe) {
@@ -130,6 +141,7 @@ export default function StudentLoginPage() {
         }
       }
     } catch (e) {
+      setConflict(null);
       setError(e.message || 'Login failed');
       setLoading(false);
     }
@@ -262,7 +274,7 @@ export default function StudentLoginPage() {
 
                       <button
                         type="button"
-                        onClick={handleLogin}
+                        onClick={() => handleLogin()}
                         disabled={loading}
                         className="w-full rounded-lg bg-sky-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                       >
@@ -283,6 +295,11 @@ export default function StudentLoginPage() {
         </div>
       </div>
 
+      {conflict && !loading && (
+        <SessionConflictDialog session={conflict.session}
+          onCancel={() => setConflict(null)}
+          onContinue={() => handleLogin({ replaceSession: true })} />
+      )}
       <ForgotPasswordModal isOpen={showForgotPassword} onClose={() => setShowForgotPassword(false)} emailOnly={!isUniversityDeployment} />
     </div>
   );

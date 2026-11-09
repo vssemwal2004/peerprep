@@ -89,12 +89,42 @@ test('one API isolates university users, sessions and student lists with duplica
     });
     assert.equal(mainStudentWallet.status, 200);
     assert.equal((await mainStudentWallet.json()).balance, 0);
-    const mainStudentIdLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier: 'PEERPREP-S1', password: 'student-password' }) });
+    // Still signed in elsewhere: the login asks first (200, no cookie) and the old session keeps working.
+    const firstStudentCookie = mainStudentLogin.headers.get('set-cookie').split(';')[0];
+    const studentIdLogin = (extra = {}, headers = {}) => fetch(`${origin}/api/auth/login`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36', ...headers },
+      body: JSON.stringify({ identifier: 'PEERPREP-S1', password: 'student-password', ...extra }) });
+    const askedLogin = await studentIdLogin();
+    const askedPayload = await askedLogin.json();
+    assert.equal(askedLogin.status, 200, JSON.stringify(askedPayload));
+    assert.equal(askedPayload.user, undefined);
+    assert.ok(askedPayload.sessionConflict?.signedInAt, JSON.stringify(askedPayload));
+    assert.equal(askedLogin.headers.get('set-cookie'), null);
+    assert.equal((await fetch(`${origin}/api/auth/session`, { headers: { Cookie: firstStudentCookie } })).status, 200);
+    // The same browser signing in again is not asked.
+    const sameBrowser = await studentIdLogin({}, { Cookie: firstStudentCookie });
+    assert.ok((await sameBrowser.json()).user);
+    const sameBrowserCookie = sameBrowser.headers.get('set-cookie').split(';')[0];
+    // Ending the other session: the new one works, the old one is told where the account was signed in.
+    const mainStudentIdLogin = await studentIdLogin({ replaceSession: true });
     const mainStudentIdPayload = await mainStudentIdLogin.json();
     assert.equal(mainStudentIdLogin.status, 200, JSON.stringify(mainStudentIdPayload));
     assert.equal(mainStudentIdPayload.user.universityId, null);
+    const replacingCookie = mainStudentIdLogin.headers.get('set-cookie').split(';')[0];
+    const replaced = await fetch(`${origin}/api/auth/session`, { headers: { Cookie: sameBrowserCookie } });
+    const replacedPayload = await replaced.json();
+    assert.equal(replaced.status, 401);
+    assert.equal(replacedPayload.code, 'SESSION_REPLACED');
+    assert.equal(replacedPayload.session.device, 'Chrome on Windows');
+    // An old session signing out leaves the new one alone; the new one signing out ends it on the server.
+    await fetch(`${origin}/api/auth/logout`, { method: 'POST', headers: { Cookie: sameBrowserCookie } });
+    assert.equal((await fetch(`${origin}/api/auth/session`, { headers: { Cookie: replacingCookie } })).status, 200);
+    await fetch(`${origin}/api/auth/logout`, { method: 'POST', headers: { Cookie: replacingCookie } });
+    const afterSignOut = await fetch(`${origin}/api/auth/session`, { headers: { Cookie: replacingCookie } });
+    assert.equal(afterSignOut.status, 401);
+    assert.equal((await afterSignOut.json()).code, 'SESSION_ENDED');
+    const freshLogin = await studentIdLogin();
+    assert.ok((await freshLogin.json()).user, 'after signing out, the next sign-in is not asked');
     const mainRecipientSearch = await fetch(`${origin}/api/platform/admin/wallet-recipients?role=student&search=peerprep-student`, {
       headers: { Cookie: platformCookie },
     });
@@ -168,9 +198,14 @@ test('one API isolates university users, sessions and student lists with duplica
       assert.equal(response.status, 200);
       return response.headers.get('set-cookie').split(';')[0];
     })();
-    const rootUniversityLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
+    // Signed in through /u/gamma already: the root login ends that session (university sessions ask too).
+    const rootUniversityAsked = await fetch(`${origin}/api/auth/login`, { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier: 'gamma-admin@example.test', password: 'gamma-password-strong' }) });
+    assert.ok((await rootUniversityAsked.json()).sessionConflict);
+    const rootUniversityLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: 'gamma-admin@example.test', password: 'gamma-password-strong', replaceSession: true }) });
     assert.equal(rootUniversityLogin.status, 200);
     assert.equal((await rootUniversityLogin.json()).user.universityId, 'gamma');
     const rootCookie = rootUniversityLogin.headers.get('set-cookie').split(';')[0];
@@ -209,7 +244,7 @@ test('one API isolates university users, sessions and student lists with duplica
     assert.equal((await indexedLogin.json()).user.universityId, 'gamma');
     const indexedStudentIdLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier: 'late-001', password: 'late-password' }) });
+      body: JSON.stringify({ identifier: 'late-001', password: 'late-password', replaceSession: true }) });
     const indexedStudentIdPayload = await indexedStudentIdLogin.json();
     assert.equal(indexedStudentIdLogin.status, 200, JSON.stringify(indexedStudentIdPayload));
     assert.equal(indexedStudentIdPayload.user.universityId, 'gamma');
@@ -236,8 +271,9 @@ test('one API isolates university users, sessions and student lists with duplica
     assert.equal((await loginDirectoryCandidates(legacyUppercaseEmail)).length, 1);
     const legacyTenantLogin = await fetch(`${origin}/api/u/gamma/auth/login`, { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier: 'LEGACY.STUDENT@EXAMPLE.TEST', password: 'legacy-password' }) });
-    assert.equal(legacyTenantLogin.status, 200, await legacyTenantLogin.text());
+      body: JSON.stringify({ identifier: 'LEGACY.STUDENT@EXAMPLE.TEST', password: 'legacy-password', replaceSession: true }) });
+    assert.equal(legacyTenantLogin.status, 200);
+    assert.ok((await legacyTenantLogin.json()).user);
 
     assert.equal((await getTenant('gamma')).universityId, 'gamma');
     const get = (id, path, cookie) => fetch(`${origin}/api/u/${id}${path}`, { headers: { Cookie: cookie } });

@@ -1,9 +1,7 @@
 import User from '../models/User.js';
 import Submission from '../models/Submission.js';
 import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
-import { signToken } from '../utils/jwt.js';
 import { HttpError } from '../utils/errors.js';
-import crypto from 'crypto';
 import { sendPasswordResetEmail } from '../utils/mailer.js';
 import { uploadAvatar, deleteAvatar, isCloudinaryConfigured } from '../utils/cloudinary.js';
 import { logActivity } from './adminActivityController.js';
@@ -19,6 +17,7 @@ import { currentTenant } from '../platform/tenantContext.js';
 import { deploymentRole } from '../platform/deployment.js';
 import { normalizeStudentFeatureAccess, studentHasFeature } from '../services/studentFeatureAccess.js';
 import { exactEmailPattern, normalizeEmailAddress } from '../utils/emailIdentity.js';
+import { SESSION_COOKIE_MAX_AGE_MS, liveOtherSession, startSession } from '../services/userSessions.js';
 
 const tenantTokenClaims = () => deploymentRole() === 'shared'
   ? { tenantId: currentTenant()?.universityId || 'platform' } : {};
@@ -43,9 +42,37 @@ function getAuthCookieOptions() {
     // Lax is more reliable across normal browsers during localhost dev while
     // still protecting against most CSRF-style cross-site subrequests.
     sameSite: 'lax',
-    maxAge: 24 * 60 * 60 * 1000,
+    maxAge: SESSION_COOKIE_MAX_AGE_MS,
     path: '/',
   };
+}
+
+/**
+ * Signs `user` in on this browser, unless the account is still signed in somewhere else and the
+ * person has not chosen to end that session: then it answers { sessionConflict } (200, no cookie,
+ * so the failed-login limit is not used up) and the login page asks "End the other session?".
+ * Returns false when it answered with the question.
+ */
+async function signIn(req, res, user, claims) {
+  if (req.body?.replaceSession !== true) {
+    const other = liveOtherSession(user, req.cookies?.accessToken);
+    if (other) {
+      res.json({ sessionConflict: other });
+      return false;
+    }
+  }
+  const session = await startSession(user, { claims, userAgent: req.get('user-agent') });
+  await cacheUserSessionState(user._id, {
+    activeSessionToken: session.hash,
+    activeSessionCreatedAt: session.startedAt,
+    activeSessionDevice: session.device,
+    passwordChangedAt: user.passwordChangedAt,
+    isActive: user.isActive,
+  });
+  console.log(`[Session] ${user.role} session started:`, user.email, session.hash.substring(0, 10) + '...');
+  // SECURITY: the JWT lives only in an HttpOnly cookie.
+  res.cookie('accessToken', session.token, getAuthCookieOptions());
+  return true;
 }
 
 // Change password for student (requires current password)
@@ -508,24 +535,9 @@ export async function login(req, res) {
     }
     // SECURITY: Log successful auth
     logAuthAttempt(req, true, admin.email, admin._id);
-    const token = signToken({ sub: admin._id, role: admin.role, email: admin.email, ...tenantTokenClaims() });
-    
-    // SECURITY: Single session per user - store session token hash
-    const sessionTokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    await User.updateOne(
-      { _id: admin._id },
-      { $set: { activeSessionToken: sessionTokenHash, activeSessionCreatedAt: new Date() } },
-    );
-    await cacheUserSessionState(admin._id, {
-      activeSessionToken: sessionTokenHash,
-      passwordChangedAt: admin.passwordChangedAt,
-      isActive: admin.isActive,
-    });
-    console.log('[Session] Admin session created:', admin.email, sessionTokenHash.substring(0, 10) + '...');
-    
-    // SECURITY: Store JWT in HttpOnly cookie instead of sending in response
-    res.cookie('accessToken', token, getAuthCookieOptions());
-    
+    // SECURITY: one session per account (asks first when another one is still signed in).
+    if (!await signIn(req, res, admin, { sub: admin._id, role: admin.role, email: admin.email, ...tenantTokenClaims() })) return undefined;
+
     return res.json({ user: { id: admin._id, email: admin.email, role: admin.role, name: admin.name,
       mustChangePassword: Boolean(admin.mustChangePassword), universityId: currentTenant()?.universityId || null } });
   }
@@ -547,39 +559,19 @@ export async function login(req, res) {
     
    // SECURITY: Log successful auth
     logAuthAttempt(req, true, student.email, student._id);
-    
-    // Log student login activity
+
+    // SECURITY: one session per account (asks first when another one is still signed in).
+    const claims = { sub: student._id, role: student.role, email: student.email, studentId: student.studentId, ...tenantTokenClaims() };
+    if (!await signIn(req, res, student, claims)) return undefined;
+
+    // Log student login activity (only once the session really starts)
     void logStudentActivity({
       studentId: student._id,
       studentModel: 'User',
       activityType: 'LOGIN',
       metadata: { email: student.email, studentId: student.studentId, isSpecialStudent: Boolean(student.isSpecialStudent) }
     }).catch((error) => console.warn('[AUTH] Login activity write failed:', error.message));
-    
-    const token = signToken({  
-      sub: student._id, 
-      role: student.role,
-      email: student.email,
-      studentId: student.studentId,
-      ...tenantTokenClaims(),
-    });
-    
-    // SECURITY: Single session per user - store session token hash
-    const sessionTokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    await User.updateOne(
-      { _id: student._id },
-      { $set: { activeSessionToken: sessionTokenHash, activeSessionCreatedAt: new Date() } },
-    );
-    await cacheUserSessionState(student._id, {
-      activeSessionToken: sessionTokenHash,
-      passwordChangedAt: student.passwordChangedAt,
-      isActive: student.isActive,
-    });
-    console.log('[Session] Student session created:', student.email, sessionTokenHash.substring(0, 10) + '...');
-    
-    // SECURITY: Store JWT in HttpOnly cookie
-    res.cookie('accessToken', token, getAuthCookieOptions());
-    
+
     return res.json({ user: { ...sanitizeUser(student), universityId: currentTenant()?.universityId || null } });
   }
 
@@ -604,23 +596,9 @@ export async function login(req, res) {
     }
     // SECURITY: Log successful auth
     logAuthAttempt(req, true, coordinator.email, coordinator._id);
-    const token = signToken({ sub: coordinator._id, role: coordinator.role, email: coordinator.email, ...tenantTokenClaims() });
+    // SECURITY: one session per account (asks first when another one is still signed in).
+    if (!await signIn(req, res, coordinator, { sub: coordinator._id, role: coordinator.role, email: coordinator.email, ...tenantTokenClaims() })) return undefined;
 
-    const sessionTokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    await User.updateOne(
-      { _id: coordinator._id },
-      { $set: { activeSessionToken: sessionTokenHash, activeSessionCreatedAt: new Date() } },
-    );
-    await cacheUserSessionState(coordinator._id, {
-      activeSessionToken: sessionTokenHash,
-      passwordChangedAt: coordinator.passwordChangedAt,
-      isActive: coordinator.isActive,
-    });
-    console.log('[Session] Coordinator session created:', coordinator.email, sessionTokenHash.substring(0, 10) + '...');
-    
-    // SECURITY: Store JWT in HttpOnly cookie
-    res.cookie('accessToken', token, getAuthCookieOptions());
-    
     return res.json({ user: { ...sanitizeUser(coordinator), universityId: currentTenant()?.universityId || null } });
   }
 

@@ -66,7 +66,9 @@ const userSchema = new mongoose.Schema({
   
   // SECURITY: Session management - one active session per user
   activeSessionToken: String, // Hash of the current valid JWT token
-  activeSessionCreatedAt: Date, // When this session was created
+  activeSessionCreatedAt: Date, // When this session was created (also "has signed in at least once")
+  activeSessionDevice: String, // "Chrome on Windows": shown when another sign-in would end this session
+  activeSessionSeenAt: Date, // Last request from this session (written at most every few minutes)
   
   // Additional fields
   avatarUrl: String,

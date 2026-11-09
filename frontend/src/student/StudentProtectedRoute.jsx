@@ -5,11 +5,11 @@ import UniversityFeatureGate from '../platform/UniversityFeatureGate';
 import { featureForStudentPath, firstStudentFeaturePath, hasStudentFeature } from './studentFeatureAccess';
 
 export default function StudentProtectedRoute({ children }) {
-  const { user, loading, authChecked } = useAuth();
+  const { user, loading, authChecked, sessionEnded } = useAuth();
   const location = useLocation();
 
-  // Show skeleton while auth is being checked (streaming loading)
-  if (loading || !authChecked) {
+  // Show skeleton while auth is being checked, and under "Your session has expired" (no redirect until OK)
+  if (loading || !authChecked || (sessionEnded && !user)) {
     return <PageSkeleton />;
   }
 

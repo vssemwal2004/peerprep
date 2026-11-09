@@ -3,10 +3,15 @@ import { routeLogin, routePasswordResetRequest } from '../platform/rootLogin.js'
 import { getStudentGlobalRanking } from '../services/globalStudentRankingService.js';
 import { forcePasswordChange, me, changePassword, changeAdminPassword, resetPassword, updateMe, updateMyAvatar, acknowledgeLearnerProgress, updatePracticeLanguage } from '../controllers/authController.js';
 import { getStudentActivity, getStudentStats, debugStudentActivity } from '../controllers/activityController.js';
-import { requireAuth, requireStudent, requireFullStudent, requireStudentFeature, requireAnyStudentFeature } from '../middleware/auth.js';
+import { invalidateUserCache, requireAuth, requireStudent, requireFullStudent, requireStudentFeature, requireAnyStudentFeature } from '../middleware/auth.js';
 import { getStudentDashboard, getStudentRanking, recordStudentProblemView, recordStudentTopicView, refreshStudentChallenges, getStudentChallengeBadges } from '../controllers/studentDashboardController.js';
 import { authLimiter, passwordResetLimiter, uploadLimiter } from '../middleware/rateLimiter.js';
 import multer from 'multer';
+import { endSession } from '../services/userSessions.js';
+import { verifyToken } from '../utils/jwt.js';
+import { deploymentRole } from '../platform/deployment.js';
+import { currentTenant, runForPlatform, runForTenant } from '../platform/tenantContext.js';
+import { getTenant } from '../platform/tenantConnections.js';
 const upload = multer();
 
 function getAuthCookieOptions() {
@@ -23,10 +28,33 @@ const router = Router();
 // SECURITY: Rate limit authentication endpoints
 router.post('/login', authLimiter, (req, res, next) => Promise.resolve(routeLogin(req, res)).catch(next));
 
+// Signing out ends this session on the server too, so the next sign-in elsewhere is not asked to
+// "end the other session". Only the session holding this cookie ends: an older, already replaced
+// session signing out leaves the newer one alone (endSession matches the token).
+async function endCookieSession(token) {
+  let payload;
+  try { payload = verifyToken(token); } catch { return; }
+  const end = async () => { if (await endSession(payload.sub, token)) invalidateUserCache(payload.sub); };
+  if (deploymentRole() !== 'shared') return end();
+  const owner = payload.tenantId || 'platform';
+  const here = currentTenant()?.universityId || 'platform';
+  if (owner === here) return end();
+  if (owner === 'platform') return runForPlatform(end);
+  return runForTenant(await getTenant(owner), end);
+}
+
 // SECURITY: Logout endpoint to clear HttpOnly cookie
-router.post('/logout', (req, res) => {
+router.post('/logout', async (req, res) => {
+  const token = req.cookies?.accessToken;
+  if (token) await endCookieSession(token).catch((error) => console.warn('[AUTH] Session end failed:', error.message));
   res.clearCookie('accessToken', getAuthCookieOptions());
   res.json({ message: 'Logged out successfully' });
+});
+
+// A light "is this session still mine?" check pages make on focus and on a timer.
+router.get('/session', requireAuth, (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ ok: true });
 });
 
 router.post('/password/change', requireAuth, changePassword);

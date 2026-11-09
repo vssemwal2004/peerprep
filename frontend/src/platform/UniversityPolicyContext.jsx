@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
 import { isUniversityDeployment, moduleEnabled, pathAllowed } from './universityPermissions';
-import { returnToLogin } from '../auth/sessionNotice';
+import { returnToLogin, sessionEndOf } from '../auth/sessionNotice';
 
 const UniversityPolicyContext = createContext(null);
 
@@ -40,6 +40,9 @@ export function UniversityPolicyProvider({ children }) {
         loadedForRef.current = userKey;
       } catch (error) {
         if (mounted) {
+          // Signed in elsewhere / signed out: AuthProvider shows "Your session has expired" and signs
+          // out only on OK, so nothing happens here.
+          if (sessionEndOf(error.response?.status, error.response?.data)) return;
           if (error.response?.status === 401) {
             mounted = false;
             await logout();

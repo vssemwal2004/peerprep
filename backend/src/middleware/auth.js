@@ -7,6 +7,7 @@ import { getValkeyClient, isValkeyEnabled } from '../utils/valkey.js';
 import { currentTenant } from '../platform/tenantContext.js';
 import { deploymentRole } from '../platform/deployment.js';
 import { studentHasFeature } from '../services/studentFeatureAccess.js';
+import { endedSessionError, touchSession } from '../services/userSessions.js';
 
 /**
  * Simple in-memory cache for user data to reduce database hits
@@ -114,7 +115,7 @@ async function getSessionState(userId) {
   if (sessionStateLoads.has(key)) return sessionStateLoads.get(key);
 
   const load = User.findById(userId)
-    .select('_id activeSessionToken passwordChangedAt isActive accessScope featureAccess')
+    .select('_id activeSessionToken activeSessionCreatedAt activeSessionDevice passwordChangedAt isActive accessScope featureAccess')
     .maxTimeMS(2000)
     .lean()
     .then(async (value) => {
@@ -202,10 +203,10 @@ export async function requireAuth(req, res, next) {
   const currentTokenHash = crypto.createHash('sha256').update(token).digest('hex');
   
   if (user.activeSessionToken && user.activeSessionToken !== currentTokenHash) {
-    // This session was invalidated by a login from another device
-    throw new HttpError(401, 'Your account was accessed from another device. Please login again.', { 
-      code: 'SESSION_REPLACED'
-    });
+    // Ended by a sign-in elsewhere (SESSION_REPLACED, with where) or by signing out (SESSION_ENDED).
+    // The page shows "Your session has expired" and signs out only when the person presses OK.
+    const ended = endedSessionError(sessionState);
+    throw new HttpError(ended.status, ended.message, ended.details);
   }
   
   // SECURITY: Check if password was changed after token was issued
@@ -218,6 +219,9 @@ export async function requireAuth(req, res, next) {
     }
   }
   
+  // "Last active" for the popup another sign-in shows (written at most every few minutes).
+  if (user.activeSessionToken) touchSession(scopedUserId(payload.sub), payload.sub, currentTokenHash);
+
   req.user = { ...user, universityId: currentTenant()?.universityId || null };
   next();
 }

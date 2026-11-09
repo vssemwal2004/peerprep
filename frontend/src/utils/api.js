@@ -1,6 +1,7 @@
 import { isUniversityDeployment } from '../platform/universityPermissions';
 import { getJudge0LanguageId } from "../admin/compiler/compilerUtils";
 import { getApiBase } from "./apiBase";
+import { reportSessionEnded } from "../auth/sessionNotice";
 
 const API_BASE = getApiBase();
 
@@ -306,6 +307,8 @@ async function request(
             err = new Error(j.error || j.message || JSON.stringify(j));
           }
           err.response = { status: res.status, data: j };
+          // Signed in elsewhere / signed out: the app shows "Your session has expired".
+          if (res.status === 401) reportSessionEnded(res.status, j);
         } catch {
           err = new Error(res.statusText);
           err.response = { status: res.status };
@@ -664,16 +667,22 @@ export const api = {
     }),
   recordStudentTopicView: (body) =>
     request("/auth/dashboard/topic-view", { method: "POST", body }),
-  login: async (identifier, password) => {
+  /**
+   * Signs in. When the account is still signed in elsewhere the answer is { sessionConflict } and
+   * nothing changes; calling again with { replaceSession: true } ends that other session.
+   */
+  login: async (identifier, password, { replaceSession = false } = {}) => {
     clearApiCache();
     const result = await request("/auth/login", {
       method: "POST",
-      body: { identifier, password },
+      body: { identifier, password, ...(replaceSession ? { replaceSession: true } : {}) },
     });
     clearApiCache();
     return result;
   },
   logout: () => request("/auth/logout", { method: "POST" }),
+  /** Is this browser's session still the account's session? (401 SESSION_REPLACED / SESSION_ENDED if not) */
+  checkSession: () => request("/auth/session", { skipCache: true, skipDedupe: true, skipQueue: true }),
   changePassword: (currentPassword, newPassword) =>
     request("/auth/password/change", {
       method: "POST",

@@ -47,6 +47,8 @@ class SocketService {
 
     this.socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
+      // The server refused this session: let the app ask the server why and show the dialog.
+      if (/Session (replaced|expired)/i.test(error?.message || '')) window.dispatchEvent(new Event('peerprep:session-check'));
     });
 
     return this.socket;
