@@ -4,16 +4,27 @@ import { createHash } from 'node:crypto';
 import mongoose from 'mongoose';
 import AssessmentSubmission from '../src/models/AssessmentSubmission.js';
 
+// Requeues final grading for submitted attempts whose grading failed, keeping answers and attempts.
+//   Dry run (default):   node scripts/recoverFailedAssessmentEvaluations.js [filters] [--summary]
+//   Apply:               CONFIRM_ASSESSMENT_DATABASE=peerprep node scripts/recoverFailedAssessmentEvaluations.js --apply [filters]
+// Filters: --submission-ids=a,b  --assessment-id=X  --all-failed
+// --stuck-dispatch selects attempts whose grading dispatch keeps failing (for example jobs that used
+// every queue retry while Judge0 was down), whatever their evaluationStatus.
+// --summary prints counts only (no student names), safe to share.
 const APPLY = process.argv.includes('--apply');
 const ALL_FAILED = process.argv.includes('--all-failed');
+const STUCK_DISPATCH = process.argv.includes('--stuck-dispatch');
+const SUMMARY = process.argv.includes('--summary');
 const value = (name) => process.argv.find((entry) => entry.startsWith(`--${name}=`))?.slice(name.length + 3) || '';
 const ids = value('submission-ids').split(',').map((entry) => entry.trim()).filter(Boolean);
+const assessmentId = value('assessment-id').trim();
 const waitMs = Math.min(300_000, Math.max(0, Number(value('wait-ms')) || 0));
 const hash = (input) => createHash('sha256').update(String(input || '')).digest('hex');
 
 for (const id of ids) assert.ok(mongoose.isValidObjectId(id), `Invalid submission id: ${id}`);
+if (assessmentId) assert.ok(mongoose.isValidObjectId(assessmentId), `Invalid assessment id: ${assessmentId}`);
 if (APPLY) {
-  assert.ok(ALL_FAILED || ids.length, '--apply requires --submission-ids=... or --all-failed');
+  assert.ok(ALL_FAILED || ids.length || assessmentId, '--apply requires --submission-ids=..., --assessment-id=... or --all-failed');
   assert.equal(process.env.CONFIRM_ASSESSMENT_DATABASE, 'peerprep', 'Set CONFIRM_ASSESSMENT_DATABASE=peerprep for an apply');
 }
 
@@ -21,9 +32,16 @@ await mongoose.connect(process.env.MONGODB_URI, { autoIndex: false, serverSelect
 try {
   const db = mongoose.connection.db;
   const query = {
-    evaluationStatus: 'failed',
     status: { $in: ['submitted', 'violation', 'expired'] },
+    ...(STUCK_DISPATCH
+      ? {
+        evaluationStatus: { $in: ['failed', 'processing'] },
+        'pendingWork.status': 'failed',
+        $expr: { $eq: ['$pendingWork.version', '$evaluationVersion'] },
+      }
+      : { evaluationStatus: 'failed' }),
     ...(ids.length ? { _id: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) } } : {}),
+    ...(assessmentId ? { assessmentId: new mongoose.Types.ObjectId(assessmentId) } : {}),
   };
   const submissions = await AssessmentSubmission.find(query)
     .select('-proctoringSnapshots -monitoringEvents -violationLog -securityHeartbeat')
@@ -69,7 +87,24 @@ try {
     };
   });
 
-  console.log(JSON.stringify({ mode: APPLY ? 'apply' : 'dry-run', database: db.databaseName, failedSubmissions: rows.length, rows }, null, 2));
+  if (SUMMARY) {
+    const groups = new Map();
+    for (const row of rows) {
+      const submission = submissions.find((entry) => String(entry._id) === row.submissionId);
+      const key = `${row.assessmentId}|${submission?.evaluationStatus}|${submission?.pendingWork?.lastError || ''}`;
+      const group = groups.get(key) || {
+        assessmentId: row.assessmentId, assessment: row.assessment,
+        evaluationStatus: submission?.evaluationStatus, pendingWorkError: submission?.pendingWork?.lastError || '',
+        submissions: 0, oldestSubmittedAt: null,
+      };
+      group.submissions += 1;
+      if (row.submittedAt && (!group.oldestSubmittedAt || row.submittedAt < group.oldestSubmittedAt)) group.oldestSubmittedAt = row.submittedAt;
+      groups.set(key, group);
+    }
+    console.log(JSON.stringify({ mode: APPLY ? 'apply' : 'dry-run', selection: STUCK_DISPATCH ? 'stuck-dispatch' : 'evaluation-failed', database: db.databaseName, failedSubmissions: rows.length, groups: [...groups.values()] }, null, 2));
+  } else {
+    console.log(JSON.stringify({ mode: APPLY ? 'apply' : 'dry-run', selection: STUCK_DISPATCH ? 'stuck-dispatch' : 'evaluation-failed', database: db.databaseName, failedSubmissions: rows.length, rows }, null, 2));
+  }
   if (APPLY && submissions.length) {
     const audit = db.collection('assessmentEvaluationRecoveries');
     const recovered = [];
@@ -95,7 +130,7 @@ try {
     });
     const result = await AssessmentSubmission.updateOne({
       _id: submission._id,
-      evaluationStatus: 'failed',
+      evaluationStatus: submission.evaluationStatus,
       evaluationVersion: submission.evaluationVersion,
       updatedAt: submission.updatedAt,
     }, {

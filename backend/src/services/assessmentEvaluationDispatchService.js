@@ -11,6 +11,18 @@ import { notifyAssessmentReportChanged } from './assessmentReportRealtime.js';
 
 const LEASE_MS = 120_000;
 const RECHECK_MS = 30_000;
+export const EXHAUSTED_DISPATCH_ERROR = 'Grading jobs used every retry; requeue with scripts/recoverFailedAssessmentEvaluations.js --stuck-dispatch.';
+
+// Error code and message for logs, with URLs (which may carry credentials) removed.
+export function describeDispatchError(error) {
+  const label = error?.code || error?.name || 'Error';
+  const message = String(error?.message || '')
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<url>')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200);
+  return message ? `${label}: ${message}` : label;
+}
 
 async function ensureSubmissionNotification(submission) {
   const dedupeKey = `assessment-submitted:${submission._id}:${submission.evaluationVersion}`;
@@ -87,19 +99,24 @@ export async function dispatchPendingAssessmentEvaluations({ limit = 25, now = n
       // Attempts without coding jobs are graded during dispatch.
       notifyAssessmentReportChanged(submission.assessmentId, 'evaluation');
     } catch (error) {
+      // A grading job that already used every queue retry cannot be published again under the
+      // same job ID, so retrying dispatch would fail forever. Park it for the recovery script.
+      const exhausted = error?.code === 'QUEUE_RECOVERY_EXHAUSTED';
       const retryMs = Math.min(15 * 60_000, 2000 * 2 ** Math.min(9, Number(submission.pendingWork?.attempts || 1)));
       await AssessmentSubmission.updateOne(releaseFilter, {
         $set: {
           'pendingWork.status': 'failed',
-          'pendingWork.nextAttemptAt': new Date(now.getTime() + retryMs),
+          'pendingWork.nextAttemptAt': exhausted ? null : new Date(now.getTime() + retryMs),
           // Avoid copying connection URIs or provider credentials into records/logs.
-          'pendingWork.lastError': 'Evaluation dispatch failed; retry scheduled.',
+          'pendingWork.lastError': exhausted
+            ? EXHAUSTED_DISPATCH_ERROR
+            : 'Evaluation dispatch failed; retry scheduled.',
         },
         $unset: { 'pendingWork.leaseToken': 1, 'pendingWork.leaseUntil': 1 },
         $inc: { __v: 1 },
       });
       failed += 1;
-      console.error(`[AssessmentDispatch] Deferred submission ${submission._id} (${error?.name || 'Error'}).`);
+      console.error(`[AssessmentDispatch] ${exhausted ? 'Parked' : 'Deferred'} submission ${submission._id} (${describeDispatchError(error)}).`);
     }
   }
   return { dispatched, failed };

@@ -157,6 +157,50 @@ test('final evaluation reuses an unchanged submitted verdict and re-judges chang
   }
 });
 
+test('a grading job that used every queue retry is parked instead of being re-dispatched forever', async () => {
+  const { assessmentQueue } = await import('../src/queues/queueManager.js');
+  const { dispatchPendingAssessmentEvaluations, EXHAUSTED_DISPATCH_ERROR } = await import('../src/services/assessmentEvaluationDispatchService.js');
+  const { submission } = await fixture({ count: 1 });
+  await mutateAssessmentSubmission({ filter: { _id: submission._id }, mutate: (doc) => finishAssessmentSubmission(doc) });
+  const originalAdd = assessmentQueue.add;
+  const originalError = console.error;
+  const logged = [];
+  let publishes = 0;
+  assessmentQueue.add = async () => {
+    publishes += 1;
+    const error = new Error('Queue recovery exhausted; manual evaluation review required');
+    error.code = 'QUEUE_RECOVERY_EXHAUSTED';
+    throw error;
+  };
+  console.error = (line) => logged.push(String(line));
+  try {
+    const first = await dispatchPendingAssessmentEvaluations();
+    assert.equal(first.failed, 1);
+    const stored = await AssessmentSubmission.findById(submission._id).lean();
+    assert.equal(stored.pendingWork.status, 'failed');
+    assert.equal(stored.pendingWork.nextAttemptAt, null);
+    assert.equal(stored.pendingWork.lastError, EXHAUSTED_DISPATCH_ERROR);
+    assert.match(logged.join('\n'), /Parked submission .*QUEUE_RECOVERY_EXHAUSTED: Queue recovery exhausted/);
+    // Later passes leave it alone until an operator requeues it.
+    const later = await dispatchPendingAssessmentEvaluations({ now: new Date(Date.now() + 86_400_000) });
+    assert.equal(later.failed + later.dispatched, 0);
+    assert.equal(publishes, 1);
+  } finally {
+    assessmentQueue.add = originalAdd;
+    console.error = originalError;
+  }
+});
+
+test('dispatch error descriptions keep the reason but drop URLs', async () => {
+  const { describeDispatchError } = await import('../src/services/assessmentEvaluationDispatchService.js');
+  const error = new Error('connect ECONNREFUSED redis://user:secret@10.0.0.5:6379 while publishing');
+  error.code = 'ECONNREFUSED';
+  const text = describeDispatchError(error);
+  assert.match(text, /^ECONNREFUSED: connect ECONNREFUSED <url> while publishing$/);
+  assert.doesNotMatch(text, /secret/);
+  assert.equal(describeDispatchError(new TypeError('')), 'TypeError');
+});
+
 test('queue publication retries preserve durable intent and reuse the same tracked coding job', async () => {
   const { assessmentQueue } = await import('../src/queues/queueManager.js');
   const { dispatchPendingAssessmentEvaluations } = await import('../src/services/assessmentEvaluationDispatchService.js');
