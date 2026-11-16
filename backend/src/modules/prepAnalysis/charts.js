@@ -12,8 +12,9 @@ export const GROUP_BY = Object.freeze({
   semester: { label: 'Semester', get: (row) => (row.student.semester ? `Sem ${row.student.semester}` : '') },
   branch: { label: 'Branch', get: (row) => row.student.branch },
   course: { label: 'Course', get: (row) => row.student.course },
-  college: { label: 'College / University', get: (row) => row.student.college },
-  group: { label: 'Group / Section', get: (row) => row.student.group },
+  college: { label: 'Campus', get: (row) => row.student.college },
+  section: { label: 'Section', get: (row) => row.student.section },
+  group: { label: 'Group', get: (row) => row.student.group },
 });
 
 const NOT_SET = 'Not set';
@@ -447,7 +448,7 @@ const CODING_CHARTS = [
   {
     id: 'group-breakdown', type: 'stackedBar', size: 'md',
     title: 'Solved problems by class',
-    question: 'How many Easy, Medium and Hard problems has each semester, branch or group solved?',
+    question: 'How many Easy, Medium and Hard problems has each semester, branch, section, group or campus solved?',
     options: { groupBy: 'semester' },
     build: ({ rows, options }) => ({
       groupBy: options.groupBy || 'semester',
@@ -904,7 +905,7 @@ const QUICKPREP_CHARTS = [
   {
     id: 'quickprep-by-class', type: 'stackedBar', size: 'md',
     title: 'Quick Prep by class',
-    question: 'In each semester, branch or section, how many students finished a sheet, are working on one, or have not started?',
+    question: 'In each semester, branch, section, group or campus, how many students finished a sheet, are working on one, or have not started?',
     options: { groupBy: 'semester' },
     build: ({ rows, options }) => ({
       groupBy: options.groupBy || 'semester',
@@ -1026,7 +1027,7 @@ const ASSESSMENT_CHARTS = [
   {
     id: 'assessment-by-class', type: 'stackedBar', size: 'md',
     title: 'Test results by class',
-    question: 'How many tests did each semester, branch or section pass, fail or miss?',
+    question: 'How many tests did each semester, branch, section, group or campus pass, fail or miss?',
     options: { groupBy: 'semester' },
     build: ({ rows, options }) => ({
       groupBy: options.groupBy || 'semester',

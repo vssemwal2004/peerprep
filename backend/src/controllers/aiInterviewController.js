@@ -245,6 +245,27 @@ export function runtimeReadiness(config = anviConfig(), env = process.env) {
 }
 export const capabilities = (_req, res) =>
   res.json({ ...CAPABILITIES, aiConfigured: anviConfigured(), runtime: runtimeReadiness() });
+const INTERVIEW_LIST_FIELDS = "title role companyName revision lifecycle summary validation.complete publishedAt completedAt updatedAt";
+// The directory's columns as sortable values; the status label mirrors the admin directory's chip.
+const INTERVIEW_SORT_FIELDS = {
+  _questions: { $add: [{ $ifNull: ["$summary.manualCount", 0] }, { $ifNull: ["$summary.plannedCount", 0] }] },
+  // Untimed sorts after every timed budget; no budget at all is blank and sorts last either way.
+  _duration: { $cond: [{ $eq: ["$summary.unlimited", true] }, Number.MAX_SAFE_INTEGER, { $ifNull: ["$summary.budgetSeconds", null] }] },
+  _durationBlank: { $cond: [{ $or: [{ $eq: ["$summary.unlimited", true] }, { $gt: [{ $ifNull: ["$summary.budgetSeconds", 0] }, 0] }] }, 0, 1] },
+  _status: { $switch: { branches: [
+    { case: { $eq: ["$lifecycle", "archived"] }, then: "Archived" },
+    { case: { $eq: ["$lifecycle", "completed"] }, then: "Completed" },
+    { case: { $ne: [{ $ifNull: ["$publishedAt", null] }, null] }, then: "Published" },
+    { case: { $eq: ["$validation.complete", true] }, then: "Ready to publish" },
+  ], default: "Draft" } },
+};
+const INTERVIEW_SORTS = {
+  title: (direction) => ({ title: direction }),
+  questions: (direction) => ({ _questions: direction }),
+  duration: (direction) => ({ _durationBlank: 1, _duration: direction }),
+  status: (direction) => ({ _status: direction }),
+  edited: (direction) => ({ updatedAt: direction }),
+};
 export async function listInterviews(req, res) {
   const { page, limit } = pageParams(req);
   // "All" lists drafts and completed interviews; the draft filters and the schedulable picker list drafts only.
@@ -265,6 +286,24 @@ export async function listInterviews(req, res) {
     where.$or = ["title", "role", "companyName"].map((field) => ({
       [field]: { $regex: search, $options: "i" },
     }));
+  const sortBy = String(req.query.sortBy || "");
+  if (Object.hasOwn(INTERVIEW_SORTS, sortBy)) {
+    // Directory header sort: computed columns (questions, duration, status) need an aggregation.
+    const direction = req.query.sortOrder === "desc" ? -1 : 1;
+    const [items, total] = await Promise.all([
+      AIInterview.aggregate([
+        // $match does not cast like find(); cast ids (owner, company) through the schema first.
+        { $match: AIInterview.find().cast(AIInterview, structuredClone(where)) },
+        { $addFields: INTERVIEW_SORT_FIELDS },
+        { $sort: { ...INTERVIEW_SORTS[sortBy](direction), _id: direction } },
+        { $skip: (page - 1) * limit },
+        { $limit: limit },
+        { $project: Object.fromEntries(INTERVIEW_LIST_FIELDS.split(" ").map((field) => [field, 1])) },
+      ]).collation({ locale: "en", strength: 2 }),
+      AIInterview.countDocuments(where),
+    ]);
+    return res.json({ items, pagination: pagination(page, limit, total) });
+  }
   const sort =
     req.query.sort === "oldest"
       ? { updatedAt: 1, _id: 1 }

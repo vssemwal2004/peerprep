@@ -65,6 +65,7 @@ after(async () => {
 const render = () => act(async () => root.render(h(MemoryRouter, { initialEntries: ['/admin/settings/suggested-companies'] }, h(Page))));
 const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
 const button = (pattern, scope = document) => [...scope.querySelectorAll('button')].find((node) => pattern.test(node.textContent) || pattern.test(node.getAttribute('aria-label') || ''));
+const sortButton = (label, scope) => [...scope.querySelectorAll('thead button')].find((node) => node.title === `Sort by ${label}`);
 const click = async (node) => { assert.ok(node, 'Click target must exist'); await act(async () => node.click()); };
 const type = (input, value) => act(async () => {
   Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, value);
@@ -102,11 +103,29 @@ test('a decision that empties the last page steps back to the previous page', as
   };
   await render();
   await settle();
-  await click(button(/^Next$/));
+  assert.ok(document.querySelector('section[aria-labelledby="company-requests-title"] [data-table-pager]'), 'The shared pager sits under the table');
+  await click(button(/^Next page$/));
   await settle();
   assert.deepEqual(calls.filter(([name]) => name === 'list').map(([, params]) => params.page), [1, 2, 1]);
   assert.equal(requestRows().length, 2);
   assert.doesNotMatch(document.body.textContent, /No pending requests/);
+});
+
+test('request column headers sort on the server and page size changes go back to page 1', async () => {
+  await render();
+  await settle();
+  const section = document.querySelector('section[aria-labelledby="company-requests-title"]');
+  await click(sortButton('Company', section));
+  await settle();
+  assert.deepEqual(calls.at(-1), ['list', { status: 'pending', page: 1, limit: 25, sortBy: 'company', sortOrder: 'asc' }]);
+  await click(sortButton('Company', section));
+  await settle();
+  assert.deepEqual(calls.at(-1)[1], { status: 'pending', page: 1, limit: 25, sortBy: 'company', sortOrder: 'desc' });
+  assert.equal(section.querySelector('th[aria-sort]').getAttribute('aria-sort'), 'descending');
+  const size = section.querySelector('[data-table-pager] select');
+  await act(async () => { size.value = '50'; size.dispatchEvent(new window.Event('change', { bubbles: true })); });
+  await settle();
+  assert.deepEqual(calls.at(-1)[1], { status: 'pending', page: 1, limit: 50, sortBy: 'company', sortOrder: 'desc' });
 });
 
 test('a failed rename keeps the dialog open and shows the error inside it', async () => {
@@ -198,7 +217,7 @@ test('the Question tags view lists confirmation progress per question and compan
   await settle();
   await click([...document.querySelectorAll('[role="radio"]')].find((node) => node.textContent === 'Question tags'));
   await settle();
-  assert.deepEqual(calls.find(([name]) => name === 'tags'), ['tags', { status: 'all', limit: 100 }]);
+  assert.deepEqual(calls.find(([name]) => name === 'tags'), ['tags', { status: 'all', page: 1, limit: 25 }]);
   const section = document.querySelector('section[aria-labelledby="question-tags-title"]');
   assert.match(section.textContent, /Collecting tags become visible to students at 20 confirmations\./);
   const rows = [...section.querySelectorAll('tbody tr')];
@@ -206,5 +225,9 @@ test('the Question tags view lists confirmation progress per question and compan
   assert.match(rows[0].textContent, /Two Sum.*Central library.*Central.*Amazon.*100%.*20 \/ 20 students.*Verified/);
   assert.doesNotMatch(rows[0].textContent, /University/);
   assert.match(rows[1].textContent, /Campus question.*Graphic Era University.*University.*Google.*35%.*7 \/ 20 students.*Collecting/);
+  assert.match(section.querySelector('[data-table-pager]').textContent, /Showing 1–2 of 2 tags/);
+  await click(sortButton('Confirmations', section));
+  await settle();
+  assert.deepEqual(calls.filter(([name]) => name === 'tags').at(-1), ['tags', { status: 'all', page: 1, limit: 25, sortBy: 'confirmations', sortOrder: 'asc' }]);
   assert.ok(document.querySelector('section[aria-labelledby="company-requests-title"]').closest('[hidden]'), 'Requests stay mounted but hidden');
 });

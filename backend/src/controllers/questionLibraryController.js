@@ -25,8 +25,12 @@ import {
   formatLibraryQuestionSummary,
   buildSearchPrefixes,
   syncProblemToLibrary,
+  libraryQuestionMatchesTerm,
+  librarySearchTermExpression,
+  librarySearchTermIndex,
+  librarySearchTerms,
 } from '../services/questionLibraryService.js';
-import { matchesSerialSearch, parseSerialSearch } from '../utils/problemSerial.js';
+import { applyNumberKind, matchesSerialSearch, parseSerialSearch } from '../utils/problemSerial.js';
 
 /** Keeps sample-case images on copied problems, limited to the fields and https URLs TestCase accepts. */
 function copySampleImages(images) {
@@ -368,6 +372,21 @@ const LIBRARY_SUMMARY_AGGREGATION_PROJECTION = Object.fromEntries(
   LIBRARY_SUMMARY_PROJECTION.split(/\s+/).filter(Boolean).map((field) => [field, 1]),
 );
 
+// Sort keys the library list accepts (the sort menu and the column headers). Anything else is the
+// default, most recently updated first.
+export const LIBRARY_SORT_FIELDS = Object.freeze(['displayOrder', 'updatedAt', 'createdAt', 'questionText', 'difficulty', 'questionType', 'tags', 'usedIn']);
+const librarySortField = (value) => (LIBRARY_SORT_FIELDS.includes(value) ? value : 'updatedAt');
+const firstLibraryTag = (question = {}) => String((Array.isArray(question.tags) ? question.tags[0] : '') || '').toLowerCase();
+
+/** In-memory order for the column sorts added for the table headers (type, first tag, assessment usage). */
+function compareLibraryColumn(a, b, sortBy, usageCount) {
+  if (sortBy === 'questionType') return String(a.questionType || '').localeCompare(String(b.questionType || ''));
+  if (sortBy === 'tags') return firstLibraryTag(a).localeCompare(firstLibraryTag(b));
+  if (sortBy === 'usedIn') return usageCount(a) - usageCount(b);
+  return 0;
+}
+const COLUMN_SORTS = new Set(['questionType', 'tags', 'usedIn']);
+
 function matchesSharedQuestion(question, query = {}) {
   const values = queryList(query.types || query.type).filter((value) => value !== 'all');
   if (values.length && !values.includes(question.questionType)) return false;
@@ -377,7 +396,10 @@ function matchesSharedQuestion(question, query = {}) {
   if (query.sourceAssessmentId && String(question.sourceAssessmentId || '') !== String(query.sourceAssessmentId)) return false;
   if (query.difficulty && question.difficulty !== query.difficulty) return false;
   if (query.tag && !(question.tags || []).includes(query.tag)) return false;
-  if (query.search) {
+  const searchList = librarySearchTerms(query.search);
+  if (searchList.multi) {
+    if (!searchList.terms.some((term) => libraryQuestionMatchesTerm(question, term))) return false;
+  } else if (query.search) {
     const normalizedSearch = normalizeSearchText(query.search);
     const numberSearch = parseSerialSearch(normalizedSearch);
     if (numberSearch) {
@@ -397,11 +419,23 @@ function mergedLibraryResponse(local, shared, query = {}) {
   const page = Math.max(1, Number(query.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(query.limit) || 25));
   const direction = query.sortOrder === 'asc' ? 1 : -1;
-  const sortBy = ['displayOrder', 'updatedAt', 'createdAt', 'questionText', 'difficulty'].includes(query.sortBy) ? query.sortBy : 'updatedAt';
-  const questions = [...local, ...shared.filter((item) => matchesSharedQuestion(item, query)).map((item) => ({ ...formatLibraryQuestionSummary(item), platformShared: true }))]
+  const sortBy = librarySortField(query.sortBy);
+  const searchList = librarySearchTerms(query.search);
+  const sharedMatches = shared.filter((item) => matchesSharedQuestion(item, query));
+  const sharedRows = sharedMatches.map((item) => ({
+    ...formatLibraryQuestionSummary(item),
+    platformShared: true,
+    ...(searchList.multi ? { searchTermIndex: librarySearchTermIndex(item, searchList.terms) } : {}),
+  }));
+  const questions = [...local, ...sharedRows]
     .sort((a, b) => {
+      // Several typed terms: results follow the order the terms were typed.
+      if (searchList.multi && a.searchTermIndex !== b.searchTermIndex) return a.searchTermIndex - b.searchTermIndex;
       if (sortBy === 'displayOrder') {
         return ((Number(a.displayOrder) || 2147483647) - (Number(b.displayOrder) || 2147483647)) * direction;
+      }
+      if (COLUMN_SORTS.has(sortBy)) {
+        return compareLibraryColumn(a, b, sortBy, (row) => (row.usedInAssessments || []).length) * direction;
       }
       if (sortBy === 'questionText' || sortBy === 'difficulty') {
         return String(a[sortBy] || '').localeCompare(String(b[sortBy] || '')) * direction;
@@ -410,13 +444,30 @@ function mergedLibraryResponse(local, shared, query = {}) {
     });
   const total = questions.length;
   const all = query.selectAll === 'true';
-  return { questions: all ? questions : questions.slice((page - 1) * limit, page * limit), pagination: { page: all ? 1 : page, limit: all ? total : limit, total, pages: Math.max(1, Math.ceil(total / limit)) } };
+  const sharedHits = searchList.multi ? new Set(searchList.terms
+    .filter((term) => sharedMatches.some((item) => libraryQuestionMatchesTerm(item, term))).map((term) => term.raw)) : null;
+  return {
+    questions: all ? questions : questions.slice((page - 1) * limit, page * limit),
+    pagination: { page: all ? 1 : page, limit: all ? total : limit, total, pages: Math.max(1, Math.ceil(total / limit)) },
+    sharedHits,
+  };
+}
+
+/** Multi-term search fields for a list response; nothing for a single-term search. */
+function searchTermsResponse(searchList, matchedTerms) {
+  if (!searchList.multi) return {};
+  return {
+    searchTerms: searchList.terms.map((term) => term.raw),
+    unmatchedTerms: searchList.terms.map((term) => term.raw).filter((raw) => !matchedTerms.has(raw)),
+  };
 }
 
 export async function listLibraryQuestions(req, res) {
   try {
     const central = await sharedQuestions();
     await ensureQuestionLibrarySynchronized();
+    // The picker's PeerPrep/LeetCode toggle decides what a bare number means ("2" → "pp 2" / "lc 2").
+    const listQuery = { ...(req.query || {}), search: applyNumberKind(String(req.query?.search || ''), req.query?.numberKind) };
 
     const {
       type = '',
@@ -441,12 +492,14 @@ export async function listLibraryQuestions(req, res) {
       limit = 25,
       selectAll = 'false',
       includeMeta = 'true',
-    } = req.query || {};
+    } = listQuery;
 
     const pageNum = Math.max(1, Number(page) || 1);
     const limitNum = Math.min(100, Math.max(1, Number(limit) || 25));
     const skip = (pageNum - 1) * limitNum;
-    const normalizedSearch = normalizeSearchText(search);
+    const searchList = librarySearchTerms(search);
+    // Several comma-separated terms are ranked by typed order, not by single-term relevance.
+    const normalizedSearch = searchList.multi ? '' : normalizeSearchText(search);
     const serialSearch = parseSerialSearch(normalizedSearch);
     const serialSearchExpressions = !serialSearch ? []
       : serialSearch.kind === 'leetcode' ? [{ $eq: ['$sourceNumber', serialSearch.number] }]
@@ -518,10 +571,27 @@ export async function listLibraryQuestions(req, res) {
     }
 
     if (String(includeMeta).trim().toLowerCase() === 'false') {
-      const allowedSortFields = new Set(['displayOrder', 'updatedAt', 'createdAt', 'questionText', 'difficulty']);
-      const selectedSort = allowedSortFields.has(sortBy) ? sortBy : 'updatedAt';
+      const selectedSort = librarySortField(sortBy);
       const direction = String(sortOrder).toLowerCase() === 'asc' ? 1 : -1;
       const includeAllMatches = String(selectAll).trim().toLowerCase() === 'true';
+      // Column sorts that need a computed key: the first tag, or how many assessments use the problem
+      // (counted like the "Used in assessments" column below: coding rows, by their linked problem).
+      const columnSortStages = selectedSort === 'tags' ? [
+        { $addFields: { __tagKey: { $toLower: { $ifNull: [{ $arrayElemAt: ['$tags', 0] }, ''] } } } },
+      ] : selectedSort === 'usedIn' ? [
+        { $lookup: {
+          from: QuestionLibrary.collection.name,
+          let: { problemId: { $cond: [{ $eq: ['$questionType', 'coding'] }, { $ifNull: ['$sourceProblemId', '__none__'] }, '__none__'] } },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$sourceProblemId', '$$problemId'] }, sourceType: 'assessment', sourceAssessmentTitle: { $nin: [null, ''] } } },
+            { $group: { _id: '$sourceAssessmentTitle' } },
+          ],
+          as: '__usage',
+        } },
+        { $addFields: { __usageCount: { $size: '$__usage' } } },
+        { $project: { __usage: 0 } },
+      ] : [];
+      const columnSortKey = { tags: '__tagKey', usedIn: '__usageCount' }[selectedSort] || selectedSort;
       const identityExpression = {
         $cond: [
           { $and: [{ $eq: ['$questionType', 'coding'] }, { $ne: [{ $ifNull: ['$sourceProblemId', null] }, null] }] },
@@ -529,13 +599,20 @@ export async function listLibraryQuestions(req, res) {
           { $concat: ['source:', { $toString: { $cond: [{ $ne: [{ $ifNull: ['$sourceKey', ''] }, ''] }, '$sourceKey', '$_id'] } }] },
         ],
       };
+      const searchRankSort = searchList.multi ? { __termRank: 1 } : normalizedSearch ? { __searchRank: 1 } : {};
       const sortExpression = selectedSort === 'difficulty'
-        ? { ...(normalizedSearch ? { __searchRank: 1 } : {}), __difficultyRank: direction, updatedAt: -1, _id: 1 }
-        : { ...(normalizedSearch ? { __searchRank: 1 } : {}), [selectedSort]: direction, updatedAt: -1, _id: 1 };
+        ? { ...searchRankSort, __difficultyRank: direction, updatedAt: -1, _id: 1 }
+        : { ...searchRankSort, [columnSortKey]: direction, updatedAt: -1, _id: 1 };
       const pageStages = includeAllMatches || central ? [] : [{ $skip: skip }, { $limit: limitNum }];
+      // Multi-term search: which typed terms each row matches (-1 = not this one) and the first of them.
+      const termStages = searchList.multi ? [
+        { $addFields: { __termHits: searchList.terms.map((term, index) => ({ $cond: [librarySearchTermExpression(term), index, -1] })) } },
+        { $addFields: { __termRank: { $min: { $filter: { input: '$__termHits', cond: { $gte: ['$$this', 0] } } } } } },
+      ] : [];
       const [result = { rows: [], count: [] }] = await QuestionLibrary.aggregate([
         { $match: baseMatch },
-        { $project: LIBRARY_SUMMARY_AGGREGATION_PROJECTION },
+        ...termStages,
+        { $project: { ...LIBRARY_SUMMARY_AGGREGATION_PROJECTION, ...(searchList.multi ? { __termHits: 1, __termRank: 1 } : {}) } },
         {
           $addFields: {
             __identity: identityExpression,
@@ -554,6 +631,7 @@ export async function listLibraryQuestions(req, res) {
         { $sort: { __sourcePriority: 1, updatedAt: -1, createdAt: -1 } },
         { $group: { _id: '$__identity', document: { $first: '$$ROOT' } } },
         { $replaceRoot: { newRoot: '$document' } },
+        ...columnSortStages,
         ...(selectedSort === 'difficulty' ? [{
           $addFields: {
             __difficultyRank: {
@@ -608,7 +686,13 @@ export async function listLibraryQuestions(req, res) {
           },
         }] : []),
         { $sort: sortExpression },
-        { $facet: { rows: pageStages, count: [{ $count: 'total' }] } },
+        { $facet: {
+          rows: pageStages,
+          count: [{ $count: 'total' }],
+          ...(searchList.multi ? { termHits: [
+            { $unwind: '$__termHits' }, { $match: { __termHits: { $gte: 0 } } }, { $group: { _id: '$__termHits' } },
+          ] } : {}),
+        } },
       ]).allowDiskUse(true);
 
       const rows = await QuestionLibrary.populate(result.rows || [], {
@@ -699,9 +783,15 @@ export async function listLibraryQuestions(req, res) {
       const localRows = rows.map((question) => ({
           ...formatLibraryQuestionSummary(question),
           usedInAssessments: Array.from(assessmentUsage.get(getLibraryUsageKey(question)) || []).sort((a, b) => a.localeCompare(b)),
+          ...(searchList.multi ? { searchTermIndex: Number.isInteger(question.__termRank) ? question.__termRank : -1 } : {}),
         }));
-      const merged = central ? mergedLibraryResponse(localRows, central, req.query) : null;
+      const merged = central ? mergedLibraryResponse(localRows, central, listQuery) : null;
+      const matchedTerms = new Set([
+        ...(result.termHits || []).map((entry) => searchList.terms[entry._id]?.raw).filter(Boolean),
+        ...(merged?.sharedHits || []),
+      ]);
       return res.json({
+        ...searchTermsResponse(searchList, matchedTerms),
         questions: merged?.questions || localRows,
         pagination: {
           page: merged?.pagination.page ?? (includeAllMatches ? 1 : pageNum),
@@ -728,7 +818,7 @@ export async function listLibraryQuestions(req, res) {
       : {};
     const [baseQuestions, scopeQuestions, tags, difficulties] = await Promise.all([
       QuestionLibrary.find(baseMatch)
-        .select(LIBRARY_SUMMARY_PROJECTION)
+        .select(searchList.multi ? `${LIBRARY_SUMMARY_PROJECTION} searchPrefixes` : LIBRARY_SUMMARY_PROJECTION)
         .sort({ updatedAt: -1, createdAt: -1 })
         .populate('createdBy', 'name email role coordinatorId')
         .lean(),
@@ -750,11 +840,14 @@ export async function listLibraryQuestions(req, res) {
     const filteredQuestions = selectedType && selectedType !== 'all'
       ? uniqueBaseQuestions.filter((question) => question.questionType === selectedType)
       : uniqueBaseQuestions;
-    const allowedSortFields = new Set(['displayOrder', 'updatedAt', 'createdAt', 'questionText', 'difficulty']);
-    const selectedSort = allowedSortFields.has(sortBy) ? sortBy : 'updatedAt';
+    const selectedSort = librarySortField(sortBy);
     const direction = String(sortOrder).toLowerCase() === 'asc' ? 1 : -1;
     const difficultyRank = { easy: 1, medium: 2, hard: 3 };
+    const usageCount = (question) => (assessmentUsage.get(getLibraryUsageKey(question)) || new Set()).size;
+    const termIndex = new Map(searchList.multi
+      ? filteredQuestions.map((question) => [question, librarySearchTermIndex(question, searchList.terms)]) : []);
     const sortedQuestions = [...filteredQuestions].sort((a, b) => {
+      if (searchList.multi && termIndex.get(a) !== termIndex.get(b)) return termIndex.get(a) - termIndex.get(b);
       if (normalizedSearch) {
         const relevanceDifference = librarySearchRank(a, normalizedSearch) - librarySearchRank(b, normalizedSearch);
         if (relevanceDifference !== 0) return relevanceDifference;
@@ -766,6 +859,7 @@ export async function listLibraryQuestions(req, res) {
       if (selectedSort === 'questionText') {
         return String(a.questionText || '').localeCompare(String(b.questionText || '')) * direction;
       }
+      if (COLUMN_SORTS.has(selectedSort)) return compareLibraryColumn(a, b, selectedSort, usageCount) * direction;
       if (selectedSort === 'displayOrder') {
         return ((Number(a.displayOrder) || 2147483647) - (Number(b.displayOrder) || 2147483647)) * direction;
       }
@@ -780,10 +874,16 @@ export async function listLibraryQuestions(req, res) {
     const localRows = questions.map((question) => ({
       ...formatLibraryQuestionSummary(question),
       usedInAssessments: Array.from(assessmentUsage.get(getLibraryUsageKey(question)) || []).sort((a, b) => a.localeCompare(b)),
+      ...(searchList.multi ? { searchTermIndex: termIndex.get(question) } : {}),
     }));
-    const merged = central ? mergedLibraryResponse(localRows, central, req.query) : null;
+    const merged = central ? mergedLibraryResponse(localRows, central, listQuery) : null;
+    const matchedTerms = new Set(searchList.multi ? [
+      ...searchList.terms.filter((term) => filteredQuestions.some((question) => libraryQuestionMatchesTerm(question, term))).map((term) => term.raw),
+      ...(merged?.sharedHits || []),
+    ] : []);
 
     res.json({
+      ...searchTermsResponse(searchList, matchedTerms),
       questions: merged?.questions || localRows,
       pagination: {
         page: merged?.pagination.page ?? (includeAllMatches ? 1 : pageNum),

@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import { CheckCircle2, Download, FileSpreadsheet, FileText, Loader2, RotateCcw, Sheet } from "lucide-react";
 import { useAnalysisApi } from "../analysisScope";
-import { RANGE_PRESETS, optionLookup, summaryLines, toQueryRequest } from "../filterModel";
+import { rangeLabel } from "../../../components/dateRange/dateRangeModel";
+import { optionLookup, summaryLines, toQueryRequest } from "../filterModel";
 import { Button, Dialog, Popover, focusRing } from "./ui";
 
 const FORMATS = [
@@ -30,7 +31,7 @@ function ExportDialog({ open, initialFormat, onClose, catalog, area, areaLabel, 
   const maxPdf = catalog.exportLimits?.maxPdfColumns || 12;
   const metricLabel = (key) => fieldMap.get(key)?.label || key;
   const lines = summaryLines(state, fieldMap, metricLabel, optionLookup(catalog), areaLabel);
-  const period = RANGE_PRESETS.find((preset) => preset.value === state.range.preset)?.label || "Custom period";
+  const period = rangeLabel(state.range);
   const tooManyForPdf = format === "pdf" && selected.length > maxPdf;
   const ordered = columns.filter((column) => selected.includes(column.key)).map((column) => column.key);
 

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2, Mail, RefreshCw, Search, Send } from 'lucide-react';
+import { AlertCircle, CalendarDays, CheckCircle2, Clock3, Loader2, Mail, RefreshCw, Search, Send } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
+import { SortHeader, TablePager, nextSort } from '../components/table';
 
 const MAIL_TYPES = {
   student_credentials: 'Student credentials',
@@ -9,6 +10,8 @@ const MAIL_TYPES = {
   assessment_invitation: 'Assessment invitation',
   event_invitation: 'Interview invitation',
   event_cancellation: 'Interview cancellation',
+  anvi_interview: 'AI interview',
+  student_message: 'Message to students',
 };
 
 const STATUS_STYLES = {
@@ -32,6 +35,7 @@ export default function AdminEmailQueue() {
   const [filters, setFilters] = useState({ search: '', type: '', status: '', dateFrom: '', dateTo: '' });
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [sort, setSort] = useState(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(filters.search.trim()), 300);
@@ -49,6 +53,8 @@ export default function AdminEmailQueue() {
         dateTo: filters.dateTo,
         page: pagination.page,
         limit: pagination.limit,
+        sortBy: sort?.key,
+        sortOrder: sort?.direction,
       });
       setJobs(data.jobs || []);
       setSummary(data.summary || { byStatus: {}, byType: {} });
@@ -58,7 +64,7 @@ export default function AdminEmailQueue() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, filters.type, filters.status, filters.dateFrom, filters.dateTo, pagination.page, pagination.limit, toast]);
+  }, [debouncedSearch, filters.type, filters.status, filters.dateFrom, filters.dateTo, pagination.page, pagination.limit, sort, toast]);
 
   useEffect(() => {
     const refreshWhenVisible = () => {
@@ -75,6 +81,11 @@ export default function AdminEmailQueue() {
 
   const updateFilter = (key, value) => {
     setFilters((current) => ({ ...current, [key]: value }));
+    setPagination((current) => ({ ...current, page: 1 }));
+  };
+
+  const toggleSort = (key) => {
+    setSort((current) => nextSort(current, key));
     setPagination((current) => ({ ...current, page: 1 }));
   };
 
@@ -113,14 +124,14 @@ export default function AdminEmailQueue() {
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1050px] text-left text-sm">
-              <thead className="bg-slate-50 text-[11px] uppercase text-slate-500 dark:bg-gray-800 dark:text-gray-400"><tr><th className="px-4 py-3">Recipient</th><th className="px-4 py-3">Mail type</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Attempts</th><th className="px-4 py-3">Queued</th><th className="px-4 py-3">Completed</th><th className="px-4 py-3">Details</th></tr></thead>
+              <thead className="bg-slate-50 text-[11px] uppercase text-slate-500 dark:bg-gray-800 dark:text-gray-400"><tr>{[['recipient', 'Recipient'], ['type', 'Mail type'], ['status', 'Status'], ['attempts', 'Attempts'], ['createdAt', 'Queued'], ['completed', 'Completed'], ['details', 'Details']].map(([key, label]) => <SortHeader key={key} sortKey={key} sort={sort} onSort={toggleSort} className="px-4 py-3">{label}</SortHeader>)}</tr></thead>
               <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
                 {loading && !jobs.length ? <tr><td colSpan="7" className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-sky-600" /></td></tr> : jobs.length ? jobs.map((job) => <tr key={job._id} className="hover:bg-slate-50/70 dark:hover:bg-gray-800/60"><td className="px-4 py-3"><p className="font-semibold text-slate-900 dark:text-white">{job.recipientId?.name || 'Recipient'}</p><p className="text-xs text-slate-500">{job.to}</p>{(job.recipientId?.studentId || job.recipientId?.coordinatorId) && <p className="text-[11px] text-slate-400">{job.recipientId.studentId || job.recipientId.coordinatorId}</p>}</td><td className="px-4 py-3 text-slate-700 dark:text-gray-200">{MAIL_TYPES[job.type] || job.type}</td><td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${STATUS_STYLES[job.status] || STATUS_STYLES.cancelled}`}>{job.status}</span></td><td className="px-4 py-3 text-slate-600 dark:text-gray-300">{job.attempts} / {job.maxAttempts}</td><td className="px-4 py-3 text-xs text-slate-600 dark:text-gray-300">{formatDate(job.createdAt)}</td><td className="px-4 py-3 text-xs text-slate-600 dark:text-gray-300">{formatDate(job.sentAt || job.failedAt)}</td><td className="max-w-[260px] px-4 py-3"><p className={`truncate text-xs ${job.lastError ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}`} title={job.lastError || job.batchId}>{job.lastError || `Batch ${job.batchId || '—'}`}</p></td></tr>) : <tr><td colSpan="7" className="py-16 text-center text-sm text-slate-500">No email logs match these filters.</td></tr>}
               </tbody>
             </table>
           </div>
 
-          <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm dark:border-gray-800"><p className="text-xs text-slate-500">{pagination.total.toLocaleString()} matching email{pagination.total === 1 ? '' : 's'}</p><div className="flex items-center gap-2"><button type="button" aria-label="Previous page" disabled={pagination.page <= 1 || loading} onClick={() => setPagination((current) => ({ ...current, page: current.page - 1 }))} className="rounded-lg border border-slate-200 p-2 disabled:opacity-40 dark:border-gray-700"><ChevronLeft className="h-4 w-4" /></button><span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Page {pagination.page} of {pagination.pages}</span><button type="button" aria-label="Next page" disabled={pagination.page >= pagination.pages || loading} onClick={() => setPagination((current) => ({ ...current, page: current.page + 1 }))} className="rounded-lg border border-slate-200 p-2 disabled:opacity-40 dark:border-gray-700"><ChevronRight className="h-4 w-4" /></button></div></div>
+          <TablePager page={pagination.page} pageSize={pagination.limit} total={pagination.total} busy={loading} noun="emails" onPage={(page) => setPagination((current) => ({ ...current, page }))} onPageSize={(limit) => setPagination((current) => ({ ...current, limit, page: 1 }))} />
         </section>
       </div>
     </div>

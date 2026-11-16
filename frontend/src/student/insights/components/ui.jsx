@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import EChart from "../../../admin/prepAnalysis/charts/EChart";
 import { changeText, changeTone } from "../insightModel";
@@ -93,6 +94,23 @@ export function Figure({ label, value, sub, children }) {
 
 export function Chart({ option, height = 240, label, onClick }) {
   return <EChart buildOption={option} height={height} ariaLabel={label} onClick={onClick} />;
+}
+
+/**
+ * A chart wider than its card (a 12-month calendar), scrolled sideways inside the card. Opens
+ * scrolled to the right end so the latest months show first: scrollbars are hidden app-wide, so on
+ * a phone, tablet or small laptop window the recent days were otherwise off-screen with no hint.
+ */
+export function LatestFirstScroll({ minWidth = "min-w-[720px]", children }) {
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    if (ref.current) ref.current.scrollLeft = ref.current.scrollWidth;
+  }, []);
+  return (
+    <div ref={ref} className="-mx-1 overflow-x-auto px-1">
+      <div className={minWidth}>{children}</div>
+    </div>
+  );
 }
 
 /** A segmented control (period, views). */

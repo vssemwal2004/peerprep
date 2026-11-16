@@ -38,6 +38,11 @@ export function drillChart(analysis, chartId, { group = null, ...drill }, signal
   return createPrepAnalysisApi(analysis.scope).drill({ ...chartRequest(analysis, chartId, {}, group), drill: { chartId, ...drill } }, signal);
 }
 
+/** Every student id behind one part of a chart (with the list's search): "Select all N matching". */
+export function drillStudentIds(analysis, chartId, { group = null, key = "", search = "" } = {}, signal) {
+  return createPrepAnalysisApi(analysis.scope).studentIds({ ...chartRequest(analysis, chartId, {}, group), drill: { chartId, key, view: "students", search } }, signal);
+}
+
 /** The chart's detailed file: Excel (summary, chart data, students, detail) or CSV (students). */
 export function downloadChart(analysis, chartId, { key = "", format = "xlsx", group = null } = {}) {
   const side = analysis.compareRequest && (group === 0 || group === 1) ? [`Group: ${analysis.compareRequest[group].label}`] : [];

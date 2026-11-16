@@ -8,7 +8,7 @@ import AIInterview from "../src/models/AIInterview.js";
 import User from "../src/models/User.js";
 import { errorHandler } from "../src/utils/errors.js";
 import { AnviAttempt } from "../src/modules/anviInterview/anviInterview.models.js";
-import { AnviBooking, AnviSlot, ANVI_SCHEDULING_MODELS } from "../src/modules/anviInterview/anviInterview.scheduling.models.js";
+import { AnviAssignmentTarget, AnviBooking, AnviSlot, ANVI_SCHEDULING_MODELS } from "../src/modules/anviInterview/anviInterview.scheduling.models.js";
 import { createAnviScheduling } from "../src/modules/anviInterview/anviInterview.scheduling.service.js";
 import { createAnviSchedulingAdminRouter, createAnviSchedulingStudentRouter } from "../src/modules/anviInterview/anviInterview.scheduling.routes.js";
 
@@ -152,6 +152,37 @@ test("admin routes create, list, edit, transition and export an assignment", asy
   assert.equal(invalid.status, 400);
   assert.equal(invalid.body.code, "INVALID_STUDENTS");
   assert.equal(invalid.body.invalid.length, 1);
+});
+
+test("the schedules list sorts by a whitelisted column, including computed progress", async (t) => {
+  if (skip(t)) return;
+  const { interview, students } = await seed();
+  const other = await AIInterview.create({
+    ownerId: adminId, creationKey: crypto.randomUUID(), title: "api design", data: { title: "api design" },
+    publishedAt: new Date(), publishedRevision: 1, publishedSnapshot: { data: { title: "api design", role: "SDE" }, revision: 1 },
+  });
+  const backend = (await service.createAssignment({ _id: adminId }, createBody(interview, students))).assignment;
+  clock.t += 1000;
+  const design = (await service.createAssignment({ _id: adminId }, { ...createBody(other, students), slotPolicy: { mode: "window" } })).assignment;
+  await AnviAssignmentTarget.updateOne({ assignmentId: backend.id, studentId: students[0]._id }, { $set: { outcome: "completed" } });
+  const titles = async (query) => (await call(`/ai-interviews/schedules?${query}`)).body.assignments.map((row) => row.title);
+  assert.deepEqual(await titles(""), [design.title, backend.title], "default is newest first");
+  assert.deepEqual(await titles("sortBy=title&sortOrder=asc"), ["api design", "Backend round"], "title sort ignores case");
+  assert.deepEqual(await titles("sortBy=title&sortOrder=desc"), ["Backend round", "api design"]);
+  assert.deepEqual(await titles("sortBy=timing&sortOrder=asc"), ["Backend round", "api design"], "slot schedules before open windows");
+  assert.deepEqual(await titles("sortBy=progress&sortOrder=desc"), ["Backend round", "api design"]);
+  assert.deepEqual(await titles("sortBy=progress&sortOrder=asc"), ["api design", "Backend round"]);
+  const second = await call("/ai-interviews/schedules?sortBy=progress&sortOrder=desc&page=2&limit=10");
+  assert.deepEqual([second.body.assignments.length, second.body.pagination.total], [0, 2]);
+  assert.deepEqual(await titles("sortBy=$where&sortOrder=asc"), [design.title, backend.title], "unknown columns keep the default");
+
+  const names = async (query) => (await call(`/ai-interviews/schedules/${backend.id}?${query}`)).body.roster.map((row) => row.email);
+  assert.deepEqual(await names(""), ["asha@example.com", "ravi@example.com"], "roster default is the order students were added");
+  assert.deepEqual(await names("sortBy=name&sortOrder=desc"), ["ravi@example.com", "asha@example.com"]);
+  assert.deepEqual(await names("sortBy=outcome&sortOrder=asc"), ["ravi@example.com", "asha@example.com"], "pending before completed");
+  assert.deepEqual(await names("sortBy=outcome&sortOrder=desc&page=2&limit=10"), []);
+  const paged = await call(`/ai-interviews/schedules/${backend.id}?sortBy=outcome&sortOrder=desc&limit=10`);
+  assert.deepEqual([paged.body.roster.map((row) => row.email), paged.body.pagination.total], [["asha@example.com", "ravi@example.com"], 2]);
 });
 
 test("students book, reschedule, download and cancel only their own bookings", async (t) => {

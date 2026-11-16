@@ -5,7 +5,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import User from '../src/models/User.js';
 import { University, PlatformCoinMovement, PlatformCoinWallet } from '../src/platform/models.js';
 import { PLATFORM_WALLET_SCOPE } from '../src/platform/coins.js';
-import { coinAccounts, coinConsoleSummary, coinLedger } from '../src/platform/coinConsole.js';
+import { coinAccounts, coinConsoleSummary, coinLedger, coinRange } from '../src/platform/coinConsole.js';
 
 const now = new Date('2026-10-19T12:00:00Z');
 const at = (hours) => new Date(now.getTime() - hours * 3_600_000);
@@ -61,6 +61,20 @@ test('summary totals wallets, the last 30 days and spending per feature', async 
   assert.equal(summary.recent.at(-1).to, 'North University wallet');
 });
 
+test('a chosen period limits the flow, spending and distribution (IST days)', async () => {
+  const summary = await coinConsoleSummary(now, coinRange({ range: 'custom', from: '2026-10-19', to: '2026-10-19' }, now));
+  assert.deepEqual(summary.range, { range: 'custom', from: '2026-10-19', to: '2026-10-19' });
+  assert.deepEqual(summary.trend.map((day) => day.date), ['2026-10-19']);
+  assert.equal(summary.month.issued, 50, 'the 1000 top-up was on 18 October');
+  assert.equal(summary.month.spent, 10);
+  assert.equal(summary.universities[0].distributed30d, 0);
+  assert.equal(summary.totals.mainAccounts, 50, 'balances are always current');
+  const week = await coinConsoleSummary(now, coinRange({ range: '7d' }, now));
+  assert.equal(week.trend.length, 7);
+  assert.equal(week.month.issued, 1050);
+  assert.throws(() => coinRange({ range: 'all' }, now), (error) => error.status === 400);
+});
+
 test('ledger filters by type group and wallet scope, and pages with a cursor', async () => {
   const spent = await coinLedger({ kind: 'spent' });
   assert.deepEqual(spent.entries.map((row) => row.kind), ['student_spend']);
@@ -81,4 +95,23 @@ test('accounts lists main-database wallets, largest first, with search', async (
   const found = await coinAccounts({ search: 'ravi' });
   assert.deepEqual(found.accounts.map((row) => row.accountId), ['C-1']);
   assert.equal((await coinAccounts({ role: 'student' })).total, 1);
+});
+
+test('accounts sort by a whitelisted column and page size; the ledger pages by number', async () => {
+  const names = async (query) => (await coinAccounts(query)).accounts.map((row) => row.name);
+  assert.deepEqual(await names({ sortBy: 'balance', sortOrder: 'asc' }), ['Ravi Kumar', 'Asha Verma']);
+  assert.deepEqual(await names({ sortBy: 'account', sortOrder: 'desc' }), ['Ravi Kumar', 'Asha Verma']);
+  assert.deepEqual(await names({ sortBy: 'account', sortOrder: 'asc' }), ['Asha Verma', 'Ravi Kumar']);
+  assert.deepEqual(await names({ sortBy: 'type', sortOrder: 'asc' }), ['Ravi Kumar', 'Asha Verma'], 'coordinator before student');
+  assert.deepEqual(await names({ sortBy: 'account', sortOrder: 'asc', page: 2, limit: 10 }), []);
+  const small = await coinAccounts({ sortBy: 'account', sortOrder: 'asc', limit: 10 });
+  assert.deepEqual([small.pageSize, small.total], [10, 2]);
+  assert.equal((await coinAccounts({ limit: 7 })).pageSize, 25, 'unknown page sizes fall back to 25');
+  assert.deepEqual(await names({ sortBy: '__proto__', sortOrder: 'asc' }), ['Asha Verma', 'Ravi Kumar'], 'unknown columns keep balance order');
+
+  const first = await coinLedger({ page: 1, limit: 3 });
+  assert.deepEqual([first.entries.length, first.total, first.page, first.pageSize], [3, 4, 1, 3]);
+  assert.equal(first.entries[0].kind, 'student_spend', 'newest first');
+  const last = await coinLedger({ page: 2, limit: 3 });
+  assert.deepEqual(last.entries.map((row) => row.kind), ['topup']);
 });

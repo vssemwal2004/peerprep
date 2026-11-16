@@ -1,11 +1,27 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowUpDown, CheckSquare, Edit2, Eye, Loader2, Lock, Mail, MoreVertical, Search, ShieldCheck, ToggleLeft, ToggleRight, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { CheckSquare, Edit2, Eye, Loader2, Lock, Mail, MoreVertical, Search, ShieldCheck, ToggleLeft, ToggleRight, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 
-const pageSizes = [10, 25, 50, 100];
+const timeValue = (value) => {
+  const time = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isNaN(time) ? null : time;
+};
+const COLUMN_VALUES = {
+  name: (row) => row.name || null,
+  email: (row) => row.email || null,
+  phone: (row) => row.phone || null,
+  role: (row) => row.role || 'coordinator',
+  status: (row) => (row.isActive !== false ? 'Active' : 'Disabled'),
+  permissionCount: (row) => Number(row.permissionCount || 0),
+  lastActive: (row) => timeValue(row.lastActive),
+  createdAt: (row) => timeValue(row.createdAt),
+};
+const columnValue = (row, key) => COLUMN_VALUES[key]?.(row);
+const COLUMNS = [['name', 'Name'], ['email', 'Email'], ['phone', 'Phone'], ['role', 'Role'], ['status', 'Status'], ['permissionCount', 'Permissions'], ['lastActive', 'Last Active']];
 
 function formatDate(value) {
   if (!value) return 'Never';
@@ -129,10 +145,6 @@ export default function CoordinatorDirectory() {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('createdAt');
-  const [sortDir, setSortDir] = useState('desc');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -167,7 +179,7 @@ export default function CoordinatorDirectory() {
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
-    const list = coordinators.filter((coordinator) => {
+    return coordinators.filter((coordinator) => {
       const matchesText = !text || [coordinator.name, coordinator.email, coordinator.phone, coordinator.coordinatorId, coordinator.department, coordinator.college]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(text));
@@ -175,22 +187,10 @@ export default function CoordinatorDirectory() {
       const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? active : !active);
       return matchesText && matchesStatus;
     });
+  }, [coordinators, query, statusFilter]);
 
-    return list.sort((a, b) => {
-      const left = sortBy === 'permissionCount' ? Number(a.permissionCount || 0) : String(a[sortBy] || '').toLowerCase();
-      const right = sortBy === 'permissionCount' ? Number(b.permissionCount || 0) : String(b[sortBy] || '').toLowerCase();
-      if (left < right) return sortDir === 'asc' ? -1 : 1;
-      if (left > right) return sortDir === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [coordinators, query, statusFilter, sortBy, sortDir]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
-
-  useEffect(() => {
-    setPage(1);
-  }, [query, statusFilter, sortBy, sortDir, pageSize]);
+  const table = useClientTable(filtered, { getValue: columnValue, initialSort: { key: 'createdAt', direction: 'desc' }, resetKey: `${query}|${statusFilter}` });
+  const pageItems = table.pageRows;
 
   const toggleStatus = async (coordinator) => {
     const active = coordinator.isActive !== false;
@@ -326,12 +326,6 @@ export default function CoordinatorDirectory() {
               <select aria-label="Filter coordinator status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                 <option value="all">All statuses</option><option value="active">Active</option><option value="disabled">Disabled</option>
               </select>
-              <select aria-label="Sort coordinators by" value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm outline-none focus:border-sky-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                <option value="createdAt">Recently added</option><option value="name">Name</option><option value="email">Email</option><option value="permissionCount">Permissions</option><option value="lastActive">Last active</option>
-              </select>
-              <button type="button" title="Change sort direction" onClick={() => setSortDir((value) => value === 'asc' ? 'desc' : 'asc')} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                <ArrowUpDown className="h-3.5 w-3.5" />{sortDir === 'asc' ? 'Ascending' : 'Descending'}
-              </button>
               <Link to="/admin/coordinators" className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700">
                 <UserPlus className="h-4 w-4" />Add coordinator
               </Link>
@@ -377,16 +371,19 @@ export default function CoordinatorDirectory() {
               {pageItems.map((coordinator) => (
                 <CoordinatorCard key={coordinator._id} coordinator={coordinator} checked={selectedCoordinatorIds.has(String(coordinator._id))} onCheck={() => setSelectedCoordinatorIds((current) => { const next = new Set(current); const key = String(coordinator._id); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onView={setSelected} onEdit={startEdit} onToggle={toggleStatus} onDelete={deleteCoordinator} onMail={sendCoordinatorMail} onAccess={(item) => navigate(`/admin/coordinator-access/${item._id}`)} />
               ))}
+              <div className="rounded-lg border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900"><TablePager {...table.pager} noun="coordinators" className="border-t-0" /></div>
             </div>
 
-            <div className="hidden overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 dark:border-gray-700 lg:block">
+            <div className="hidden overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700 lg:block">
+              <div className="overflow-x-auto overflow-y-visible">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50 dark:bg-gray-700">
                   <tr>
                     <th className="w-10 px-3 py-2 text-left"><input type="checkbox" aria-label="Select all coordinators on this page" checked={pageItems.length > 0 && pageItems.every((item) => selectedCoordinatorIds.has(String(item._id)))} onChange={(event) => setSelectedCoordinatorIds((current) => { const next = new Set(current); pageItems.forEach((item) => { const key = String(item._id); if (event.target.checked) next.add(key); else next.delete(key); }); return next; })} className="h-4 w-4 rounded border-slate-300 text-sky-600" /></th>
-                    {['Name', 'Email', 'Phone', 'Role', 'Status', 'Permissions', 'Last Active', 'Actions'].map((heading) => (
-                      <th key={heading} className={`px-3 py-2 text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300 ${heading === 'Actions' ? 'text-right' : 'text-left'}`}>{heading}</th>
+                    {COLUMNS.map(([key, heading]) => (
+                      <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort} className="py-2 text-[10px] dark:text-gray-300">{heading}</SortHeader>
                     ))}
+                    <SortHeader sortable={false} align="right" className="py-2 text-[10px] dark:text-gray-300">Actions</SortHeader>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white dark:divide-gray-700 dark:bg-gray-800">
@@ -418,20 +415,8 @@ export default function CoordinatorDirectory() {
                   })}
                 </tbody>
               </table>
-            </div>
-
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs text-slate-500 dark:text-gray-400">
-                Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, filtered.length)} of {filtered.length}
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-medium dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                  {pageSizes.map((size) => <option key={size} value={size}>{size} / page</option>)}
-                </select>
-                <button disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="h-8 rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-700 disabled:opacity-40 dark:border-gray-700 dark:text-gray-200">Previous</button>
-                <span className="px-2 text-xs font-semibold text-slate-600 dark:text-gray-300">{page} / {totalPages}</span>
-                <button disabled={page === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} className="h-8 rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-700 disabled:opacity-40 dark:border-gray-700 dark:text-gray-200">Next</button>
-              </div>
+              <TablePager {...table.pager} noun="coordinators" className="bg-white dark:bg-gray-800" />
             </div>
           </>
         )}

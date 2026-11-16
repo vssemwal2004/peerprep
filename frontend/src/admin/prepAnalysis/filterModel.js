@@ -16,6 +16,8 @@
 // rule:   { id, field, operator, value, labels, qualifiers }
 // rankRule: { id, direction: "top" | "bottom", value, unit: "count" | "percent", metric }
 
+import { DATE_RANGE_PRESETS, normalizeDateRange, rangeToBody } from "../../components/dateRange/dateRangeModel.js";
+
 // Operator words, used when a filter is written out (summaries and downloads).
 export const OPERATORS = Object.freeze({
   enum: [{ value: "anyOf", label: "is" }, { value: "noneOf", label: "is not" }],
@@ -25,13 +27,11 @@ export const OPERATORS = Object.freeze({
   text: [{ value: "contains", label: "contains" }],
 });
 
-export const RANGE_PRESETS = Object.freeze([
-  { value: "30d", label: "Last 30 days" },
-  { value: "90d", label: "Last 90 days" },
-  { value: "180d", label: "Last 6 months" },
-  { value: "365d", label: "Last year" },
-  { value: "all", label: "All time" },
-]);
+// The periods the server accepts (prepAnalysis.service.js RANGE_PRESETS), plus a custom From–To range.
+export const RANGE_PRESETS = Object.freeze(DATE_RANGE_PRESETS.map(({ value, label }) => ({ value, label })));
+export const RANGE_PRESET_VALUES = Object.freeze(RANGE_PRESETS.map((preset) => preset.value));
+/** The page's period as saved: { preset } or { preset: "custom", from, to } ("YYYY-MM-DD"). */
+export const cleanRange = (range) => normalizeDateRange(range, "all");
 
 export const MAX_GROUPS = 6;
 export const MAX_RANK_RULES = 6;
@@ -91,7 +91,7 @@ export const rankMetrics = (catalog, area) => [
 
 // The filters shown straight away; the rest sit under "More filters".
 const MAIN_FIELDS = new Set([
-  "student.semester", "student.branch", "student.course", "student.group", "student.prepScore",
+  "student.semester", "student.branch", "student.course", "student.section", "student.group", "student.college", "student.prepScore",
   "learning.prepScore", "interview.prepScore", "assessment.prepScore",
   "coding.practiceStatus", "coding.prepScore", "coding.solved", "coding.solvedHard", "coding.solvedTopics", "coding.solvesToReview",
   "quickprep.status", "quickprep.activity", "quickprep.progress", "quickprep.sheets", "quickprep.finished", "quickprep.solvesToReview",
@@ -218,7 +218,7 @@ export function normalizeState(stored, fallbackArea = "coding") {
   }
   return {
     area: typeof stored.area === "string" ? stored.area : base.area,
-    range: stored.range?.preset ? stored.range : base.range,
+    range: stored.range?.preset ? cleanRange(stored.range) : base.range,
     groups: groups.length ? groups : [newGroup()],
     rank,
     sheets: cleanSheets(stored.sheets),
@@ -296,7 +296,7 @@ export function toQueryRequest({ state, layout = [], table }, fieldMap) {
   const sheets = scopedSheets(state);
   return {
     module: state.area,
-    range: state.range,
+    range: rangeToBody(cleanRange(state.range)),
     ...(sheets.length ? { sheets: sheets.map((sheet) => sheet.id) } : {}),
     filter: toRequestFilter(state, fieldMap),
     rank: toRequestRank(state.rank),

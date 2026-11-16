@@ -3,7 +3,8 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { CalendarClock, CalendarPlus, ChevronRight, Download, ExternalLink, Pencil, RefreshCw, Users } from "lucide-react";
 import { ROOT } from "../definition";
 import { useRemote } from "../useRemote";
-import { EmptyState, Notice, Pagination, Panel, Select, primaryClass, secondaryClass, tableHeadClass, tableRowClass } from "../ui";
+import { EmptyState, Notice, Panel, Select, primaryClass, secondaryClass, tableHeadClass, tableRowClass } from "../ui";
+import { SortHeader, TablePager, nextSort } from "../../../components/table";
 import { scheduleApi } from "./schedulesApi";
 import { RowMenu, ScheduleFrame, StatusPill } from "./scheduleUi";
 import { STATUS_FILTERS, formatIst, idOf, isEditable, kpiValue, listRows, timingLabel } from "./scheduleModel";
@@ -37,13 +38,25 @@ export default function SchedulesPage({ navigation }) {
   const [params, setParams] = useSearchParams();
   const status = params.get("status") || "", interviewId = params.get("interviewId") || "";
   const page = Number(params.get("page")) || 1, limit = Number(params.get("limit")) || 25;
-  const remote = useRemote(() => scheduleApi.list({ status, interviewId, page, limit }), [status, interviewId, page, limit]);
+  const sortKey = params.get("sort") || "", sortOrder = params.get("order") === "desc" ? "desc" : "asc";
+  const sort = sortKey ? { key: sortKey, direction: sortOrder } : null;
+  const remote = useRemote(() => scheduleApi.list({ status, interviewId, page, limit, ...(sortKey ? { sortBy: sortKey, sortOrder } : {}) }),
+    [status, interviewId, page, limit, sortKey, sortOrder]);
   const set = (name, value) => setParams((current) => {
     const next = new URLSearchParams(current);
     if (value) next.set(name, value); else next.delete(name);
     if (name !== "page") next.delete("page");
     return next;
   }, { replace: true });
+  // Header click: ascending, descending, then back to newest first. The server sorts across every page.
+  const changeSort = (key) => setParams((current) => {
+    const next = new URLSearchParams(current);
+    const value = nextSort(sort, key);
+    if (value) { next.set("sort", value.key); next.set("order", value.direction); } else { next.delete("sort"); next.delete("order"); }
+    next.delete("page");
+    return next;
+  }, { replace: true });
+  const header = (key, label, className = "") => <SortHeader sortKey={key} sort={sort} onSort={changeSort} className={className}>{label}</SortHeader>;
   const rows = listRows(remote.result).map((row) => {
     const kpis = row.kpis || row.counts || {};
     const assigned = kpiValue(kpis, "assigned") || Number(row.audience?.studentCount) || 0;
@@ -100,11 +113,11 @@ export default function SchedulesPage({ navigation }) {
                 <caption className="sr-only">AI interview schedules</caption>
                 <thead className={tableHeadClass}>
                   <tr>
-                    <th scope="col" className="px-5 py-3 font-semibold">Schedule</th>
-                    <th scope="col" className="px-3 py-3 font-semibold">Status</th>
-                    <th scope="col" className="px-3 py-3 font-semibold">Window (IST)</th>
-                    <th scope="col" className="px-3 py-3 font-semibold">Timing</th>
-                    <th scope="col" className="px-3 py-3 font-semibold">Progress</th>
+                    {header("title", "Schedule", "pl-5")}
+                    {header("status", "Status")}
+                    {header("window", "Window (IST)")}
+                    {header("timing", "Timing")}
+                    {header("progress", "Progress")}
                     <th scope="col" className="px-5 py-3 text-right font-semibold"><span className="sr-only">Actions</span></th>
                   </tr>
                 </thead>
@@ -133,7 +146,8 @@ export default function SchedulesPage({ navigation }) {
               </table>
             </div>
             </>}
-        {remote.result?.pagination && rows.length > 0 && <Pagination value={remote.result.pagination} onPage={(value) => set("page", String(value))} onLimit={(value) => set("limit", String(value))} />}
+        {remote.result?.pagination && rows.length > 0 && <TablePager page={remote.result.pagination.page || page} pageSize={limit} total={remote.result.pagination.total || 0}
+          onPage={(value) => set("page", String(value))} onPageSize={(value) => set("limit", String(value))} busy={remote.loading} noun="schedules" />}
       </Panel>
     </ScheduleFrame>
   );

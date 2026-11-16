@@ -14,6 +14,7 @@ const LONG_REQUEST_PATTERNS = [
   /^\/api\/ai-interviews\/schedules\/[^/]+\/(?:close|cancel|release)$/,
   /^\/api\/admin\/assessment\/reports\/export/,
   /^\/api\/admin\/assessment\/reports\/export-data/,
+  /^\/api\/admin\/performance-reports\//,
   /^\/api\/students\/export/,
   /^\/api\/feedback\/.*export/,
   /^\/api\/compiler\/submit/,

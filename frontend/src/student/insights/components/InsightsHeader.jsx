@@ -7,8 +7,10 @@ import { daysAgoText, formatNumber, PERIODS, preparationLevel, sectionPath } fro
 import { SECTION_ICONS } from "../sectionIcons";
 import { CountUp } from "./motion";
 import { buttonClass, focusRing, primaryButtonClass, Segmented } from "./ui";
+import { dayKey } from "../../../components/dateRange/dateRangeModel";
 
-const todayKey = () => new Date().toISOString().slice(0, 10);
+// The student's local calendar day (toISOString is UTC and blocked "today" in IST before 05:30).
+const todayKey = () => dayKey();
 const initials = (name = "") => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?";
 
 function DownloadMenu({ onDownload }) {

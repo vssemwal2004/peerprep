@@ -56,6 +56,14 @@ const MAX_TARGET_SCAN = MAX_COHORT * 10;
 const INVITE_COOLDOWN_MS = 10 * MINUTE;
 const TARGET_STATUS_FILTERS = ["", "all", "removed", ...OUTCOMES];
 const TARGET_SORTS = ["name", "studentCode", "email", "department", "schedule", "slot", "status", "attempt", "score", "assignedAt"];
+// Schedules list header sort. "progress" (completed / assigned) is computed, so it ranks at most this many schedules.
+const ASSIGNMENT_SORTS = {
+  title: { title: 1 }, status: { status: 1 }, window: { "window.opensAt": 1 },
+  timing: { "slotPolicy.mode": 1, "slotPolicy.slotMinutes": 1, "slotPolicy.capacityPerSlot": 1 },
+};
+const PROGRESS_SORT_SCAN = 2000;
+// Schedule detail roster header sort (default: the order students were added).
+const ROSTER_SORTS = ["name", "outcome", "booking", "attempts"];
 // A create still in its draft phase after this long was interrupted (the process died) and is redone.
 const STALE_DRAFT_MS = 2 * MINUTE;
 
@@ -892,10 +900,32 @@ export function createAnviScheduling({ clock = Date, notifier = createScheduling
     const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
     const requested = Number.parseInt(query.limit, 10);
     const limit = LIST_LIMITS.includes(requested) ? requested : 25;
-    const [total, rows] = await Promise.all([
-      AnviAssignment.countDocuments(filter),
-      AnviAssignment.find(filter).select("-snapshotData").sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).maxTimeMS(8000).lean(),
-    ]);
+    const direction = query.sortOrder === "desc" ? -1 : 1;
+    const sortBy = String(query.sortBy || "");
+    const newest = { createdAt: -1, _id: -1 };
+    let total, rows;
+    if (sortBy === "progress") {
+      // Completion share is a per-schedule tally, so rank the newest schedules in memory and load one page.
+      const scan = await AnviAssignment.find(filter).select("_id audience.studentCount").sort(newest).limit(PROGRESS_SORT_SCAN).maxTimeMS(8000).lean();
+      const scanTallies = await outcomeCounts(scan.map((row) => row._id));
+      const share = (row) => {
+        const tally = scanTallies.get(String(row._id));
+        const kpis = kpisOf(tally.outcomes, tally.removed);
+        const assigned = kpis.assigned || Number(row.audience?.studentCount) || 0;
+        return assigned ? kpis.completed / assigned : 0;
+      };
+      const ids = scan.map((row, index) => ({ id: row._id, index, value: share(row) }))
+        .sort((a, b) => (a.value - b.value) * direction || a.index - b.index)
+        .slice((page - 1) * limit, page * limit).map((entry) => entry.id);
+      const docs = new Map((await AnviAssignment.find({ _id: { $in: ids } }).select("-snapshotData").lean()).map((row) => [String(row._id), row]));
+      [total, rows] = [await AnviAssignment.countDocuments(filter), ids.map((id) => docs.get(String(id))).filter(Boolean)];
+    } else {
+      const fields = Object.hasOwn(ASSIGNMENT_SORTS, sortBy) ? ASSIGNMENT_SORTS[sortBy] : null;
+      const order = fields ? { ...Object.fromEntries(Object.keys(fields).map((key) => [key, direction])), ...newest } : newest;
+      let find = AnviAssignment.find(filter).select("-snapshotData").sort(order).skip((page - 1) * limit).limit(limit).maxTimeMS(8000);
+      if (sortBy === "title") find = find.collation({ locale: "en", strength: 2 });
+      [total, rows] = await Promise.all([AnviAssignment.countDocuments(filter), find.lean()]);
+    }
     const tallies = await outcomeCounts(rows.map((row) => row._id));
     return {
       assignments: rows.map((row) => {
@@ -962,15 +992,50 @@ export function createAnviScheduling({ clock = Date, notifier = createScheduling
     return match;
   }
 
+  /** One roster page ordered by a header column; one schedule's targets are ranked in memory (a cohort is capped). */
+  async function sortedRosterPage(assignment, match, sortBy, direction, page, limit) {
+    const all = await AnviAssignmentTarget.find(match).select("_id studentId status outcome attemptsUsed")
+      .sort({ createdAt: 1, _id: 1 }).limit(MAX_TARGET_SCAN).maxTimeMS(8000).lean();
+    const studentIds = all.map((row) => row.studentId);
+    let keyOf;
+    if (sortBy === "name") {
+      const users = await User.find({ _id: { $in: studentIds } }).select("_id name").maxTimeMS(8000).lean();
+      const names = new Map(users.map((row) => [String(row._id), String(row.name || "").toLowerCase()]));
+      keyOf = (row) => names.get(String(row.studentId)) || null;
+    } else if (sortBy === "booking") {
+      // The same booking the roster row shows: the active one, else the latest.
+      const bookings = await AnviBooking.find({ assignmentId: assignment._id, studentId: { $in: studentIds } })
+        .select("studentId startsAt active").sort({ createdAt: -1, _id: -1 }).maxTimeMS(8000).lean();
+      const shown = new Map();
+      for (const booking of bookings) {
+        const known = shown.get(String(booking.studentId));
+        if (!known || (booking.active && !known.active)) shown.set(String(booking.studentId), booking);
+      }
+      keyOf = (row) => { const booking = shown.get(String(row.studentId)); return booking?.startsAt ? ms(booking.startsAt) : null; };
+    } else if (sortBy === "outcome") keyOf = (row) => (row.status === "removed" ? OUTCOMES.length : OUTCOMES.indexOf(row.outcome));
+    else keyOf = (row) => Number(row.attemptsUsed || 0);
+    const blank = (value) => value === null || value === undefined || value === "";
+    const pageIds = all.map((row, index) => ({ id: row._id, index, key: keyOf(row) }))
+      .sort((a, b) => {
+        if (blank(a.key) || blank(b.key)) return (blank(a.key) - blank(b.key)) || a.index - b.index;
+        return (a.key < b.key ? -1 : a.key > b.key ? 1 : 0) * direction || a.index - b.index;
+      })
+      .slice((page - 1) * limit, page * limit).map((entry) => entry.id);
+    const docs = new Map((await AnviAssignmentTarget.find({ _id: { $in: pageIds } }).lean()).map((row) => [String(row._id), row]));
+    return pageIds.map((value) => docs.get(String(value))).filter(Boolean);
+  }
+
   async function getAssignmentDetail(admin, id, query = {}) {
     const assignment = await owned(admin, id);
     const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
     const limit = Math.min(200, Math.max(10, Number.parseInt(query.limit, 10) || 50));
     const match = await rosterFilter(assignment, query);
+    const sortBy = ROSTER_SORTS.includes(query.sortBy) ? query.sortBy : "";
     const [tallies, total, targets, slotStats] = await Promise.all([
       outcomeCounts([assignment._id]),
       AnviAssignmentTarget.countDocuments(match),
-      AnviAssignmentTarget.find(match).sort({ createdAt: 1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(),
+      sortBy ? sortedRosterPage(assignment, match, sortBy, query.sortOrder === "desc" ? -1 : 1, page, limit)
+        : AnviAssignmentTarget.find(match).sort({ createdAt: 1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(),
       AnviSlot.aggregate([
         { $match: { assignmentId: assignment._id, status: { $ne: "cancelled" } } },
         { $group: { _id: null, slots: { $sum: 1 }, capacity: { $sum: "$capacity" }, booked: { $sum: "$bookedCount" } } },

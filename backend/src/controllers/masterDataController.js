@@ -9,6 +9,8 @@ const CATEGORY_FIELD = {
   branch: 'branch',
   semester: 'semester',
   course: 'course',
+  section: 'section',
+  group: 'group',
 };
 
 function validateCategory(category) {
@@ -174,7 +176,7 @@ export async function deleteMasterData(req, res) {
 
 export async function syncMasterDataFromStudents(req, res) {
   const students = await User.find({ role: 'student' })
-    .select('college branch semester course')
+    .select('college branch semester course section group')
     .lean();
   const values = new Map();
   students.forEach((student) => {

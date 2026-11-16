@@ -22,6 +22,12 @@ const DIFFICULTY_FILTERS = ['All', 'Easy', 'Medium', 'Hard'];
 // Validated two-series pair (light + dark surfaces): accepted vs other attempts.
 const ACCEPTED_COLOR = '#0284c7';
 const OTHER_COLOR = '#d97706';
+const DIFFICULTY_RANK = { easy: 1, medium: 2, hard: 3 };
+const difficultyRank = (row) => DIFFICULTY_RANK[String(row.difficulty || '').toLowerCase()] ?? null;
+const timeValue = (value) => {
+  const time = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isNaN(time) ? null : time;
+};
 
 function filterProblems(list, query, difficulty) {
   const needle = query.trim().toLowerCase();
@@ -293,16 +299,16 @@ function ProblemTableCard({ id, title, description, icon, problems, variant }) {
 
   const columns = variant === 'attempted'
     ? [
-      { key: 'title', label: 'Problem', render: (row) => <TitleCell title={row.title || 'Untitled Problem'} /> },
-      { key: 'difficulty', label: 'Difficulty', width: 'w-24', hideOnMobile: true, render: (row) => <DifficultyPill difficulty={row.difficulty} /> },
-      { key: 'attempts', label: 'Attempts', width: 'w-20', align: 'right', hideOnMobile: true, render: (row) => num(row.attempts) },
-      { key: 'status', label: 'Last result', width: 'w-32', render: (row) => <StatusPill status={row.lastStatus} createdAt={row.lastSubmittedAt} /> },
-      { key: 'date', label: 'Last activity', width: 'w-36', hideOnMobile: true, render: (row) => <span className="text-xs text-slate-500 dark:text-zinc-400">{fmtDateTime(row.lastSubmittedAt)}</span> },
+      { key: 'title', label: 'Problem', value: (row) => row.title || null, render: (row) => <TitleCell title={row.title || 'Untitled Problem'} /> },
+      { key: 'difficulty', label: 'Difficulty', width: 'w-24', hideOnMobile: true, value: difficultyRank, render: (row) => <DifficultyPill difficulty={row.difficulty} /> },
+      { key: 'attempts', label: 'Attempts', width: 'w-20', align: 'right', hideOnMobile: true, value: (row) => num(row.attempts), render: (row) => num(row.attempts) },
+      { key: 'status', label: 'Last result', width: 'w-32', value: (row) => row.lastStatus || null, render: (row) => <StatusPill status={row.lastStatus} createdAt={row.lastSubmittedAt} /> },
+      { key: 'date', label: 'Last activity', width: 'w-36', hideOnMobile: true, value: (row) => timeValue(row.lastSubmittedAt), render: (row) => <span className="text-xs text-slate-500 dark:text-zinc-400">{fmtDateTime(row.lastSubmittedAt)}</span> },
     ]
     : [
-      { key: 'title', label: 'Problem', render: (row) => <TitleCell title={row.title || 'Untitled Problem'} /> },
-      { key: 'difficulty', label: 'Difficulty', width: 'w-24', hideOnMobile: true, render: (row) => <DifficultyPill difficulty={row.difficulty} /> },
-      { key: 'date', label: 'Solved on', width: 'w-40', hideOnMobile: true, render: (row) => <span className="text-xs text-slate-500 dark:text-zinc-400">{fmtDateTime(row.acceptedAt)}</span> },
+      { key: 'title', label: 'Problem', value: (row) => row.title || null, render: (row) => <TitleCell title={row.title || 'Untitled Problem'} /> },
+      { key: 'difficulty', label: 'Difficulty', width: 'w-24', hideOnMobile: true, value: difficultyRank, render: (row) => <DifficultyPill difficulty={row.difficulty} /> },
+      { key: 'date', label: 'Solved on', width: 'w-40', hideOnMobile: true, value: (row) => timeValue(row.acceptedAt), render: (row) => <span className="text-xs text-slate-500 dark:text-zinc-400">{fmtDateTime(row.acceptedAt)}</span> },
     ];
 
   const mobileMeta = (row) => (
@@ -341,6 +347,8 @@ function ProblemTableCard({ id, title, description, icon, problems, variant }) {
               rows={filtered}
               rowKey={(row, index) => `${row.problemId || row.title}-${index}`}
               mobileMeta={mobileMeta}
+              resetKey={`${query}|${difficulty}`}
+              noun="problems"
             />
           )}
         </>
@@ -351,11 +359,11 @@ function ProblemTableCard({ id, title, description, icon, problems, variant }) {
 
 function SubmissionHistoryCard({ history }) {
   const columns = [
-    { key: 'title', label: 'Problem', render: (row) => <TitleCell title={row.problemTitle || 'Untitled Problem'} /> },
-    { key: 'language', label: 'Language', width: 'w-28', hideOnMobile: true, render: (row) => (row.language ? languageLabel(row.language) : '—') },
-    { key: 'status', label: 'Result', width: 'w-32', render: (row) => <StatusPill status={row.status} createdAt={row.createdAt} /> },
-    { key: 'runtime', label: 'Runtime', width: 'w-24', align: 'right', hideOnMobile: true, render: (row) => formatRuntime(row.executionTimeMs, row.status) || <span className="text-slate-300 dark:text-zinc-600">—</span> },
-    { key: 'date', label: 'Submitted', width: 'w-36', hideOnMobile: true, render: (row) => <span className="text-xs text-slate-500 dark:text-zinc-400">{fmtDateTime(row.createdAt)}</span> },
+    { key: 'title', label: 'Problem', value: (row) => row.problemTitle || null, render: (row) => <TitleCell title={row.problemTitle || 'Untitled Problem'} /> },
+    { key: 'language', label: 'Language', width: 'w-28', hideOnMobile: true, value: (row) => (row.language ? languageLabel(row.language) : null), render: (row) => (row.language ? languageLabel(row.language) : '—') },
+    { key: 'status', label: 'Result', width: 'w-32', value: (row) => row.status || null, render: (row) => <StatusPill status={row.status} createdAt={row.createdAt} /> },
+    { key: 'runtime', label: 'Runtime', width: 'w-24', align: 'right', hideOnMobile: true, value: (row) => (formatRuntime(row.executionTimeMs, row.status) ? Number(row.executionTimeMs) : null), render: (row) => formatRuntime(row.executionTimeMs, row.status) || <span className="text-slate-300 dark:text-zinc-600">—</span> },
+    { key: 'date', label: 'Submitted', width: 'w-36', hideOnMobile: true, value: (row) => timeValue(row.createdAt), render: (row) => <span className="text-xs text-slate-500 dark:text-zinc-400">{fmtDateTime(row.createdAt)}</span> },
   ];
   const mobileMeta = (row) => {
     const runtime = formatRuntime(row.executionTimeMs, row.status);
@@ -382,6 +390,7 @@ function SubmissionHistoryCard({ history }) {
           rows={history}
           rowKey={(row, index) => `${row._id || row.problemTitle}-${index}`}
           mobileMeta={mobileMeta}
+          noun="submissions"
         />
       )}
     </Card>

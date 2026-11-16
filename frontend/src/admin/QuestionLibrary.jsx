@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, BookOpenText, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, Columns3, Edit3, Eye, EyeOff, Filter, Folder, Globe2, Library, LoaderCircle, Lock, MoreVertical, Plus, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, BookOpenText, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, Columns3, Edit3, Eye, EyeOff, Filter, Folder, Globe2, Library, LoaderCircle, Lock, MoreVertical, Plus, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { queueQuestionSelection } from './assessment/assessmentProblemSelectionStore';
@@ -12,7 +12,9 @@ import { buildAssessmentQuestionIdentitySet, isLibraryQuestionAlreadyAdded } fro
 import { canAuthorQuickPrep, isControlDeployment } from '../platform/universityPermissions';
 import { getLanguageLabel, getProblemSupportedLanguages } from './compiler/compilerUtils';
 import CodingQuestionFilterDrawer from './library/CodingQuestionFilterDrawer';
+import { QUESTION_SEARCH_PLACEHOLDER, addFoundToSelection, isMultiTermSearch, unmatchedTermsLabel } from './library/searchTerms.js';
 import QuickPrepAddReviewDialog from './quickprep/QuickPrepAddReviewDialog';
+import { PAGE_SIZE_OPTIONS, TablePager } from '../components/table';
 
 const TYPE_LABELS = {
   all: 'All Questions',
@@ -22,7 +24,33 @@ const TYPE_LABELS = {
   one_line: 'One-word Questions',
 };
 const LIBRARY_PAGE_SIZE = 25;
-const LIBRARY_PAGE_SIZES = [25, 50, 100];
+const LIBRARY_PAGE_SIZES = PAGE_SIZE_OPTIONS;
+// Column headers sort on the server (backend LIBRARY_SORT_FIELDS); the labels name a header sort in the sort menu.
+const SORT_COLUMN_LABELS = {
+  questionText: 'Question', questionType: 'Question type', difficulty: 'Difficulty', tags: 'Tags / Topics', usedIn: 'Used in assessments', updatedAt: 'Updated',
+};
+const SORT_PRESETS = ['displayOrder:asc', 'updatedAt:desc', 'createdAt:desc', 'questionText:asc', 'difficulty:asc'];
+
+/** The library's list is a CSS grid, not a <table>: this is SortHeader's button for a grid header cell. */
+function GridSortHeader({ sortKey, sort, onSort, children, className = '' }) {
+  const active = sort?.key === sortKey;
+  const direction = active ? sort.direction : null;
+  const Icon = direction === 'asc' ? ArrowUp : direction === 'desc' ? ArrowDown : ArrowUpDown;
+  return (
+    <div className={`min-w-0 ${className}`} aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : undefined}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        title={`Sort by ${children}`}
+        className={`group inline-flex max-w-full items-center gap-1 rounded-md text-left outline-none transition-colors [letter-spacing:inherit] [text-transform:inherit] focus-visible:ring-2 focus-visible:ring-sky-500/60 ${active ? 'text-sky-700 dark:text-sky-300' : 'hover:text-slate-800 dark:hover:text-gray-100'}`}
+      >
+        <span className="min-w-0 leading-4">{children}</span>
+        <Icon aria-hidden="true" className={`h-3 w-3 shrink-0 ${active ? 'opacity-100' : 'opacity-40 group-hover:opacity-80'}`} />
+        <span className="sr-only">{direction === 'asc' ? ', sorted ascending' : direction === 'desc' ? ', sorted descending' : ', not sorted'}</span>
+      </button>
+    </div>
+  );
+}
 
 function labelForType(type = '') {
   return TYPE_LABELS[type] || `${String(type || 'other').replace(/_/g, ' ')} Questions`;
@@ -225,6 +253,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     uncategorized: false,
     viewMode: 'questions',
     folderBy: 'topics',
+    // What a bare number in the search means: the PeerPrep question number or the LeetCode number.
+    numberKind: 'peerprep',
     ...(restoredViewState.filters || {}),
     type: lockType || initialType,
     ...((lockType || initialType) === 'coding' ? { sortBy: 'displayOrder', sortOrder: 'asc' } : {}),
@@ -238,8 +268,9 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(() => Math.max(1, Number(restoredViewState.page) || 1));
   const [pageSize, setPageSize] = useState(() => LIBRARY_PAGE_SIZES.includes(Number(restoredViewState.pageSize)) ? Number(restoredViewState.pageSize) : LIBRARY_PAGE_SIZE);
-  const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
+  // Comma-separated search: typed terms that matched no question (from the server).
+  const [unmatchedTerms, setUnmatchedTerms] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectedMeta, setSelectedMeta] = useState({});
   const [activeQuestion, setActiveQuestion] = useState(null);
@@ -262,7 +293,6 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [folderItems, setFolderItems] = useState([]);
   const [folderLoading, setFolderLoading] = useState(false);
-  const [folderPages, setFolderPages] = useState(1);
   const [folderTotal, setFolderTotal] = useState(0);
   const [expandedFolderId, setExpandedFolderId] = useState('');
   const [folderQuestions, setFolderQuestions] = useState({});
@@ -321,6 +351,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const folderView = filters.type === 'coding' && filters.viewMode === 'folders';
   const visibleQuestions = folderView ? (folderQuestions[expandedFolderId]?.items || []) : questions;
   const eligibleQuestions = visibleQuestions.filter((question) => !questionAlreadyAdded(question));
+  const multiTermSearch = isMultiTermSearch(filters.search);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -386,6 +417,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         const data = await api.listLibraryQuestions({
           type: filters.type === 'all' ? '' : filters.type,
           search: filters.search,
+          numberKind: filters.numberKind,
           tag: filters.tag,
           difficulty: filters.difficulty,
           status: filters.status,
@@ -411,8 +443,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         setStatusCounts(data.filters?.statuses || []);
         setAvailableDifficulties(data.filters?.difficulties || []);
         setAvailableAssessments(data.filters?.assessments || []);
-        setPages(data.pagination?.pages || 1);
         setTotal(data.pagination?.total || 0);
+        setUnmatchedTerms(Array.isArray(data.unmatchedTerms) ? data.unmatchedTerms : []);
       } catch (error) {
         if (!mounted) return;
         toast.error(error.message || 'Failed to load library.');
@@ -442,7 +474,6 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           : await api.listCodingTopics({ ids: selectedIds.join(','), withQuestions: true, page, limit: pageSize, skipCache: reloadKey > 0 });
         if (!cancelled) {
           setFolderItems(result[kind] || []);
-          setFolderPages(Number(result.pagination?.pages || 1));
           setFolderTotal(Number(result.pagination?.total || 0));
         }
       } catch (error) {
@@ -457,15 +488,18 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     return () => { cancelled = true; };
   }, [filters.folderBy, filters.tagIds, filters.topicIds, filters.type, filters.viewMode, page, pageSize, reloadKey, toast]);
 
-  const loadFolderQuestionPage = async (folder, targetPage = 1, { allInFolder = false } = {}) => {
+  const loadFolderQuestionPage = async (folder, targetPage = 1, { allInFolder = false, limit, sort } = {}) => {
     const folderId = String(folder?._id || '');
     if (!folderId) return;
+    const folderLimit = Number(limit || folderQuestions[folderId]?.pagination?.limit || pageSize);
+    const folderSort = sort || { sortBy: filters.sortBy, sortOrder: filters.sortOrder };
     setFolderQuestionLoading(folderId);
     try {
       const byTags = filters.folderBy === 'tags';
       const data = await api.listLibraryQuestions({
         type: 'coding',
         search: allInFolder ? '' : filters.search,
+        numberKind: filters.numberKind,
         difficulty: allInFolder ? '' : filters.difficulty,
         status: allInFolder ? '' : filters.status,
         visibility: allInFolder ? '' : filters.visibility,
@@ -476,8 +510,10 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         tagIds: byTags ? folderId : (allInFolder ? '' : (filters.tagIds || []).join(',')),
         tagMatch: allInFolder ? 'any' : filters.tagMatch,
         classificationMatch: 'all',
+        sortBy: folderSort.sortBy,
+        sortOrder: folderSort.sortOrder,
         page: targetPage,
-        limit: pageSize,
+        limit: folderLimit,
         includeMeta: false,
         skipCache: reloadKey > 0 || Boolean(String(filters.search || '').trim()),
       });
@@ -485,7 +521,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         ...current,
         [folderId]: {
           items: data.questions || [],
-          pagination: data.pagination || { page: targetPage, pages: 1, total: 0, limit: pageSize },
+          pagination: { page: targetPage, pages: 1, total: 0, ...(data.pagination || {}), limit: folderLimit },
           allInFolder,
         },
       }));
@@ -508,6 +544,37 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     if (folderQuestions[folderId]) return;
     await loadFolderQuestionPage(folder, 1, { allInFolder: true });
   };
+
+  // One server sort for the sort menu and the column headers. In folders view it orders the questions
+  // inside folders, so the open folder reloads and the folder list keeps its page.
+  const applySort = (sortBy, sortOrder) => {
+    setFilters((prev) => ({ ...prev, sortBy, sortOrder }));
+    if (!folderView) {
+      setPage(1);
+      return;
+    }
+    const openFolder = folderItems.find((folder) => String(folder._id) === expandedFolderId);
+    setFolderQuestions((current) => (expandedFolderId && current[expandedFolderId] ? { [expandedFolderId]: current[expandedFolderId] } : {}));
+    if (openFolder) loadFolderQuestionPage(openFolder, 1, { allInFolder: Boolean(folderQuestions[expandedFolderId]?.allInFolder), sort: { sortBy, sortOrder } });
+  };
+  const headerSort = { key: filters.sortBy, direction: filters.sortOrder === 'asc' ? 'asc' : 'desc' };
+  // A header click sorts ascending; clicking the sorted header again flips it.
+  const sortByColumn = (key) => applySort(key, filters.sortBy === key && filters.sortOrder === 'asc' ? 'desc' : 'asc');
+  const sortValue = `${filters.sortBy}:${filters.sortOrder}`;
+  const changePageSize = (size) => { setPageSize(size); setPage(1); };
+  // The standard pager under the list (folders view pages the folders). Embedded, the list scrolls, so it sits just below it.
+  const libraryPager = (
+    <TablePager
+      page={page}
+      pageSize={pageSize}
+      total={folderView ? folderTotal : total}
+      onPage={setPage}
+      onPageSize={changePageSize}
+      busy={folderView ? folderLoading : loading}
+      noun={folderView ? 'folders' : 'questions'}
+      className={embedded ? 'mt-2 shrink-0 rounded-xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900' : 'dark:border-gray-700'}
+    />
+  );
 
 
   const categoryTabs = useMemo(() => {
@@ -617,32 +684,52 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     setSelectedMeta((previous) => eligibleQuestions.reduce((acc, question) => ({ ...acc, [question._id]: question }), previous));
   };
 
+  const fetchAllMatchingQuestions = () => api.listLibraryQuestions({
+    type: filters.type === 'all' ? '' : filters.type,
+    search: filters.search,
+    numberKind: filters.numberKind,
+    tag: filters.tag,
+    difficulty: filters.difficulty,
+    status: filters.status,
+    visibility: filters.visibility,
+    sourceAssessmentId: filters.sourceAssessmentId,
+    sortBy: filters.sortBy,
+    sortOrder: filters.sortOrder,
+    topicIds: (filters.topicIds || []).join(','),
+    topicScope: filters.topicScope,
+    topicMatch: filters.topicMatch,
+    tagIds: (filters.tagIds || []).join(','),
+    tagMatch: filters.tagMatch,
+    classificationMatch: filters.classificationMatch,
+    uncategorized: filters.uncategorized || undefined,
+    selectAll: true,
+    skipCache: true,
+  });
+
+  // Comma-separated search: add every found question (all pages) to what is already selected.
+  const selectAllFoundQuestions = async () => {
+    if (!total || selectingAll || folderView) return;
+    setSelectingAll(true);
+    try {
+      const data = await fetchAllMatchingQuestions();
+      const next = addFoundToSelection(selectedIds, selectedMeta, data.questions || [], (question) => !questionAlreadyAdded(question));
+      setSelectedIds(next.ids);
+      setSelectedMeta(next.meta);
+      toast.success(next.added ? `Added ${next.added} found question${next.added === 1 ? '' : 's'} to the selection.` : 'Every found question is already selected or added.');
+    } catch (error) {
+      toast.error(error.message || 'Failed to select the found questions.');
+    } finally {
+      setSelectingAll(false);
+    }
+  };
+
   const selectAllMatchingQuestions = async () => {
     // The flat-list query ignores the open folder, so "all matches" is not offered in folders view.
     if (!total || selectingAll || folderView) return;
     setSelectingAll(true);
     setBulkMenuOpen(false);
     try {
-      const data = await api.listLibraryQuestions({
-        type: filters.type === 'all' ? '' : filters.type,
-        search: filters.search,
-        tag: filters.tag,
-        difficulty: filters.difficulty,
-        status: filters.status,
-        visibility: filters.visibility,
-        sourceAssessmentId: filters.sourceAssessmentId,
-        sortBy: filters.sortBy,
-        sortOrder: filters.sortOrder,
-        topicIds: (filters.topicIds || []).join(','),
-        topicScope: filters.topicScope,
-        topicMatch: filters.topicMatch,
-        tagIds: (filters.tagIds || []).join(','),
-        tagMatch: filters.tagMatch,
-        classificationMatch: filters.classificationMatch,
-        uncategorized: filters.uncategorized || undefined,
-        selectAll: true,
-        skipCache: true,
-      });
+      const data = await fetchAllMatchingQuestions();
       const matches = (data.questions || []).filter((question) => !questionAlreadyAdded(question));
       const matchingMeta = {};
       matches.forEach((question) => { matchingMeta[question._id] = question; });
@@ -1297,16 +1384,32 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           </section>
         )}
 
-        <div className={`${embedded ? 'shrink-0' : 'mt-5'} flex flex-col gap-2 border-b border-slate-200 pb-3 dark:border-gray-800 xl:flex-row xl:items-center`}>
-          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus-within:ring-sky-900/30">
+        {/* Wraps instead of squeezing: the search keeps a usable width and the buttons move to the next line. */}
+        <div className={`${embedded ? 'shrink-0' : 'mt-5'} flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3 dark:border-gray-800`}>
+          <div className="flex h-10 w-full min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 sm:w-auto sm:min-w-[26rem] sm:flex-1 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus-within:ring-sky-900/30">
             <Search className="h-4 w-4 shrink-0 text-slate-400" />
             <input
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search question number, question, answer, tag or topic"
+              placeholder={QUESTION_SEARCH_PLACEHOLDER}
+              aria-label="Search questions"
               className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
             />
-            {searchInput && <button type="button" onClick={() => setSearchInput('')} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-gray-800"><X className="h-3.5 w-3.5" /></button>}
+            {searchInput && <button type="button" aria-label="Clear search" onClick={() => setSearchInput('')} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-gray-800"><X className="h-3.5 w-3.5" /></button>}
+          </div>
+          {/* A number can be both a PeerPrep number and a LeetCode number: the toggle says which one is meant. */}
+          <div role="radiogroup" aria-label="Numbers in the search are" title="Which number a typed number means (“lc 2” / “pp 2” always work)"
+            className="inline-flex h-10 shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-semibold dark:border-gray-700 dark:bg-gray-900">
+            {[['peerprep', 'PrepCode'], ['leetcode', 'CodeLe']].map(([kind, text]) => {
+              const active = (filters.numberKind || 'peerprep') === kind;
+              return (
+                <button key={kind} type="button" role="radio" aria-checked={active}
+                  onClick={() => { if (!active) { setFilters((prev) => ({ ...prev, numberKind: kind })); setPage(1); } }}
+                  className={`h-full rounded-md px-2.5 transition-colors ${active ? 'bg-white text-sky-700 shadow-sm dark:bg-gray-800 dark:text-sky-300' : 'text-slate-500 hover:text-slate-800 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+                  {text}
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -1368,7 +1471,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
               )}
             </div>
 
-            <select value={`${filters.sortBy}:${filters.sortOrder}`} onChange={(event) => { const [sortBy, sortOrder] = event.target.value.split(':'); setFilters((prev) => ({ ...prev, sortBy, sortOrder })); setPage(1); }} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+            <select aria-label="Sort questions" value={sortValue} onChange={(event) => { const [sortBy, sortOrder] = event.target.value.split(':'); applySort(sortBy, sortOrder); }} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+              {!SORT_PRESETS.includes(sortValue) && <option value={sortValue}>{SORT_COLUMN_LABELS[filters.sortBy] || 'Column'} {filters.sortOrder === 'asc' ? '(ascending)' : '(descending)'}</option>}
               {filters.type === 'coding' && <option value="displayOrder:asc">Question sequence</option>}
               <option value="updatedAt:desc">Recently updated</option>
               <option value="createdAt:desc">Recently created</option>
@@ -1378,6 +1482,16 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             <button type="button" onClick={refreshLibrary} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800" aria-label="Refresh library"><RefreshCw className="h-4 w-4" /></button>
           </div>
         </div>
+
+        {multiTermSearch && !folderView && !loading && (
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs" data-testid="multi-term-search">
+            <span className="font-semibold text-slate-600 dark:text-gray-300">{total} found</span>
+            {(selectionMode || quickprepMode || bulkSelecting) && (
+              <button type="button" onClick={selectAllFoundQuestions} disabled={!total || selectingAll} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-sky-600 px-3 font-semibold text-white hover:bg-sky-500 disabled:opacity-50"><CheckSquare className="h-3.5 w-3.5" />{selectingAll ? 'Selecting...' : `Select all found (${total})`}</button>
+            )}
+            {unmatchedTerms.length > 0 && <span className="min-w-0 truncate text-amber-700 dark:text-amber-300" title={unmatchedTerms.join(', ')}>{unmatchedTermsLabel(unmatchedTerms)}</span>}
+          </div>
+        )}
 
         {activeFilterCount > 0 && (
           <div className="mt-3 flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-2 dark:border-gray-700 dark:bg-gray-900/70">
@@ -1400,12 +1514,12 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           <div className="w-full min-w-0">
           <div className={`grid min-w-0 gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 ${embedded ? 'sticky top-0 z-20 shadow-[0_1px_0_rgba(148,163,184,0.18)]' : ''}`} style={{ gridTemplateColumns: columnTemplate }}>
             {rowSelectionActive ? <div className="flex items-center justify-center"><input type="checkbox" aria-label="Select all available questions on this page" checked={eligibleQuestions.length > 0 && eligibleQuestions.every((question) => selectedIds.has(question._id))} disabled={!eligibleQuestions.length} onChange={toggleSelectVisibleQuestions} className="h-4 w-4 rounded border-slate-300 text-sky-600 disabled:opacity-40" /></div> : null}
-            <div className="min-w-0">Question</div>
-            <div className="min-w-0">Question type</div>
-            {visibleColumns.difficulty && <div>Difficulty</div>}
-            {visibleColumns.tags && <div className="min-w-0">Tags / Topics</div>}
-            {visibleColumns.usedIn && <div className="min-w-0 leading-4">Used in assessments</div>}
-            {visibleColumns.updated && <div>Updated</div>}
+            <GridSortHeader sortKey="questionText" sort={headerSort} onSort={sortByColumn}>Question</GridSortHeader>
+            <GridSortHeader sortKey="questionType" sort={headerSort} onSort={sortByColumn}>Question type</GridSortHeader>
+            {visibleColumns.difficulty && <GridSortHeader sortKey="difficulty" sort={headerSort} onSort={sortByColumn}>Difficulty</GridSortHeader>}
+            {visibleColumns.tags && <GridSortHeader sortKey="tags" sort={headerSort} onSort={sortByColumn}>Tags / Topics</GridSortHeader>}
+            {visibleColumns.usedIn && <GridSortHeader sortKey="usedIn" sort={headerSort} onSort={sortByColumn}>Used in assessments</GridSortHeader>}
+            {visibleColumns.updated && <GridSortHeader sortKey="updatedAt" sort={headerSort} onSort={sortByColumn}>Updated</GridSortHeader>}
             {!rowSelectionActive ? <div className="text-right">Actions</div> : null}
           </div>
 
@@ -1417,6 +1531,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                 const folderData = folderQuestions[folderId] || {};
                 const items = folderData.items || [];
                 const questionPagination = folderData.pagination || { page: 1, pages: 1, total: 0 };
+                const folderLimit = Number(questionPagination.limit) || pageSize;
                 const allInFolder = Boolean(folderData.allInFolder);
                 const count = Number(folder[filters.folderBy === 'tags' ? 'questionCount' : 'directQuestionCount'] || 0);
                 return <div key={folderId} className="border-b border-slate-200 last:border-b-0 dark:border-gray-800">
@@ -1432,7 +1547,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                     {folderQuestionLoading !== folderId && folderData.pagination && (allInFolder || Number(questionPagination.total) < count) && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-100 bg-sky-50/70 px-4 py-2.5 text-xs dark:border-sky-900/60 dark:bg-sky-950/20"><span className="font-medium text-slate-600 dark:text-gray-300">{allInFolder ? `Showing all ${count} questions in ${folder.name}.` : `${questionPagination.total} questions match the current search and filters out of ${count} total.`}</span><button type="button" onClick={() => loadFolderQuestionPage(folder, 1, { allInFolder: !allInFolder })} className="shrink-0 rounded-lg border border-sky-200 bg-white px-3 py-1.5 font-bold text-sky-700 shadow-sm hover:bg-sky-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">{allInFolder ? 'Apply current filters' : `View all ${count}`}</button></div>}
                     {folderQuestionLoading === folderId ? <div className="p-6 text-center text-xs text-slate-500">Loading matching questions...</div> : items.length === 0 ? <div className="p-6 text-center text-xs text-slate-500">No questions match the remaining filters in this folder.</div> : items.map((question, questionIndex) => <div key={`${folderId}-${question._id}`} onClick={() => (rowSelectionActive ? toggleSelection(question) : previewQuestion(question))} role="button" tabIndex={0} aria-disabled={questionAlreadyAdded(question)} className={`grid min-w-0 items-center ${questionAlreadyAdded(question) ? 'cursor-not-allowed opacity-65' : 'cursor-pointer'} gap-2 border-b border-slate-200/70 px-3 py-3 text-sm text-slate-600 last:border-b-0 hover:bg-white dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900`} style={{ gridTemplateColumns: columnTemplate }}>
                       {rowSelectionActive ? <div className="flex justify-center"><input type="checkbox" checked={selectedIds.has(question._id)} disabled={questionAlreadyAdded(question)} onChange={(event) => { event.stopPropagation(); toggleSelection(question); }} onClick={(event) => event.stopPropagation()} className="h-4 w-4 rounded border-slate-300 text-sky-600 disabled:opacity-40" /></div> : null}
-                      <div className="flex min-w-0 items-center gap-2"><span className="flex h-6 min-w-7 items-center justify-center rounded-md bg-white px-1.5 text-[10px] font-bold tabular-nums text-slate-500 shadow-sm dark:bg-gray-800 dark:text-gray-300">{getQuestionSerial(question, ((Number(questionPagination.page) - 1) * pageSize) + questionIndex + 1)}</span><span className="min-w-0 flex-1 truncate font-semibold text-slate-800 dark:text-gray-100">{getLibraryQuestionTitle(question)}</span>{questionAlreadyAdded(question) && <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">Added</span>}<button type="button" onClick={(event) => { event.stopPropagation(); setStatementModal({ open: true, title: getLibraryQuestionTitle(question), statement: getFullQuestionStatement(question) }); }} className="shrink-0 text-[11px] font-semibold text-sky-600 hover:underline dark:text-sky-400">+ More</button></div>
+                      <div className="flex min-w-0 items-center gap-2"><span className="flex h-6 min-w-7 items-center justify-center rounded-md bg-white px-1.5 text-[10px] font-bold tabular-nums text-slate-500 shadow-sm dark:bg-gray-800 dark:text-gray-300">{getQuestionSerial(question, ((Number(questionPagination.page) - 1) * folderLimit) + questionIndex + 1)}</span><span className="min-w-0 flex-1 truncate font-semibold text-slate-800 dark:text-gray-100">{getLibraryQuestionTitle(question)}</span>{questionAlreadyAdded(question) && <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">Added</span>}<button type="button" onClick={(event) => { event.stopPropagation(); setStatementModal({ open: true, title: getLibraryQuestionTitle(question), statement: getFullQuestionStatement(question) }); }} className="shrink-0 text-[11px] font-semibold text-sky-600 hover:underline dark:text-sky-400">+ More</button></div>
                       <div className="truncate text-xs font-semibold">{labelForQuestionType(question)}</div>
                       {visibleColumns.difficulty && <div><span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold dark:border-gray-700 dark:bg-gray-800">{question.difficulty || 'Not set'}</span></div>}
                       {visibleColumns.tags && <div className="flex min-w-0 gap-1 overflow-hidden">{(question.tags || []).slice(0, 2).map((tag) => <span key={`${question._id}-${tag}`} className="max-w-[90px] truncate rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] dark:border-gray-700 dark:bg-gray-800">{tag}</span>)}{(question.tags || []).length > 2 && <button type="button" onClick={(event) => { event.stopPropagation(); openTagsModal(question.questionText || 'Question', question.tags || []); }} className="shrink-0 rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">+{question.tags.length - 2}</button>}</div>}
@@ -1440,11 +1555,19 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                       {visibleColumns.updated && <div className="text-xs text-slate-500">{question.updatedAt ? new Date(question.updatedAt).toLocaleDateString() : '-'}</div>}
                       {!rowSelectionActive ? <div className="flex justify-end gap-1"><button type="button" onClick={(event) => { event.stopPropagation(); previewQuestion(question); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 bg-white text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300" aria-label={`Preview ${getLibraryQuestionTitle(question)}`}><Eye className="h-4 w-4" /></button>{(!question.platformShared || rolePrefix === '/admin') && <button id={`question-actions-trigger-${question._id}`} data-platform-menu-trigger type="button" aria-haspopup="menu" aria-controls="question-library-action-menu" aria-expanded={actionMenuId === question._id} onClick={(event) => toggleQuestionActions(question, event)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" aria-label={`Actions for ${getLibraryQuestionTitle(question)}`}><MoreVertical className="h-4 w-4" /></button>}</div> : null}
                     </div>)}
-                    {folderQuestionLoading !== folderId && items.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"><span>Showing {((Number(questionPagination.page) - 1) * pageSize) + 1}-{Math.min(Number(questionPagination.page) * pageSize, Number(questionPagination.total))} of {questionPagination.total} {allInFolder ? 'folder' : 'matching'} questions</span><div className="flex items-center gap-1.5"><button type="button" disabled={Number(questionPagination.page) <= 1} onClick={() => loadFolderQuestionPage(folder, Number(questionPagination.page) - 1, { allInFolder })} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900"><ChevronLeft className="h-3.5 w-3.5" /></button><span className="min-w-20 text-center font-semibold">Page {questionPagination.page} of {questionPagination.pages}</span><button type="button" disabled={Number(questionPagination.page) >= Number(questionPagination.pages)} onClick={() => loadFolderQuestionPage(folder, Number(questionPagination.page) + 1, { allInFolder })} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900"><ChevronRight className="h-3.5 w-3.5" /></button></div></div>}
+                    {folderData.pagination && <TablePager
+                      page={Number(questionPagination.page) || 1}
+                      pageSize={folderLimit}
+                      total={Number(questionPagination.total) || 0}
+                      onPage={(value) => loadFolderQuestionPage(folder, value, { allInFolder })}
+                      onPageSize={(size) => loadFolderQuestionPage(folder, 1, { allInFolder, limit: size })}
+                      busy={folderQuestionLoading === folderId}
+                      noun={allInFolder ? 'folder questions' : 'matching questions'}
+                      className="bg-white dark:border-gray-800 dark:bg-gray-900"
+                    />}
                   </div>}
                 </div>;
               })}
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-400"><div className="flex flex-wrap items-center gap-3"><span>Showing {folderItems.length ? ((page - 1) * pageSize) + 1 : 0}-{Math.min(page * pageSize, folderTotal)} of {folderTotal} folders</span><div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-900"><span className="px-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Per page</span>{LIBRARY_PAGE_SIZES.map((size) => <button key={size} type="button" onClick={() => { setPageSize(size); setPage(1); }} className={`h-7 min-w-9 rounded-md px-2 text-xs font-bold transition ${pageSize === size ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:bg-sky-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}>{size}</button>)}</div></div><div className="flex items-center gap-1.5"><button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900"><ChevronLeft className="h-3.5 w-3.5" /></button><span className="min-w-20 text-center font-semibold">Page {page} of {folderPages}</span><button type="button" onClick={() => setPage((current) => Math.min(folderPages, current + 1))} disabled={page >= folderPages} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900"><ChevronRight className="h-3.5 w-3.5" /></button></div></div>
             </div>
           ) : loading ? (
             <div className="p-8 text-center text-sm text-slate-500 dark:text-gray-400">Loading library questions...</div>
@@ -1578,39 +1701,12 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             ))
           )}
           </div>
+          {!embedded && libraryPager}
         </div>
 
         {actorModal && <div className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setActorModal(null); }}><div role="dialog" aria-modal="true" aria-label="Record creator" className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">Added by</p><h2 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">{actorModal.name || 'Administrator'}</h2></div><button type="button" onClick={() => setActorModal(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button></div><dl className="mt-4 space-y-3 text-sm"><div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Role</dt><dd className="mt-1 capitalize font-semibold text-slate-800 dark:text-slate-100">{actorModal.role || 'admin'}</dd></div>{actorModal.email && <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Email</dt><dd className="mt-1 break-all text-slate-700 dark:text-slate-200">{actorModal.email}</dd></div>}{actorModal.coordinatorId && <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Teacher ID</dt><dd className="mt-1 font-mono font-bold text-slate-700 dark:text-slate-200">{actorModal.coordinatorId}</dd></div>}</dl></div></div>}
 
-        {filters.viewMode !== 'folders' && <div className="mt-3 flex shrink-0 flex-col gap-2 border-t border-slate-200 pt-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:text-gray-400">
-          <div className="flex flex-wrap items-center gap-3"><span>Showing {questions.length ? ((page - 1) * pageSize) + 1 : 0}-{Math.min(page * pageSize, total)} of {total} questions</span><div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-gray-700 dark:bg-gray-800"><span className="px-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Rows</span>{LIBRARY_PAGE_SIZES.map((size) => <button key={size} type="button" onClick={() => { setPageSize(size); setPage(1); }} className={`h-7 min-w-9 rounded-md px-2 text-xs font-bold transition ${pageSize === size ? 'bg-sky-600 text-white shadow-sm' : 'bg-white text-slate-600 hover:bg-sky-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{size}</button>)}</div></div>
-          <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
-            disabled={page === 1}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
-            aria-label="Previous page"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </button>
-          {Array.from({ length: Math.min(5, pages) }, (_, index) => {
-            const start = Math.max(1, Math.min(page - 2, pages - 4));
-            const pageNumber = start + index;
-            if (pageNumber > pages) return null;
-            return <button key={pageNumber} type="button" onClick={() => setPage(pageNumber)} className={`h-8 min-w-8 rounded-lg px-2 font-bold ${pageNumber === page ? 'bg-sky-600 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}>{pageNumber}</button>;
-          })}
-          <button
-            type="button"
-            onClick={() => setPage((prev) => Math.min(prev + 1, pages))}
-            disabled={page >= pages}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
-            aria-label="Next page"
-          >
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-          </div>
-        </div>}
+        {embedded && libraryPager}
       </div>
 
       {actionMenuId && actionMenuPopup && createPortal(

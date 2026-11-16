@@ -7,6 +7,8 @@ const announcementSchema = new mongoose.Schema({
   type: { type: String, enum: ['motivation', 'info', 'alert'], default: 'motivation' },
   status: { type: String, enum: ['active', 'inactive'], default: 'inactive' },
   priority: { type: String, enum: ['high', 'normal', 'low'], default: 'normal' },
+  // Also shown as a popup to students right after they log in (once per login).
+  showAsPopup: { type: Boolean, default: false },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   expiryDate: { type: Date }
 }, { timestamps: true });

@@ -5,7 +5,7 @@ import { HttpError } from '../utils/errors.js';
 import { getRateLimitKey } from '../middleware/rateLimiter.js';
 import {
   addQuestItems, addQuestLibraryItems, createQuest, duplicateQuest, getAdminQuest, getStudentQuest, listAdminQuests, listStudentQuests, questInsights, questOverview,
-  questTaxonomy, quickPrepAuthoringAllowed, recordQuestView, removeQuest, searchQuestLibrary, startQuest, updateQuest,
+  questStudents, questTaxonomy, quickPrepAuthoringAllowed, recordQuestView, removeQuest, searchQuestLibrary, startQuest, updateQuest,
 } from '../services/questService.js';
 import { invalidateCacheNamespaces } from '../services/responseCacheService.js';
 import { engagementScope } from '../services/adaptiveEngagementService.js';
@@ -14,6 +14,7 @@ const router = Router();
 // QuickPreps are designed only by the super admin (central platform) or a standalone install's admin.
 // University deployments receive them from the central feed; their admins cannot read or change them here.
 const requireQuickPrepAuthor = (req, res, next) => (quickPrepAuthoringAllowed() ? requireAdmin(req, res, next) : next(new HttpError(403, 'QuickPreps are managed by the super admin.')));
+
 router.use(requireAuth, (req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
 const writeLimit = rateLimit({ windowMs: 60000, limit: 60, standardHeaders: true, legacyHeaders: false, keyGenerator: getRateLimitKey });
 // A completed quest changes XP and badges, so the student's cached progress snapshot is dropped.
@@ -22,7 +23,8 @@ const refreshEngagement = (req) => invalidateCacheNamespaces(`adaptive-engagemen
 // Admin routes come first so "/admin" is never read as a quest slug.
 router.get('/admin/library', requireQuickPrepAuthor, async (req, res) => res.json(await searchQuestLibrary(req.query)));
 router.get('/admin/taxonomy', requireQuickPrepAuthor, async (req, res) => res.json(await questTaxonomy()));
-router.get('/admin/overview', requireQuickPrepAuthor, async (req, res) => res.json(await questOverview()));
+router.get('/admin/overview', requireQuickPrepAuthor, async (req, res) => res.json(await questOverview(req.query)));
+router.get('/admin/students', requireQuickPrepAuthor, async (req, res) => res.json(await questStudents(req.query)));
 router.get('/admin', requireQuickPrepAuthor, async (req, res) => res.json({ quests: await listAdminQuests(req.user, req.query.college) }));
 router.post('/admin', requireQuickPrepAuthor, writeLimit, async (req, res) => res.status(201).json({ quest: await createQuest(req.user, req.query.college, req.body || {}) }));
 router.get('/admin/:id', requireQuickPrepAuthor, async (req, res) => res.json({ quest: await getAdminQuest(req.user, req.query.college, req.params.id) }));

@@ -267,6 +267,33 @@ test('the super admin threshold setting applies to tags and is validated', async
   assert.equal((await call('/interview-companies/admin/tag-progress?status=collecting')).body.rows.length, 0);
 });
 
+test('admin company lists sort by a whitelisted column and tag progress pages', async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  await vote('Beta Works', oid(), 0, 3);
+  await vote('Alpha Labs', oid(), 0, 1);
+  await vote('Gamma Soft', oid(), 0, 2);
+  const keys = async (query) => (await call(`/interview-companies/admin/suggestions?${query}`)).body.rows.map(({ key }) => key);
+  assert.deepEqual(await keys(''), ['beta works', 'gamma soft', 'alpha labs'], 'Default order is most students first');
+  assert.deepEqual(await keys('sortBy=company&sortOrder=asc'), ['alpha labs', 'beta works', 'gamma soft']);
+  assert.deepEqual(await keys('sortBy=company&sortOrder=desc'), ['gamma soft', 'beta works', 'alpha labs']);
+  assert.deepEqual(await keys('sortBy=students&sortOrder=asc'), ['alpha labs', 'gamma soft', 'beta works']);
+  assert.deepEqual(await keys('sortBy=company&sortOrder=asc&page=2&limit=2'), ['gamma soft']);
+  assert.deepEqual(await keys('sortBy=__proto__&sortOrder=asc'), ['beta works', 'gamma soft', 'alpha labs'], 'Unknown columns keep the default order');
+  assert.equal((await call('/interview-companies/admin/suggestions?sortBy=suggestion&sortOrder=asc')).status, 200);
+
+  await m.setVoteThreshold(1);
+  const progress = (query) => call(`/interview-companies/admin/tag-progress?${query}`);
+  const companiesOf = async (query) => (await progress(query)).body.rows.map(({ company }) => company);
+  // Pending names are not catalog tags; Amazon and Google are listed.
+  await vote('Amazon', oid(), 0, 1);
+  await vote('Google', oid(), 0, 2);
+  assert.deepEqual(await companiesOf(''), ['Google', 'Amazon']);
+  assert.deepEqual(await companiesOf('sortBy=company&sortOrder=asc'), ['Amazon', 'Google']);
+  assert.deepEqual(await companiesOf('sortBy=confirmations&sortOrder=asc'), ['Amazon', 'Google']);
+  const second = await progress('sortBy=company&sortOrder=asc&page=2&limit=1');
+  assert.deepEqual([second.body.rows.map(({ company }) => company), second.body.pagination], [['Google'], { page: 2, limit: 1, total: 2, pages: 2 }]);
+});
+
 test('company decisions are validated', async (t) => {
   if (skipReason) return t.skip(skipReason);
   await vote('Amazon Inc', oid(), 0, 1);

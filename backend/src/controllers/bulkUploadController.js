@@ -49,7 +49,7 @@ function batchQuery(req) {
       ? { $or: [{ status: 'active' }, { status: { $exists: false } }] }
       : { status: req.query.status });
   }
-  if (validObjectId(req.query.uploadedBy)) query.uploadedBy = req.query.uploadedBy;
+  if (validObjectId(req.query.uploadedBy)) query.uploadedBy = new mongoose.Types.ObjectId(String(req.query.uploadedBy));
   const createdAt = {};
   if (req.query.dateFrom && !Number.isNaN(new Date(req.query.dateFrom).getTime())) createdAt.$gte = new Date(req.query.dateFrom);
   if (req.query.dateTo && !Number.isNaN(new Date(req.query.dateTo).getTime())) {
@@ -75,13 +75,57 @@ function serializeBatch(batch) {
   };
 }
 
+// Table header sort keys → stored fields. recordCount is the size of the linked-record array, so it is
+// computed in an aggregation; every other key is a plain indexed-or-small field sort.
+const BULK_UPLOAD_SORT_FIELDS = Object.freeze({
+  name: 'name',
+  entityType: 'entityType',
+  createdAt: 'createdAt',
+  recordCount: 'recordCount',
+  result: 'createdCount',
+  owner: 'uploadedByEmail',
+  status: 'status',
+});
+
+/** Whitelisted sort for the bulk-upload list. Unknown keys fall back to newest first. */
+export function bulkUploadSort(query = {}) {
+  const key = String(query.sortBy || '');
+  const field = Object.hasOwn(BULK_UPLOAD_SORT_FIELDS, key) ? BULK_UPLOAD_SORT_FIELDS[key] : null;
+  if (!field) return { field: 'createdAt', sort: { createdAt: -1, _id: -1 } };
+  const direction = String(query.sortOrder || '').toLowerCase() === 'desc' ? -1 : 1;
+  return { field, sort: { [field]: direction, _id: direction } };
+}
+
+async function findBatchPage(query, { field, sort }, page, limit) {
+  if (field !== 'recordCount') {
+    return StudentUploadBatch.find(query).sort(sort).skip((page - 1) * limit).limit(limit)
+      .populate('uploadedBy', 'name email role coordinatorId').lean();
+  }
+  const ordered = await StudentUploadBatch.aggregate([
+    { $match: query },
+    { $addFields: { recordCount: { $cond: [
+      { $gt: [{ $size: { $ifNull: ['$recordIds', []] } }, 0] },
+      { $size: { $ifNull: ['$recordIds', []] } },
+      { $size: { $ifNull: ['$studentIds', []] } },
+    ] } } },
+    { $sort: sort },
+    { $skip: (page - 1) * limit },
+    { $limit: limit },
+    { $project: { _id: 1 } },
+  ]);
+  const ids = ordered.map((row) => row._id);
+  const rows = await StudentUploadBatch.find({ _id: { $in: ids } })
+    .populate('uploadedBy', 'name email role coordinatorId').lean();
+  const byId = new Map(rows.map((row) => [String(row._id), row]));
+  return ids.map((id) => byId.get(String(id))).filter(Boolean);
+}
+
 export async function listBulkUploads(req, res) {
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(100, Math.max(10, Number(req.query.limit) || 25));
   const query = batchQuery(req);
   const [batches, total, typeCounts, statusCounts, uploaders] = await Promise.all([
-    StudentUploadBatch.find(query).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit)
-      .populate('uploadedBy', 'name email role coordinatorId').lean(),
+    findBatchPage(query, bulkUploadSort(req.query), page, limit),
     StudentUploadBatch.countDocuments(query),
     StudentUploadBatch.aggregate([{ $group: { _id: { $ifNull: ['$entityType', 'student'] }, count: { $sum: 1 } } }]),
     StudentUploadBatch.aggregate([{ $group: { _id: { $ifNull: ['$status', 'active'] }, count: { $sum: 1 } } }]),

@@ -58,15 +58,15 @@ export const PENDING = [
   { key: 'startingSoon', tone: 'amber', label: (n) => `${n} interview event${n === 1 ? '' : 's'} starting within 48 hours`, link: 'interviews' },
   { key: 'pairsPending', tone: 'amber', label: (n) => `${n} interview pair${n === 1 ? '' : 's'} waiting for a time`, link: 'interviews' },
   { key: 'draftAssessments', tone: 'sky', label: (n) => `${n} draft assessment${n === 1 ? '' : 's'} not yet published`, link: 'assessments' },
-  { key: 'flaggedAttempts', tone: 'rose', label: (n) => `${n} test attempt${n === 1 ? '' : 's'} flagged for integrity (14 days)`, link: 'reports' },
+  { key: 'flaggedAttempts', tone: 'rose', label: (n, period = '14 days') => `${n} test attempt${n === 1 ? '' : 's'} flagged for integrity (${period})`, link: 'reports' },
   { key: 'emailFailed', tone: 'rose', label: (n) => `${n} login email${n === 1 ? '' : 's'} failed to send`, link: 'students' },
   { key: 'notActivated', tone: 'slate', label: (n) => `${n} student${n === 1 ? ' has' : 's have'} not signed in yet`, link: 'students' },
 ];
 
-export function pendingRows(pending = {}, links) {
+export function pendingRows(pending = {}, links, period) {
   return PENDING
     .filter((item) => Number(pending[item.key]) > 0 && links[item.link])
-    .map((item) => ({ key: item.key, tone: item.tone, label: item.label(Number(pending[item.key])), to: links[item.link] }));
+    .map((item) => ({ key: item.key, tone: item.tone, label: item.label(Number(pending[item.key]), period), to: links[item.link] }));
 }
 
 // Trend series that exist for this viewer, in display order.
@@ -91,6 +91,20 @@ export function weekChange(values = []) {
   const before = values.slice(-14, -7).reduce((a, b) => a + b, 0);
   if (!before) return recent ? null : 0;
   return Math.round(((recent - before) / before) * 100);
+}
+
+// The dashboard period: presets the overview supports (a daily trend needs a first day, so no "All time").
+export const OVERVIEW_PRESETS = ['7d', '30d', '90d', '180d', '365d'];
+const PERIOD_SHORT = { '7d': '7 days', '30d': '30 days', '90d': '90 days', '180d': '6 months', '365d': '1 year' };
+
+/** "30 days" for a preset, "period" for a custom range (used as "Feedback · 30 days"). */
+export function periodShort(range) {
+  return PERIOD_SHORT[range?.preset] || (range?.preset === 'custom' ? 'period' : '14 days');
+}
+
+/** "last 30 days" or "1 Oct 2026 – 31 Oct 2026" (used inside sentences). */
+export function periodPhrase(label = '') {
+  return /^Last /.test(label) ? `l${label.slice(1)}` : label;
 }
 
 export const formatNumber = (value) => new Intl.NumberFormat('en-IN').format(Number(value) || 0);

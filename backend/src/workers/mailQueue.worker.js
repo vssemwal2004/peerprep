@@ -36,8 +36,9 @@ async function deliver(job) {
   if (job.type === 'event_cancellation') {
     return sendEventCancellationEmail(payload);
   }
-  if (job.type === 'anvi_interview') {
-    // Rendered (and escaped) when queued by the ANVI scheduling notifier; no attachments.
+  if (job.type === 'anvi_interview' || job.type === 'student_message') {
+    // Rendered (and escaped) when queued: by the ANVI scheduling notifier, or by an admin's
+    // "Send email" from Prep Analysis with one of their email templates. No attachments.
     return sendMail({ to: payload.to, subject: payload.subject, html: payload.html });
   }
   throw new Error(`Unsupported queued email type: ${job.type}`);

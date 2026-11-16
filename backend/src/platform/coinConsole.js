@@ -8,6 +8,7 @@ import { PLATFORM_WALLET_SCOPE } from './coins.js';
 import { COIN_FEATURES } from './coinFeatures.js';
 import { getCoinPricing } from './coinSpend.js';
 import { coinFlow } from './platformInsights.js';
+import { parseDateRange, parseDayKey, rangeDayKeys, rangeEcho } from '../utils/dateRange.js';
 
 // Master Admin Prep Coin console: live summary, ledger and account wallets across every scope.
 
@@ -71,22 +72,36 @@ async function presentMovements(rows) {
   }));
 }
 
-export async function coinConsoleSummary(now = new Date()) {
-  const since = new Date(now.getTime() - 30 * DAY_MS);
+/**
+ * The console period from the query string (?range=7d…365d or ?range=custom&from&to, Indian
+ * calendar days). Without one it is the last 30 days, as before.
+ */
+export function coinRange(query = {}, now = new Date()) {
+  return parseDateRange(query, { defaultPreset: '30d', presets: ['7d', '30d', '90d', '180d', '365d'], offsetMinutes: 330, now });
+}
+
+export async function coinConsoleSummary(now = new Date(), range = null) {
+  // Without a range: the original rolling 30 days. With one: the chosen calendar days.
+  const window = range ? (() => {
+    const days = rangeDayKeys(range, { offsetMinutes: 330, now, fallbackDays: 30 });
+    return { days, start: days.length ? parseDayKey(days[0], 330) : range.from || now, end: range.to && range.to < now ? range.to : null };
+  })() : null;
+  const since = window?.start || new Date(now.getTime() - 30 * DAY_MS);
+  const period = { $gte: since, ...(window?.end ? { $lte: window.end } : {}) };
   const [universities, walletTotals, flow, featureSpend, charges, freeUses, distributed, recent, pricing, topWallets] = await Promise.all([
     University.find({ deletedAt: null }).select('universityId name coinBalance active logo').sort({ coinBalance: -1, name: 1 }).lean(),
     PlatformCoinWallet.aggregate([
       { $group: { _id: { platform: { $eq: ['$universityId', PLATFORM_WALLET_SCOPE] }, role: '$role' }, balance: { $sum: '$balance' }, holders: { $sum: { $cond: [{ $gt: ['$balance', 0] }, 1, 0] } } } },
     ]).option({ maxTimeMS: QUERY_MS }),
-    coinFlow(now, 30),
+    coinFlow(now, 30, {}, window),
     PlatformCoinMovement.aggregate([
-      { $match: { kind: { $in: ['student_spend', 'student_refund'] }, createdAt: { $gte: since } } },
+      { $match: { kind: { $in: ['student_spend', 'student_refund'] }, createdAt: period } },
       { $group: { _id: { feature: '$featureKey', kind: '$kind' }, amount: { $sum: '$amount' }, count: { $sum: 1 } } },
     ]).option({ maxTimeMS: QUERY_MS }),
-    PlatformCoinCharge.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: '$status', n: { $sum: 1 } } }]).option({ maxTimeMS: QUERY_MS }),
-    PlatformCoinCharge.countDocuments({ createdAt: { $gte: since }, freeQuota: true, status: 'captured' }).maxTimeMS(QUERY_MS),
+    PlatformCoinCharge.aggregate([{ $match: { createdAt: period } }, { $group: { _id: '$status', n: { $sum: 1 } } }]).option({ maxTimeMS: QUERY_MS }),
+    PlatformCoinCharge.countDocuments({ createdAt: period, freeQuota: true, status: 'captured' }).maxTimeMS(QUERY_MS),
     PlatformCoinMovement.aggregate([
-      { $match: { kind: { $in: ['admin_to_coordinator', 'coordinator_to_student'] }, createdAt: { $gte: since } } },
+      { $match: { kind: { $in: ['admin_to_coordinator', 'coordinator_to_student'] }, createdAt: period } },
       { $group: { _id: '$universityId', amount: { $sum: '$amount' } } },
     ]).option({ maxTimeMS: QUERY_MS }),
     PlatformCoinMovement.find().sort({ createdAt: -1 }).limit(12).lean(),
@@ -108,6 +123,8 @@ export async function coinConsoleSummary(now = new Date()) {
 
   return {
     generatedAt: now.toISOString(),
+    // `month`, `trend`, `features[].spent` and `distributed30d` cover this period (default: last 30 days).
+    range: range ? rangeEcho(range, 330) : { range: '30d' },
     totals: {
       universityWallets: universities.reduce((sum, row) => sum + (row.coinBalance || 0), 0),
       universityAccounts: sumOf(total(false), 'balance'),
@@ -158,10 +175,24 @@ export async function coinLedger(query = {}) {
     filter.createdAt = { $lt: before };
   }
   const limit = Math.min(100, Math.max(1, Number.parseInt(query.limit, 10) || 40));
+  if (query.page !== undefined && !query.before) {
+    // Numbered pages for the console table: newest first, with the total for First/Last.
+    const page = Math.max(1, Math.min(100_000, Number.parseInt(query.page, 10) || 1));
+    const [rows, total] = await Promise.all([
+      PlatformCoinMovement.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).maxTimeMS(QUERY_MS).lean(),
+      PlatformCoinMovement.countDocuments(filter).maxTimeMS(QUERY_MS),
+    ]);
+    return { entries: await presentMovements(rows), total, page, pageSize: limit, nextCursor: null };
+  }
   const rows = await PlatformCoinMovement.find(filter).sort({ createdAt: -1, _id: -1 }).limit(limit + 1).maxTimeMS(QUERY_MS).lean();
   const page = rows.slice(0, limit);
   return { entries: await presentMovements(page), nextCursor: rows.length > limit ? page.at(-1).createdAt : null };
 }
+
+// Accounts table header sort ("account" is the owner's name, ranked in memory over at most this many wallets).
+const ACCOUNT_SORTS = { account: 'userId', type: 'role', balance: 'balance', lastChange: 'updatedAt' };
+const ACCOUNT_PAGE_SIZES = [10, 25, 50, 100];
+const ACCOUNT_NAME_SORT_SCAN = 5000;
 
 // Wallets of PeerPrep's own (main database) coordinators and students, largest balance first.
 export async function coinAccounts(query = {}) {
@@ -175,14 +206,32 @@ export async function coinAccounts(query = {}) {
     const people = await User.find({ role: role || { $in: ['coordinator', 'student'] }, $or: [{ name: regex }, { email: regex }, { studentId: regex }, { coordinatorId: regex }] }).select('_id').limit(200).lean();
     filter.userId = { $in: people.map((person) => person._id) };
   }
-  const [wallets, total] = await Promise.all([
-    PlatformCoinWallet.find(filter).sort({ balance: -1, _id: 1 }).skip((page - 1) * 25).limit(25).maxTimeMS(QUERY_MS).lean(),
-    PlatformCoinWallet.countDocuments(filter).maxTimeMS(QUERY_MS),
-  ]);
+  const pageSize = ACCOUNT_PAGE_SIZES.includes(Number(query.limit)) ? Number(query.limit) : 25;
+  const direction = query.sortOrder === 'desc' ? -1 : 1;
+  const sortBy = Object.hasOwn(ACCOUNT_SORTS, String(query.sortBy || '')) ? String(query.sortBy) : '';
+  let wallets, total;
+  if (sortBy === 'account') {
+    // Names live on User, so rank the matching wallets by owner name in memory (capped) and load one page.
+    const all = await PlatformCoinWallet.find(filter).select('_id userId').sort({ balance: -1, _id: 1 }).limit(ACCOUNT_NAME_SORT_SCAN).maxTimeMS(QUERY_MS).lean();
+    const owners = all.length ? await User.find({ _id: { $in: all.map((wallet) => wallet.userId) } }).select('name').maxTimeMS(QUERY_MS).lean() : [];
+    const nameOf = new Map(owners.map((person) => [String(person._id), String(person.name || '').trim()]));
+    const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+    const ids = all.map((wallet, index) => ({ id: wallet._id, index, name: nameOf.get(String(wallet.userId)) || '' }))
+      .sort((a, b) => (!a.name || !b.name ? (!a.name - !b.name) : collator.compare(a.name, b.name) * direction) || a.index - b.index)
+      .slice((page - 1) * pageSize, page * pageSize).map((entry) => String(entry.id));
+    const byWallet = new Map((await PlatformCoinWallet.find({ _id: { $in: ids } }).lean()).map((wallet) => [String(wallet._id), wallet]));
+    [wallets, total] = [ids.map((id) => byWallet.get(id)).filter(Boolean), await PlatformCoinWallet.countDocuments(filter).maxTimeMS(QUERY_MS)];
+  } else {
+    const order = sortBy ? { [ACCOUNT_SORTS[sortBy]]: direction, _id: 1 } : { balance: -1, _id: 1 };
+    [wallets, total] = await Promise.all([
+      PlatformCoinWallet.find(filter).sort(order).skip((page - 1) * pageSize).limit(pageSize).maxTimeMS(QUERY_MS).lean(),
+      PlatformCoinWallet.countDocuments(filter).maxTimeMS(QUERY_MS),
+    ]);
+  }
   const people = wallets.length ? await User.find({ _id: { $in: wallets.map((wallet) => wallet.userId) } }).select('name email studentId coordinatorId').lean() : [];
   const byId = new Map(people.map((person) => [String(person._id), person]));
   return {
-    total, page, pageSize: 25,
+    total, page, pageSize,
     accounts: wallets.map((wallet) => {
       const person = byId.get(String(wallet.userId)) || {};
       return { id: String(wallet.userId), role: wallet.role, balance: wallet.balance, updatedAt: wallet.updatedAt, name: person.name || 'Former user', email: person.email || '', accountId: person.studentId || person.coordinatorId || '' };

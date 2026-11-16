@@ -285,6 +285,10 @@ test("directory has one secondary navigation, URL pagination and working action 
   );
   await click(document.querySelector('[aria-label="Next page"]'));
   assert.equal(calls.filter((x) => x[0] === "list").at(-1)[1].page, 2);
+  assert.ok(document.querySelector("[data-table-pager]"), "the shared pager sits under the directory");
+  await click(document.querySelector('button[title="Sort by Questions"]'));
+  const sorted = calls.filter((x) => x[0] === "list").at(-1)[1];
+  assert.deepEqual([sorted.sortBy, sorted.sortOrder, sorted.page], ["questions", "asc", 1], "a header sort goes to the server from page 1");
   await click(document.querySelector('[aria-haspopup="menu"]'));
   await click(button("Archive"));
   assert.ok(document.querySelector("dialog[open]"));

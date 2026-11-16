@@ -7,8 +7,30 @@ import {
   FileText, Video, Link as LinkIcon, CheckCircle, Menu, Database as DatabaseIcon,
   ExternalLink, Youtube
 } from 'lucide-react';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 
-const difficultyColors = Object.fromEntries(['easy', 'easy-medium', 'medium', 'medium-hard', 'hard'].map((level) => [level, difficultyTheme(level).pill]));
+const DIFFICULTY_LEVELS = ['easy', 'easy-medium', 'medium', 'medium-hard', 'hard'];
+const difficultyColors = Object.fromEntries(DIFFICULTY_LEVELS.map((level) => [level, difficultyTheme(level).pill]));
+
+// Sort values for a chapter's topic table: difficulty by level, resources by presence.
+const topicSortValue = (topic, key) => {
+  if (key === 'difficulty') {
+    const rank = DIFFICULTY_LEVELS.indexOf(topic.difficultyLevel || topic.difficulty);
+    return rank < 0 ? null : rank;
+  }
+  if (key === 'importanceLevel') return topic.importanceLevel || 3;
+  if (key === 'problemLink' || key === 'topicVideoLink' || key === 'notesPDF' || key === 'questionPDF') return topic[key] ? 1 : 0;
+  return topic[key];
+};
+const TOPIC_COLUMNS = [
+  { key: 'topicName', label: 'Topic' },
+  { key: 'problemLink', label: 'Problem Link' },
+  { key: 'importanceLevel', label: 'Importance', align: 'center' },
+  { key: 'difficulty', label: 'Difficulty', align: 'center' },
+  { key: 'topicVideoLink', label: 'Video', align: 'center' },
+  { key: 'notesPDF', label: 'Notes', align: 'center' },
+  { key: 'questionPDF', label: 'Questions', align: 'center' },
+];
 
 export default function CoordinatorDatabase() {
   const [loading, setLoading] = useState(true);
@@ -394,6 +416,7 @@ function SubjectCard({ subject, isExpanded, onToggle, expandedChapters, toggleCh
 }
 
 function ChapterCard({ chapter, isExpanded, onToggle }) {
+  const topicTable = useClientTable(chapter.topics, { getValue: topicSortValue });
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-slate-200 dark:border-gray-700 overflow-hidden">
       <div
@@ -438,6 +461,7 @@ function ChapterCard({ chapter, isExpanded, onToggle }) {
           >
             <div className="p-3 bg-slate-50 dark:bg-gray-900">
               {Array.isArray(chapter.topics) && chapter.topics.length > 0 ? (
+                <div>
                 <div className="overflow-x-auto">
                   <table className="w-full table-fixed">
                     <colgroup>
@@ -451,25 +475,23 @@ function ChapterCard({ chapter, isExpanded, onToggle }) {
                     </colgroup>
                     <thead>
                       <tr className="border-b border-slate-200 dark:border-gray-700">
-                        <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Topic</th>
-                        <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Problem Link</th>
-                        <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Importance</th>
-                        <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Difficulty</th>
-                        <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Video</th>
-                        <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Notes</th>
-                        <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Questions</th>
+                        {TOPIC_COLUMNS.map((column) => (
+                          <SortHeader key={column.key} sortKey={column.key} sort={topicTable.sort} onSort={topicTable.toggleSort} align={column.align}>{column.label}</SortHeader>
+                        ))}
                       </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-gray-900">
-                      {chapter.topics.map((topic, idx) => (
+                      {topicTable.pageRows.map((topic, idx) => (
                         <TopicRow
-                          key={topic._id || idx}
+                          key={topic._id || `${topic.topicName}-${idx}`}
                           topic={topic}
-                          isLastRow={idx === chapter.topics.length - 1}
+                          isLastRow={idx === topicTable.pageRows.length - 1}
                         />
                       ))}
                     </tbody>
                   </table>
+                </div>
+                <TablePager {...topicTable.pager} noun="topics" />
                 </div>
               ) : (
                 <div className="text-center py-4">

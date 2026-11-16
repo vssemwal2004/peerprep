@@ -4,9 +4,9 @@ import { api } from '../../utils/api';
 import { Notice, ProgressBar, SearchBox, Segmented, card } from '../quickprep/ui';
 import { formatDate } from '../quickprep/format';
 import { EmptyState, TableSkeleton } from './companyUi';
-import { useDebounced } from './companyHelpers';
+import { PAGE_SIZE, useDebounced } from './companyHelpers';
+import { SortHeader, TablePager, nextSort } from '../../components/table';
 
-const TAG_LIMIT = 100;
 const FILTERS = [{ value: 'all', label: 'All' }, { value: 'verified', label: 'Verified' }, { value: 'collecting', label: 'Collecting' }];
 const EMPTY = {
   all: ['No interview reports yet', 'Question and company pairs appear here as students report interviews after solving.'],
@@ -21,22 +21,35 @@ export default function QuestionTags({ threshold, version }) {
   const [status, setStatus] = useState('all');
   const [search, setSearch] = useState('');
   const term = useDebounced(search.trim());
-  const [state, setState] = useState({ rows: [], threshold: null, loading: true, error: '' });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [sort, setSort] = useState(null);
+  const [state, setState] = useState({ rows: [], threshold: null, total: 0, loading: true, error: '' });
   const latest = useRef(0);
   const load = useCallback(async () => {
     const id = ++latest.current;
     setState((previous) => ({ ...previous, loading: true, error: '' }));
     try {
-      const data = await api.companyTagProgress({ status, limit: TAG_LIMIT, ...(term ? { search: term } : {}) });
-      if (id === latest.current) setState({ rows: data.rows || [], threshold: data.threshold ?? null, loading: false, error: '' });
+      const data = await api.companyTagProgress({ status, page, limit: pageSize, ...(term ? { search: term } : {}),
+        ...(sort ? { sortBy: sort.key, sortOrder: sort.direction } : {}) });
+      if (id !== latest.current) return;
+      const pages = data.pagination?.pages || 1;
+      if (!data.rows?.length && page > pages) { setPage(pages); return; }
+      const rows = data.rows || [];
+      setState({ rows, threshold: data.threshold ?? null, total: data.pagination?.total ?? rows.length, loading: false, error: '' });
     } catch (cause) {
       if (id === latest.current) setState((previous) => ({ ...previous, loading: false, error: cause.message || 'Question tags could not load.' }));
     }
-  }, [status, term]);
+  }, [status, term, page, pageSize, sort]);
   useEffect(() => { void load(); }, [load, version]);
+  // A new filter or search starts again from the first page.
+  useEffect(() => { setPage(1); }, [status, term]);
 
   const needed = state.threshold ?? threshold;
   const { rows } = state;
+  const changeSort = (key) => { setSort((current) => nextSort(current, key)); setPage(1); };
+  const changePageSize = (size) => { setPageSize(size); setPage(1); };
+  const header = (key, label, className = '') => <SortHeader sortKey={key} sort={sort} onSort={changeSort} className={className}>{label}</SortHeader>;
   const [emptyTitle, emptyText] = EMPTY[status];
   return <section className={card} aria-labelledby="question-tags-title">
     <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4 dark:border-zinc-800">
@@ -55,12 +68,12 @@ export default function QuestionTags({ threshold, version }) {
           <table className="w-full min-w-[920px] whitespace-nowrap text-left text-sm">
             <thead className="bg-slate-50/80 text-[11.5px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-zinc-900/60 dark:text-zinc-400">
               <tr>
-                <th scope="col" className="py-3 pl-4 pr-3">Question</th>
-                <th scope="col" className="px-3 py-3">Source</th>
-                <th scope="col" className="px-3 py-3">Company</th>
-                <th scope="col" className="w-56 px-3 py-3">Confirmations</th>
-                <th scope="col" className="px-3 py-3">Status</th>
-                <th scope="col" className="py-3 pl-3 pr-4">Last reported</th>
+                {header('question', 'Question')}
+                {header('source', 'Source')}
+                {header('company', 'Company')}
+                {header('confirmations', 'Confirmations', 'w-56')}
+                {header('status', 'Status')}
+                {header('lastReported', 'Last reported')}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
@@ -88,8 +101,7 @@ export default function QuestionTags({ threshold, version }) {
             </tbody>
           </table>
         </div>}
-    {rows.length > 0 && <p className="border-t border-slate-100 px-4 py-2.5 text-[12px] text-slate-500 dark:border-zinc-800 dark:text-zinc-400">
-      {rows.length >= TAG_LIMIT ? `Showing the first ${TAG_LIMIT} tags. Search to narrow the list.` : `Showing ${rows.length} ${rows.length === 1 ? 'tag' : 'tags'}`}
-    </p>}
+    {(rows.length > 0 || state.total > 0) && <TablePager page={page} pageSize={pageSize} total={state.total}
+      onPage={setPage} onPageSize={changePageSize} busy={state.loading} noun="tags" />}
   </section>;
 }

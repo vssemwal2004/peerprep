@@ -38,7 +38,7 @@ export default function StudentAssessmentList() {
     : null;
 
   return (
-    <AssessmentModuleLayout title="Your Assessments">
+    <AssessmentModuleLayout title="Prep Assessment">
       {loading ? (
         <div className="space-y-4">
           <div className="h-56 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900" />

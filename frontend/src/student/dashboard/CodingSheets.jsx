@@ -3,16 +3,20 @@ import { ArrowUpRight } from 'lucide-react';
 import useQuests from '../quests/useQuests';
 import QuestCard from '../quests/QuestCard';
 import { questState } from '../quests/questTheme';
+import { questWindowStatus } from '../quests/questWindow';
 import { SectionHeader, Skeleton, textLink, Unavailable } from './ui';
 
 const SHOWN = 3;
 const STATE_ORDER = { active: 0, new: 1, completed: 2 };
+const WINDOW_ORDER = { open: 0, upcoming: 1, ended: 2 };
 const recency = (quest) => new Date(quest.lastViewedAt || quest.startedAt || 0).getTime();
 
 /** Three QuickPrep coding sheets as full cards: in progress (most recent first), then new, then completed. */
 export default function CodingSheets() {
   const { quests, loading, error, reload } = useQuests();
-  const ordered = [...quests].sort((a, b) => (STATE_ORDER[questState(a)] ?? 3) - (STATE_ORDER[questState(b)] ?? 3) || recency(b) - recency(a));
+  // Sheets open now come first; upcoming and ended (start–end time) ones after them.
+  const ordered = [...quests].sort((a, b) => (WINDOW_ORDER[questWindowStatus(a)] ?? 3) - (WINDOW_ORDER[questWindowStatus(b)] ?? 3)
+    || (STATE_ORDER[questState(a)] ?? 3) - (STATE_ORDER[questState(b)] ?? 3) || recency(b) - recency(a));
   if (!loading && !error && !quests.length) return null;
 
   return <section aria-labelledby="dashboard-sheets-title">

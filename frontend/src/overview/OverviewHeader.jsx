@@ -114,7 +114,7 @@ function StatCell({ label, value, hint, Icon, tone = 'slate', to, href }) {
  */
 export default function OverviewHeader({
   badge, BadgeIcon, title, subtitle, chips = [], updatedAt, loading = false, onRefresh,
-  search = null, createItems = [], stats = [], shortcuts = [],
+  search = null, createItems = [], stats = [], shortcuts = [], period = null,
 }) {
   const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
   return (
@@ -141,6 +141,7 @@ export default function OverviewHeader({
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto lg:justify-end">
           {search ? <StudentSearch to={search.to} placeholder={search.placeholder} /> : null}
           <div className="flex items-center gap-2">
+            {period}
             <CreateMenu items={createItems} />
             {onRefresh ? (
               <button type="button" onClick={onRefresh} aria-label="Refresh overview" title="Refresh"
@@ -163,7 +164,8 @@ export default function OverviewHeader({
           {shortcuts.map(({ label, to, href, Icon }) => {
             const inner = <>{Icon ? <Icon className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" /> : null}{label}</>;
             const cls = 'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-900/[0.05] hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60 dark:text-slate-300 dark:hover:bg-white/[0.06] dark:hover:text-white';
-            return to ? <Link key={label} to={to} className={cls}>{inner}</Link> : <a key={label} href={href} className={cls}>{inner}</a>;
+            // Keyed by destination: a section anchor and a page link can share a label ("Universities").
+            return to ? <Link key={`to:${to}`} to={to} className={cls}>{inner}</Link> : <a key={`href:${href}`} href={href} className={cls}>{inner}</a>;
           })}
         </nav>
       ) : null}

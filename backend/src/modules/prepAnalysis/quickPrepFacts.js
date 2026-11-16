@@ -17,7 +17,7 @@ const IN_LIST_LIMIT = 5000;
 async function loadDefinitions() {
   return isUniversity()
     ? (await sharedQuests()) || []
-    : Quest.find({ status: { $ne: 'archived' } }).select('_id title slug semesters status items').maxTimeMS(MAX_QUERY_MS).lean();
+    : Quest.find({ status: { $ne: 'archived' } }).select('_id title slug semesters status items startsAt endsAt').maxTimeMS(MAX_QUERY_MS).lean();
 }
 
 export async function loadQuickPrepSheets(definitions = null) {
@@ -84,7 +84,8 @@ export async function loadQuickPrepFacts({ studentIds, range }) {
     const sheet = sheets.get(String(row.questId));
     const keys = progress.sheets.get(sheet.id)?.keys || [];
     const total = keys.length;
-    const solvedKeys = keys.filter((key) => progress.isSolved(studentId, key));
+    // A sheet with an attempt window counts only solves inside it (questService.cohortQuestProgress).
+    const solvedKeys = keys.filter((key) => progress.isSolved(studentId, key, sheet.id));
     const solved = solvedKeys.length;
     const list = byStudent.get(studentId) || [];
     list.push({

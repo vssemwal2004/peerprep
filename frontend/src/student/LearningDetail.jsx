@@ -20,6 +20,53 @@ import {
 import { api } from '../utils/api';
 import socketService from '../utils/socket';
 import { useToast } from '../components/CustomToast';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
+
+const TOPIC_DIFFICULTY_RANK = { easy: 1, 'easy-medium': 2, medium: 3, 'medium-hard': 4, hard: 5 };
+const TOPIC_HEAD = 'py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider';
+const TOPIC_COLUMNS = [
+  ['status', 'Status', 'left', '8%'], ['topicName', 'Topic', 'left', '22%'], ['problemLink', 'Problem Link', 'left', '12%'],
+  ['importance', 'Importance', 'center', '12%'], ['difficulty', 'Difficulty', 'center', '11%'], ['video', 'Video', 'center', '11%'],
+  ['notes', 'Notes', 'center', '12%'], ['questions', 'Questions', 'center', '12%'],
+];
+
+/** A chapter's topics: every column sorts, the standard pager sits under the table. */
+function ChapterTopicsTable({ topics, isCompleted, renderRow }) {
+  const getValue = useCallback((topic, key) => {
+    switch (key) {
+      case 'status': return isCompleted(topic._id) ? 1 : 0;
+      case 'topicName': return topic.topicName || null;
+      case 'problemLink': return topic.problemLink ? 1 : 0;
+      case 'importance': return Number(topic.importanceLevel || 3);
+      case 'difficulty': return TOPIC_DIFFICULTY_RANK[topic.difficultyLevel] ?? null;
+      case 'video': return topic.topicVideoLink ? 1 : 0;
+      case 'notes': return topic.notesPDF ? 1 : 0;
+      case 'questions': return topic.questionPDF ? 1 : 0;
+      default: return null;
+    }
+  }, [isCompleted]);
+  const table = useClientTable(topics, { getValue });
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <table className="w-full table-fixed" style={{ '--serial-start': (table.page - 1) * table.pageSize }}>
+          <colgroup>{TOPIC_COLUMNS.map(([key, , , width]) => <col key={key} style={{ width }} />)}</colgroup>
+          <thead>
+            <tr className="border-b border-slate-200 dark:border-gray-700">
+              {TOPIC_COLUMNS.map(([key, label, align]) => (
+                <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort} align={align} className={TOPIC_HEAD}>{label}</SortHeader>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="bg-white dark:bg-gray-900">
+            {table.pageRows.map((topic, idx) => renderRow(topic, idx, table.pageRows.length - 1))}
+          </tbody>
+        </table>
+      </div>
+      <TablePager {...table.pager} noun="topics" className="bg-white dark:border-gray-700 dark:bg-gray-900" />
+    </div>
+  );
+}
 
 // Extract YouTube video ID from any YouTube URL format
 const getYouTubeVideoId = (url) => {
@@ -763,36 +810,14 @@ export default function LearningDetail() {
                         >
                           <div className="p-4 bg-white dark:bg-gray-900">
                             <h4 className="text-sm font-semibold text-slate-700 dark:text-gray-300 mb-3">Topics</h4>
-                            <div className="overflow-x-auto">
-                              <table className="w-full table-fixed">
-                                <colgroup>
-                                  <col style={{ width: '8%' }} />
-                                  <col style={{ width: '22%' }} />
-                                  <col style={{ width: '12%' }} />
-                                  <col style={{ width: '12%' }} />
-                                  <col style={{ width: '11%' }} />
-                                  <col style={{ width: '11%' }} />
-                                  <col style={{ width: '12%' }} />
-                                  <col style={{ width: '12%' }} />
-                                </colgroup>
-                                <thead>
-                                  <tr className="border-b border-slate-200 dark:border-gray-700">
-                                    <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Status</th>
-                                    <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Topic</th>
-                                    <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Problem Link</th>
-                                    <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Importance</th>
-                                    <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Difficulty</th>
-                                    <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Video</th>
-                                    <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Notes</th>
-                                    <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Questions</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="bg-white dark:bg-gray-900">
-                                  {chapter.topics.map((topic, idx) => (
-                                    <tr 
+                            <ChapterTopicsTable
+                              topics={chapter.topics}
+                              isCompleted={isTopicCompleted}
+                              renderRow={(topic, idx, lastIdx) => (
+                                    <tr
                                       key={topic._id}
                                       className={`border-b border-slate-100 dark:border-gray-800 hover:bg-slate-50 dark:hover:bg-gray-800/50 transition-colors ${
-                                        idx === chapter.topics.length - 1 ? 'border-b-0' : ''
+                                        idx === lastIdx ? 'border-b-0' : ''
                                       }`}
                                     >
                                       {/* Status */}
@@ -900,10 +925,8 @@ export default function LearningDetail() {
                                         )}
                                       </td>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
+                              )}
+                            />
                             <div className="mt-3 text-xs text-slate-600 dark:text-gray-400 bg-slate-50 dark:bg-gray-800/60 border border-slate-200 dark:border-gray-700 rounded-lg px-3 py-2">
                               Tip: when you finish a video, click the status circle to mark it complete so your progress updates.
                             </div>

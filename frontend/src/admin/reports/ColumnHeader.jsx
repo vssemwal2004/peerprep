@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Filter, Search, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, Filter, Search, X } from 'lucide-react';
 import { COLUMN_FILTERS, columnFilterActive, facetOptions } from './rosterModel';
 
 const MENU_WIDTH = 264;
@@ -186,9 +186,12 @@ export default function ColumnHeader({
     >
       <span className={`inline-flex items-center gap-0.5 ${justify}`}>
         {sortKey ? (
-          <button type="button" onClick={() => onSort(sortKey)} className="inline-flex items-center gap-1 rounded px-1 py-0.5 uppercase tracking-wider transition-colors hover:text-sky-600 dark:hover:text-sky-400">
+          <button type="button" onClick={() => onSort(sortKey)} title={`Sort by ${label}`} className="group inline-flex items-center gap-1 rounded px-1 py-0.5 uppercase tracking-wider transition-colors hover:text-sky-600 dark:hover:text-sky-400">
             {label}
-            {sortedHere && (sort.dir === 'asc' ? <ChevronUp className="h-3 w-3 text-sky-600" /> : <ChevronDown className="h-3 w-3 text-sky-600" />)}
+            {/* Same indicator as the shared table SortHeader: a faint ⇅ until the column is sorted. */}
+            {sortedHere
+              ? (sort.dir === 'asc' ? <ArrowUp aria-hidden="true" className="h-3 w-3 text-sky-600" /> : <ArrowDown aria-hidden="true" className="h-3 w-3 text-sky-600" />)
+              : <ArrowUpDown aria-hidden="true" className="h-3 w-3 opacity-40 group-hover:opacity-80" />}
           </button>
         ) : <span className="px-1">{label}</span>}
         {hasMenu && (

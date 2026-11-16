@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 
 const formatDate = (value, options = {}) => {
   if (!value) return 'Date not available';
@@ -42,6 +43,47 @@ const buildQuery = (values) => {
   });
   return query.toString();
 };
+
+const toTime = (value) => (value ? new Date(value) : null);
+const isAssessmentCompleted = (assessment) => Boolean(assessment.endTime && new Date(assessment.endTime).getTime() < Date.now());
+
+const assessmentSortValue = (assessment, key) => {
+  if (key === 'startTime') return toTime(assessment.startTime);
+  if (key === 'status') return isAssessmentCompleted(assessment) ? 'Completed' : 'Open';
+  return assessment?.[key];
+};
+
+const studentFeedbackSortValue = (row, key) => {
+  switch (key) {
+    case 'student': return row.student?.name;
+    case 'score': return row.score;
+    case 'submittedAt': return toTime(row.submittedAt);
+    // Pending first (ascending), then submitted responses by rating.
+    case 'feedbackStatus': return row.feedback ? 1 + Number(row.feedback.rating || 0) / 10 : 0;
+    case 'feedbackDate': return toTime(row.feedback?.submittedAt);
+    case 'comments': return row.feedback?.comments;
+    default: return row?.[key];
+  }
+};
+
+const ASSESSMENT_COLUMNS = [
+  { key: 'title', label: 'Assessment', className: 'px-4 py-3' },
+  { key: 'startTime', label: 'Date', className: 'px-3 py-3' },
+  { key: 'status', label: 'Status', className: 'px-3 py-3' },
+  { key: 'completedStudents', label: 'Completed', className: 'px-3 py-3', align: 'center' },
+  { key: 'feedbackCount', label: 'Responses', className: 'px-3 py-3', align: 'center' },
+  { key: 'averageRating', label: 'Average rating', className: 'px-3 py-3' },
+  { key: 'pendingFeedback', label: 'Pending', className: 'px-3 py-3', align: 'center' },
+];
+
+const STUDENT_FEEDBACK_COLUMNS = [
+  { key: 'student', label: 'Student', className: 'px-4 py-2.5' },
+  { key: 'score', label: 'Score', className: 'px-3 py-2.5' },
+  { key: 'submittedAt', label: 'Assessment submitted', className: 'px-3 py-2.5' },
+  { key: 'feedbackStatus', label: 'Feedback status', className: 'px-3 py-2.5' },
+  { key: 'feedbackDate', label: 'Feedback date', className: 'px-3 py-2.5' },
+  { key: 'comments', label: 'Comments', className: 'px-3 py-2.5' },
+];
 
 function RatingStars({ value, size = 'h-4 w-4' }) {
   const rating = Number(value || 0);
@@ -81,17 +123,20 @@ function SummaryTile({ icon: Icon, label, value, helper, tone = 'sky' }) {
   );
 }
 
-function AssessmentTable({ assessments, onOpen }) {
+function AssessmentTable({ table, onOpen }) {
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:border-gray-800 dark:bg-gray-800/80 dark:text-gray-400">
-            <tr><th className="px-4 py-3">Assessment</th><th className="px-3 py-3">Date</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-center">Completed</th><th className="px-3 py-3 text-center">Responses</th><th className="px-3 py-3">Average rating</th><th className="px-3 py-3 text-center">Pending</th><th className="px-4 py-3 text-right">Action</th></tr>
+            <tr>
+              {ASSESSMENT_COLUMNS.map((column) => <SortHeader key={column.key} sortKey={column.key} sort={table.sort} onSort={table.toggleSort} align={column.align} className={column.className}>{column.label}</SortHeader>)}
+              <SortHeader sortable={false} align="right" className="px-4 py-3">Action</SortHeader>
+            </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-            {assessments.map((assessment) => {
-              const isCompleted = assessment.endTime && new Date(assessment.endTime).getTime() < Date.now();
+            {table.pageRows.map((assessment) => {
+              const isCompleted = isAssessmentCompleted(assessment);
               return (
                 <tr key={assessment._id} tabIndex={0} role="button" onClick={() => onOpen(assessment)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(assessment); } }} className="group cursor-pointer transition-colors hover:bg-sky-50/60 focus:bg-sky-50/60 focus:outline-none dark:hover:bg-gray-800/50 dark:focus:bg-gray-800/50">
                   <td className="px-4 py-3"><p className="max-w-sm truncate font-bold text-slate-900 dark:text-white">{assessment.title}</p><p className="mt-0.5 text-[11px] capitalize text-slate-500 dark:text-gray-400">{assessment.assessmentType || 'Mixed'} assessment</p></td>
@@ -108,6 +153,7 @@ function AssessmentTable({ assessments, onOpen }) {
           </tbody>
         </table>
       </div>
+      <TablePager {...table.pager} noun="assessments" />
     </div>
   );
 }
@@ -256,6 +302,7 @@ function AssessmentFeedbackDetail({ assessment, onBack }) {
   }, [loadRows]);
 
   const summary = data.summary || {};
+  const table = useClientTable(data.rows, { getValue: studentFeedbackSortValue, resetKey: `${filters.search}|${filters.from}|${filters.to}` });
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_55%,#eef4ff_100%)] px-3 py-4 dark:bg-gray-950 sm:px-5 lg:px-6">
@@ -339,21 +386,17 @@ function AssessmentFeedbackDetail({ assessment, onBack }) {
               <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Try changing the search or feedback date range.</p>
             </div>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <table className="min-w-[1020px] w-full text-left">
                 <thead className="bg-slate-50 dark:bg-gray-800/80">
                   <tr className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-gray-400">
-                    <th className="px-4 py-2.5">Student</th>
-                    <th className="px-3 py-2.5">Score</th>
-                    <th className="px-3 py-2.5">Assessment submitted</th>
-                    <th className="px-3 py-2.5">Feedback status</th>
-                    <th className="px-3 py-2.5">Feedback date</th>
-                    <th className="px-3 py-2.5">Comments</th>
-                    <th className="px-4 py-2.5 text-right">Action</th>
+                    {STUDENT_FEEDBACK_COLUMNS.map((column) => <SortHeader key={column.key} sortKey={column.key} sort={table.sort} onSort={table.toggleSort} className={column.className}>{column.label}</SortHeader>)}
+                    <SortHeader sortable={false} align="right" className="px-4 py-2.5">Action</SortHeader>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-                  {data.rows.map((row) => (
+                  {table.pageRows.map((row) => (
                     <tr
                       key={row.id}
                       className="group cursor-pointer align-top transition-colors hover:bg-sky-50/50 focus:bg-sky-50/50 focus:outline-none dark:hover:bg-gray-800/40 dark:focus:bg-gray-800/40"
@@ -381,6 +424,8 @@ function AssessmentFeedbackDetail({ assessment, onBack }) {
                 </tbody>
               </table>
             </div>
+            <TablePager {...table.pager} noun="students" />
+            </>
           )}
         </section>
         {selectedStudent && <StudentFeedbackModal row={selectedStudent} onClose={() => setSelectedStudent(null)} />}
@@ -413,6 +458,8 @@ export default function AssessmentFeedback() {
     const timeoutId = setTimeout(() => { void loadAssessments(); }, 250);
     return () => clearTimeout(timeoutId);
   }, [loadAssessments]);
+
+  const assessmentTable = useClientTable(assessments, { getValue: assessmentSortValue, resetKey: `${filters.search}|${filters.from}|${filters.to}` });
 
   const overview = useMemo(() => assessments.reduce((summary, assessment) => ({
     assessments: summary.assessments + 1,
@@ -493,7 +540,7 @@ export default function AssessmentFeedback() {
               <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Try a different assessment name or date range.</p>
             </div>
           ) : (
-            <AssessmentTable assessments={assessments} onOpen={setSelectedAssessment} />
+            <AssessmentTable table={assessmentTable} onOpen={setSelectedAssessment} />
           )}
         </section>
       </div>

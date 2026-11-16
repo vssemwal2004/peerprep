@@ -2,6 +2,9 @@ import { useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Archive,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   CalendarClock,
   CheckCircle2,
   ClipboardList,
@@ -22,7 +25,8 @@ import { ROOT, uid } from "./definition";
 import { useDebounced, useRemote } from "./useRemote";
 import { StatusChip } from "./wizard/WizardShell";
 import { COMPLETE_TEXT, REOPEN_TEXT, interviewStatus } from "./wizard/steps";
-import { Dialog, Field, Notice, Pagination, Select, TextInput, primaryClass, secondaryClass, surfaceClass } from "./ui";
+import { Dialog, Field, Notice, Select, TextInput, primaryClass, secondaryClass, surfaceClass } from "./ui";
+import { TablePager, nextSort } from "../../components/table";
 import { scrollStripClass, useScrollFade } from "./useScrollFade";
 
 const COLUMNS = "xl:grid-cols-[minmax(260px,2.4fr)_120px_110px_150px_120px_40px]";
@@ -38,6 +42,31 @@ const SORTS = [
   { value: "oldest", label: "Oldest edited" },
   { value: "title", label: "Name A–Z" },
 ];
+// The sort menu's presets as header sorts, so the menu and the column headers stay in step.
+const PRESET_SORTS = { updated: { key: "edited", direction: "desc" }, oldest: { key: "edited", direction: "asc" }, title: { key: "title", direction: "asc" } };
+const presetOf = (sort) => Object.keys(PRESET_SORTS).find((value) => PRESET_SORTS[value].key === sort?.key && PRESET_SORTS[value].direction === sort?.direction) || "";
+const HEADERS = [["title", "Interview"], ["questions", "Questions"], ["duration", "Duration"], ["status", "Status"], ["edited", "Last edited"]];
+
+/** A column-header sort button for the directory's grid header (the same cycle as the shared SortHeader). */
+function GridSortHeader({ sortKey, label, sort, onSort, children }) {
+  const active = sort?.key === sortKey;
+  const Icon = !active ? ArrowUpDown : sort.direction === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <span>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        title={`Sort by ${label}`}
+        className={`group inline-flex items-center gap-1 rounded-md uppercase tracking-wider outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sky-500/60 ${active ? "text-sky-700 dark:text-sky-300" : "hover:text-slate-800 dark:hover:text-gray-100"}`}
+      >
+        <span>{label}</span>
+        <Icon aria-hidden="true" className={`h-3 w-3 shrink-0 ${active ? "opacity-100" : "opacity-40 group-hover:opacity-80"}`} />
+        <span className="sr-only">{active ? (sort.direction === "asc" ? ", sorted ascending" : ", sorted descending") : ", not sorted"}</span>
+      </button>
+      {children}
+    </span>
+  );
+}
 
 const edited = (value) => {
   const date = new Date(value);
@@ -90,8 +119,13 @@ export default function Directory() {
   const search = params.get("search") || "",
     status = params.get("status") || "",
     sort = params.get("sort") || "updated",
+    sortBy = params.get("sortBy") || "",
+    sortOrder = params.get("sortOrder") === "desc" ? "desc" : "asc",
     page = Number(params.get("page")) || 1,
     limit = Number(params.get("limit")) || 25;
+  // A header sort (sortBy) wins over the menu preset; with neither the list is last edited first.
+  const columnSort = sortBy ? { key: sortBy, direction: sortOrder } : PRESET_SORTS[sort] || PRESET_SORTS.updated;
+  const menuValue = sortBy ? presetOf(columnSort) || "column" : sort;
   const settled = useDebounced(search),
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
@@ -101,9 +135,39 @@ export default function Directory() {
   const key = useRef("");
   const strip = useScrollFade([status]);
   const remote = useRemote(
-    () => interviewApi.list({ search: settled, status, sort, page, limit }),
-    [settled, status, sort, page, limit],
+    () => interviewApi.list({ search: settled, status, sort, page, limit, ...(sortBy ? { sortBy, sortOrder } : {}) }),
+    [settled, status, sort, page, limit, sortBy, sortOrder],
   );
+  const sortColumn = (key) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p);
+        const value = nextSort(columnSort, key);
+        next.delete("sort");
+        next.delete("page");
+        if (value) {
+          next.set("sortBy", value.key);
+          next.set("sortOrder", value.direction);
+        } else {
+          next.delete("sortBy");
+          next.delete("sortOrder");
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  const choosePreset = (value) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p);
+        next.delete("sortBy");
+        next.delete("sortOrder");
+        next.delete("page");
+        if (value && value !== "column") next.set("sort", value);
+        return next;
+      },
+      { replace: true },
+    );
   const set = (name, value) =>
     setParams(
       (p) => {
@@ -213,10 +277,10 @@ export default function Directory() {
             </div>
             <Select
               aria-label="Sort interviews"
-              value={sort}
-              onChange={(e) => set("sort", e.target.value)}
+              value={menuValue}
+              onChange={(e) => choosePreset(e.target.value)}
               className="sm:w-44"
-              options={SORTS}
+              options={menuValue === "column" ? [...SORTS, { value: "column", label: "Column sort" }] : SORTS}
             />
           </div>
         </div>
@@ -258,11 +322,11 @@ export default function Directory() {
         ) : (
           <>
             <div className={`hidden gap-4 border-b border-slate-100 bg-slate-50/80 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:border-gray-800 dark:bg-gray-950/50 dark:text-gray-400 xl:grid ${COLUMNS}`}>
-              <span>Interview{total ? <span className="ml-1.5 font-medium normal-case tracking-normal text-slate-400 dark:text-gray-500">{total.toLocaleString()}</span> : null}</span>
-              <span>Questions</span>
-              <span>Duration</span>
-              <span>Status</span>
-              <span>Last edited</span>
+              {HEADERS.map(([key, label]) => (
+                <GridSortHeader key={key} sortKey={key} label={label} sort={columnSort} onSort={sortColumn}>
+                  {key === "title" && total ? <span className="ml-1.5 font-medium normal-case tracking-normal text-slate-400 dark:text-gray-500">{total.toLocaleString()}</span> : null}
+                </GridSortHeader>
+              ))}
               <span className="sr-only">Actions</span>
             </div>
             <ul className="divide-y divide-slate-100 dark:divide-gray-800">
@@ -350,11 +414,18 @@ export default function Directory() {
             </ul>
           </>
         )}
-        <Pagination
-          value={remote.result?.pagination}
-          onPage={(v) => set("page", String(v))}
-          onLimit={(v) => set("limit", String(v))}
-        />
+        {remote.result?.pagination && (
+          <TablePager
+            page={remote.result.pagination.page || page}
+            pageSize={limit}
+            pageSizeOptions={[25, 50, 100]}
+            total={remote.result.pagination.total || 0}
+            onPage={(v) => set("page", String(v))}
+            onPageSize={(v) => set("limit", String(v))}
+            busy={remote.loading}
+            noun="interviews"
+          />
+        )}
       </section>
       {confirm && (
         <Dialog

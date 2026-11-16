@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../utils/api';
 import InterviewWorkspaceNav from '../components/interviews/InterviewWorkspaceNav';
 import InterviewDirectory from '../components/interviews/InterviewDirectory';
 import { InterviewStat as StatCard, InterviewPair as PairCard } from '../components/interviews/InterviewSummary';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 import {
   CheckCircle,
   AlertCircle,
@@ -22,6 +23,23 @@ import {
   UserMinus,
   Trash2
 } from 'lucide-react';
+
+const INVITATION_LABELS = { sent: 'Sent', failed: 'Failed', pending: 'Queued' };
+const invitationLabel = (status) => INVITATION_LABELS[status] || 'Not sent';
+
+const participantSortValue = (item, key) => {
+  const student = item.studentId || {};
+  switch (key) {
+    case 'student': return student.name;
+    case 'academic': return Number(student.semester) || null;
+    case 'group': return student.group;
+    case 'mail': return invitationLabel(item.invitationStatus);
+    case 'participation': return item.joinedAt ? 'Joined' : 'Not joined';
+    default: return item?.[key];
+  }
+};
+
+const PARTICIPANT_COLUMNS = [['student', 'Student details'], ['academic', 'Academic details'], ['group', 'Coordinator group'], ['mail', 'Mail status'], ['participation', 'Participation']];
 
 // Main Component
 export default function EventDetail() {
@@ -46,6 +64,10 @@ export default function EventDetail() {
   const [globalParticipantMenuOpen, setGlobalParticipantMenuOpen] = useState(false);
   const [participantMenuId, setParticipantMenuId] = useState('');
   const [activeDataView, setActiveDataView] = useState('students');
+  const assignedParticipants = useMemo(() => participants.filter((item) => item.assignmentStatus === 'assigned'), [participants]);
+  const participantTable = useClientTable(assignedParticipants, { getValue: participantSortValue, resetKey: id });
+  const pageParticipantIds = participantTable.pageRows.map((item) => String(item.studentId?._id || '')).filter(Boolean);
+  const pageAllSelected = pageParticipantIds.length > 0 && pageParticipantIds.every((studentId) => selectedParticipantIds.includes(studentId));
 
   const getBasePath = useCallback(() => {
     if (location.pathname.startsWith('/admin/interviews/one-to-one/past')) return '/admin/interviews/one-to-one/past';
@@ -336,7 +358,7 @@ export default function EventDetail() {
                         Interview Analytics
                       </h3>
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-                        <StatCard icon={UserCheck} label="Assigned" value={participants.filter((item) => item.assignmentStatus === 'assigned').length} />
+                        <StatCard icon={UserCheck} label="Assigned" value={assignedParticipants.length} />
                         <StatCard icon={Users} label="Joined" value={analytics.joined} />
                         <StatCard icon={Link2} label="Pairs" value={analytics.pairs} />
                         <StatCard icon={Calendar} label="Scheduled" value={analytics.scheduled} />
@@ -353,7 +375,7 @@ export default function EventDetail() {
                       className={`flex items-center justify-between rounded-xl px-4 py-3 text-left transition ${activeDataView === 'students' ? 'bg-white text-sky-700 shadow-sm ring-1 ring-slate-200 dark:bg-gray-800 dark:text-sky-300 dark:ring-gray-700' : 'text-slate-600 hover:bg-white/70 dark:text-gray-300 dark:hover:bg-gray-800/60'}`}
                     >
                       <span className="flex items-center gap-3"><UserCheck className="h-5 w-5" /><span><span className="block text-sm font-bold">Assigned Students</span><span className="mt-0.5 block text-xs font-medium opacity-70">Student directory and mail access</span></span></span>
-                      <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">{participants.filter((item) => item.assignmentStatus === 'assigned').length}</span>
+                      <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">{assignedParticipants.length}</span>
                     </button>
                     <button
                       type="button"
@@ -378,7 +400,7 @@ export default function EventDetail() {
                         </button>
                         {globalParticipantMenuOpen && (
                           <div data-platform-action-menu className="absolute right-0 top-11 z-20 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-gray-700 dark:bg-gray-800">
-                            <button type="button" onClick={() => setSelectedParticipantIds(participants.filter((item) => item.assignmentStatus === 'assigned').map((item) => String(item.studentId?._id)))} className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:text-white dark:hover:bg-gray-700">Select all students</button>
+                            <button type="button" onClick={() => setSelectedParticipantIds(assignedParticipants.map((item) => String(item.studentId?._id)).filter(Boolean))} className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:text-white dark:hover:bg-gray-700">Select all students</button>
                             <button type="button" disabled={!selectedParticipantIds.length || actionBusy} onClick={() => handleSendInvitations(selectedParticipantIds)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-40 dark:text-sky-300 dark:hover:bg-gray-700"><Send className="h-3.5 w-3.5" />Send/Resend selected ({selectedParticipantIds.length})</button>
                             <button type="button" disabled={actionBusy} onClick={() => handleSendInvitations([])} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-40 dark:text-indigo-300 dark:hover:bg-gray-700"><Send className="h-3.5 w-3.5" />Send/Resend all</button>
                           </div>
@@ -386,31 +408,31 @@ export default function EventDetail() {
                       </div>
                     </div>
                     <div className="max-h-[32rem] overflow-auto">
-                      {participants.filter((item) => item.assignmentStatus === 'assigned').length === 0 ? (
+                      {assignedParticipants.length === 0 ? (
                         <div className="p-6 text-center text-sm text-slate-500">No students assigned.</div>
                       ) : (
                         <table className="w-full min-w-[960px] text-left text-xs">
                           <thead className="sticky top-0 bg-slate-50 text-slate-500 dark:bg-gray-900 dark:text-gray-400">
                             <tr>
-                              <th className="w-14 px-4 py-3">
+                              <SortHeader sortable={false} className="w-14 px-4 py-3">
                                 <input
                                   type="checkbox"
-                                  aria-label="Select all assigned students"
-                                  checked={participants.filter((item) => item.assignmentStatus === 'assigned').length > 0 && selectedParticipantIds.length === participants.filter((item) => item.assignmentStatus === 'assigned').length}
-                                  onChange={(event) => setSelectedParticipantIds(event.target.checked ? participants.filter((item) => item.assignmentStatus === 'assigned').map((item) => String(item.studentId?._id)).filter(Boolean) : [])}
+                                  aria-label="Select students on this page"
+                                  checked={pageAllSelected}
+                                  onChange={(event) => setSelectedParticipantIds((current) => (event.target.checked
+                                    ? [...new Set([...current, ...pageParticipantIds])]
+                                    : current.filter((studentId) => !pageParticipantIds.includes(studentId))))}
                                   className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
                                 />
-                              </th>
-                              <th className="px-4 py-3">Student details</th>
-                              <th className="px-4 py-3">Academic details</th>
-                              <th className="px-4 py-3">Coordinator group</th>
-                              <th className="px-4 py-3">Mail status</th>
-                              <th className="px-4 py-3">Participation</th>
-                              <th className="px-4 py-3 text-right">Actions</th>
+                              </SortHeader>
+                              {PARTICIPANT_COLUMNS.map(([key, label]) => (
+                                <SortHeader key={key} sortKey={key} sort={participantTable.sort} onSort={participantTable.toggleSort} className="px-4 py-3">{label}</SortHeader>
+                              ))}
+                              <SortHeader sortable={false} align="right" className="px-4 py-3">Actions</SortHeader>
                             </tr>
                           </thead>
                           <tbody>
-                            {participants.filter((item) => item.assignmentStatus === 'assigned').map((item) => {
+                            {participantTable.pageRows.map((item) => {
                               const student = item.studentId || {};
                               const studentId = String(student._id || '');
                               return (
@@ -419,7 +441,7 @@ export default function EventDetail() {
                                   <td className="px-4 py-4"><div className="font-bold text-slate-900 dark:text-white">{student.name || 'Unnamed student'}</div><div className="mt-1 text-slate-500">{student.studentId || 'No registration ID'}</div><div className="mt-0.5 text-slate-500">{student.email || 'No email'}</div></td>
                                   <td className="px-4 py-4 text-slate-600 dark:text-gray-300"><div className="font-semibold text-slate-800 dark:text-gray-200">Semester {student.semester || '-'}</div><div className="mt-1">{student.course || 'Course not set'} · {student.branch || 'Branch not set'}</div><div className="mt-0.5 text-slate-400">{student.college || 'College not set'}</div></td>
                                   <td className="px-4 py-4 text-slate-600 dark:text-gray-300"><div className="font-semibold">{student.group || 'No group'}</div></td>
-                                  <td className="px-4 py-4"><span className={`rounded-full px-2.5 py-1 font-semibold ${item.invitationStatus === 'sent' ? 'bg-emerald-50 text-emerald-700' : item.invitationStatus === 'failed' ? 'bg-rose-50 text-rose-700' : item.invitationStatus === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{item.invitationStatus === 'sent' ? 'Sent' : item.invitationStatus === 'failed' ? 'Failed' : item.invitationStatus === 'pending' ? 'Queued' : 'Not sent'}</span></td>
+                                  <td className="px-4 py-4"><span className={`rounded-full px-2.5 py-1 font-semibold ${item.invitationStatus === 'sent' ? 'bg-emerald-50 text-emerald-700' : item.invitationStatus === 'failed' ? 'bg-rose-50 text-rose-700' : item.invitationStatus === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{invitationLabel(item.invitationStatus)}</span></td>
                                   <td className="px-4 py-4 text-slate-600 dark:text-gray-300"><span className={`inline-flex items-center gap-1.5 font-semibold ${item.joinedAt ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500'}`}><span className={`h-2 w-2 rounded-full ${item.joinedAt ? 'bg-emerald-500' : 'bg-slate-300'}`} />{item.joinedAt ? 'Joined' : 'Not joined'}</span></td>
                                   <td className="relative px-4 py-4 text-right">
                                     <button data-platform-menu-trigger aria-expanded={participantMenuId === item._id} type="button" onClick={() => setParticipantMenuId((current) => current === item._id ? '' : item._id)} className="rounded-lg p-1.5 hover:bg-slate-100 dark:hover:bg-gray-700"><MoreVertical className="h-4 w-4" /></button>
@@ -437,6 +459,7 @@ export default function EventDetail() {
                         </table>
                       )}
                     </div>
+                    {assignedParticipants.length > 0 && <TablePager {...participantTable.pager} busy={actionBusy} noun="students" />}
                   </div>
                   )}
 

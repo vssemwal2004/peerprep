@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, Layers3, LoaderCircle, Search, Shapes, Shuffle, SlidersHorizontal, Star, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Building2, Layers3, LoaderCircle, Search, Shapes, Shuffle, SlidersHorizontal, Star, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { buildTagsParam, PROBLEM_SORT_OPTIONS } from './problemUtils';
@@ -12,14 +12,21 @@ import TopicsPanel from './problems/TopicsPanel';
 import PracticeCalendar from './problems/PracticeCalendar';
 import ProblemRow, { ProblemRowsSkeleton } from './problems/ProblemRow';
 import { CreateListModal, SaveToListsModal } from './problems/ProblemListModals';
-import { DIFFICULTY, fieldBase, focusRing, PAGE_SIZE_OPTIONS, problemStatus } from './problems/problemsUi';
+import { DEFAULT_PAGE_SIZE, DIFFICULTY, fieldBase, focusRing, PAGE_SIZE_OPTIONS, problemStatus } from './problems/problemsUi';
 import PracticePager from './problems/PracticePager';
+import { nextSort } from '../components/table';
 
 const PAGE_SIZE_KEY = 'peerprep:prepcoding-page-size';
 const SEARCH_DEBOUNCE_MS = 250;
 const NO_ORDER = 2147483647;
+// Every order here is one the practice endpoint sorts on (questionPractice.js SORT_KEYS / sortPractice), so the
+// column headers and the sort menu always agree and paging stays on the server.
 const QUESTION_SORT_OPTIONS = [...PROBLEM_SORT_OPTIONS.filter((option) => !option.value.startsWith('acceptance')),
+  { value: 'sequence-desc', label: 'Question Sequence (Reverse)', sortBy: 'displayOrder', sortOrder: 'desc' },
+  { value: 'title-asc', label: 'Title (A to Z)', sortBy: 'title', sortOrder: 'asc' },
+  { value: 'title-desc', label: 'Title (Z to A)', sortBy: 'title', sortOrder: 'desc' },
   { value: 'latest-asked', label: 'Recently Asked', sortBy: 'latestInterviewDate', sortOrder: 'desc' }];
+const ROW_GRID = 'sm:grid-cols-[24px_minmax(0,1fr)_100px_78px_32px]';
 const FAVORITES_KEY = 'peerprep:problem-favorites';
 const DIFFICULTY_OPTIONS = ['', 'Easy', 'Medium', 'Hard'];
 
@@ -33,8 +40,35 @@ function readFavorites() {
 function readPageSize() {
   try {
     const stored = Number(window.localStorage.getItem(PAGE_SIZE_KEY));
-    return PAGE_SIZE_OPTIONS.includes(stored) ? stored : PAGE_SIZE_OPTIONS[0];
-  } catch { return PAGE_SIZE_OPTIONS[0]; }
+    return PAGE_SIZE_OPTIONS.includes(stored) ? stored : DEFAULT_PAGE_SIZE;
+  } catch { return DEFAULT_PAGE_SIZE; }
+}
+
+/** A column label that sorts the server-paged list, styled like the shared table SortHeader. */
+function ColumnSort({ sortKey, sort, onSort, align = 'left', className = '', children }) {
+  const direction = sort?.key === sortKey ? sort.direction : null;
+  const Icon = direction === 'asc' ? ArrowUp : direction === 'desc' ? ArrowDown : ArrowUpDown;
+  return <button type="button" onClick={() => onSort(sortKey)} title={`Sort by ${children}`}
+    className={`group inline-flex items-center gap-1 rounded-md ${align === 'right' ? 'justify-end' : ''} ${direction ? 'text-sky-700 dark:text-sky-300' : 'hover:text-slate-800 dark:hover:text-zinc-100'} ${focusRing} ${className}`}>
+    <span>{children}</span>
+    <Icon aria-hidden="true" className={`h-3 w-3 shrink-0 ${direction ? 'opacity-100' : 'opacity-40 group-hover:opacity-80'}`} />
+    <span className="sr-only">{direction === 'asc' ? ', sorted ascending' : direction === 'desc' ? ', sorted descending' : ', not sorted'}</span>
+  </button>;
+}
+
+/** Column labels over the question cards (tablet and up), lined up with ProblemRow's grid. */
+function ProblemColumns({ sort, onSort }) {
+  return <div aria-label="Sort questions by column" role="group"
+    className={`mb-2 hidden items-center gap-3 border border-transparent pl-4 pr-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400 sm:grid ${ROW_GRID}`}>
+    <span><span className="sr-only">Status</span></span>
+    <div className="flex items-center gap-2">
+      <ColumnSort sortKey="displayOrder" sort={sort} onSort={onSort} align="right" className="w-10">No.</ColumnSort>
+      <ColumnSort sortKey="title" sort={sort} onSort={onSort}>Title</ColumnSort>
+    </div>
+    <span>Type</span>
+    <ColumnSort sortKey="difficulty" sort={sort} onSort={onSort}>Difficulty</ColumnSort>
+    <span aria-hidden="true" />
+  </div>;
 }
 
 /** The search chip names a question-number search as such; other searches show the typed text. */
@@ -163,6 +197,13 @@ export default function ProblemsPage() {
   };
   const selectView = (next) => { setShowFavorites(next.kind === 'favorites'); setSelectedListId(next.kind === 'list' ? next.id : ''); };
   const clearSearch = () => { setSearchQuery(''); setDebouncedSearch(''); };
+  // Headers cycle ascending → descending → off; off returns to the view's default order (the sort menu follows).
+  const columnSort = { key: resolvedSort.sortBy, direction: resolvedSort.sortOrder };
+  const sortByColumn = (key) => {
+    const next = nextSort(columnSort, key);
+    const match = next && QUESTION_SORT_OPTIONS.find((option) => option.sortBy === next.key && option.sortOrder === next.direction);
+    setSortValue(match ? match.value : (selectedCompany ? 'latest-asked' : 'sequence-asc'));
+  };
   const goToPage = (next) => {
     // The pager shows the previous response's pages while a new filter loads; ignore clicks until it lands.
     if (loading) return;
@@ -262,7 +303,8 @@ export default function ProblemsPage() {
           </div>
 
           <div className="mt-3 flex min-h-[28px] flex-wrap items-center gap-2 text-[12.5px] text-slate-500 dark:text-zinc-400">
-            <span><strong className="font-semibold tabular-nums text-slate-800 dark:text-zinc-100">{Number(pagination.total || 0).toLocaleString()}</strong> {pagination.total === 1 ? 'question' : 'questions'}</span>
+            <span><strong className="font-semibold tabular-nums text-slate-800 dark:text-zinc-100">{Number(pagination.total || 0).toLocaleString()}</strong> {pagination.total === 1 ? 'question' : 'questions'}
+              {problems.length > 0 && <><span className="text-slate-400 dark:text-zinc-500"> · </span>{solvedOnPage} of {problems.length} solved on this page</>}</span>
             {activeFilters.map((filter) => <FilterChip key={filter.key} label={filter.label} onRemove={filter.clear} />)}
             {activeFilters.length > 1 && <button type="button" onClick={clearFilters} className={`rounded font-medium text-slate-600 underline-offset-2 hover:underline dark:text-zinc-300 ${focusRing}`}>Clear all</button>}
             {loading && problems.length > 0 && <LoaderCircle className="h-3.5 w-3.5 animate-spin text-sky-500" aria-label="Updating" />}
@@ -277,6 +319,7 @@ export default function ProblemsPage() {
                 {activeFilters.length > 0 && <button type="button" onClick={clearFilters} className={`mt-4 rounded-xl bg-slate-900 px-4 py-2 text-[12.5px] font-medium text-white dark:bg-white dark:text-slate-900 ${focusRing}`}>Clear filters</button>}
               </div>
                 : <>
+                  <ProblemColumns sort={columnSort} onSort={sortByColumn} />
                   {/* The current page stays in place, dimmed, until the next one arrives. */}
                   <ul aria-busy={loading} className={`space-y-2 transition-opacity duration-150 ${loading ? 'opacity-60' : ''}`}>
                     {problems.map((problem, index) => <ProblemRow key={problem._id} problem={problem}
@@ -284,8 +327,7 @@ export default function ProblemsPage() {
                       saved={favorites.includes(String(problem.listId)) || lists.some((list) => list.problemIds.includes(String(problem.listId)))}
                       opening={openingProblemId === problem._id} onOpen={openProblem} onSave={setListPickerProblem} onCompany={selectCompany} />)}
                   </ul>
-                  <PracticePager busy={loading} page={pagination.page || 1} pages={pagination.pages || 1} total={pagination.total || 0} limit={pagination.limit || pageSize} pageSize={pageSize}
-                    shown={problems.length} solvedOnPage={solvedOnPage} onPage={goToPage} onPageSize={setPageSize} />
+                  <PracticePager busy={loading} page={pagination.page || 1} total={pagination.total || 0} pageSize={pageSize} onPage={goToPage} onPageSize={setPageSize} />
                 </>}
           </div>
         </section>

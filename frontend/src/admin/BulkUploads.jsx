@@ -4,8 +4,6 @@ import {
   AlertTriangle,
   Archive,
   CalendarDays,
-  ChevronLeft,
-  ChevronRight,
   Database,
   Download,
   FileQuestion,
@@ -25,6 +23,7 @@ import {
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
+import { SortHeader, TablePager, nextSort } from '../components/table';
 
 const TYPE_OPTIONS = [
   { value: '', label: 'All data types' },
@@ -64,6 +63,8 @@ export default function BulkUploads() {
   const [filters, setFilters] = useState(emptyFilters);
   const [appliedFilters, setAppliedFilters] = useState(emptyFilters);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [sort, setSort] = useState(null);
   const [data, setData] = useState({ batches: [], pagination: { page: 1, pages: 1, total: 0 }, facets: { types: [], statuses: [], uploaders: [] } });
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState('');
@@ -75,14 +76,14 @@ export default function BulkUploads() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await api.listBulkUploads({ ...appliedFilters, page, limit: 25 });
+      const response = await api.listBulkUploads({ ...appliedFilters, page, limit: pageSize, sortBy: sort?.key, sortOrder: sort?.direction });
       setData(response);
     } catch (error) {
       toast.error(error.message || 'Failed to load bulk uploads.');
     } finally {
       setLoading(false);
     }
-  }, [appliedFilters, page, toast]);
+  }, [appliedFilters, page, pageSize, sort, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -91,6 +92,9 @@ export default function BulkUploads() {
     records: data.batches.reduce((sum, batch) => sum + Number(batch.recordCount || 0), 0),
     failed: data.batches.reduce((sum, batch) => sum + Number(batch.failedCount || 0), 0),
   }), [data]);
+
+  const toggleSort = (key) => { setSort((current) => nextSort(current, key)); setPage(1); };
+  const changePageSize = (size) => { setPageSize(size); setPage(1); };
 
   const applyFilters = (event) => {
     event?.preventDefault?.();
@@ -191,9 +195,9 @@ export default function BulkUploads() {
         </form>
 
         <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-          <div className="overflow-x-auto"><table className="w-full min-w-[1150px] text-left text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 dark:border-gray-800 dark:bg-gray-800/70"><tr><th className="px-5 py-3">Upload list</th><th className="px-5 py-3">Data type</th><th className="px-5 py-3">Uploaded</th><th className="px-5 py-3">Records</th><th className="px-5 py-3">Result</th><th className="px-5 py-3">Owner</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Actions</th></tr></thead>
+          <div className="overflow-x-auto"><table className="w-full min-w-[1150px] text-left text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 dark:border-gray-800 dark:bg-gray-800/70"><tr>{[['name', 'Upload list'], ['entityType', 'Data type'], ['createdAt', 'Uploaded'], ['recordCount', 'Records'], ['result', 'Result'], ['owner', 'Owner'], ['status', 'Status']].map(([key, label]) => <SortHeader key={key} sortKey={key} sort={sort} onSort={toggleSort} className="px-5 py-3">{label}</SortHeader>)}<SortHeader sortable={false} align="right" className="px-5 py-3">Actions</SortHeader></tr></thead>
             <tbody className="divide-y divide-slate-100 dark:divide-gray-800">{loading ? <tr><td colSpan="8" className="px-5 py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-sky-600" /></td></tr> : data.batches.map((batch) => { const meta = TYPE_META[batch.entityType] || TYPE_META.question_mixed; const Icon = meta.Icon; return <tr key={batch._id} onClick={() => setSelected(batch)} className="cursor-pointer transition hover:bg-sky-50/50 dark:hover:bg-sky-950/10"><td className="px-5 py-4"><div className="flex items-center gap-3"><span className="rounded-xl bg-slate-100 p-2 text-slate-500 dark:bg-gray-800"><FileSpreadsheet className="h-4 w-4" /></span><div><p className="max-w-[260px] truncate font-bold text-slate-900 dark:text-white">{batch.name}</p><p className="mt-0.5 max-w-[260px] truncate text-[11px] text-slate-500">{batch.originalFileName}</p></div></div></td><td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold ${meta.tone}`}><Icon className="h-3.5 w-3.5" />{meta.label}</span></td><td className="px-5 py-4 text-xs text-slate-600 dark:text-gray-300"><span className="inline-flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" />{new Date(batch.createdAt).toLocaleString()}</span></td><td className="px-5 py-4 font-bold text-slate-800 dark:text-gray-200">{batch.recordCount}</td><td className="px-5 py-4 text-xs"><span className="text-emerald-600">{batch.createdCount || 0} created</span><span className="mx-1 text-slate-300">•</span><span className="text-blue-600">{batch.updatedCount || 0} updated</span>{batch.failedCount > 0 && <><span className="mx-1 text-slate-300">•</span><span className="text-rose-600">{batch.failedCount} failed</span></>}</td><td className="px-5 py-4"><p className="text-xs font-bold text-slate-700 dark:text-gray-200">{batch.uploadedBy?.name || batch.uploadedByEmail || 'Administrator'}</p><p className="text-[10px] text-slate-400">{batch.uploadedBy?.email || batch.uploadedByEmail}</p></td><td className="px-5 py-4"><StatusBadge status={batch.status} /></td><td className="px-5 py-4" onClick={(event) => event.stopPropagation()}><div className="flex justify-end gap-1"><button title="Download uploaded data" onClick={() => download(batch, 'data')} disabled={workingId === batch._id} className="rounded-lg p-2 text-slate-500 hover:bg-sky-50 hover:text-sky-700 disabled:opacity-40 dark:hover:bg-gray-800"><Download className="h-4 w-4" /></button>{batch.status !== 'deleted' && <><button title="Rename" onClick={() => rename(batch)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-gray-800"><Pencil className="h-4 w-4" /></button><button title={batch.status === 'archived' ? 'Restore' : 'Archive'} onClick={() => changeStatus(batch)} className="rounded-lg p-2 text-slate-500 hover:bg-amber-50 hover:text-amber-700 dark:hover:bg-gray-800">{batch.status === 'archived' ? <RotateCcw className="h-4 w-4" /> : <Archive className="h-4 w-4" />}</button><button title="Delete uploaded data" onClick={() => openDelete(batch)} className="rounded-lg p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30"><Trash2 className="h-4 w-4" /></button></>}</div></td></tr>; })}{!loading && !data.batches.length && <tr><td colSpan="8" className="px-5 py-16 text-center text-sm text-slate-500">No uploads match these filters.</td></tr>}</tbody></table></div>
-          <div className="flex items-center justify-between border-t border-slate-200 px-5 py-3 text-xs text-slate-500 dark:border-gray-800"><span>{data.pagination.total || 0} uploads</span><div className="flex items-center gap-2"><button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="rounded-lg border border-slate-200 p-2 disabled:opacity-30 dark:border-gray-700"><ChevronLeft className="h-3.5 w-3.5" /></button><span>Page {data.pagination.page || 1} of {data.pagination.pages || 1}</span><button disabled={page >= (data.pagination.pages || 1)} onClick={() => setPage((value) => value + 1)} className="rounded-lg border border-slate-200 p-2 disabled:opacity-30 dark:border-gray-700"><ChevronRight className="h-3.5 w-3.5" /></button></div></div>
+          <TablePager page={data.pagination.page || page} pageSize={pageSize} total={data.pagination.total || 0} onPage={setPage} onPageSize={changePageSize} busy={loading} noun="uploads" />
         </section>
       </div>
 

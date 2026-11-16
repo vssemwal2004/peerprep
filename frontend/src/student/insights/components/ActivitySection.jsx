@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { CalendarDays, Flame, Trophy } from "lucide-react";
 import { activityCalendarOption, weekdayOption } from "../insightCharts";
 import { daysAgoText, formatNumber } from "../insightModel";
-import { Card, CardTitle, Chart, Figure, Section } from "./ui";
+import { Card, CardTitle, Chart, Figure, LatestFirstScroll, Section } from "./ui";
 
 const FEATURE_LABELS = [["coding", "Practice", "#0284c7"], ["learning", "Lessons", "#14b8a6"], ["tests", "Tests", "#f59e0b"], ["interviews", "Interviews", "#8b5cf6"]];
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -26,9 +26,7 @@ export default function ActivitySection({ activity, access }) {
         </Card>
         <Card className="p-4 lg:col-span-3">
           <CardTitle title="Activity calendar" hint="Darker means more done that day" />
-          <div className="-mx-1 overflow-x-auto px-1">
-            <div className="min-w-[720px]"><Chart option={calendar} height={140} label="Activity calendar for the last 12 months" /></div>
-          </div>
+          <LatestFirstScroll><Chart option={calendar} height={140} label="Activity calendar for the last 12 months" /></LatestFirstScroll>
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
             {totals.map((item) => (
               <div key={item.key} className="flex min-w-[120px] flex-1 items-center gap-2">

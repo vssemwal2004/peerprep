@@ -1,13 +1,17 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAnalysisApi } from "../analysisScope";
+import { PageCheckbox, RowCheckbox, SelectionBar, SendEmailDialog } from "./StudentMail";
+import useStudentSelection from "./useStudentSelection";
 import { AnimatedNumber } from "./Motion";
 import {
   Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Bot, BookOpenCheck, CalendarClock, CheckCircle2, CircleDashed, ClipboardList,
-  Flag, Flame, ListChecks, MessagesSquare, PauseCircle, PlayCircle, Target, Trophy, Users, XCircle,
+  Flag, Flame, ListChecks, MessagesSquare, PauseCircle, PlayCircle, Search, Target, Trophy, Users, X, XCircle,
 } from "lucide-react";
 import { DIFFICULTY_COLORS } from "../charts/chartTheme";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
 import { isKpiActive, kpiRule } from "../filterModel";
 import { formatScore } from "../../../student/prepScore/formatScore";
-import PageNav from "../../reports/PageNav";
+import { SortHeader, TablePager } from "../../../components/table";
 import { initials, sectionStyle } from "./sectionStyles";
 import { Dialog, focusRing } from "./ui";
 
@@ -174,38 +178,38 @@ const COLUMNS = {
     { label: "Prep Score", sort: "prepScore", render: (row) => <ScoreCell row={row} /> },
     { label: "Solved (Easy · Medium · Hard)", sort: "solved", render: solvedCell },
     { label: "Accuracy", sort: "accuracy", align: "right", render: (row) => (row.submissions ? `${row.accuracy}%` : "—") },
-    { label: "Coding", render: (row) => <StatusPill status={row.practiceStatus} /> },
+    { label: "Coding", sort: "practiceStatus", render: (row) => <StatusPill status={row.practiceStatus} /> },
     { label: "Own work", sort: "solvesToReview", render: (row) => <ReviewCell review={row.review} /> },
-    { label: "Languages", render: (row) => <span className="block max-w-[150px] truncate text-slate-500">{row.languages.map((language) => LANGUAGE_LABELS[language] || language).join(", ") || "—"}</span> },
+    { label: "Languages", sort: "languages", render: (row) => <span className="block max-w-[150px] truncate text-slate-500">{row.languages.map((language) => LANGUAGE_LABELS[language] || language).join(", ") || "—"}</span> },
   ],
   quickprep: [
     { label: "Sheet progress", sort: "sheetProgress", render: (row) => (row.quickprep?.started ? <PercentBar value={row.quickprep.progress} /> : "—") },
     { label: "Sheets started", sort: "sheetsStarted", render: (row) => <span className="whitespace-nowrap tabular-nums">{row.quickprep ? `${row.quickprep.started} of ${row.quickprep.visibleSheets} open` : "—"}</span> },
     { label: "Finished", sort: "sheetsFinished", align: "right", render: (row) => <span className="tabular-nums">{row.quickprep?.finished ?? 0}</span> },
     { label: "Questions solved", sort: "sheetQuestions", align: "right", render: (row) => <span className="tabular-nums">{row.quickprep?.started ? `${row.quickprep.solved} of ${row.quickprep.total}` : "—"}</span> },
-    { label: "Last activity", render: (row) => <span className="whitespace-nowrap text-slate-500">{lastSeenLabel(row.quickprep?.daysSinceActive)}</span> },
+    { label: "Last activity", sort: "sheetLastActive", render: (row) => <span className="whitespace-nowrap text-slate-500">{lastSeenLabel(row.quickprep?.daysSinceActive)}</span> },
     { label: "Own work", sort: "sheetSolvesToReview", render: (row) => <ReviewCell review={row.quickprep?.review} /> },
-    { label: "Quick Prep", render: (row) => <StatusPill status={row.quickprep?.status || "none"} /> },
+    { label: "Quick Prep", sort: "sheetStatus", render: (row) => <StatusPill status={row.quickprep?.status || "none"} /> },
   ],
   learning: [
     { label: "Course completed", sort: "learningProgress", render: (row) => <PercentBar value={row.learning?.progress || 0} /> },
     { label: "Topics", sort: "topicsCompleted", render: (row) => <span className="tabular-nums">{row.learning ? `${row.learning.completedTopics} of ${row.learning.availableTopics}` : "—"}</span> },
-    { label: "Video", align: "right", render: (row) => <span className="tabular-nums">{row.learning ? `${row.learning.videoMinutes} min` : "—"}</span> },
-    { label: "Learning", render: (row) => <StatusPill status={row.learning?.status} /> },
+    { label: "Video", sort: "videoMinutes", align: "right", render: (row) => <span className="tabular-nums">{row.learning ? `${row.learning.videoMinutes} min` : "—"}</span> },
+    { label: "Learning", sort: "learningStatus", render: (row) => <StatusPill status={row.learning?.status} /> },
   ],
   interview: [
     { label: "Mock score", sort: "mockScore", render: (row) => (row.interview?.mockDone ? <PercentBar value={row.interview.mockScore} /> : "—") },
     { label: "Interviews done", sort: "interviewsDone", align: "right", render: (row) => <span className="tabular-nums">{row.interview?.done ?? 0}</span> },
-    { label: "Mock · AI", render: (row) => <span className="whitespace-nowrap tabular-nums text-slate-500">{row.interview ? `${row.interview.mockDone} mock · ${row.interview.aiCompleted} AI` : "—"}</span> },
-    { label: "Scheduled", align: "right", render: (row) => <span className="tabular-nums">{row.interview?.scheduled || "—"}</span> },
-    { label: "Interviews", render: (row) => <StatusPill status={row.interview?.status} /> },
+    { label: "Mock · AI", sort: "mockAndAi", render: (row) => <span className="whitespace-nowrap tabular-nums text-slate-500">{row.interview ? `${row.interview.mockDone} mock · ${row.interview.aiCompleted} AI` : "—"}</span> },
+    { label: "Scheduled", sort: "interviewsScheduled", align: "right", render: (row) => <span className="tabular-nums">{row.interview?.scheduled || "—"}</span> },
+    { label: "Interviews", sort: "interviewStatus", render: (row) => <StatusPill status={row.interview?.status} /> },
   ],
   assessment: [
     { label: "Test score", sort: "testScore", render: (row) => (row.assessment?.taken ? <PercentBar value={row.assessment.averageScore} /> : "—") },
     { label: "Tests taken", sort: "testsTaken", align: "right", render: (row) => <span className="tabular-nums" title={row.assessment?.awaiting ? `${row.assessment.awaiting} more awaiting evaluation` : undefined}>{row.assessment?.taken ?? 0}{row.assessment?.awaiting ? <span className="text-sky-600 dark:text-sky-300"> +{row.assessment.awaiting}</span> : null}</span> },
-    { label: "Passed", align: "right", render: (row) => <span className="tabular-nums">{row.assessment?.taken ? `${row.assessment.passed} of ${row.assessment.taken}` : "—"}</span> },
+    { label: "Passed", sort: "testsPassed", align: "right", render: (row) => <span className="tabular-nums">{row.assessment?.taken ? `${row.assessment.passed} of ${row.assessment.taken}` : "—"}</span> },
     { label: "Missed", sort: "testsMissed", align: "right", render: (row) => <span className={`tabular-nums ${row.assessment?.missed ? "font-semibold text-amber-600 dark:text-amber-400" : ""}`}>{row.assessment?.missed ?? 0}</span> },
-    { label: "Tests", render: (row) => <StatusPill status={row.assessment?.status} /> },
+    { label: "Tests", sort: "testStatus", render: (row) => <StatusPill status={row.assessment?.status} /> },
   ],
 };
 const scoreCell = (value) => (value === null || value === undefined ? "—" : (
@@ -219,44 +223,90 @@ for (const area of ["interview", "assessment"]) {
 COLUMNS.all = [
   { label: "Prep Score (overall)", sort: "overallScore", render: (row) => scoreCell(row.scores?.total) },
   { ...COLUMNS.coding[0], label: "Prep Coding" },
-  { ...COLUMNS.quickprep[0], label: "Quick Prep", sort: undefined },
-  { label: "Prep Learning", render: (row) => scoreCell(row.scores?.features?.learning) },
-  { ...COLUMNS.interview[0], label: "Prep Interview", sort: undefined },
-  { ...COLUMNS.assessment[0], label: "Prep Assessment", sort: undefined },
+  { ...COLUMNS.quickprep[0], label: "Quick Prep" },
+  { label: "Prep Learning", sort: "learningScore", render: (row) => scoreCell(row.scores?.features?.learning) },
+  { ...COLUMNS.interview[0], label: "Prep Interview", sort: "interviewScore" },
+  { ...COLUMNS.assessment[0], label: "Prep Assessment", sort: "assessmentScore" },
 ];
 // One assessment's page: the stored Prep Score covers every test, so it is left out here.
 const SCOPED_ASSESSMENT_COLUMNS = [
   { label: "Test score", sort: "testScore", render: (row) => (row.assessment?.taken ? <PercentBar value={row.assessment.averageScore} /> : "—") },
-  { label: "Result", render: (row) => {
+  { label: "Result", sort: "testResult", render: (row) => {
     if (!row.assessment?.taken && row.assessment?.awaiting) return <span className="font-semibold text-sky-700 dark:text-sky-300">Awaiting evaluation</span>;
     if (!row.assessment?.taken) return <span className={row.assessment?.missed ? "font-semibold text-amber-600 dark:text-amber-400" : "text-slate-400"}>{row.assessment?.missed ? "Missed" : "Not attempted"}</span>;
     return row.assessment.passed ? <span className="font-semibold text-emerald-600 dark:text-emerald-400">Passed</span> : <span className="font-semibold text-rose-600 dark:text-rose-400">Failed</span>;
   } },
-  { label: "Status", render: (row) => <StatusPill status={row.assessment?.status} /> },
+  { label: "Status", sort: "testStatus", render: (row) => <StatusPill status={row.assessment?.status} /> },
 ];
+// Sorts that start A–Z (or place 1 first) on the first click; figures start high-to-low.
+const ASC_FIRST = new Set(["position", "name", "className", "practiceStatus", "languages", "sheetStatus", "sheetLastActive", "learningStatus", "interviewStatus", "testStatus"]);
 const POSITION_HINT = { coding: "Prep Score", quickprep: "sheet progress", learning: "course completed", interview: "Prep Score", assessment: "Prep Score", all: "overall Prep Score" };
 
 /**
  * The students on the page, sorted and paged on the server. `title` and `actions` (e.g. a
  * download button) let it lead the page when a headline number picked these students.
  */
-export function StudentTable({ table, area, loading, onChange, onOpen, title = "Students", actions = null, scoped = false }) {
+/** The student table's search box: types freely, asks the server once typing pauses. */
+export function TableSearch({ value = "", onSearch, placeholder = "Search name, email or ID" }) {
+  const [text, setText] = useState(value);
+  const sent = useRef(value);
+  // Follow outside changes (another section, a cleared view) without fighting the typing.
+  useEffect(() => { if (value !== sent.current) { sent.current = value; setText(value); } }, [value]);
+  useEffect(() => {
+    const next = text.trim();
+    if (next === sent.current.trim()) return undefined;
+    const timer = setTimeout(() => { sent.current = next; onSearch(next); }, 300);
+    return () => clearTimeout(timer);
+  }, [text, onSearch]);
+  return (
+    <label className="relative block w-full sm:w-64">
+      <span className="sr-only">Search students</span>
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+      <input
+        type="search"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => { if (event.key === "Enter") { const next = text.trim(); sent.current = next; onSearch(next); } }}
+        placeholder={placeholder}
+        title="Use commas to find several students"
+        className="h-8 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-7 text-[12.5px] text-slate-800 outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-white/10 dark:bg-gray-950 dark:text-slate-100 [&::-webkit-search-cancel-button]:hidden"
+      />
+      {text ? (
+        <button type="button" onClick={() => { setText(""); sent.current = ""; onSearch(""); }} aria-label="Clear search"
+          className={`absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 ${focusRing}`}>
+          <X className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
+    </label>
+  );
+}
+
+export function StudentTable({ table, area, loading, onChange, onOpen, title = "Students", actions = null, scoped = false, requestBody = null }) {
+  const search = table?.search || "";
+  const onSearch = useRef(null);
+  onSearch.current = (next) => onChange({ search: next, page: 1 });
+  const [stableSearch] = useState(() => (next) => onSearch.current(next));
+  const api = useAnalysisApi();
+  // Ticked students for "Send email": kept across pages and searches, cleared when the filters change.
+  const bodyKey = JSON.stringify(requestBody || {});
+  const selection = useStudentSelection(`${area}|${bodyKey}`);
+  const [emailing, setEmailing] = useState(false);
+  const closeEmail = useCallback(() => setEmailing(false), []);
   if (!table) return null;
+  const selectable = Boolean(requestBody);
+  const pageIds = selectable ? table.rows.map((row) => String(row.id)) : [];
   const columns = scoped && area === "assessment" ? SCOPED_ASSESSMENT_COLUMNS : (COLUMNS[area] || COLUMNS.coding);
-  const pages = Math.max(1, Math.ceil(table.total / table.limit));
-  const sortBy = (key) => onChange({ sort: key, direction: table.sort === key && table.direction === "desc" ? "asc" : "desc", page: 1 });
-  const header = (label, sort, align) => {
-    const active = sort && table.sort === sort;
-    return (
-      <th key={label} scope="col" className={`whitespace-nowrap px-3 py-2 font-semibold ${align === "right" ? "text-right" : "text-left"}`} aria-sort={active ? (table.direction === "asc" ? "ascending" : "descending") : undefined}>
-        {sort ? (
-          <button type="button" onClick={() => sortBy(sort)} className={`inline-flex items-center gap-1 hover:text-slate-800 dark:hover:text-white ${focusRing}`}>
-            {label}{active && (table.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-          </button>
-        ) : label}
-      </th>
-    );
-  };
+  // The server always has a sort (the area's default when none is picked), so a header click flips
+  // the active column or starts a new one: high-to-low for figures, A–Z / place 1 first for the rest.
+  const sortBy = (key) => onChange({
+    sort: key,
+    direction: table.sort === key ? (table.direction === "desc" ? "asc" : "desc") : (ASC_FIRST.has(key) ? "asc" : "desc"),
+    page: 1,
+  });
+  const sort = table.sort ? { key: table.sort, direction: table.direction } : null;
+  const header = (label, sortKey, align) => (
+    <SortHeader key={label} sortKey={sortKey} sort={sort} onSort={sortBy} sortable={Boolean(sortKey)} align={align} className="whitespace-nowrap">{label}</SortHeader>
+  );
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-800 dark:bg-gray-900" aria-labelledby="students-title">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 dark:border-white/[0.06]">
@@ -264,24 +314,33 @@ export function StudentTable({ table, area, loading, onChange, onOpen, title = "
           <h2 id="students-title" className="flex items-center gap-2 text-[13.5px] font-bold text-slate-900 dark:text-white"><Users className="h-4 w-4 text-sky-500" />{title}</h2>
           <p className="text-[11px] text-slate-500 dark:text-slate-400"># is the place by {scoped && area === "assessment" ? "test score" : (POSITION_HINT[area] || "Prep Score")}. Click a student for their full profile.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-slate-600 dark:bg-white/[0.06] dark:text-slate-300">{table.total.toLocaleString()} students</span>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <TableSearch value={search} onSearch={stableSearch} />
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-slate-600 dark:bg-white/[0.06] dark:text-slate-300">
+            {search && Number.isFinite(table.inView) ? `${table.total.toLocaleString()} of ${table.inView.toLocaleString()} students` : `${table.total.toLocaleString()} students`}
+          </span>
           {actions}
         </div>
       </header>
+      {selectable && (
+        <SelectionBar className="mx-4 mt-3" selection={selection} total={table.total}
+          loadAll={() => api.studentIds({ ...requestBody, table: { search } })} onEmail={() => setEmailing(true)} />
+      )}
       <div className={`overflow-x-auto ${loading ? "opacity-60" : ""}`}>
         <table data-no-serial className="min-w-full text-[12px] text-slate-700 dark:text-slate-200">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/60 text-[10.5px] text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.02] dark:text-slate-400">
-              {header("#")}
+              {selectable && <th scope="col" className="w-9 px-3 py-2.5"><PageCheckbox pageIds={pageIds} selection={selection} /></th>}
+              {header("#", "position")}
               {header("Student", "name")}
-              {header("Class")}
+              {header("Class", "className")}
               {columns.map((column) => header(column.label, column.sort, column.align))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-white/[0.05]">
             {table.rows.map((row) => (
-              <tr key={row.id} onClick={() => onOpen?.(row.id)} className="cursor-pointer transition-colors hover:bg-sky-50/50 dark:hover:bg-sky-500/[0.06]">
+              <tr key={row.id} onClick={() => onOpen?.(row.id)} className={`cursor-pointer transition-colors hover:bg-sky-50/50 dark:hover:bg-sky-500/[0.06] ${selection.has(String(row.id)) ? "bg-sky-50/60 dark:bg-sky-500/[0.07]" : ""}`}>
+                {selectable && <td className="w-9 px-3 py-2"><RowCheckbox checked={selection.has(String(row.id))} onChange={() => selection.toggle(String(row.id))} label={`Select ${row.name}`} /></td>}
                 <td className="px-3 py-2 font-bold tabular-nums text-slate-400">{row.position}</td>
                 <td className="max-w-[240px] px-3 py-2">
                   <button type="button" onClick={(event) => { event.stopPropagation(); onOpen?.(row.id); }} className={`flex min-w-0 items-center gap-2.5 text-left ${focusRing}`}>
@@ -296,16 +355,21 @@ export function StudentTable({ table, area, loading, onChange, onOpen, title = "
                 {columns.map((column) => <td key={column.label} className={`px-3 py-2 ${column.align === "right" ? "text-right" : ""}`}>{column.render(row)}</td>)}
               </tr>
             ))}
-            {!table.rows.length && <tr><td colSpan={columns.length + 3} className="px-3 py-10 text-center text-[12px] text-slate-400">No students match. Try clearing a filter.</td></tr>}
+            {!table.rows.length && <tr><td colSpan={columns.length + 3 + (selectable ? 1 : 0)} className="px-3 py-10 text-center text-[12px] text-slate-400">{search ? `No student matches “${search}”.` : "No students match. Try clearing a filter."}</td></tr>}
           </tbody>
         </table>
       </div>
-      {pages > 1 && (
-        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-3 py-2 text-[11px] text-slate-500 dark:border-white/[0.06]">
-          <span>Page {table.page} of {pages}</span>
-          <PageNav page={table.page} totalPages={pages} onPage={(page) => onChange({ page })} />
-        </footer>
-      )}
+      <TablePager
+        page={table.page}
+        pageSize={table.limit}
+        total={table.total}
+        onPage={(page) => onChange({ page })}
+        onPageSize={(limit) => onChange({ limit, page: 1 })}
+        busy={loading}
+        noun="students"
+        className="dark:border-white/[0.06]"
+      />
+      {selectable && <SendEmailDialog open={emailing} onClose={closeEmail} studentIds={selection.ids} body={requestBody} />}
     </section>
   );
 }

@@ -4,7 +4,8 @@ import { Activity, Archive, Ban, CalendarCheck, CalendarClock, CalendarRange, Ch
 import { ROOT } from "../definition";
 import { useDebounced, useRemote } from "../useRemote";
 import { ICON_TONES } from "../theme";
-import { ActionMenu, EmptyState, Notice, Pagination, Panel, Select, TextInput, iconActionClass, iconDangerClass, inputClass, primaryClass, secondaryClass, surfaceClass, tableHeadClass, tableRowClass } from "../ui";
+import { SortHeader, TablePager, nextSort } from "../../../components/table";
+import { ActionMenu, EmptyState, Notice, Panel, Select, TextInput, iconActionClass, iconDangerClass, inputClass, primaryClass, secondaryClass, surfaceClass, tableHeadClass, tableRowClass } from "../ui";
 import { scheduleApi } from "./schedulesApi";
 import { AddStudentsDialog, MoveBookingDialog } from "./scheduleDialogs";
 import { ConfirmDialog, KpiTile, OutcomePill, ScheduleFrame, StatusPill } from "./scheduleUi";
@@ -77,6 +78,8 @@ function Tabs({ id: base, value, onChange, items }) {
 
 function Roster({ assignment, rows, pagination, query, onQuery, onAction, editable, onRefresh, refreshing }) {
   const slots = assignment.slotPolicy?.mode === "slots";
+  // Headers sort on the server across every page; a new sort starts at page 1.
+  const header = (key, label, className = "") => <SortHeader sortKey={key} sort={query.sort} onSort={(value) => onQuery({ sort: nextSort(query.sort, value) })} className={className}>{label}</SortHeader>;
   // Each student's cells, rendered as a card on phones and as a table row from md up.
   const entries = rows.map((row) => {
     const student = studentOf(row);
@@ -131,10 +134,10 @@ function Roster({ assignment, rows, pagination, query, onQuery, onAction, editab
           <caption className="sr-only">Students in this schedule</caption>
           <thead className={tableHeadClass}>
             <tr>
-              <th scope="col" className="px-5 py-3 font-semibold">Student</th>
-              <th scope="col" className="px-3 py-3 font-semibold">Outcome</th>
-              {slots && <th scope="col" className="px-3 py-3 font-semibold">Booking (IST)</th>}
-              <th scope="col" className="px-3 py-3 font-semibold">Attempts</th>
+              {header("name", "Student", "pl-5")}
+              {header("outcome", "Outcome")}
+              {slots && header("booking", "Booking (IST)")}
+              {header("attempts", "Attempts")}
               <th scope="col" className="px-5 py-3 text-right font-semibold"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
@@ -150,7 +153,8 @@ function Roster({ assignment, rows, pagination, query, onQuery, onAction, editab
         </table>
       </div>
       </>}
-    {pagination && rows.length > 0 && <Pagination value={pagination} onPage={(page) => onQuery({ page }, true)} onLimit={(limit) => onQuery({ limit })} />}
+    {pagination && rows.length > 0 && <TablePager page={pagination.page || query.page} pageSize={query.limit} total={pagination.total || 0}
+      onPage={(page) => onQuery({ page }, true)} onPageSize={(limit) => onQuery({ limit })} busy={refreshing} noun="students" />}
   </Panel>;
 }
 
@@ -165,7 +169,7 @@ function Fact({ icon: Icon, label, children }) {
 export default function ScheduleDetail({ navigation }) {
   const { id } = useParams();
   const location = useLocation();
-  const [query, setQuery] = useState({ search: "", outcome: "", page: 1, limit: 25 });
+  const [query, setQuery] = useState({ search: "", outcome: "", page: 1, limit: 25, sort: null });
   const search = useDebounced(query.search);
   const [tab, setTab] = useState("roster");
   const tabsId = useId();
@@ -184,7 +188,8 @@ export default function ScheduleDetail({ navigation }) {
   });
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
-  const remote = useRemote(() => scheduleApi.get(id, { search, outcome: query.outcome, page: query.page, limit: query.limit }), [id, search, query.outcome, query.page, query.limit]);
+  const remote = useRemote(() => scheduleApi.get(id, { search, outcome: query.outcome, page: query.page, limit: query.limit,
+    ...(query.sort ? { sortBy: query.sort.key, sortOrder: query.sort.direction } : {}) }), [id, search, query.outcome, query.page, query.limit, query.sort?.key, query.sort?.direction]);
   const detail = remote.result || {};
   const assignment = { ...assignmentOf(detail), kpis: detail.kpis || assignmentOf(detail).kpis || {} };
   const kpis = assignment.kpis;

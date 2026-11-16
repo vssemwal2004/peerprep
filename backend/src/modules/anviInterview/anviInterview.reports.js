@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import AIInterview from "../../models/AIInterview.js";
 import User from "../../models/User.js";
 import { HttpError } from "../../utils/errors.js";
+import { parseDateRange, rangeMatch } from "../../utils/dateRange.js";
 import { anviConfig } from "./anviInterview.config.js";
 import { AnviAttempt } from "./anviInterview.models.js";
 import { cohortForAttempt, evaluateAttemptSoon, itemInsightFields, reportOverall, reportSkills } from "./anviInterview.evaluation.js";
@@ -74,6 +75,22 @@ const pageOf = (query = {}) => ({
   page: Math.max(1, Math.min(10000, Number.parseInt(query.page, 10) || 1)),
   limit: [25, 50, 100].includes(Number(query.limit)) ? Number(query.limit) : 25,
 });
+// Attempts table column → stored field (`student` sorts by the student's name through a lookup).
+// Unknown keys keep the default newest-first order.
+export const ATTEMPT_SORT_FIELDS = Object.freeze({
+  student: "studentName",
+  interview: "title",
+  status: "status",
+  score: "overall.percent",
+  started: "startedAt",
+});
+export function attemptSortOf(query = {}) {
+  const key = String(query.sortBy || "");
+  if (!Object.hasOwn(ATTEMPT_SORT_FIELDS, key)) return { key: null, sort: { startedAt: -1, _id: -1 } };
+  const direction = query.sortOrder === "desc" ? -1 : 1;
+  const field = ATTEMPT_SORT_FIELDS[key];
+  return { key, sort: field === "startedAt" ? { startedAt: direction, _id: direction } : { [field]: direction, startedAt: -1, _id: -1 } };
+}
 const studentOf = (user) => ({ id: user ? String(user._id) : null, name: user?.name || "Unknown student", email: user?.email || "", studentId: user?.studentId || "" });
 const overallOf = (overall) => (overall ? {
   score: overall.score ?? 0, max: overall.max ?? 0, percent: overall.percent ?? 0, band: overall.band || "", partial: Boolean(overall.partial),
@@ -116,10 +133,25 @@ export function createAnviReports({ evaluateSoon = evaluateAttemptSoon, clock = 
     }
     // An assignment filter can only narrow the admin's own interviews, so another admin's id lists nothing.
     const assignmentId = query.assignmentId ? objectId(query.assignmentId, "assignment") : null;
-    const filter = { interviewId: { $in: ids }, ...(status ? { status } : {}), ...(assignmentId ? { assignmentId } : {}) };
+    // ?range=7d… or ?range=custom&from&to (IST days) limits attempts by start time; default all time.
+    const started = rangeMatch("startedAt", parseDateRange(query, { defaultPreset: "all", offsetMinutes: 330 }));
+    const filter = { interviewId: { $in: ids }, ...(status ? { status } : {}), ...(assignmentId ? { assignmentId } : {}), ...started };
+    const order = attemptSortOf(query);
+    const projection = Object.fromEntries(ROW_FIELDS.split(" ").map((field) => [field, 1]));
     const [total, rows] = await Promise.all([
       AnviAttempt.countDocuments(filter).maxTimeMS(8000),
-      AnviAttempt.find(filter).select(ROW_FIELDS).sort({ startedAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).maxTimeMS(8000).lean(),
+      order.key === "student"
+        // The name lives on the user, so this one order joins the page's students before sorting.
+        ? AnviAttempt.aggregate([
+          { $match: filter },
+          { $lookup: { from: User.collection.collectionName, localField: "studentId", foreignField: "_id", pipeline: [{ $project: { name: 1 } }], as: "studentUser" } },
+          { $addFields: { studentName: { $toLower: { $ifNull: [{ $first: "$studentUser.name" }, ""] } } } },
+          { $sort: order.sort },
+          { $skip: (page - 1) * limit },
+          { $limit: limit },
+          { $project: projection },
+        ]).option({ maxTimeMS: 8000 })
+        : AnviAttempt.find(filter).select(ROW_FIELDS).sort(order.sort).skip((page - 1) * limit).limit(limit).maxTimeMS(8000).lean(),
     ]);
     const users = rows.length
       ? await User.find({ _id: { $in: [...new Set(rows.map((row) => String(row.studentId)))] } }).select("name email studentId").lean()

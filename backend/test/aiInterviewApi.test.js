@@ -85,6 +85,28 @@ const create = (title = "Interview") =>
     { data: { title } },
     { "Idempotency-Key": crypto.randomUUID() },
   );
+test("the interview directory sorts by a whitelisted column, owner scoped", async () => {
+  const owner = { "X-Test-Owner": String(new mongoose.Types.ObjectId()) };
+  for (const title of ["beta round", "Alpha round", "gamma round"]) {
+    const made = await call("", "POST", { data: { title } }, { ...owner, "Idempotency-Key": crypto.randomUUID() });
+    assert.equal(made.status, 201);
+  }
+  const titles = async (query) => {
+    const result = await call(`?${query}`, "GET", undefined, owner);
+    assert.equal(result.status, 200);
+    return result.body.items.map((item) => item.title);
+  };
+  assert.deepEqual(await titles(""), ["gamma round", "Alpha round", "beta round"], "default is last edited first");
+  assert.deepEqual(await titles("sortBy=title&sortOrder=asc"), ["Alpha round", "beta round", "gamma round"], "title ignores case");
+  assert.deepEqual(await titles("sortBy=title&sortOrder=desc"), ["gamma round", "beta round", "Alpha round"]);
+  assert.deepEqual(await titles("sortBy=edited&sortOrder=asc"), ["beta round", "Alpha round", "gamma round"]);
+  for (const sortBy of ["questions", "duration", "status"]) assert.equal((await titles(`sortBy=${sortBy}&sortOrder=desc`)).length, 3);
+  const listed = await call("?sortBy=title&sortOrder=asc", "GET", undefined, owner);
+  assert.deepEqual(Object.keys(listed.body.items[0]).filter((key) => key.startsWith("_") && key !== "_id"), [], "sort helpers are not returned");
+  assert.equal(listed.body.pagination.total, 3);
+  assert.deepEqual(await titles("sortBy=constructor&sortOrder=asc"), ["gamma round", "Alpha round", "beta round"], "unknown columns keep the default");
+});
+
 test("only administrators can use authoring endpoints", async () => {
   for (const role of ["student", "coordinator"])
     assert.equal(

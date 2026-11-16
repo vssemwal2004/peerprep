@@ -3,6 +3,7 @@ import { api } from '../utils/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import InterviewWorkspaceNav from '../components/interviews/InterviewWorkspaceNav';
 import InterviewSelector from '../components/interviews/InterviewSelector';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 import { 
   Filter, 
   RefreshCw, 
@@ -87,6 +88,17 @@ const FeedbackCard = ({ feedback, onMarksClick, onCommentsClick }) => (
     )}
   </motion.div>
 );
+
+const feedbackMarks = (f) => f.totalMarks ?? (f.marks <= 25 ? f.marks : Math.round((f.marks || 0) * 25 / 100));
+
+const feedbackSortValue = (f, key) => {
+  if (key === 'marks') return Number(feedbackMarks(f));
+  if (key === 'college') return f.intervieweeCollege;
+  if (key === 'submittedAt') return f.submittedAt ? new Date(f.submittedAt) : null;
+  return f?.[key];
+};
+
+const FEEDBACK_COLUMNS = [['event', 'Event'], ['interviewer', 'Mentor'], ['interviewee', 'Candidate'], ['college', 'College'], ['marks', 'Marks'], ['comments', 'Comments'], ['submittedAt', 'Submitted']];
 
 // Main Component
 export default function FeedbackReview() {
@@ -187,6 +199,7 @@ export default function FeedbackReview() {
   };
 
   const selectedEvent = events.find(e => e._id === selectedEventId);
+  const table = useClientTable(feedback, { getValue: feedbackSortValue, resetKey: `${selectedEventId}|${college}` });
 
   return (
     <InterviewWorkspaceNav events={events} loading={eventsLoading} error={eventsError}>
@@ -327,7 +340,7 @@ export default function FeedbackReview() {
                     <p className="text-xs mt-0.5">Try adjusting your filters</p>
                   </div>
                 ) : (
-                  feedback.map((f, index) => (
+                  table.pageRows.map((f, index) => (
                     <FeedbackCard
                       key={f.id || index}
                       feedback={f}
@@ -341,6 +354,11 @@ export default function FeedbackReview() {
                       }}
                     />
                   ))
+                )}
+                {feedback.length > 0 && (
+                  <div className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+                    <TablePager {...table.pager} noun="feedback records" className="border-t-0" />
+                  </div>
                 )}
               </div>
 
@@ -362,31 +380,13 @@ export default function FeedbackReview() {
                       <table className="w-full">
                         <thead className="bg-slate-50 dark:bg-gray-700 border-b border-slate-200 dark:border-gray-600">
                           <tr>
-                            <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 dark:text-gray-300 uppercase tracking-wider">
-                              Event
-                            </th>
-                            <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                              Mentor
-                            </th>
-                            <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                              Candidate
-                            </th>
-                            <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                              College
-                            </th>
-                            <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                              Marks
-                            </th>
-                            <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                              Comments
-                            </th>
-                            <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                              Submitted
-                            </th>
+                            {FEEDBACK_COLUMNS.map(([key, label]) => (
+                              <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort} className="py-2 px-3">{label}</SortHeader>
+                            ))}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-gray-700">
-                          {feedback.map((f, index) => (
+                          {table.pageRows.map((f, index) => (
                             <motion.tr
                               key={f.id || index}
                               initial={{ opacity: 0 }}
@@ -417,7 +417,7 @@ export default function FeedbackReview() {
                                 >
                                   <Star className="w-3 h-3 text-amber-500" />
                                   <span className="text-sm font-semibold text-slate-800 dark:text-gray-200">
-                                    {(f.totalMarks ?? (f.marks <= 25 ? f.marks : Math.round((f.marks || 0) * 25 / 100)))}/25
+                                    {feedbackMarks(f)}/25
                                   </span>
                                 </button>
                               </td>
@@ -446,6 +446,7 @@ export default function FeedbackReview() {
                       </table>
                     </div>
                   )}
+                  {feedback.length > 0 && <TablePager {...table.pager} noun="feedback records" />}
                 </motion.div>
               </div>
             </>

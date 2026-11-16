@@ -5,7 +5,7 @@ import {
   activityCalendarOption, cumulativeSolvesOption, DIFFICULTY_COLORS, rhythmOption, skillRadarOption, testTimeOption, weeklyAccuracyOption,
 } from "../insightCharts";
 import { daysAgoText, formatNumber, formatPercent, fullDate, hourLabel, LANGUAGE_NAMES, sectionPath, shortDate, strengthsAndGaps, targetProgress, TOPIC_STATES, weeklyAccuracy } from "../insightModel";
-import { Card, CardTitle, Chart, Empty, focusRing, Pill, ProgressBar } from "./ui";
+import { Card, CardTitle, Chart, Empty, focusRing, LatestFirstScroll, Pill, ProgressBar } from "./ui";
 
 const linkClass = `inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-semibold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10 ${focusRing}`;
 
@@ -16,9 +16,7 @@ export function HeatmapCard({ activity, compact = false, link = true }) {
     <Card className="p-4">
       <CardTitle title="Activity calendar" hint={`${activity.days.length} active days in the last 12 months`}
         right={link ? <Link to={sectionPath("activity")} className={linkClass}>Details<ArrowRight className="h-3.5 w-3.5" /></Link> : null} />
-      <div className="-mx-1 overflow-x-auto px-1">
-        <div className="min-w-[720px]"><Chart option={calendar} height={compact ? 120 : 150} label="Activity calendar for the last 12 months" /></div>
-      </div>
+      <LatestFirstScroll><Chart option={calendar} height={compact ? 120 : 150} label="Activity calendar for the last 12 months" /></LatestFirstScroll>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-[11.5px] text-slate-500 dark:text-zinc-400">
         <span className="inline-flex items-center gap-1.5"><Flame className={`h-4 w-4 ${activity.streak.current ? "text-orange-500" : "text-slate-300"}`} aria-hidden="true" /><b className="text-slate-800 dark:text-zinc-100">{activity.streak.current}</b> day streak · best <b className="text-slate-800 dark:text-zinc-100">{activity.streak.best}</b></span>
         <span className="inline-flex items-center gap-1.5">Less

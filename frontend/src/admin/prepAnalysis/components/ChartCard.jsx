@@ -5,6 +5,7 @@ import {
   FileSpreadsheet, Filter, Funnel, Grid3x3, Image as ImageIcon, Info, Layers, LayoutGrid, LineChart, ListOrdered, Maximize2, MoreHorizontal,
   Percent, PieChart, Radar, Sheet, SlidersHorizontal, Sparkles, Spline, Table2, Target, TrendingDown, TrendingUp, Users,
 } from "lucide-react";
+import { SortHeader, TablePager, useClientTable } from "../../../components/table";
 import EChart from "../charts/EChart";
 import { chartInsight } from "../charts/chartInsights";
 import { buildChartOption, chartHeight, chartTable, viewsFor } from "../charts/chartOptions";
@@ -47,22 +48,30 @@ function saveFile(name, href) {
 }
 const fileName = (chart, extension) => `${chart.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}.${extension}`;
 
-/** The chart's figures as a table. A row opens its student, or its part when it stands for one. */
+// Table rows keep their position in the chart (ids/keys are matched by it); columns sort by cell index.
+const cellValue = (entry, column) => entry.row[column];
+const PAGER_HEIGHT = 52;
+
+/** The chart's figures as a table, sortable by every column and paged. A row opens its student, or its part when it stands for one. */
 export function ChartTable({ chart, height, onStudent, onPart, search = "" }) {
   const { columns, rows, ids = [] } = useMemo(() => chartTable(chart), [chart]);
   const keys = useMemo(() => (chart.drillable ? chartTableKeys(chart) : []), [chart]);
   const needle = search.trim().toLowerCase();
   const shown = useMemo(() => rows.map((row, index) => ({ row, index }))
     .filter(({ row }) => !needle || row.some((cell) => typeof cell === "string" && cell.toLowerCase().includes(needle))), [needle, rows]);
+  const table = useClientTable(shown, { getValue: cellValue, resetKey: shown });
   if (!rows.length) return <EmptyChart height={Math.min(height, 260)} />;
   return (
-    <div style={{ maxHeight: height }} className="overflow-auto rounded-lg border border-slate-100 dark:border-white/[0.06]">
+    <div className="overflow-hidden rounded-lg border border-slate-100 dark:border-white/[0.06]">
+    <div style={{ maxHeight: Math.max(160, height - PAGER_HEIGHT) }} className="overflow-auto">
       <table data-no-serial className="min-w-full text-[11.5px]">
         <thead className="sticky top-0 bg-slate-50 text-[10.5px] text-slate-500 dark:bg-gray-900 dark:text-slate-400">
-          <tr>{columns.map((column) => <th key={column.label} scope="col" className={`whitespace-nowrap px-2.5 py-1.5 font-semibold ${column.numeric ? "text-right" : "text-left"}`}>{column.label}</th>)}</tr>
+          <tr>{columns.map((column, columnIndex) => (
+            <SortHeader key={column.label} sortKey={columnIndex} sort={table.sort} onSort={table.toggleSort} align={column.numeric ? "right" : "left"} className="whitespace-nowrap">{column.label}</SortHeader>
+          ))}</tr>
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-white/[0.05]">
-          {shown.map(({ row, index }) => {
+          {table.pageRows.map(({ row, index }) => {
             const id = ids[index];
             const key = keys[index];
             const open = id && onStudent ? () => onStudent(id) : key && onPart ? () => onPart({ key, label: String(row[0]) }) : undefined;
@@ -80,6 +89,8 @@ export function ChartTable({ chart, height, onStudent, onPart, search = "" }) {
           {!shown.length && <tr><td colSpan={columns.length} className="px-2.5 py-4 text-center text-slate-500">Nothing matches “{search}”.</td></tr>}
         </tbody>
       </table>
+    </div>
+    <TablePager {...table.pager} noun="rows" className="dark:border-white/[0.06]" />
     </div>
   );
 }

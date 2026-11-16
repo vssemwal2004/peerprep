@@ -4,6 +4,22 @@ import { AlertTriangle, CalendarDays, FileSpreadsheet, Loader2, Mail, MoreVertic
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { useAuth } from '../context/AuthContext';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
+
+const timeValue = (value) => {
+  const time = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isNaN(time) ? null : time;
+};
+const COLUMN_VALUES = {
+  name: (batch) => batch.name,
+  originalFileName: (batch) => batch.originalFileName,
+  createdAt: (batch) => timeValue(batch.createdAt),
+  students: (batch) => batch.studentCount ?? batch.studentIds?.length ?? 0,
+  results: (batch) => Number(batch.createdCount || 0) + Number(batch.updatedCount || 0),
+  uploadedBy: (batch) => batch.uploadedBy?.name || batch.uploadedByEmail || 'Administrator',
+};
+const columnValue = (batch, key) => COLUMN_VALUES[key]?.(batch);
+const COLUMNS = [['name', 'List name'], ['originalFileName', 'Original file'], ['createdAt', 'Upload date'], ['students', 'Students'], ['results', 'Results'], ['uploadedBy', 'Uploaded by']];
 
 export default function StudentBulkLists() {
   const navigate = useNavigate();
@@ -40,6 +56,7 @@ export default function StudentBulkLists() {
     return batches.filter((batch) => [batch.name, batch.originalFileName, batch.uploadedByEmail]
       .some((value) => String(value || '').toLowerCase().includes(query)));
   }, [batches, search]);
+  const table = useClientTable(visible, { getValue: columnValue, resetKey: search });
   const totalStudents = useMemo(() => batches.reduce((sum, batch) => sum + (batch.studentCount ?? batch.studentIds?.length ?? 0), 0), [batches]);
   const latestUpload = batches[0]?.createdAt ? new Date(batches[0].createdAt).toLocaleDateString() : '—';
 
@@ -121,10 +138,10 @@ export default function StudentBulkLists() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
-                <tr><th className="px-5 py-3">List name</th><th className="px-5 py-3">Original file</th><th className="px-5 py-3">Upload date</th><th className="px-5 py-3">Students</th><th className="px-5 py-3">Results</th><th className="px-5 py-3">Uploaded by</th><th className="px-5 py-3 text-right">Actions</th></tr>
+                <tr>{COLUMNS.map(([key, label]) => <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort} className="px-5 py-3 dark:text-gray-400">{label}</SortHeader>)}<SortHeader sortable={false} align="right" className="px-5 py-3 dark:text-gray-400">Actions</SortHeader></tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-                {loading ? <tr><td colSpan="7" className="px-5 py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-sky-600" /></td></tr> : visible.map((batch) => (
+                {loading ? <tr><td colSpan="7" className="px-5 py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-sky-600" /></td></tr> : table.pageRows.map((batch) => (
                   <tr key={batch._id} onClick={() => viewStudents(batch)} className="cursor-pointer transition-colors hover:bg-sky-50/50 dark:hover:bg-sky-950/10">
                     <td className="px-5 py-4"><div className="flex items-center gap-3"><span className="rounded-lg bg-sky-50 p-2 text-sky-600 dark:bg-sky-950/40"><FileSpreadsheet className="h-4 w-4" /></span><span className="font-semibold text-slate-900 dark:text-white">{batch.name}{batch.sourceType === 'assessment' && <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">Assessment</span>}</span></div></td>
                     <td className="px-5 py-4 text-slate-600 dark:text-gray-300">{batch.originalFileName}</td>
@@ -147,6 +164,7 @@ export default function StudentBulkLists() {
               </tbody>
             </table>
           </div>
+          <TablePager {...table.pager} busy={loading} noun="bulk lists" />
         </div>
 
         {uploaderModal && <div className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setUploaderModal(null); }}><div role="dialog" aria-modal="true" aria-label="Upload owner" className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">Uploaded by</p><h2 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">{uploaderModal.name || 'Administrator'}</h2></div><button type="button" onClick={() => setUploaderModal(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button></div><dl className="mt-4 space-y-3 text-sm"><div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Role</dt><dd className="mt-1 capitalize font-semibold text-slate-800 dark:text-slate-100">{uploaderModal.role || 'admin'}</dd></div>{uploaderModal.email && <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Email</dt><dd className="mt-1 break-all text-slate-700 dark:text-slate-200">{uploaderModal.email}</dd></div>}{uploaderModal.coordinatorId && <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Teacher ID</dt><dd className="mt-1 font-mono font-bold text-slate-700 dark:text-slate-200">{uploaderModal.coordinatorId}</dd></div>}</dl></div></div>}

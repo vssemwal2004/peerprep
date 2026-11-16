@@ -4,7 +4,8 @@ import { api } from '../../utils/api';
 import { isControlDeployment as central } from '../../platform/universityPermissions';
 import { Notice, RowMenu, SearchBox, Segmented, card } from '../quickprep/ui';
 import { formatDate, plural, timeAgo } from '../quickprep/format';
-import { CompanyStatus, EmptyState, MiniMeter, Pager, TableSkeleton } from './companyUi';
+import { CompanyStatus, EmptyState, MiniMeter, TableSkeleton } from './companyUi';
+import { SortHeader, TablePager, nextSort } from '../../components/table';
 import { PAGE_SIZE, companies, useDebounced } from './companyHelpers';
 import { MergeDialog, RenameDialog } from './CompanyDialogs';
 
@@ -30,6 +31,8 @@ export default function CompanyRequests({ threshold, version, onLoaded, onChange
   const [search, setSearch] = useState('');
   const term = useDebounced(search.trim());
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [sort, setSort] = useState(null);
   const [state, setState] = useState({ data: null, loading: true, error: '' });
   const [selected, setSelected] = useState(() => new Set());
   const [busyKey, setBusyKey] = useState(null);
@@ -43,7 +46,8 @@ export default function CompanyRequests({ threshold, version, onLoaded, onChange
     const id = ++latest.current;
     setState((previous) => ({ ...previous, loading: true, error: '' }));
     try {
-      const data = await api.listCompanySuggestions({ status, page, limit: PAGE_SIZE, ...(term ? { search: term } : {}) });
+      const data = await api.listCompanySuggestions({ status, page, limit: pageSize, ...(term ? { search: term } : {}),
+        ...(sort ? { sortBy: sort.key, sortOrder: sort.direction } : {}) });
       if (id !== latest.current) return;
       // A decision can empty the last page; step back to the new last page instead of showing a false empty state.
       const pages = data.pagination?.pages || 1;
@@ -54,7 +58,7 @@ export default function CompanyRequests({ threshold, version, onLoaded, onChange
     } catch (cause) {
       if (id === latest.current) setState((previous) => ({ ...previous, loading: false, error: cause.message || 'Company requests could not load.' }));
     }
-  }, [status, page, term, onLoaded]);
+  }, [status, page, pageSize, sort, term, onLoaded]);
   useEffect(() => { void load(); }, [load, version]);
 
   const rows = state.data?.rows || [];
@@ -108,6 +112,9 @@ export default function CompanyRequests({ threshold, version, onLoaded, onChange
   const toggle = (key) => setSelected((previous) => { const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key); return next; });
   const changeStatus = (next) => { setStatus(next); setPage(1); };
   const changeSearch = (next) => { setSearch(next); setPage(1); };
+  const changeSort = (key) => { setSort((current) => nextSort(current, key)); setPage(1); };
+  const changePageSize = (size) => { setPageSize(size); setPage(1); };
+  const header = (key, label) => <SortHeader sortKey={key} sort={sort} onSort={changeSort}>{label}</SortHeader>;
   const [emptyTitle, emptyText] = EMPTY[status];
 
   return <section className={card} aria-labelledby="company-requests-title">
@@ -135,13 +142,13 @@ export default function CompanyRequests({ threshold, version, onLoaded, onChange
               <tr>
                 <th scope="col" className="w-10 py-3 pl-4 pr-1"><input ref={headerBox} type="checkbox" aria-label="Select all on this page" disabled={!eligible.length || Boolean(bulk)} checked={eligible.length > 0 && picked.length === eligible.length}
                   onChange={(event) => setSelected(event.target.checked ? new Set(eligible.map((row) => row.key)) : new Set())} className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 disabled:opacity-30 dark:border-zinc-600 dark:bg-zinc-900" /></th>
-                <th scope="col" className="px-3 py-3">Company</th>
-                <th scope="col" className="px-3 py-3">Students</th>
-                <th scope="col" className="px-3 py-3">Questions</th>
-                {central && <th scope="col" className="px-3 py-3">Universities</th>}
-                <th scope="col" className="px-3 py-3">Requested</th>
-                <th scope="col" className="px-3 py-3">Suggestion</th>
-                <th scope="col" className="px-3 py-3">Status</th>
+                {header('company', 'Company')}
+                {header('students', 'Students')}
+                {header('questions', 'Questions')}
+                {central && header('universities', 'Universities')}
+                {header('requested', 'Requested')}
+                {header('suggestion', 'Suggestion')}
+                {header('status', 'Status')}
                 <th scope="col" className="py-3 pl-3 pr-4 text-right"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
@@ -177,7 +184,8 @@ export default function CompanyRequests({ threshold, version, onLoaded, onChange
             </tbody>
           </table>
         </div>}
-    {(rows.length > 0 || state.data?.pagination?.total > 0) && <Pager pagination={state.data?.pagination} count={rows.length} onPage={setPage} disabled={state.loading || Boolean(bulk)} />}
+    {(rows.length > 0 || state.data?.pagination?.total > 0) && <TablePager page={state.data?.pagination?.page || page} pageSize={pageSize} total={state.data?.pagination?.total || 0}
+      onPage={setPage} onPageSize={changePageSize} busy={state.loading || Boolean(bulk)} noun="companies" />}
 
     {dialog?.type === 'rename' && <RenameDialog row={dialog.row} catalog={catalog} busy={busyKey === dialog.row.key} error={dialogError} onClose={() => setDialog(null)}
       onApprove={(name) => decide(dialog.row, { action: 'approve', name }, `Approved “${dialog.row.name}” as ${name}.`)} onMerge={(target) => merge(dialog.row, target)} />}

@@ -10,26 +10,29 @@ import { useAuth } from '../context/AuthContext';
 import { ActivityTrendChart, BandChart, BarRows, DonutChart } from './charts';
 import { CardHeader, CardLink, Delta, EmptyHint, Glass, KpiTile, MiniStat, OverviewShell, ProgressBar, SkeletonRows, ToneDot } from './ui';
 import {
-  MODULE_META, dailyTotals, formatNumber, greeting, linksFor, pendingRows, percent, relativeTime, sum, trendSeries, weekChange, whenLabel,
+  MODULE_META, OVERVIEW_PRESETS, dailyTotals, formatNumber, greeting, linksFor, pendingRows, percent, periodPhrase, periodShort, relativeTime, sum, trendSeries, weekChange, whenLabel,
 } from './overviewModel';
+import DateRangeFilter from '../components/dateRange/DateRangeFilter';
+import { rangeLabel, rangeToQuery } from '../components/dateRange/dateRangeModel';
 
 const REFRESH_MS = 5 * 60_000;
 
-function useOverview() {
+function useOverview(range) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const query = JSON.stringify(rangeToQuery(range));
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setData(await api.overviewInsights());
+      setData(await api.overviewInsights(JSON.parse(query)));
     } catch (failure) {
       setError(failure?.message || 'The overview could not be loaded.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [query]);
   useEffect(() => {
     load();
     const timer = setInterval(load, REFRESH_MS);
@@ -51,12 +54,13 @@ export function TodayRow({ label, color, today, yesterday }) {
   );
 }
 
-export function CodingPanel({ coding, links }) {
+// `period` is the chosen dashboard period in words ("last 30 days"); `short` its tile form ("30 days").
+export function CodingPanel({ coding, links, period = 'last 14 days' }) {
   const missed = Math.max(0, coding.attempts - coding.accepted);
   const difficultyColor = { easy: '#10b981', medium: '#f59e0b', hard: '#e11d48' };
   return (
     <Glass className="p-5">
-      <CardHeader title="Coding practice" subtitle="Practice submissions, last 14 days" Icon={Code2} action={<CardLink to={links.coding}>Analysis</CardLink>} />
+      <CardHeader title="Coding practice" subtitle={`Practice submissions, ${period}`} Icon={Code2} action={<CardLink to={links.coding}>Analysis</CardLink>} />
       <DonutChart
         centre={coding.acceptanceRate == null ? '—' : `${Math.round(coding.acceptanceRate)}%`}
         caption="accepted"
@@ -78,11 +82,11 @@ export function CodingPanel({ coding, links }) {
   );
 }
 
-export function AssessmentPanel({ assessments, links }) {
+export function AssessmentPanel({ assessments, links, period = 'last 14 days', short = '14 days' }) {
   const labels = ['0–25', '26–50', '51–75', '76–90', '91–100'];
   return (
     <Glass className="p-5">
-      <CardHeader title="Assessments" subtitle={`${formatNumber(assessments.submissions)} submissions, last 14 days`} Icon={ClipboardList} action={<CardLink to={links.reports}>Reports</CardLink>} />
+      <CardHeader title="Assessments" subtitle={`${formatNumber(assessments.submissions)} submissions, ${period}`} Icon={ClipboardList} action={<CardLink to={links.reports}>Reports</CardLink>} />
       <div className="grid grid-cols-3 gap-2">
         <MiniStat label="Live now" value={assessments.live} tone="text-emerald-600 dark:text-emerald-300" />
         <MiniStat label="Upcoming" value={assessments.upcoming} />
@@ -95,16 +99,16 @@ export function AssessmentPanel({ assessments, links }) {
       <BandChart bars={assessments.scoreBands.map((value, index) => ({ label: labels[index], value }))} color={MODULE_META.assessments.color} unit="submissions" height={150} />
       <div className="mt-3 grid grid-cols-2 gap-2">
         <MiniStat label="Taking a test now" value={formatNumber(assessments.inProgress)} />
-        <MiniStat label="Integrity flags · 14 days" value={formatNumber(assessments.flagged)} tone={assessments.flagged ? 'text-rose-600 dark:text-rose-300' : undefined} />
+        <MiniStat label={`Integrity flags · ${short}`} value={formatNumber(assessments.flagged)} tone={assessments.flagged ? 'text-rose-600 dark:text-rose-300' : undefined} />
       </div>
     </Glass>
   );
 }
 
-export function InterviewPanel({ mock, ai, links }) {
+export function InterviewPanel({ mock, ai, links, period = 'last 14 days', short = '14 days' }) {
   return (
     <Glass className="p-5">
-      <CardHeader title="Interviews" subtitle={mock ? 'Mock interview pairs and feedback' : 'AI interviews, last 14 days'} Icon={MessageSquare} action={<CardLink to={mock ? links.interviews : links.aiInterviews}>Open</CardLink>} />
+      <CardHeader title="Interviews" subtitle={mock ? 'Mock interview pairs and feedback' : `AI interviews, ${period}`} Icon={MessageSquare} action={<CardLink to={mock ? links.interviews : links.aiInterviews}>Open</CardLink>} />
       {mock ? (
         <>
           <DonutChart
@@ -119,23 +123,23 @@ export function InterviewPanel({ mock, ai, links }) {
           <div className="mt-4 grid grid-cols-2 gap-2">
             <MiniStat label="Upcoming events" value={mock.upcoming} />
             <MiniStat label="Live now" value={mock.live} tone="text-emerald-600 dark:text-emerald-300" />
-            <MiniStat label="Feedback · 14 days" value={formatNumber(mock.feedback)} />
+            <MiniStat label={`Feedback · ${short}`} value={formatNumber(mock.feedback)} />
             <MiniStat label="Average feedback" value={mock.averageFeedback == null ? '—' : `${Math.round(mock.averageFeedback)}%`} />
           </div>
         </>
       ) : null}
-      {ai ? <div className={mock ? 'mt-2' : ''}><MiniStat label="AI interviews completed · 14 days" value={formatNumber(ai.completed)} /></div> : null}
+      {ai ? <div className={mock ? 'mt-2' : ''}><MiniStat label={`AI interviews completed · ${short}`} value={formatNumber(ai.completed)} /></div> : null}
     </Glass>
   );
 }
 
-export function LearningPanel({ learning, students, links }) {
+export function LearningPanel({ learning, students, links, short = '14 days' }) {
   const share = percent(learning.activeLearners, students);
   return (
     <Glass className="p-5">
       <CardHeader title="Learning" subtitle="Topics and lessons" Icon={BookOpen} action={<CardLink to={links.learning}>Manage</CardLink>} />
       <div className="grid grid-cols-2 gap-2">
-        <MiniStat label="Topics completed · 14 days" value={formatNumber(learning.topicsCompleted)} tone="text-emerald-600 dark:text-emerald-300" />
+        <MiniStat label={`Topics completed · ${short}`} value={formatNumber(learning.topicsCompleted)} tone="text-emerald-600 dark:text-emerald-300" />
         <MiniStat label="Active learners · 7 days" value={formatNumber(learning.activeLearners)} />
       </div>
       <div className="mt-5">
@@ -148,7 +152,11 @@ export function LearningPanel({ learning, students, links }) {
 
 export default function OverviewDashboard({ role = 'admin', allowPath = () => true, can = () => true }) {
   const { user } = useAuth();
-  const { data, loading, error, reload } = useOverview();
+  const [range, setRange] = useState({ preset: '30d' });
+  const { data, loading, error, reload } = useOverview(range);
+  const periodLabel = rangeLabel(range);
+  const period = periodPhrase(periodLabel);
+  const short = periodShort(range);
   const links = useMemo(() => {
     const base = linksFor(role);
     return Object.fromEntries(Object.entries(base).map(([key, value]) => [key, typeof value === 'string' && !allowPath(value) ? null : value]));
@@ -159,10 +167,12 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
     const series = trendSeries(data);
     const trend = data.trend || [];
     const totals = dailyTotals(trend, series).map((row) => row.total);
-    const today = trend.at(-1) || {};
-    const yesterday = trend.at(-2) || {};
-    return { series, trend, totals, today, yesterday, pending: pendingRows(data.pending, links) };
-  }, [data, links]);
+    // `glance` is [yesterday, today] whatever the period; older servers only send the trend.
+    const glance = data.glance?.length === 2 ? data.glance : trend;
+    const today = glance.at(-1) || {};
+    const yesterday = glance.at(-2) || {};
+    return { series, trend, totals, today, yesterday, pending: pendingRows(data.pending, links, short) };
+  }, [data, links, short]);
 
   const firstName = user?.name?.split(' ')[0] || (role === 'admin' ? 'Admin' : 'Coordinator');
   const people = data?.people || {};
@@ -210,17 +220,17 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
     data.access?.students && { label: data.ownScope ? 'My students' : 'Students', value: formatNumber(people.students), helper: `+${formatNumber(people.newStudents)} joined in 30 days`, Icon: Users, color: '#0284c7', to: links.students },
     { label: 'Active this week', value: formatNumber(people.activeWeek), helper: `${percent(people.activeWeek, people.students)}% of students · ${formatNumber(people.activeToday)} today`, Icon: Activity, color: '#10b981', trend: view.totals, delta: weekChange(view.totals) },
     data.prepScore && { label: 'Average Prep Score', value: data.prepScore.average == null ? '—' : data.prepScore.average, helper: `${formatNumber(data.prepScore.scored)} students scored`, Icon: Gauge, color: '#0ea5e9', to: links.analysis },
-    data.coding && { label: 'Coding acceptance', value: data.coding.acceptanceRate == null ? '—' : `${Math.round(data.coding.acceptanceRate)}%`, helper: `${formatNumber(data.coding.attempts)} submissions · 14 days`, Icon: Code2, color: MODULE_META.coding.color, trend: view.trend.map((row) => row.coding), delta: weekChange(view.trend.map((row) => row.coding)), to: links.coding },
-    data.assessments && { label: 'Assessment average', value: data.assessments.averageScore == null ? '—' : `${Math.round(data.assessments.averageScore)}%`, helper: `${formatNumber(data.assessments.submissions)} submissions · 14 days`, Icon: ClipboardList, color: MODULE_META.assessments.color, trend: view.trend.map((row) => row.assessments), delta: weekChange(view.trend.map((row) => row.assessments)), to: links.reports },
-    (data.mockInterviews || data.aiInterviews) && { label: 'Interviews', value: formatNumber((data.mockInterviews?.feedback || 0) + (data.aiInterviews?.completed || 0)), helper: data.mockInterviews ? `${data.mockInterviews.upcoming} upcoming events` : 'AI interviews · 14 days', Icon: MessageSquare, color: MODULE_META.interviews.color, trend: view.trend.map((row) => row.interviews), delta: weekChange(view.trend.map((row) => row.interviews)), to: data.mockInterviews ? links.interviews : links.aiInterviews },
+    data.coding && { label: 'Coding acceptance', value: data.coding.acceptanceRate == null ? '—' : `${Math.round(data.coding.acceptanceRate)}%`, helper: `${formatNumber(data.coding.attempts)} submissions · ${short}`, Icon: Code2, color: MODULE_META.coding.color, trend: view.trend.map((row) => row.coding), delta: weekChange(view.trend.map((row) => row.coding)), to: links.coding },
+    data.assessments && { label: 'Assessment average', value: data.assessments.averageScore == null ? '—' : `${Math.round(data.assessments.averageScore)}%`, helper: `${formatNumber(data.assessments.submissions)} submissions · ${short}`, Icon: ClipboardList, color: MODULE_META.assessments.color, trend: view.trend.map((row) => row.assessments), delta: weekChange(view.trend.map((row) => row.assessments)), to: links.reports },
+    (data.mockInterviews || data.aiInterviews) && { label: 'Interviews', value: formatNumber((data.mockInterviews?.feedback || 0) + (data.aiInterviews?.completed || 0)), helper: data.mockInterviews ? `${data.mockInterviews.upcoming} upcoming events` : `AI interviews · ${short}`, Icon: MessageSquare, color: MODULE_META.interviews.color, trend: view.trend.map((row) => row.interviews), delta: weekChange(view.trend.map((row) => row.interviews)), to: data.mockInterviews ? links.interviews : links.aiInterviews },
     data.learning && { label: 'Topics completed', value: formatNumber(data.learning.topicsCompleted), helper: `${formatNumber(data.learning.activeLearners)} active learners`, Icon: BookOpen, color: MODULE_META.learning.color, trend: view.trend.map((row) => row.learning), delta: weekChange(view.trend.map((row) => row.learning)), to: links.learning },
   ].filter(Boolean) : [];
 
   const modulePanels = data ? [
-    data.coding && <CodingPanel key="coding" coding={data.coding} links={links} />,
-    data.assessments && <AssessmentPanel key="assessments" assessments={data.assessments} links={links} />,
-    (data.mockInterviews || data.aiInterviews) && <InterviewPanel key="interviews" mock={data.mockInterviews} ai={data.aiInterviews} links={links} />,
-    data.learning && <LearningPanel key="learning" learning={data.learning} students={people.students} links={links} />,
+    data.coding && <CodingPanel key="coding" coding={data.coding} links={links} period={period} />,
+    data.assessments && <AssessmentPanel key="assessments" assessments={data.assessments} links={links} period={period} short={short} />,
+    (data.mockInterviews || data.aiInterviews) && <InterviewPanel key="interviews" mock={data.mockInterviews} ai={data.aiInterviews} links={links} period={period} short={short} />,
+    data.learning && <LearningPanel key="learning" learning={data.learning} students={people.students} links={links} short={short} />,
   ].filter(Boolean) : [];
 
   const panelGrid = modulePanels.length >= 3 ? 'md:grid-cols-2 xl:grid-cols-3' : modulePanels.length === 2 ? 'md:grid-cols-2' : '';
@@ -244,6 +254,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
         createItems={createItems}
         stats={headerStats}
         shortcuts={shortcuts}
+        period={<DateRangeFilter value={range} onChange={setRange} presets={OVERVIEW_PRESETS} align="right" label="Dashboard period" />}
       />
 
       {error ? <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div> : null}
@@ -257,7 +268,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
 
       <div className="mt-4 grid gap-4 xl:grid-cols-12">
         <Glass className="p-5 xl:col-span-8">
-          <CardHeader title="Engagement trend" subtitle="Daily student actions per module, last 14 days" Icon={Activity} action={data?.access?.activity ? <CardLink to={links.activity}>Activity log</CardLink> : null} />
+          <CardHeader title="Engagement trend" subtitle={`Daily student actions per module, ${period}`} Icon={Activity} action={data?.access?.activity ? <CardLink to={links.activity}>Activity log</CardLink> : null} />
           {showSkeleton ? <div className="h-[260px] animate-pulse rounded-xl bg-slate-200/60 dark:bg-white/[0.05]" />
             : view.series.length ? <ActivityTrendChart data={view.trend} series={view.series} />
               : <EmptyHint>No modules are enabled for this account yet. Ask your administrator to grant access.</EmptyHint>}
@@ -352,7 +363,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
           </Glass>
         ) : null}
       </div>
-      {data ? <p className="mt-4 text-center text-[11px] text-slate-400">Totals: {formatNumber(sum(view.trend, 'logins'))} sign-ins in 14 days · refreshed automatically every 5 minutes</p> : null}
+      {data ? <p className="mt-4 text-center text-[11px] text-slate-400">Totals: {formatNumber(sum(view.trend, 'logins'))} sign-ins · {periodLabel} · refreshed automatically every 5 minutes</p> : null}
     </OverviewShell>
   );
 }

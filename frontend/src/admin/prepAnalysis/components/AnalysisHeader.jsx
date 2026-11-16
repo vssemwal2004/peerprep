@@ -1,12 +1,13 @@
 import { motion, useReducedMotion } from "framer-motion";
-import { CalendarRange, LayoutGrid, Sigma } from "lucide-react";
-import { RANGE_PRESETS } from "../filterModel";
+import { LayoutGrid, Sigma } from "lucide-react";
+import DateRangeFilter from "../../../components/dateRange/DateRangeFilter";
+import { RANGE_PRESET_VALUES } from "../filterModel";
 import { AREA_ICONS } from "./sectionStyles";
 import { focusRing } from "./ui";
 
 /**
- * The page header: feature tabs (Prep Coding, Learning…), the period, and the page actions
- * (`children`). Changing a tab or the period applies at once.
+ * The page header: feature tabs (Prep Coding, Learning…), the period ({ preset } or a custom
+ * From–To range), and the page actions (`children`). Changing a tab or the period applies at once.
  */
 export default function AnalysisHeader({ areas, area, onArea, period, onPeriod, children, embedded = false }) {
   const reduced = useReducedMotion();
@@ -34,15 +35,7 @@ export default function AnalysisHeader({ areas, area, onArea, period, onPeriod, 
             );
           })}
         </nav>}
-        <label className="relative inline-flex items-center">
-          <span className="sr-only">Period</span>
-          <CalendarRange className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-400" />
-          <select value={period} onChange={(event) => onPeriod(event.target.value)}
-            className={`h-9 appearance-none rounded-lg border border-slate-200 bg-white pl-8 pr-8 text-[12.5px] font-semibold text-slate-700 hover:border-slate-300 dark:border-gray-700 dark:bg-gray-900 dark:text-slate-200 ${focusRing}`}>
-            {RANGE_PRESETS.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}
-          </select>
-          <span className="pointer-events-none absolute right-2.5 text-[10px] text-slate-400" aria-hidden="true">▼</span>
-        </label>
+        <DateRangeFilter value={period} onChange={onPeriod} presets={RANGE_PRESET_VALUES} />
         <div className="ml-auto flex flex-wrap items-center gap-2">{children}</div>
       </div>
     </header>

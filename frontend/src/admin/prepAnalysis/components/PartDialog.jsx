@@ -1,11 +1,12 @@
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import {
-  ArrowDown, ArrowUp, ChevronLeft, ChevronRight, FileSpreadsheet, Filter, Loader2, Maximize2, Search, Sheet, UserRound, X,
-} from "lucide-react";
+import { FileSpreadsheet, Filter, Loader2, Maximize2, Search, Sheet, UserRound, X } from "lucide-react";
+import { SortHeader, TablePager } from "../../../components/table";
 import { formatScore } from "../../../student/prepScore/formatScore";
-import { drillChart, useChartDownload } from "../chartActions";
+import { chartRequest, drillChart, drillStudentIds, useChartDownload } from "../chartActions";
+import { PageCheckbox, RowCheckbox, SelectionBar, SendEmailDialog } from "./StudentMail";
+import useStudentSelection from "./useStudentSelection";
 import { AnimatedNumber } from "./Motion";
 import { sectionStyle } from "./sectionStyles";
 import { Button, IconButton, focusRing } from "./ui";
@@ -35,6 +36,7 @@ function useDrill(analysis, chartId, key, view, group) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState({ key: "", direction: "" });
   const [page, setPage] = useState(1);
+  const [limit, setLimitState] = useState(PAGE_SIZE);
   const [state, setState] = useState({ loading: true, error: "", result: null });
   useEffect(() => {
     const timer = setTimeout(() => { setQuery(search.trim()); setPage(1); }, 250);
@@ -42,11 +44,11 @@ function useDrill(analysis, chartId, key, view, group) {
   }, [search]);
   // Students and problems have different columns, so a new tab starts on its own order.
   useEffect(() => { setSort({ key: "", direction: "" }); setPage(1); }, [view]);
-  const requestKey = JSON.stringify({ filters: analysis.state, focus: analysis.focus, compare: analysis.compareRequest, entry: analysis.entryById?.get(chartId), chartId, key, view, group, query, sort, page });
+  const requestKey = JSON.stringify({ filters: analysis.state, focus: analysis.focus, compare: analysis.compareRequest, entry: analysis.entryById?.get(chartId), chartId, key, view, group, query, sort, page, limit });
   useEffect(() => {
     const controller = new AbortController();
     setState((current) => ({ ...current, loading: true, error: "" }));
-    drillChart(analysis, chartId, { key, view, group, search: query, sort: sort.key, direction: sort.direction, page, limit: PAGE_SIZE }, controller.signal)
+    drillChart(analysis, chartId, { key, view, group, search: query, sort: sort.key, direction: sort.direction, page, limit }, controller.signal)
       .then((result) => setState({ loading: false, error: "", result }))
       .catch((error) => { if (error.name !== "AbortError") setState((current) => ({ ...current, loading: false, error: error.message })); });
     return () => controller.abort();
@@ -58,35 +60,33 @@ function useDrill(analysis, chartId, key, view, group) {
     setSort({ key: columnKey, direction: current.key === columnKey && current.direction === "desc" ? "asc" : "desc" });
     setPage(1);
   };
-  return { ...state, search, setSearch, query, sortBy, setPage };
+  const setLimit = (size) => { setLimitState(size); setPage(1); };
+  return { ...state, search, setSearch, query, sortBy, setPage, limit, setLimit };
 }
 
-function DrillTable({ drill, onStudent }) {
+function DrillTable({ drill, onStudent, selection = null }) {
   const { result } = drill;
   const columns = result?.columns || [];
   if (drill.error) return <p className="p-6 text-[12.5px] text-rose-600">{drill.error}</p>;
   if (!result) return <div className="flex h-48 items-center justify-center text-[12px] text-slate-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading…</div>;
   if (!result.rows.length) return <p className="p-10 text-center text-[12.5px] text-slate-500">{drill.query ? `Nothing matches “${drill.query}”.` : "No students here."}</p>;
+  const sort = result.sort ? { key: result.sort, direction: result.direction } : null;
+  const pageIds = selection ? [...new Set(result.rows.map((row) => String(row.id)))] : [];
   return (
     <table data-no-serial className="min-w-full text-[12px]">
-      <thead className="sticky top-0 z-10 bg-white text-[11px] text-slate-500 shadow-[0_1px_0_rgba(15,23,42,0.06)] dark:bg-gray-900 dark:text-slate-400">
+      <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_rgba(15,23,42,0.06)] dark:bg-gray-900">
         <tr>
-          {columns.map((column) => {
-            const active = result.sort === column.key;
-            return (
-              <th key={column.key} scope="col" aria-sort={active ? (result.direction === "asc" ? "ascending" : "descending") : "none"} className={`whitespace-nowrap px-3 py-2 font-semibold ${column.kind === "text" ? "text-left" : "text-right"}`}>
-                <button type="button" onClick={() => drill.sortBy(column.key)} className={`inline-flex items-center gap-0.5 rounded hover:text-slate-900 dark:hover:text-white ${active ? "text-slate-900 dark:text-white" : ""} ${focusRing}`}>
-                  {column.label}{active && (result.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-                </button>
-              </th>
-            );
-          })}
+          {selection && <th scope="col" className="w-9 px-3 py-2.5"><PageCheckbox pageIds={pageIds} selection={selection} /></th>}
+          {columns.map((column) => (
+            <SortHeader key={column.key} sortKey={column.key} sort={sort} onSort={drill.sortBy} align={column.kind === "text" ? "left" : "right"} className="whitespace-nowrap">{column.label}</SortHeader>
+          ))}
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100 dark:divide-white/[0.05]">
         {result.rows.map((row, rowIndex) => (
           <tr key={`${row.id}-${rowIndex}`} tabIndex={0} onClick={() => onStudent?.(row.id)} onKeyDown={(event) => { if (event.key === "Enter") onStudent?.(row.id); }}
-            className={`cursor-pointer transition-colors hover:bg-sky-50/70 focus:bg-sky-50 focus:outline-none dark:hover:bg-sky-500/10 ${drill.loading ? "opacity-60" : ""}`}>
+            className={`cursor-pointer transition-colors hover:bg-sky-50/70 focus:bg-sky-50 focus:outline-none dark:hover:bg-sky-500/10 ${drill.loading ? "opacity-60" : ""} ${selection?.has(String(row.id)) ? "bg-sky-50/60 dark:bg-sky-500/[0.07]" : ""}`}>
+            {selection && <td className="w-9 px-3 py-2"><RowCheckbox checked={selection.has(String(row.id))} onChange={() => selection.toggle(String(row.id))} label={`Select ${row.cells[0] ?? "student"}`} /></td>}
             {row.cells.map((cell, index) => {
               const column = columns[index];
               return (
@@ -116,6 +116,11 @@ function PartDialogBody({ analysis, chart, part, layered, onClose, onStudent, on
   const drill = useDrill(analysis, chart.id, part.key, tab, group);
   const download = useChartDownload(analysis, chart.id);
   const result = drill.result;
+  // Tick students to email them; ticks stay while searching and paging, so several searches can add up.
+  const selection = useStudentSelection(chart.id);
+  const [emailing, setEmailing] = useState(false);
+  const closeEmail = useCallback(() => setEmailing(false), []);
+  const selectable = tab === "students";
   const style = sectionStyle(chart.section);
   const students = result?.students ?? part.students;
   const cohort = result?.cohort ?? chart.summary?.cohort;
@@ -178,18 +183,25 @@ function PartDialogBody({ analysis, chart, part, layered, onClose, onStudent, on
           </label>
         </div>
 
-        <div className="mx-5 min-h-[220px] flex-1 overflow-auto rounded-xl border border-slate-200 dark:border-gray-800">
-          <DrillTable drill={drill} onStudent={onStudent} />
+        {selectable && (
+          <SelectionBar className="mx-5 mb-2" selection={selection} total={result?.total ?? 0}
+            loadAll={() => drillStudentIds(analysis, chart.id, { group, key: part.key, search: drill.query })}
+            onEmail={() => setEmailing(true)} />
+        )}
+        <div className="mx-5 flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-gray-800">
+          <div className="min-h-0 flex-1 overflow-auto">
+            <DrillTable drill={drill} onStudent={onStudent} selection={selectable ? selection : null} />
+          </div>
+          {result && (
+            <TablePager page={result.page} pageSize={drill.limit} total={result.total} onPage={drill.setPage} onPageSize={drill.setLimit}
+              busy={drill.loading} noun={tab === "students" ? "students" : "rows"} />
+          )}
         </div>
 
         <footer className="flex flex-wrap items-center gap-2 px-5 py-3.5">
-          {result && result.pages > 1 ? (
-            <span className="flex items-center gap-1 text-[12px] text-slate-500">
-              <IconButton label="Previous page" disabled={result.page <= 1} onClick={() => drill.setPage(result.page - 1)}><ChevronLeft className="h-4 w-4" /></IconButton>
-              <span className="tabular-nums">{((result.page - 1) * result.limit + 1).toLocaleString()}–{Math.min(result.total, result.page * result.limit).toLocaleString()} of {result.total.toLocaleString()}</span>
-              <IconButton label="Next page" disabled={result.page >= result.pages} onClick={() => drill.setPage(result.page + 1)}><ChevronRight className="h-4 w-4" /></IconButton>
-            </span>
-          ) : <span className="text-[12px] text-slate-400">{result ? `${result.total.toLocaleString()} ${result.total === 1 ? "row" : "rows"}` : ""}</span>}
+          {selectable && !selection.count && result?.rows?.length > 0 && (
+            <p className="text-[12px] text-slate-500 dark:text-slate-400">Tick students to send them an email.</p>
+          )}
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {part.studentId && <Button onClick={() => onStudent(part.studentId)}><UserRound className="h-3.5 w-3.5" />Full profile</Button>}
             {onFocus && group === null && <Button onClick={() => onFocus(part)} title="Show the whole page for just these students"><Filter className="h-3.5 w-3.5" />Filter page to these</Button>}
@@ -201,6 +213,7 @@ function PartDialogBody({ analysis, chart, part, layered, onClose, onStudent, on
           </div>
         </footer>
       </motion.section>
+      <SendEmailDialog open={emailing} onClose={closeEmail} studentIds={selection.ids} body={chartRequest(analysis, chart.id, {}, group)} />
     </div>
   );
 }

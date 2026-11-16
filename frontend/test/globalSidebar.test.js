@@ -15,6 +15,11 @@ const originals = new Map(globals.map((key) => [key, Object.getOwnPropertyDescri
 
 before(async () => {
   dom = new JSDOM('<!doctype html><html><body><div id="app"></div></body></html>', { url: 'http://localhost:5173' });
+  // JSDOM has no matchMedia; the sidebar asks it whether to show the phone navigation (desktop here).
+  dom.window.matchMedia ??= (query) => ({
+    matches: false, media: query, onchange: null,
+    addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false,
+  });
   for (const key of globals) Object.defineProperty(globalThis, key, {
     configurable: true, writable: true, value: key === 'IS_REACT_ACT_ENVIRONMENT' ? true : dom.window[key],
   });
@@ -106,7 +111,9 @@ for (const role of ['admin', 'coordinator', 'student']) {
 for (const role of ['admin', 'coordinator']) {
   test(`${role}: nested interview dropdown and links survive pointerdown`, async () => {
     await mount(role);
-    const parent = titled('Interviews');
+    // Master Admin calls the group Prep Interview; coordinators still see Interviews.
+    const interviewsTitle = role === 'admin' ? 'Prep Interview' : 'Interviews';
+    const parent = titled(interviewsTitle);
     await click(parent);
     await click(document.querySelector('[aria-label="Expand One-to-One Interviews"]'));
     assert.equal(parent.getAttribute('aria-expanded'), 'true');
@@ -162,7 +169,7 @@ test('student assessment module keeps its title outside the content scroller', a
 
 test('account popup is exclusive and still supports theme switching, outside dismissal and Escape', async () => {
   await mount();
-  const group = titled('Assessments');
+  const group = titled('Prep Assessment');
   await click(group);
   const account = document.querySelector('[aria-label="Open account menu"]');
   await click(account);
@@ -207,7 +214,7 @@ test('portaled action menu survives capture pointerdown and executes its item cl
 
 test('switching groups keeps just the selected section open', async () => {
   await mount();
-  for (const label of ['Assessments', 'Library', 'Interviews', 'Settings']) {
+  for (const label of ['Prep Assessment', 'Prep Library', 'Prep Interview', 'Settings']) {
     await click(titled(label));
     assert.deepEqual(expandedGroups().map((group) => group.title), [label]);
   }
@@ -215,7 +222,7 @@ test('switching groups keeps just the selected section open', async () => {
 
 test('AI Interviews label opens its submenu and each option navigates with an exact active state', async () => {
   await mount();
-  await click(titled('Interviews'));
+  await click(titled('Prep Interview'));
   await click(document.querySelector('[aria-label="AI Interviews"]'));
   const toggle = document.querySelector('[aria-label="Collapse AI Interviews"]');
   assert.ok(toggle, 'Clicking the label must expand the AI submenu');
@@ -227,8 +234,8 @@ test('AI Interviews label opens its submenu and each option navigates with an ex
     const link = [...currentPanel.querySelectorAll('a')].find((item) => item.getAttribute('href') === destination);
     await click(link);
     assert.equal(document.getElementById('location').textContent, destination);
-    assert.equal(titled('Interviews').getAttribute('aria-expanded'), 'false');
-    await click(titled('Interviews'));
+    assert.equal(titled('Prep Interview').getAttribute('aria-expanded'), 'false');
+    await click(titled('Prep Interview'));
     await click(document.querySelector('[aria-label="AI Interviews"]'));
     currentPanel = document.getElementById(document.querySelector('[aria-label="Collapse AI Interviews"]').getAttribute('aria-controls'));
     assert.equal(currentPanel.querySelector('[aria-current="page"]').getAttribute('href'), destination);
@@ -246,16 +253,16 @@ async function mountAt(path, role = 'admin') {
 
 test('Master Admin universities live in one dropdown with a page per task', async () => {
   await mount();
-  await click(titled('Universities'));
-  const panel = document.getElementById(titled('Universities').getAttribute('aria-controls'));
+  await click(titled('University'));
+  const panel = document.getElementById(titled('University').getAttribute('aria-controls'));
   assert.deepEqual([...panel.querySelectorAll('a')].map((link) => link.getAttribute('aria-label')),
     ['Overview', 'All Universities', 'Add University', 'Shared Assessments', 'New-University Defaults', 'Activity Log']);
   for (const destination of [...panel.querySelectorAll('a')].map((link) => link.getAttribute('href'))) {
-    const livePanel = document.getElementById(titled('Universities').getAttribute('aria-controls'));
+    const livePanel = document.getElementById(titled('University').getAttribute('aria-controls'));
     const link = [...livePanel.querySelectorAll('a')].find((item) => item.getAttribute('href') === destination);
     await click(link);
     assert.equal(document.getElementById('location').textContent, destination);
-    await click(titled('Universities'));
+    await click(titled('University'));
   }
 });
 
@@ -274,9 +281,9 @@ test('Master Admin Prep Coins is one dropdown with a page per task, and pricing 
 test('opening one university highlights Universities without opening its flyout automatically', async () => {
   await mountAt('/admin/universities/graphic-era?tab=plan');
   await act(async () => document.querySelector('aside').dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
-  assert.equal(titled('Universities').getAttribute('aria-expanded'), 'false');
-  assert.ok(titled('Universities').className.includes('text-sky-700'));
-  await click(titled('Universities'));
+  assert.equal(titled('University').getAttribute('aria-expanded'), 'false');
+  assert.ok(titled('University').className.includes('text-sky-700'));
+  await click(titled('University'));
   const active = document.querySelector('[aria-label="All Universities"]');
   assert.ok(active.className.includes('bg-sky-50'));
 });
@@ -302,12 +309,24 @@ test('Settings is organised into folders that open in place and navigate', async
 
 test('assessment-only students can open and use their only group', async () => {
   await mount('student', undefined, 'assessment_only');
-  await click(titled('Assessments'));
-  const links = document.getElementById(titled('Assessments').getAttribute('aria-controls')).querySelectorAll('a');
+  await click(titled('Prep Assessment'));
+  const links = document.getElementById(titled('Prep Assessment').getAttribute('aria-controls')).querySelectorAll('a');
   assert.equal(links.length, 3);
   for (const destination of [...links].map((link) => link.getAttribute('href'))) {
-    const panel = document.getElementById(titled('Assessments').getAttribute('aria-controls'));
+    const panel = document.getElementById(titled('Prep Assessment').getAttribute('aria-controls'));
     await click([...panel.querySelectorAll('a')].find((link) => link.getAttribute('href') === destination));
-    await click(titled('Assessments'));
+    await click(titled('Prep Assessment'));
   }
+});
+
+test('student sidebar leads with Dashboard, Prep Coding, Quick Prep, Prep Assessment, Resume, Ranking, Prep Coin', async () => {
+  await mount('student');
+  const order = ['Dashboard', 'Prep Coding', 'Quick Prep', 'Prep Assessment', 'Resume', 'Ranking', 'Prep Coin'];
+  const items = [...document.querySelectorAll('nav a, nav button')];
+  const positions = order.map((label) => {
+    const index = items.findIndex((node) => [node.getAttribute('title'), node.getAttribute('aria-label'), node.textContent.trim()].includes(label));
+    assert.ok(index >= 0, `${label} is in the student sidebar`);
+    return index;
+  });
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'the seven core items keep the agreed order');
 });

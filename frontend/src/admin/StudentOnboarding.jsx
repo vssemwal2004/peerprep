@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../utils/api";
 import AccountQuotaNotice from '../components/AccountQuotaNotice';
@@ -9,6 +9,35 @@ import { Upload, CheckCircle, AlertCircle, Plus, Loader2, FileText, Download, Us
 import { useNavigate } from "react-router-dom";
 import StudentAccessSelector from './components/StudentAccessSelector';
 import { ALL_STUDENT_FEATURES } from '../student/studentFeatureAccess';
+import { DataTable, SortHeader, TablePager, useClientTable } from '../components/table';
+
+// Server result of a CSV upload/check, one row per CSV line.
+const UPLOAD_RESULT_COLUMNS = [
+  { key: 'row', label: 'Row', value: (result) => Number(result.row) || null, headerClassName: 'w-16', className: 'whitespace-nowrap text-xs text-slate-600 dark:text-gray-400' },
+  { key: 'email', label: 'Email', value: (result) => result.email || null, headerClassName: 'min-w-[180px]', className: 'whitespace-nowrap text-xs' },
+  { key: 'studentid', label: 'Student ID', value: (result) => result.studentid || null, headerClassName: 'w-24', className: 'whitespace-nowrap text-xs' },
+  {
+    key: 'status',
+    label: 'Status',
+    headerClassName: 'w-20',
+    className: 'whitespace-nowrap text-xs',
+    render: (result) => <span className={`font-medium ${result.status === 'created' ? 'text-emerald-500 dark:text-emerald-400' : 'text-amber-500 dark:text-amber-400'}`}>{result.status}</span>,
+  },
+];
+
+/** Status label of a CSV preview row (also its sort value). */
+function previewStatusLabel(errors, result) {
+  if (errors?.length) return `${errors.length} error(s)`;
+  switch (result?.status) {
+    case 'updated': return 'Updated';
+    case 'will_update': return `Will Update: ${result.changes?.join(', ') || ''}`;
+    case 'exists':
+    case 'exists_no_change': return 'Already exists';
+    case 'studentid_conflict': return 'Student ID Conflict';
+    case 'ready': return 'Ready to add';
+    default: return 'Valid';
+  }
+}
 
 export default function StudentOnboarding() {
   const { logBulkCreate, logCreate, logUpload } = useActivityLogger();
@@ -21,7 +50,7 @@ export default function StudentOnboarding() {
   const [uploadResult, setUploadResult] = useState(null);
   const [clientErrors, setClientErrors] = useState([]);
   const [showSingleForm, setShowSingleForm] = useState(false);
-  const [singleForm, setSingleForm] = useState({ course: '', name: '', email: '', studentid: '', branch: '', college: '', teacherid: '', semester: '', group: '' });
+  const [singleForm, setSingleForm] = useState({ course: '', name: '', email: '', studentid: '', branch: '', college: '', teacherid: '', semester: '', section: '', group: '' });
   const [singleMsg, setSingleMsg] = useState('');
   const [singleLoading, setSingleLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -67,16 +96,27 @@ export default function StudentOnboarding() {
     masterData
       .filter((entry) => entry.category === category && entry.isActive !== false)
       .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name));
+  // A section is required once Master Data lists sections; the group always stays optional.
+  const sectionRequired = masterData.some((entry) => entry.category === 'section' && entry.isActive !== false);
 
   // Email validation regex
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  const errorsByRow = clientErrors.reduce((acc, cur) => {
+  const errorsByRow = useMemo(() => clientErrors.reduce((acc, cur) => {
     const msg = cur.details ? (Array.isArray(cur.details) ? cur.details.join(', ') : cur.details) : cur.error;
     if (!acc[cur.row]) acc[cur.row] = [];
     acc[cur.row].push(msg || cur.error);
     return acc;
-  }, {});
+  }, {}), [clientErrors]);
+
+  // CSV preview: sortable by every column, paged. `idx` keeps the CSV position, which the
+  // upload/check results are matched by.
+  const previewColumns = useMemo(() => (students.length ? Object.keys(students[0]).filter((key) => key !== '__row') : []), [students]);
+  const previewRows = useMemo(() => students.map((student, idx) => ({ student, idx })), [students]);
+  const previewValue = useCallback((entry, key) => (key === '__status'
+    ? previewStatusLabel(errorsByRow[entry.student.__row], uploadResult?.results?.[entry.idx])
+    : entry.student[key]), [errorsByRow, uploadResult]);
+  const previewTable = useClientTable(previewRows, { getValue: previewValue, resetKey: students });
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -199,13 +239,14 @@ export default function StudentOnboarding() {
           if (!r.teacherid || r.teacherid.trim() === '') missing.push('teacherid');
           if (!r.semester || r.semester.trim() === '') missing.push('semester');
           
-          // Validate Group if provided - must be G1 to G5
-          if (r.group && r.group.trim() !== '') {
-            const groupValue = r.group.trim().toUpperCase();
-            if (!['G1', 'G2', 'G3', 'G4', 'G5'].includes(groupValue)) {
-              errs.push({ row: rowNum, error: 'Invalid group value. Must be G1, G2, G3, G4, or G5', details: ['group'] });
+          // Optional Section / Group: once Master Data lists values, only those (any case) are accepted.
+          [['section', 'Section'], ['group', 'Group']].forEach(([key, label]) => {
+            const value = String(r[key] || '').trim().toLowerCase();
+            const allowed = masterOptions(key).map((entry) => entry.name.toLowerCase());
+            if (value && allowed.length && !allowed.includes(value)) {
+              errs.push({ row: rowNum, error: `${label} "${r[key].trim()}" is not in Master Data`, details: [key] });
             }
-          }
+          });
           
           if (missing.length > 0) errs.push({ row: rowNum, error: 'Missing required fields', details: missing });
           else {
@@ -441,6 +482,10 @@ export default function StudentOnboarding() {
       setSingleMsg('Please fill in all required fields: Name, Email, Student ID, Branch, Course, College, Teacher ID, and Semester');
       return;
     }
+    if (sectionRequired && !singleForm.section) {
+      setSingleMsg('Please choose a section');
+      return;
+    }
     if (!emailRegex.test(email)) {
       setSingleMsg('Please enter a valid email address');
       return;
@@ -470,7 +515,7 @@ export default function StudentOnboarding() {
       
       // Don't add to local students array since it's already uploaded to server
       // This prevents the "Upload to Server" button from staying enabled
-      setSingleForm({ name: '', email: '', studentid: '', branch: '', course: '', college: '', teacherid: '', semester: '', group: '' });
+      setSingleForm({ name: '', email: '', studentid: '', branch: '', course: '', college: '', teacherid: '', semester: '', section: '', group: '' });
       
       // Log activity
       logCreate('STUDENT', data.id, `Created student: ${singleForm.name} (${data.email})`, {
@@ -498,7 +543,7 @@ export default function StudentOnboarding() {
   const isSingleValid = () => {
     const { course, name, email, studentid, branch, college, teacherid, semester } = singleForm;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return course && name && email && studentid && branch && college && teacherid && semester && emailRegex.test(email);
+    return course && name && email && studentid && branch && college && teacherid && semester && (!sectionRequired || singleForm.section) && emailRegex.test(email);
   };
 
   return (
@@ -537,7 +582,7 @@ export default function StudentOnboarding() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 text-xs text-slate-700 dark:text-gray-300">
                 <div className="space-y-1">
                   <p><strong>Required columns:</strong> Course, Name, Email, Student ID, Branch, College, Teacher ID, Semester</p>
-                  <p className="hidden sm:block"><strong>Optional columns:</strong> Group (G1-G5)</p>
+                  <p className="hidden sm:block"><strong>Optional columns:</strong> Section, Group (values from Master Data when set up)</p>
                   <p className="hidden sm:block"><strong>Header format:</strong> Keep the same order as the sample CSV so every column is picked up correctly.</p>
                 </div>
                 <div className="space-y-1 hidden lg:block">
@@ -591,16 +636,19 @@ export default function StudentOnboarding() {
                 { key: 'semester', label: 'Semester *', masterCategory: 'semester' },
                 { key: 'course', label: 'Course *', masterCategory: 'course' },
                 { key: 'college', label: 'Campus / College *', masterCategory: 'campus' },
-              ].map(({ key, label, placeholder, type, hint, masterCategory }) => (
+                { key: 'section', label: sectionRequired ? 'Section *' : 'Section', masterCategory: 'section', emptyHint: 'Add sections in Master Data' },
+                { key: 'group', label: 'Group (Optional)', masterCategory: 'group', emptyHint: 'Add groups in Master Data' },
+              ].map(({ key, label, placeholder, type, hint, masterCategory, emptyHint }) => (
                 <div key={key} className="flex flex-col">
                   <label className="text-xs font-medium text-slate-700 dark:text-gray-300 mb-1">{label}</label>
                   {masterCategory ? (
                     <select
                       value={singleForm[key]}
                       onChange={(e) => handleSingleChange(key, e.target.value)}
-                      className="p-2 text-sm border border-slate-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-500 dark:focus:ring-sky-600 focus:border-transparent transition-all duration-200 bg-white dark:bg-gray-800 text-slate-900 dark:text-gray-100"
+                      disabled={Boolean(emptyHint) && !masterOptions(masterCategory).length}
+                      className="disabled:cursor-not-allowed disabled:opacity-60 p-2 text-sm border border-slate-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-500 dark:focus:ring-sky-600 focus:border-transparent transition-all duration-200 bg-white dark:bg-gray-800 text-slate-900 dark:text-gray-100"
                     >
-                      <option value="">Select {label.replace(' *', '')}</option>
+                      <option value="">{emptyHint && !masterOptions(masterCategory).length ? emptyHint : `Select ${label.replace(' *', '').replace(' (Optional)', '')}`}</option>
                       {masterOptions(masterCategory).map((entry) => (
                         <option key={entry._id} value={entry.name}>
                           {masterCategory === 'semester' ? `Semester ${entry.name}` : entry.name}
@@ -619,21 +667,6 @@ export default function StudentOnboarding() {
                   {hint && <span className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">{hint}</span>}
                 </div>
               ))}
-              <div className="flex flex-col">
-                <label className="text-xs font-medium text-slate-700 dark:text-gray-300 mb-1">Group (Optional)</label>
-                <select
-                  value={singleForm.group}
-                  onChange={(e) => handleSingleChange('group', e.target.value)}
-                  className="p-2 text-sm border border-slate-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-500 dark:focus:ring-sky-600 focus:border-transparent transition-all duration-200 bg-white dark:bg-gray-800 text-slate-900 dark:text-gray-100"
-                >
-                  <option value="">Select Group</option>
-                  <option value="G1">G1</option>
-                  <option value="G2">G2</option>
-                  <option value="G3">G3</option>
-                  <option value="G4">G4</option>
-                  <option value="G5">G5</option>
-                </select>
-              </div>
             </div>
             <div className="flex gap-3 mt-4 justify-end">
               <motion.button
@@ -880,32 +913,14 @@ export default function StudentOnboarding() {
                   <h3 className="text-sm font-semibold text-slate-700 dark:text-gray-200 mb-3">
                     Existing Records - {uploadResult.count} records processed
                   </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm border border-slate-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
-                      <thead>
-                        <tr className="bg-slate-50 dark:bg-gray-700 text-left text-slate-700 dark:text-gray-300">
-                          <th className="py-2 px-3 whitespace-nowrap text-xs font-semibold w-16">Row</th>
-                          <th className="py-2 px-3 whitespace-nowrap text-xs font-semibold min-w-[180px]">Email</th>
-                          <th className="py-2 px-3 whitespace-nowrap text-xs font-semibold w-24">Student ID</th>
-                          <th className="py-2 px-3 whitespace-nowrap text-xs font-semibold w-20">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {uploadResult.results.map((r, i) => (
-                          <tr key={i} className="border-t border-slate-100 dark:border-gray-700 hover:bg-slate-50 dark:hover:bg-gray-700">
-                            <td className="py-2 px-3 whitespace-nowrap text-xs text-slate-600 dark:text-gray-400">{r.row || '-'}</td>
-                            <td className="py-2 px-3 whitespace-nowrap text-xs text-slate-800 dark:text-gray-200">{r.email || '-'}</td>
-                            <td className="py-2 px-3 whitespace-nowrap text-xs text-slate-800 dark:text-gray-200">{r.studentid || '-'}</td>
-                            <td className={`py-2 px-3 whitespace-nowrap text-xs font-medium ${
-                              r.status === 'created' ? 'text-emerald-500 dark:text-emerald-400' : 'text-amber-500 dark:text-amber-400'
-                            }`}>
-                              {r.status}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <DataTable
+                    columns={UPLOAD_RESULT_COLUMNS}
+                    rows={uploadResult.results || []}
+                    rowKey={(result, index) => `${result.row || ''}-${index}`}
+                    resetKey={uploadResult}
+                    noun="records"
+                    dense
+                  />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -984,34 +999,38 @@ export default function StudentOnboarding() {
             )}
 
             {/* Data Table */}
-            <div className="overflow-auto rounded-lg border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
-              <table className="min-w-full">
+            <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+             <div className="overflow-auto">
+              <table className="min-w-full" style={{ '--serial-start': (previewTable.page - 1) * previewTable.pageSize }}>
                 <thead className="bg-slate-50 dark:bg-gray-700">
                   <tr>
-                    {Object.keys(students[0]).filter(k => k !== '__row').map((k) => (
-                      <th
+                    {previewColumns.map((k) => (
+                      <SortHeader
                         key={k}
-                        className="py-3 px-4 border-b border-slate-200 dark:border-gray-600 text-left text-xs font-semibold text-slate-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap"
+                        sortKey={k}
+                        sort={previewTable.sort}
+                        onSort={previewTable.toggleSort}
+                        className="whitespace-nowrap border-b border-slate-200 dark:border-gray-600 dark:text-gray-300"
                       >
                         {k.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                      </th>
+                      </SortHeader>
                     ))}
-                    <th className="py-3 px-4 border-b border-slate-200 dark:border-gray-600 text-left text-xs font-semibold text-slate-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">
+                    <SortHeader sortKey="__status" sort={previewTable.sort} onSort={previewTable.toggleSort} className="whitespace-nowrap border-b border-slate-200 dark:border-gray-600 dark:text-gray-300">
                       Status
-                    </th>
+                    </SortHeader>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-gray-700">
-                  {students.map((student, idx) => (
+                  {previewTable.pageRows.map(({ student, idx }, position) => (
                     <motion.tr
                       key={idx}
                       initial={{ opacity: 0, y: 5 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.5 + idx * 0.03 }}
+                      transition={{ delay: Math.min(position, 25) * 0.03 }}
                       className="hover:bg-slate-50 dark:hover:bg-gray-700 transition-colors duration-150 cursor-pointer"
                       onClick={() => handleRowClick(student, idx)}
                     >
-                      {Object.keys(students[0]).filter(k => k !== '__row').map((k) => (
+                      {previewColumns.map((k) => (
                         <td
                           key={k}
                           className="py-3 px-4 text-sm text-slate-600 dark:text-gray-300 whitespace-nowrap"
@@ -1063,6 +1082,8 @@ export default function StudentOnboarding() {
                   ))}
                 </tbody>
               </table>
+             </div>
+              <TablePager {...previewTable.pager} noun="rows" />
             </div>
           </motion.div>
         )}

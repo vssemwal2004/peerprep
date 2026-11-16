@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, Download, Eye, EyeOff, FileText, Loader2, ShieldCheck, Upload, UserPlus, Users } from 'lucide-react';
 import { api } from '../utils/api';
 import AccountQuotaNotice from '../components/AccountQuotaNotice';
 import { useToast } from '../components/CustomToast';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 import { defaultCoordinatorPermissions } from './coordinatorPermissions';
+
+const PREVIEW_COLUMNS = [['row', 'Row'], ['name', 'Name'], ['email', 'Email'], ['coordinatorId', 'Coordinator ID'], ['department', 'Department'], ['college', 'College'], ['access', 'Access'], ['result', 'Result']];
 
 const initialForm = {
   coordinatorName: '',
@@ -85,6 +88,17 @@ export default function CoordinatorOnboarding() {
     });
     return () => { active = false; };
   }, [toast]);
+
+  const resultsByRow = useMemo(() => new Map((bulkResult?.results || []).map((item) => [item.row, item])), [bulkResult]);
+  const previewValue = useCallback((row, key) => {
+    if (key === 'access') return row.grantDefaultAccess ? 'Default' : 'None';
+    if (key === 'result') {
+      const result = resultsByRow.get(row.row);
+      return result ? (result.status === 'created' ? 'Created' : result.errors?.join(', ') || 'Failed') : 'Ready';
+    }
+    return row[key];
+  }, [resultsByRow]);
+  const previewTable = useClientTable(bulkRows, { getValue: previewValue, resetKey: bulkRows });
 
   const departments = useMemo(() => masterData.filter((entry) => entry.category === 'branch'), [masterData]);
   const colleges = useMemo(() => masterData.filter((entry) => entry.category === 'campus'), [masterData]);
@@ -258,7 +272,7 @@ export default function CoordinatorOnboarding() {
               {bulkFile && <div className="mt-3 flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200"><FileText className="h-4 w-4" />{bulkFile.name}<span className="text-xs opacity-70">({(bulkFile.size / 1024).toFixed(1)} KB)</span></div>}
             </div>
             {bulkErrors.length > 0 && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><div className="font-bold">Fix these CSV problems before upload</div><ul className="mt-2 list-disc space-y-1 pl-5">{bulkErrors.slice(0, 20).map((error) => <li key={error}>{error}</li>)}</ul></div>}
-            {bulkRows.length > 0 && <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10"><div><h3 className="font-bold text-slate-950 dark:text-white">Upload preview</h3><p className="text-sm text-slate-500">{bulkRows.length} coordinator rows ready for server validation</p></div><button type="button" onClick={uploadBulk} disabled={bulkErrors.length > 0 || bulkLoading || Boolean(bulkResult)} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 dark:bg-white dark:text-slate-950">{bulkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{bulkLoading ? 'Uploading...' : bulkResult ? 'Upload processed' : 'Upload coordinators'}</button></div><div className="overflow-x-auto"><table className="min-w-[900px] w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-400 dark:bg-white/[0.03]"><tr>{['Row', 'Name', 'Email', 'Coordinator ID', 'Department', 'College', 'Access', 'Result'].map((heading) => <th key={heading} className="px-4 py-3">{heading}</th>)}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-white/10">{bulkRows.slice(0, 100).map((row) => { const rowResult = bulkResult?.results?.find((item) => item.row === row.row); return <tr key={row.row}><td className="px-4 py-3 font-bold text-slate-500">{row.row}</td><td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">{row.name}</td><td className="px-4 py-3 text-slate-600 dark:text-slate-300">{row.email}</td><td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">{row.coordinatorId}</td><td className="px-4 py-3 text-slate-500">{row.department || '-'}</td><td className="px-4 py-3 text-slate-500">{row.college || '-'}</td><td className="px-4 py-3 text-slate-500">{row.grantDefaultAccess ? 'Default' : 'None'}</td><td className={`px-4 py-3 text-xs font-bold ${rowResult?.status === 'created' ? 'text-emerald-600' : rowResult ? 'text-rose-600' : 'text-slate-400'}`}>{rowResult ? (rowResult.status === 'created' ? 'Created' : rowResult.errors?.join(', ')) : 'Ready'}</td></tr>; })}</tbody></table></div>{bulkRows.length > 100 && <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">Showing first 100 rows. All {bulkRows.length} rows will be processed.</div>}</div>}
+            {bulkRows.length > 0 && <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10"><div><h3 className="font-bold text-slate-950 dark:text-white">Upload preview</h3><p className="text-sm text-slate-500">{bulkRows.length} coordinator rows ready for server validation</p></div><button type="button" onClick={uploadBulk} disabled={bulkErrors.length > 0 || bulkLoading || Boolean(bulkResult)} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 dark:bg-white dark:text-slate-950">{bulkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{bulkLoading ? 'Uploading...' : bulkResult ? 'Upload processed' : 'Upload coordinators'}</button></div><div className="overflow-x-auto"><table className="min-w-[900px] w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-400 dark:bg-white/[0.03]"><tr>{PREVIEW_COLUMNS.map(([key, heading]) => <SortHeader key={key} sortKey={key} sort={previewTable.sort} onSort={previewTable.toggleSort} className="px-4 py-3">{heading}</SortHeader>)}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-white/10">{previewTable.pageRows.map((row) => { const rowResult = resultsByRow.get(row.row); return <tr key={row.row}><td className="px-4 py-3 font-bold text-slate-500">{row.row}</td><td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">{row.name}</td><td className="px-4 py-3 text-slate-600 dark:text-slate-300">{row.email}</td><td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">{row.coordinatorId}</td><td className="px-4 py-3 text-slate-500">{row.department || '-'}</td><td className="px-4 py-3 text-slate-500">{row.college || '-'}</td><td className="px-4 py-3 text-slate-500">{row.grantDefaultAccess ? 'Default' : 'None'}</td><td className={`px-4 py-3 text-xs font-bold ${rowResult?.status === 'created' ? 'text-emerald-600' : rowResult ? 'text-rose-600' : 'text-slate-400'}`}>{rowResult ? (rowResult.status === 'created' ? 'Created' : rowResult.errors?.join(', ')) : 'Ready'}</td></tr>; })}</tbody></table></div><TablePager {...previewTable.pager} noun="rows" /></div>}
             {bulkResult && <div className="grid gap-3 sm:grid-cols-4">{[['Created', bulkResult.created], ['Failed', bulkResult.failed], ['Emails sent', bulkResult.emailSent], ['Email failures', bulkResult.emailFailed]].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-gray-900"><div className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</div><div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{value || 0}</div></div>)}</div>}
           </div>
         )}

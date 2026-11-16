@@ -1,49 +1,14 @@
 import React, { useMemo, useRef, useEffect } from 'react';
+import { dayKey } from './dateRange/dateRangeModel.js';
+import { rollingYearMonths } from './contributionCalendarModel.js';
 
-// Helper to generate rolling 365 days from today backwards
-function getRolling365Days(endingDayKey) {
-  const today = endingDayKey ? new Date(`${endingDayKey}T12:00:00`) : new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  const startDate = new Date(today);
-  startDate.setDate(startDate.getDate() - 364);
-  
-  const monthsMap = new Map();
-  const currentDate = new Date(startDate);
-  
-  while (currentDate <= today) {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-    const key = `${year}-${month}`;
-    
-    if (!monthsMap.has(key)) {
-      monthsMap.set(key, {
-        year,
-        month,
-        days: []
-      });
-    }
-    
-    monthsMap.get(key).days.push(new Date(currentDate));
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-  
-  // Convert map to array and fill weeks
-  const months = Array.from(monthsMap.values());
-  
-  // Add padding to first month to align with week grid
-  if (months.length > 0) {
-    const firstDay = months[0].days[0];
-    const startDayOfWeek = firstDay.getDay();
-    const padding = [];
-    for (let i = 0; i < startDayOfWeek; i++) {
-      padding.push(null);
-    }
-    months[0].days = [...padding, ...months[0].days];
-  }
-  
-  return months;
-}
+// Every cell and gap has a fixed size, so the grid's tracks are spelled out instead of left to
+// implicit-column / 1fr intrinsic sizing (same 10px cells and 4px gaps in every engine).
+const CELL = '0.625rem';
+const monthGridStyle = (dayCount) => ({
+  gridTemplateRows: `repeat(7, ${CELL})`,
+  gridTemplateColumns: `repeat(${Math.ceil(dayCount / 7)}, ${CELL})`,
+});
 
 function intensityClass(v) {
   // White/gray background with blue shades for activity (with dark mode support)
@@ -68,7 +33,8 @@ export default function ContributionCalendar({
     highest: '8+ activities',
   },
 }) {
-  const months = useMemo(() => getRolling365Days(endingDayKey), [endingDayKey]);
+  // Without an ending day the window ends on today's UTC day, the day the activity APIs bucket by.
+  const months = useMemo(() => rollingYearMonths(endingDayKey), [endingDayKey]);
   const scrollContainerRef = useRef(null);
 
   // Scroll to the right (current month) on mount
@@ -146,18 +112,15 @@ export default function ContributionCalendar({
                   {monthName}
                 </div>
                 {/* 7 rows for days of week, columns for weeks */}
-                <div className="grid grid-rows-7 grid-flow-col gap-1">
+                <div className="grid grid-flow-col gap-1" style={monthGridStyle(days.length)}>
                   {days.map((date, i) => {
                     if (!date) {
                       return <div key={`empty-${i}`} className="w-2.5 h-2.5" />;
                     }
-                    
-                    // Create UTC date string in YYYY-MM-DD format to match backend
-                    const year = date.getFullYear();
-                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const day = String(date.getDate()).padStart(2, '0');
-                    const key = `${year}-${month}-${day}`;
-                    
+
+                    // The cell's calendar day, the same "YYYY-MM-DD" the backend keys activity by.
+                    const key = dayKey(date);
+
                     const v = activity[key] || 0;
                     const cls = intensityClass(v);
                     const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'short' });

@@ -24,7 +24,6 @@ import {
   EmptyState,
   Field,
   Notice,
-  Pagination,
   Select,
   TextArea,
   TextInput,
@@ -32,6 +31,10 @@ import {
   primaryClass,
   secondaryClass,
 } from "./ui";
+import { TablePager } from "../../components/table";
+
+// The AI interview list endpoints accept these page sizes.
+const ANVI_PAGE_SIZES = [25, 50, 100];
 
 const difficultyOptions = [
   { value: "", label: "Select difficulty" },
@@ -112,11 +115,12 @@ export function TimingFields({
 function LibraryPicker({ onAdd, onClose, maxCount = 200 }) {
   const [search, setSearch] = useState(""),
     [page, setPage] = useState(1),
+    [limit, setLimit] = useState(25),
     [selected, setSelected] = useState({});
   const settled = useDebounced(search);
   const remote = useRemote(
-    () => interviewApi.library({ page, search: settled }),
-    [page, settled],
+    () => interviewApi.library({ page, limit, search: settled }),
+    [page, limit, settled],
   );
   return (
     <Dialog title="Add from Question Library" onClose={onClose}>
@@ -185,7 +189,21 @@ function LibraryPicker({ onAdd, onClose, maxCount = 200 }) {
             ))
           )}
         </div>
-        <Pagination value={remote.result?.pagination} onPage={setPage} />
+        {remote.result?.pagination && (
+          <TablePager
+            page={remote.result.pagination.page || page}
+            pageSize={limit}
+            pageSizeOptions={ANVI_PAGE_SIZES}
+            total={remote.result.pagination.total || 0}
+            onPage={setPage}
+            onPageSize={(value) => {
+              setLimit(value);
+              setPage(1);
+            }}
+            busy={remote.loading}
+            noun="questions"
+          />
+        )}
         <div className="flex items-center justify-between">
           <span className="text-xs text-slate-500">
             {Object.keys(selected).length} selected · {maxCount} available slots

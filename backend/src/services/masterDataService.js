@@ -8,12 +8,22 @@ const STUDENT_FIELD_CATEGORY = {
   course: 'course',
 };
 
+// Optional student fields: free text until Master Data has active values for them, then one of those.
+const OPTIONAL_FIELD_CATEGORY = {
+  section: 'section',
+  group: 'group',
+};
+
 const FIELD_LABEL = {
   college: 'Campus / College',
   branch: 'Branch',
   semester: 'Semester',
   course: 'Course',
+  section: 'Section',
+  group: 'Group',
 };
+
+const MAP_CATEGORIES = [...Object.values(STUDENT_FIELD_CATEGORY), ...Object.values(OPTIONAL_FIELD_CATEGORY)];
 
 const DEFAULT_MASTER_DATA = [
   { category: 'campus', name: 'GEU', code: 'GEU', order: 1 },
@@ -36,11 +46,11 @@ function normalize(category, value) {
 
 export async function loadStudentMasterMaps() {
   const entries = await MasterData.find({
-    category: { $in: Object.values(STUDENT_FIELD_CATEGORY) },
+    category: { $in: MAP_CATEGORIES },
     isActive: true,
   }).select('category name normalizedName').lean();
   const maps = Object.fromEntries(
-    Object.values(STUDENT_FIELD_CATEGORY).map((category) => [category, new Map()]),
+    MAP_CATEGORIES.map((category) => [category, new Map()]),
   );
   entries.forEach((entry) => {
     maps[entry.category].set(normalize(entry.category, entry.name), entry.name);
@@ -62,6 +72,35 @@ export function canonicalizeStudentMasterFields(fields, maps, { partial = false 
     result[field] = category === 'semester' ? Number(canonical) : canonical;
   });
   return result;
+}
+
+/**
+ * Section and group: only the fields present in `fields` are returned, and an empty value clears
+ * the field. With no active Master Data values for a category any text is kept (trimmed); with
+ * values, the text must match one of them (any case) and the Master Data spelling is stored.
+ */
+export function canonicalizeOptionalStudentFields(fields, maps) {
+  const result = {};
+  Object.entries(OPTIONAL_FIELD_CATEGORY).forEach(([field, category]) => {
+    const rawValue = fields?.[field];
+    if (rawValue === undefined || rawValue === null) return;
+    const text = String(rawValue).trim().replace(/\s+/g, ' ');
+    if (!text) { result[field] = ''; return; }
+    const allowed = maps?.[category];
+    if (!allowed?.size) { result[field] = text.slice(0, 120); return; }
+    const canonical = allowed.get(normalize(category, text));
+    if (!canonical) throw new HttpError(400, `${FIELD_LABEL[field]} "${text}" is not available in Master Data.`);
+    result[field] = canonical;
+  });
+  return result;
+}
+
+/** True when Master Data has at least one active value for `category` (e.g. 'section'). */
+export const hasMasterValues = (maps, category) => Boolean(maps?.[category]?.size);
+
+/** Section and group of one request (see canonicalizeOptionalStudentFields). */
+export async function resolveOptionalStudentFields(fields) {
+  return canonicalizeOptionalStudentFields(fields, await loadStudentMasterMaps());
 }
 
 export async function resolveStudentMasterFields(fields, options) {

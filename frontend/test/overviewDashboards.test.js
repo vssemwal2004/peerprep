@@ -63,7 +63,7 @@ test('a coordinator with only assessments sees a compact overview without other 
   api.overviewInsights = async () => structuredClone(COORDINATOR_VIEW);
   await render(h(OverviewDashboard, { role: 'coordinator', can: (permission) => permission === 'coordinator.assessment.create' }));
   const text = document.body.textContent;
-  assert.match(text, /Coordinator overview/);
+  assert.match(text, /^Coordinator/, 'the header badge names the role');
   assert.match(text, /, Meera/);
   assert.match(text, /My students40/);
   assert.match(text, /Assessment average50%/);
@@ -73,7 +73,11 @@ test('a coordinator with only assessments sees a compact overview without other 
   for (const hidden of ['Coding practice', 'Coding acceptance', 'Topics completed', 'Top students', 'Recent activity', 'Add students', 'New interview']) {
     assert.ok(!text.includes(hidden), `${hidden} is hidden`);
   }
-  assert.ok([...document.querySelectorAll('a')].some((link) => link.getAttribute('href') === '/coordinator/assessment/create'));
+  // "Create" is a menu: its links exist once it is opened.
+  const create = [...document.querySelectorAll('button[aria-haspopup="menu"]')].find((node) => node.textContent.trim() === 'Create');
+  await act(async () => create.click());
+  const items = [...document.querySelectorAll('[role="menu"] a')].map((link) => link.getAttribute('href'));
+  assert.deepEqual(items, ['/coordinator/assessment/create'], 'only what this coordinator may create');
 });
 
 test('the Master Admin overview totals universities and flags an unreachable database', async () => {

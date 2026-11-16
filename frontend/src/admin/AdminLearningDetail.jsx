@@ -27,6 +27,7 @@ import {
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import LearningAnalyticsModal from '../components/LearningAnalyticsModal';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 
 // Convert YouTube URL to embed format
 const convertToEmbedUrl = (url) => {
@@ -52,6 +53,55 @@ const convertToEmbedUrl = (url) => {
   // Return original URL if not YouTube
   return url;
 };
+
+const DIFFICULTY_RANK = { easy: 1, 'easy-medium': 2, medium: 3, 'medium-hard': 4, hard: 5 };
+const TOPIC_COLUMNS = [
+  { key: 'topic', label: 'Topic', width: '25%', align: 'left' },
+  { key: 'link', label: 'Problem Link', width: '12%', align: 'left' },
+  { key: 'importance', label: 'Importance', width: '12%', align: 'center' },
+  { key: 'difficulty', label: 'Difficulty', width: '11%', align: 'center' },
+  { key: 'video', label: 'Video', width: '8%', align: 'center' },
+  { key: 'notes', label: 'Notes', width: '8%', align: 'center' },
+  { key: 'questions', label: 'Questions', width: '8%', align: 'center' },
+  { key: 'actions', label: 'Actions', width: '16%', align: 'center', sortable: false },
+];
+// Sort by what each cell means: presence columns sort missing (0) before present (1).
+const topicValue = (topic, key) => ({
+  topic: topic.topicName,
+  link: topic.problemLink ? 1 : 0,
+  importance: topic.importanceLevel || 3,
+  difficulty: DIFFICULTY_RANK[topic.difficultyLevel] ?? DIFFICULTY_RANK.medium,
+  video: topic.topicVideoLink ? 1 : 0,
+  notes: topic.notesPDF ? 1 : 0,
+  questions: topic.questionPDF ? 1 : 0,
+}[key]);
+
+/** One chapter's topics: sortable headers, the shared pager underneath; rows come from the render prop. */
+function TopicsTable({ topics, children }) {
+  const table = useClientTable(topics, { getValue: topicValue });
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <table className="w-full table-fixed">
+          <colgroup>
+            {TOPIC_COLUMNS.map((column) => <col key={column.key} style={{ width: column.width }} />)}
+          </colgroup>
+          <thead>
+            <tr className="border-b border-slate-200 dark:border-gray-700">
+              {TOPIC_COLUMNS.map((column) => (
+                <SortHeader key={column.key} sortKey={column.key} sort={table.sort} onSort={table.toggleSort} align={column.align} sortable={column.sortable !== false}>{column.label}</SortHeader>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="bg-white dark:bg-gray-900">
+            {children(table.pageRows)}
+          </tbody>
+        </table>
+      </div>
+      <TablePager {...table.pager} noun="topics" />
+    </div>
+  );
+}
 
 export default function AdminLearningDetail() {
   const toast = useToast();
@@ -491,36 +541,12 @@ export default function AdminLearningDetail() {
                         >
                           <div className="p-5 bg-white dark:bg-gray-900">
                             <h4 className="text-sm font-semibold text-slate-700 dark:text-gray-300 mb-3">Topics</h4>
-                            <div className="overflow-x-auto">
-                              <table className="w-full table-fixed">
-                                <colgroup>
-                                  <col style={{ width: '25%' }} />
-                                  <col style={{ width: '12%' }} />
-                                  <col style={{ width: '12%' }} />
-                                  <col style={{ width: '11%' }} />
-                                  <col style={{ width: '8%' }} />
-                                  <col style={{ width: '8%' }} />
-                                  <col style={{ width: '8%' }} />
-                                  <col style={{ width: '16%' }} />
-                                </colgroup>
-                                <thead>
-                                  <tr className="border-b border-slate-200 dark:border-gray-700">
-                                    <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Topic</th>
-                                    <th className="text-left py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Problem Link</th>
-                                    <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Importance</th>
-                                    <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Difficulty</th>
-                                    <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Video</th>
-                                    <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Notes</th>
-                                    <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Questions</th>
-                                    <th className="text-center py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider">Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="bg-white dark:bg-gray-900">
-                                  {chapter.topics.map((topic, idx) => (
-                                    <tr 
+                            <TopicsTable topics={chapter.topics}>
+                                  {(pageTopics) => pageTopics.map((topic, idx) => (
+                                    <tr
                                       key={topic._id}
                                       className={`border-b border-slate-100 dark:border-gray-800 hover:bg-slate-50 dark:hover:bg-gray-800/50 transition-colors ${
-                                        idx === chapter.topics.length - 1 ? 'border-b-0' : ''
+                                        idx === pageTopics.length - 1 ? 'border-b-0' : ''
                                       }`}
                                     >
                                       {/* Topic Name */}
@@ -634,9 +660,7 @@ export default function AdminLearningDetail() {
                                       </td>
                                     </tr>
                                   ))}
-                                </tbody>
-                              </table>
-                            </div>
+                            </TopicsTable>
                           </div>
                         </motion.div>
                       )}

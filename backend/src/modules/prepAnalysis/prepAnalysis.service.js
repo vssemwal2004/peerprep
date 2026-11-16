@@ -15,9 +15,10 @@ import { competitionRanks } from './ranking.js';
 import { getPrepScorePolicyVersion } from '../../services/prepScore/policy.js';
 import { storedScoresFor } from '../../services/prepScore/sync.js';
 import {
-  buildChartBook, buildReport, CHART_EXPORT_TYPES, COLUMN_BY_KEY, DEFAULT_EXPORT_COLUMNS, EXPORT_TYPES,
+  buildChartBook, buildReport, CHART_EXPORT_TYPES, COLUMN_BY_KEY, DEFAULT_EXPORT_COLUMNS, EXPORT_TYPES, periodText,
 } from './prepAnalysis.export.js';
-import { detailLabel, drillDetail, drillFor, drillStudents, sortItems } from './drill.js';
+import { ALL_STUDENTS, detailLabel, drillDetail, drillFor, drillStudents, sortItems } from './drill.js';
+import { buildComparison, compareBuckets, COMPARE_LIMITS, comparisonReport } from './compare.js';
 import { chartSummary } from './summaries.js';
 import {
   loadAssessmentDefinitions, loadAssessmentFacts, PASS_PERCENT, scopeAssessmentDefinitions, scopeStudentsToAssessments,
@@ -58,7 +59,44 @@ const TABLE_SORTS = {
   testsMissed: (row) => row.assessment?.missed ?? -1,
   overallScore: (row) => row.scores?.total ?? 0,
   featureScore: (row, area) => row.scores?.features[area]?.score ?? 0,
+  // Every other column of the student table sorts too (the shared table format: every header sorts).
+  // "#" ascending is place 1 first, i.e. the area's measure from high to low.
+  position: (row, area) => -((POSITION_BY[area] || POSITION_BY.coding)(row) ?? 0),
+  className: (row) => `${String(row.student?.semester ?? '').padStart(2, '0')} ${row.student?.branch || ''}`.trim(),
+  practiceStatus: (row) => row.coding.practiceStatus || '',
+  languages: (row) => (row.coding.languages || []).join(', '),
+  sheetLastActive: (row) => row.quickprep?.daysSinceActive ?? Number.MAX_SAFE_INTEGER,
+  sheetStatus: (row) => row.quickprep?.status || 'none',
+  videoMinutes: (row) => row.learning?.videoMinutes ?? -1,
+  learningStatus: (row) => row.learning?.status || '',
+  learningScore: (row) => row.scores?.features?.learning?.score ?? 0,
+  mockAndAi: (row) => (row.interview ? row.interview.mockDone * 100_000 + row.interview.aiCompleted : -1),
+  interviewsScheduled: (row) => row.interview?.scheduled ?? -1,
+  interviewStatus: (row) => row.interview?.status || '',
+  interviewScore: (row) => row.scores?.features?.interview?.score ?? 0,
+  testsPassed: (row) => row.assessment?.passed ?? -1,
+  testStatus: (row) => row.assessment?.status || '',
+  assessmentScore: (row) => row.scores?.features?.assessment?.score ?? 0,
+  // One assessment's "Result": passed, failed, awaiting evaluation, missed, not attempted.
+  testResult: (row) => {
+    const test = row.assessment;
+    if (test?.taken) return test.passed ? 4 : 3;
+    if (test?.awaiting) return 2;
+    return test?.missed ? 1 : 0;
+  },
 };
+const textCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+const compareSortValues = (left, right) => (typeof left === 'number' && typeof right === 'number'
+  ? left - right
+  : textCollator.compare(String(left ?? ''), String(right ?? '')));
+
+/** The student table's order (also the download's): a TABLE_SORTS key or "name", ties by name. */
+export function tableComparator(sortKey, direction, area) {
+  const sign = direction === 'asc' ? 1 : -1;
+  if (sortKey === 'name' || !Object.hasOwn(TABLE_SORTS, sortKey)) return (left, right) => sign * left.name.localeCompare(right.name);
+  const value = TABLE_SORTS[sortKey];
+  return (left, right) => sign * compareSortValues(value(left, area), value(right, area)) || left.name.localeCompare(right.name);
+}
 // The order "#" uses in the table, per area.
 const POSITION_BY = {
   coding: (row) => row.coding.prepScore,
@@ -207,7 +245,7 @@ export function validatePrepAnalysisQuery(body = {}, permissions) {
     });
 
   const table = body.table || {};
-  const sort = (TABLE_SORTS[table.sort] || table.sort === 'name') ? table.sort : DEFAULT_SORT[area];
+  const sort = (Object.hasOwn(TABLE_SORTS, String(table.sort)) || table.sort === 'name') ? table.sort : DEFAULT_SORT[area];
   return {
     module: area,
     modules,
@@ -230,6 +268,8 @@ export function validatePrepAnalysisQuery(body = {}, permissions) {
       direction: table.direction === 'asc' ? 'asc' : 'desc',
       page: Math.max(1, Number.parseInt(table.page, 10) || 1),
       limit: Math.min(QUERY_LIMITS.maxTableLimit, Math.max(1, Number.parseInt(table.limit, 10) || 25)),
+      // The table's own search box: name, email or student ID; commas search for several students.
+      search: typeof table.search === 'string' ? table.search.trim().slice(0, 200) : '',
     },
     refresh: body.refresh === true,
   };
@@ -353,7 +393,7 @@ export function compareGroups(query, selected, context) {
 
 /** The area's download columns that are not already in the drill's student columns. */
 const genericColumns = (module) => (DEFAULT_EXPORT_COLUMNS[module] || DEFAULT_EXPORT_COLUMNS.coding)
-  .filter((key) => !['position', 'name', 'studentId', 'semester', 'branch', 'group', 'prepScore'].includes(key))
+  .filter((key) => !['position', 'name', 'studentId', 'semester', 'branch', 'section', 'group', 'prepScore'].includes(key))
   .map((key) => COLUMN_BY_KEY.get(key)).filter(Boolean);
 
 /** The one chart a drill or chart download is about, with the students it was drawn from. */
@@ -445,7 +485,7 @@ const reviewCounts = (review) => (review ? {
 function tableRow(row, position) {
   return {
     id: row.id, name: row.name, studentId: row.studentId, email: row.email,
-    semester: row.student.semester, branch: row.student.branch, course: row.student.course, group: row.student.group, college: row.student.college,
+    semester: row.student.semester, branch: row.student.branch, course: row.student.course, group: row.student.group, section: row.student.section, college: row.student.college,
     position,
     prepScore: row.coding.prepScore, points: row.coding.points,
     solved: row.coding.solved, accuracy: row.coding.accuracy, submissions: row.coding.submissions,
@@ -478,16 +518,30 @@ function tableRow(row, position) {
 }
 
 /** Rows of the student table. `position` is the place within the students in view, by the area's measure. */
+/** Search terms of the table's search box: comma-separated, lower-case, at most 50. */
+export function tableSearchTerms(search = '') {
+  return [...new Set(String(search || '').toLowerCase().split(',').map((term) => term.trim()).filter(Boolean))].slice(0, 50);
+}
+
+/** True when any term appears in the student's name, email or student ID. */
+export function matchesTableSearch(row, terms) {
+  if (!terms.length) return true;
+  const haystack = `${row.name || ''}\n${row.email || ''}\n${row.studentId || ''}`.toLowerCase();
+  return terms.some((term) => haystack.includes(term));
+}
+
 function studentTable(rows, table, area) {
+  // Places are counted over every student in view, so a searched student keeps their real place.
   const positions = competitionRanks(rows, POSITION_BY[area] || POSITION_BY.coding);
-  const direction = table.direction === 'asc' ? 1 : -1;
-  const sorter = table.sort === 'name'
-    ? (left, right) => direction * left.name.localeCompare(right.name)
-    : (left, right) => direction * (TABLE_SORTS[table.sort](left, area) - TABLE_SORTS[table.sort](right, area)) || left.name.localeCompare(right.name);
-  const sorted = [...rows].sort(sorter);
-  const start = (table.page - 1) * table.limit;
+  const terms = tableSearchTerms(table.search);
+  const matched = terms.length ? rows.filter((row) => matchesTableSearch(row, terms)) : rows;
+  const sorted = [...matched].sort(tableComparator(table.sort, table.direction, area));
+  const pages = Math.max(1, Math.ceil(matched.length / table.limit));
+  const page = Math.min(table.page, pages);
+  const start = (page - 1) * table.limit;
   return {
-    total: rows.length, page: table.page, limit: table.limit, sort: table.sort, direction: table.direction,
+    total: matched.length, inView: rows.length, search: table.search || '',
+    page, limit: table.limit, sort: table.sort, direction: table.direction,
     rows: sorted.slice(start, start + table.limit).map((row) => tableRow(row, positions.get(row))),
   };
 }
@@ -577,9 +631,8 @@ export async function runPrepAnalysis({ user, query }) {
 export async function exportPrepAnalysis({ user, query, options }) {
   const context = await queryContext(user, query);
   const { selected } = selectStudents(context, query);
-  const sortKey = TABLE_SORTS[query.table.sort] ? query.table.sort : DEFAULT_SORT[query.module];
-  const direction = query.table.direction === 'asc' ? 1 : -1;
-  const ordered = [...selected].sort((left, right) => direction * (TABLE_SORTS[sortKey](left, query.module) - TABLE_SORTS[sortKey](right, query.module)) || left.name.localeCompare(right.name));
+  const sortKey = (Object.hasOwn(TABLE_SORTS, String(query.table.sort)) || query.table.sort === 'name') ? query.table.sort : DEFAULT_SORT[query.module];
+  const ordered = [...selected].sort(tableComparator(sortKey, query.table.direction, query.module));
   const report = buildReport({
     rows: ordered, columns: options.columns, summary: options.summary, query,
     cohortSize: context.rows.length, positionOf: POSITION_BY[query.module] || POSITION_BY.coding,
@@ -592,6 +645,100 @@ export async function exportPrepAnalysis({ user, query, options }) {
     filename: `prep-analysis-${query.module}-${stamp}.${type.extension}`,
     rowCount: report.rows.length,
   };
+}
+
+// ---------------------------------------------------------------- compare classes side by side
+
+/** The page's students (filters, top / bottom, focus) split by the chosen class values. */
+export async function comparePrepAnalysis({ user, query, compareBy }) {
+  const context = await queryContext(user, query, query.range, { refresh: query.refresh });
+  const { selected } = selectStudents(context, query);
+  const comparison = buildComparison({ rows: selected, compareBy, area: query.module, modules: query.modules });
+  return {
+    meta: {
+      generatedAt: new Date().toISOString(), dataLoadedAt: context.loadedAt.toISOString(), module: query.module,
+      range: { preset: query.range.preset, from: query.range.from?.toISOString() || null, to: query.range.to?.toISOString() || null },
+      period: periodText(query.range), cohortSize: context.rows.length, matched: selected.length, truncated: context.truncated,
+    },
+    ...comparison,
+  };
+}
+
+/** Every student behind one compared value, with the area's columns (the page sorts and pages them). */
+export async function comparePrepAnalysisStudents({ user, query, compareBy, value }) {
+  const context = await queryContext(user, query);
+  const { selected } = selectStudents(context, query);
+  const bucket = compareBuckets(selected, { ...compareBy, values: [value] })[0];
+  const generic = genericColumns(query.module).filter((column) => query.modules.has(column.module));
+  // "All features" lists the overall Prep Score (the Quick Prep drill column), one area its own score.
+  const scoreModule = query.module === 'all' ? 'quickprep' : query.module;
+  const students = drillStudents({ id: 'compare', module: scoreModule }, bucket.rows, ALL_STUDENTS, {}, generic, { sheets: context.sheets, tests: context.tests });
+  sortItems(students.items, students.columns, students.sort, students.direction);
+  return {
+    label: bucket.label, total: students.items.length, truncated: students.items.length > COMPARE_LIMITS.maxStudents,
+    columns: students.columns,
+    rows: students.items.slice(0, COMPARE_LIMITS.maxStudents).map((item) => ({ id: item.id, cells: students.columns.map((column) => item.values[column.key] ?? null) })),
+  };
+}
+
+/** The comparison table as Excel or CSV. */
+export async function exportPrepAnalysisComparison({ user, query, compareBy, options }) {
+  const context = await queryContext(user, query);
+  const { selected } = selectStudents(context, query);
+  const comparison = buildComparison({ rows: selected, compareBy, area: query.module, modules: query.modules });
+  const generatedAt = new Date();
+  const report = comparisonReport(comparison, {
+    title: `Prep Analysis · ${comparison.dimension.label} comparison`,
+    generatedAt,
+    details: [
+      ['Area', MODULES[query.module]?.label || 'All features'],
+      ['Period', periodText(query.range)],
+      ['Compared', `${comparison.dimension.label}: ${comparison.columns.map((column) => column.label).join(', ')}`],
+      ['Students', `${comparison.total.students.toLocaleString('en-IN')} of ${context.rows.length.toLocaleString('en-IN')}`],
+      ['Generated', generatedAt.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })],
+    ],
+    filters: options.summary.length ? options.summary : ['No filters: every student is included'],
+  });
+  const type = EXPORT_TYPES[options.format];
+  return {
+    buffer: await type.render(report),
+    contentType: type.contentType,
+    filename: `prep-analysis-${comparison.dimension.key}-comparison-${generatedAt.toISOString().slice(0, 10)}.${type.extension}`,
+    rowCount: report.rows.length,
+  };
+}
+
+/** format (csv / xlsx) and the plain-language filter lines of a comparison download. */
+export function validateComparisonExport(body = {}) {
+  const format = ['csv', 'xlsx'].includes(body.format) ? body.format : null;
+  if (!format) throw new HttpError(400, 'Choose Excel or CSV.');
+  const summary = (Array.isArray(body.summary) ? body.summary : []).map((line) => String(line ?? '').replace(/[\u0000-\u001f]+/g, ' ').trim().slice(0, 240)).filter(Boolean).slice(0, 40);
+  return { format, summary };
+}
+
+/**
+ * "Select all N matching": every student id behind the page's student table (filters + its search box),
+ * or behind one chart part's student list (`drill`, with that list's search).
+ */
+export async function matchingStudentIds({ user, query, drill = null }) {
+  if (drill?.chartId) {
+    const { context, entry, chart, rows } = await chartContext({ user, query, chartId: drill.chartId });
+    const students = drillStudents(chart, rows, drill.key, entry.options, genericColumns(chart.module), { sheets: context.sheets, tests: context.tests });
+    const items = drill.search
+      ? students.items.filter((item) => `${item.row.name} ${item.row.studentId} ${item.row.email}`.toLowerCase().includes(drill.search))
+      : students.items;
+    return [...new Set(items.map((item) => String(item.row?.id ?? item.id)))];
+  }
+  const context = await queryContext(user, query);
+  const terms = tableSearchTerms(query.table.search);
+  return selectStudents(context, query).selected.filter((row) => matchesTableSearch(row, terms)).map((row) => String(row.id));
+}
+
+/** The students with these ids among everyone this user may analyse (filters do not matter here). */
+export async function studentRowsByIds({ user, query, ids }) {
+  const context = await queryContext(user, query);
+  const wanted = new Set(ids.map(String));
+  return context.rows.filter((row) => wanted.has(String(row.id)));
 }
 
 export async function countPrepAnalysis({ user, query }) {
@@ -720,10 +867,10 @@ function assessmentProfile(row, tests, range) {
 
 /** One student's profile from their row: only their own work, never compared with anyone else. */
 export function buildStudentProfile(row, { range, modules, sheets = new Map(), tests = new Map() }) {
-  const { semester, course, branch, college, group, batchNames, status } = row.student;
+  const { semester, course, branch, college, group, section, batchNames, status } = row.student;
   return {
     range: { preset: range.preset, from: range.from?.toISOString() || null, to: range.to?.toISOString() || null },
-    student: { id: row.id, name: row.name, studentId: row.studentId, email: row.email, semester, course, branch, college, group, batchNames, status },
+    student: { id: row.id, name: row.name, studentId: row.studentId, email: row.email, semester, course, branch, college, group, section, batchNames, status },
     coding: modules.has('coding') ? codingProfile(row, range) : null,
     quickprep: modules.has('quickprep') && row.quickprep ? quickPrepProfile(row, sheets) : null,
     learning: modules.has('learning') && row.learning ? learningProfile(row, range) : null,
@@ -859,11 +1006,11 @@ export async function listFieldOptions({ user, permissions, optionsKey, q = '', 
       .sort((left, right) => right.coding.prepScore - left.coding.prepScore || left.name.localeCompare(right.name))
       .map((row) => ({ value: row.id, label: row.studentId ? `${row.name} · ${row.studentId}` : row.name }));
     return { options: options.slice(0, OPTION_LIMIT), total: options.length };
-  } else if (['courses', 'branches', 'colleges', 'groups', 'coordinators', 'batches'].includes(optionsKey)) {
+  } else if (['courses', 'branches', 'colleges', 'sections', 'groups', 'coordinators', 'batches'].includes(optionsKey)) {
     const { rows, batchNames } = await context();
     const readers = {
       courses: (row) => row.student.course, branches: (row) => row.student.branch,
-      colleges: (row) => row.student.college, groups: (row) => row.student.group,
+      colleges: (row) => row.student.college, sections: (row) => row.student.section, groups: (row) => row.student.group,
       coordinators: (row) => row.student.coordinators, batches: (row) => row.student.batches,
     };
     options = distinctFromRows(rows, readers[optionsKey]);

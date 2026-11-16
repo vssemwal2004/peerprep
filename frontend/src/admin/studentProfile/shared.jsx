@@ -1,5 +1,7 @@
+import { useCallback } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Search } from 'lucide-react';
+import { SortHeader, TablePager, useClientTable } from '../../components/table';
 import { Pill } from '../../student/profile/ui';
 import { STATUS_TONE_CLASSES, difficultyTone, focusRing, statusMeta } from '../../student/profile/format';
 
@@ -160,32 +162,44 @@ export function SegmentedFilter({ options, value, onChange, label }) {
  * region. Columns marked `hideOnMobile` only appear from `xl` (the content column beside the
  * profile sidebar is too narrow for their fixed widths before that); below `xl` their content is
  * repeated under the title via `mobileMeta`, so the table never scrolls sideways.
+ * Every column sorts from its header by `value(row)` (or `row[key]`); the standard pager sits under it.
+ * `resetKey` (e.g. the search text) returns the table to page 1.
  */
-export function DataTable({ caption, columns, rows, rowKey, mobileMeta, maxHeight = 'max-h-[420px]' }) {
+export function DataTable({ caption, columns, rows, rowKey, mobileMeta, maxHeight = 'max-h-[420px]', resetKey, noun = 'rows', initialPageSize }) {
+  const getValue = useCallback((row, key) => {
+    const column = columns.find((item) => item.key === key);
+    return column?.value ? column.value(row) : row?.[key];
+  }, [columns]);
+  const table = useClientTable(rows, { getValue, resetKey, initialPageSize });
   return (
+    <div className="overflow-hidden rounded-lg border border-slate-100 dark:border-zinc-800">
     <div
       tabIndex={0}
       role="region"
       aria-label={caption}
-      className={`overflow-y-auto overflow-x-hidden rounded-lg border border-slate-100 [scrollbar-width:thin] dark:border-zinc-800 ${maxHeight} ${focusRing}`}
+      className={`overflow-y-auto overflow-x-hidden [scrollbar-width:thin] ${maxHeight} ${focusRing}`}
     >
-      <table className="w-full table-fixed border-separate border-spacing-0 text-left text-[13px]">
+      <table className="w-full table-fixed border-separate border-spacing-0 text-left text-[13px]" style={{ '--serial-start': (table.page - 1) * table.pageSize }}>
         <caption className="sr-only">{caption}</caption>
         <thead>
           <tr>
             {columns.map((column) => (
-              <th
+              <SortHeader
                 key={column.key}
-                scope="col"
-                className={`sticky top-0 z-10 border-b border-slate-100 bg-slate-50/95 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 dark:text-zinc-400 ${column.hideOnMobile ? 'hidden xl:table-cell' : ''} ${column.align === 'right' ? 'text-right' : ''} ${column.width || ''}`}
+                sortKey={column.key}
+                sort={table.sort}
+                onSort={table.toggleSort}
+                sortable={column.sortable !== false}
+                align={column.align}
+                className={`sticky top-0 z-10 border-b border-slate-100 bg-slate-50/95 py-2 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 ${column.hideOnMobile ? 'hidden xl:table-cell' : ''} ${column.width || ''}`}
               >
                 {column.label}
-              </th>
+              </SortHeader>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, index) => (
+          {table.pageRows.map((row, index) => (
             <tr key={rowKey(row, index)} className="transition-colors hover:bg-sky-50/50 dark:hover:bg-sky-500/5">
               {columns.map((column, columnIndex) => (
                 <td
@@ -202,6 +216,8 @@ export function DataTable({ caption, columns, rows, rowKey, mobileMeta, maxHeigh
           ))}
         </tbody>
       </table>
+    </div>
+    <TablePager {...table.pager} noun={noun} className="dark:border-zinc-800" />
     </div>
   );
 }

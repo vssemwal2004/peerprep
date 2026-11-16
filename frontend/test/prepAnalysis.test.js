@@ -18,7 +18,7 @@ import { assessmentAnalysisPath, prepAnalysisStateFromSearch } from '../src/admi
 const FIELDS = [
   { key: 'student.semester', module: 'student', group: 'Class', label: 'Semester', kind: 'enum', valueType: 'number', options: 'semesters' },
   { key: 'student.branch', module: 'student', group: 'Class', label: 'Branch', kind: 'enum', options: 'branches' },
-  { key: 'student.college', module: 'student', group: 'Class', label: 'College / University', kind: 'enum', options: 'colleges' },
+  { key: 'student.college', module: 'student', group: 'Class', label: 'Campus', kind: 'enum', options: 'colleges' },
   { key: 'student.search', module: 'student', group: 'Account', label: 'Name, email or student ID', kind: 'text' },
   { key: 'coding.practiceStatus', module: 'coding', group: 'Practice', label: 'Practice status', kind: 'enum', options: 'practiceStatuses' },
   { key: 'coding.solvedTopics', module: 'coding', group: 'Practice', label: 'Topic solved', kind: 'set', options: 'topics' },
@@ -79,7 +79,8 @@ test('the feature comes first, and Quick Prep filters belong to Prep Coding', ()
   assert.deepEqual([...new Set(featureFields(catalog, 'all').map((entry) => entry.module))], ['coding', 'learning', 'interview', 'assessment']);
   assert.deepEqual(studentFields(catalog).map((entry) => entry.key), ['student.semester', 'student.branch', 'student.college', 'student.search']);
   assert.deepEqual(rankMetrics(catalog, 'assessment').map((entry) => entry.key), ['assessment.averageScore', 'assessment.missed']);
-  assert.ok(isMainField(field('student.semester')) && !isMainField(field('student.college')), 'rarely used filters wait under "more"');
+  assert.ok(isMainField(field('student.semester')) && isMainField(field('student.college')), 'class filters (campus too) are shown straight away');
+  assert.ok(!isMainField(field('student.search')), 'rarely used filters wait under "more"');
   const state = { ...defaultFilterState('coding'), groups: [groupOf(range('coding.prepScore', '50', ''), pick('student.semester', ['5']))], rank: { join: 'and', rules: [newRankRule('coding.prepScore')] } };
   const learning = switchArea(state, 'learning', fieldMap, catalog);
   assert.deepEqual(learning.groups[0].rules.map((rule) => rule.field), ['student.semester'], 'student filters stay, the old feature\'s go');
@@ -205,7 +206,8 @@ test('pages saved by earlier versions open as groups instead of breaking', () =>
   });
   assert.deepEqual(v4.groups[0].rules.map((rule) => rule.field), ['coding.prepScore', 'student.branch']);
   assert.equal(v4.rank.join, 'or');
-  assert.deepEqual(Object.keys(normalizeState(null)).sort(), ['area', 'groups', 'range', 'rank']);
+  assert.deepEqual(Object.keys(normalizeState(null)).sort(), ['area', 'groups', 'range', 'rank', 'sheets']);
+  assert.deepEqual(normalizeState(null).sheets, [], 'no Quick Prep sheet scope means every sheet');
 });
 
 // ---------------------------------------------------------------- charts
@@ -230,6 +232,12 @@ const SAMPLES = {
     groupBy: 'semester', label: 'Average test score', unit: '%', passMark: 40,
     groups: [{ label: 'Sem 1', students: 5, count: 5, min: 10, q1: 30, median: 45, q3: 60, max: 90, mean: 46 }, { label: 'Sem 2', students: 3, count: 3, min: 35, q1: 40, median: 50, q3: 70, max: 80, mean: 55 }],
   },
+  combo: {
+    barLabel: 'questions',
+    categories: [{ key: 'Easy', label: 'Easy', students: 4, note: '4 students solved one' }, { key: 'Hard', label: 'Hard', students: 1, note: '1 students solved one' }],
+    bars: [{ name: 'Solved', values: [6, 1], stack: 'questions' }, { name: 'Not solved yet', values: [2, 3], stack: 'questions' }],
+    lines: [{ name: 'Solve rate', unit: '%', values: [75, 25] }],
+  },
 };
 const serializable = (option) => JSON.stringify(option, (key, value) => (typeof value === 'function' ? undefined : value));
 
@@ -249,6 +257,7 @@ test('every chart type builds in every view, light and dark, and is empty with n
     rankedStackedBar: { items: [] }, donut: { items: [] }, trend: { labels: [] }, funnel: { stages: [{ value: 0 }] },
     barList: { items: [] }, calendar: { days: [] }, radar: { student: null, indicators: [] }, histogram: { bins: [{ count: 0 }] },
     stackedBar: { groups: [] }, heatmap: { students: [], columns: [] }, scatter: { items: [] }, boxplot: { groups: [{ count: 0 }] },
+    combo: { categories: [], bars: [], lines: [] },
   };
   for (const [type, data] of Object.entries(empty)) assert.equal(buildChartOption({ type, data }, chartTheme(false)), null, `${type} is empty`);
   assert.ok(chartHeight({ type: 'stackedBar', data: { horizontal: true, groups: new Array(10).fill({}) } }) > chartHeight({ type: 'stackedBar', data: { horizontal: true, groups: [{}] } }));
@@ -257,7 +266,8 @@ test('every chart type builds in every view, light and dark, and is empty with n
 test('views change how a chart reads: steps with %, 100% bars, weekly lines', () => {
   const steps = buildChartOption({ type: 'funnel', data: SAMPLES.funnel }, chartTheme(false));
   assert.equal(steps.series[0].type, 'bar');
-  assert.equal(steps.series[0].label.formatter({ dataIndex: 1, value: 30 }), '30 · 75%');
+  // Values sit in one right-aligned column (the second row axis), not at the end of each bar.
+  assert.equal(steps.yAxis[1].axisLabel.formatter('1'), '30 · 75%');
   const percent = buildChartOption({ type: 'stackedBar', data: SAMPLES.stackedBar }, chartTheme(false), 'percent');
   assert.deepEqual(percent.series.map((series) => series.data[0]), [22, 33, 44]);
   const grouped = buildChartOption({ type: 'stackedBar', data: SAMPLES.stackedBar }, chartTheme(false), 'grouped');
@@ -356,8 +366,8 @@ test('top-student bars are as long as the score and the label is the score', () 
   const option = buildChartOption({ type: 'rankedStackedBar', data }, chartTheme(false));
   const length = option.series.reduce((sum, series) => sum + series.data[0], 0);
   assert.equal(Math.round(length * 10) / 10, 13.4);
-  assert.equal(option.series.at(-1).label.formatter({ dataIndex: 0 }), '13.4');
-  assert.deepEqual(chartTable({ type: 'rankedStackedBar', data }).rows[0], [1, 'Depth', 13.4, 1, 0, 0], 'the table shows problems solved in the period, like the drawer');
+  assert.equal(option.yAxis[1].axisLabel.formatter('0'), '13.4');
+  assert.deepEqual(chartTable({ type: 'rankedStackedBar', data }).rows[0], [1, 'Depth', 13.4, 1, 0, 0, 0], 'the table shows problems solved in the period, like the drawer');
 });
 
 test('each chart says what stands out in one sentence, with no averages', () => {
@@ -384,10 +394,10 @@ test('charts speak the area\'s own units and colours, and escape names', () => {
   const matrix = buildChartOption({ type: 'heatmap', data: SAMPLES.heatmap }, chartTheme(false));
   assert.match(matrix.tooltip.formatter({ value: [0, 0, 100] }), /100%<\/b> solved/);
   const behind = buildChartOption({ type: 'barList', data: SAMPLES.barList }, chartTheme(false));
-  assert.equal(behind.series[0].label.formatter({ dataIndex: 0 }), '0%');
+  assert.equal(behind.yAxis[1].axisLabel.formatter('0'), '0%');
   const topics = buildChartOption({ type: 'barList', data: { valueLabel: 'students solving', cohort: 3000, items: [{ key: 'Graphs', name: 'Graphs', value: 1175, pct: 39.2 }] } }, chartTheme(false));
-  assert.equal(topics.series[0].label.formatter({ dataIndex: 0 }), '1,175 · 39.2%', 'counts of students say how many of everyone in view');
-  assert.equal(topics.yAxis.axisLabel.formatter('0'), 'Graphs', 'rows are indexes, labels are names');
+  assert.equal(topics.yAxis[1].axisLabel.formatter('0'), '1,175 · 39.2%', 'counts of students say how many of everyone in view');
+  assert.equal(topics.yAxis[0].axisLabel.formatter('0'), 'Graphs', 'rows are indexes, labels are names');
   const histogram = buildChartOption({ type: 'histogram', data: SAMPLES.histogram }, chartTheme(false));
   assert.equal(histogram.xAxis.name, 'Course completed');
   const leaderboard = buildChartOption({ type: 'rankedStackedBar', data: { items: [{ ...SAMPLES.rankedStackedBar.items[0], name: '<img src=x>' }] } }, chartTheme(false));

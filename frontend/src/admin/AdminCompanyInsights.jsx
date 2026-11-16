@@ -4,8 +4,20 @@ import { Link } from "react-router-dom";
 import { api } from "../utils/api";
 import { useToast } from "../components/CustomToast";
 import CompanyBenchmarkForm, { createEmptyBenchmark, validateBenchmark } from "./CompanyBenchmarkForm";
+import { SortHeader, TablePager, useClientTable } from "../components/table";
 
 const PAGE_SIZE = 8;
+const numberOrNull = (value) => (value === null || value === undefined || value === "" || Number.isNaN(Number(value)) ? null : Number(value));
+const COLUMN_VALUES = {
+  companyName: (company) => company.companyName || null,
+  dsaAccuracyRequired: (company) => numberOrNull(company.dsaAccuracyRequired),
+  requiredTopics: (company) => (company.requiredTopics || []).join(", ") || null,
+  minStreak: (company) => numberOrNull(company.minStreak),
+  interviewScore: (company) => numberOrNull(company.interviewScore),
+};
+const columnValue = (company, key) => COLUMN_VALUES[key]?.(company);
+const COLUMNS = [["companyName", "Company Name"], ["dsaAccuracyRequired", "DSA Accuracy"], ["requiredTopics", "Key Topics"], ["minStreak", "Min Streak"], ["interviewScore", "Interview Score"]];
+const HEADER_CLASS = "px-6 py-3 text-xs tracking-widest text-slate-400 dark:text-gray-500";
 
 function EditModal({ open, onClose, onSave, values, setValues, errors, saving }) {
   if (!open) return null;
@@ -81,7 +93,6 @@ export default function AdminCompanyInsights() {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [menuOpenId, setMenuOpenId] = useState(null);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -125,14 +136,8 @@ export default function AdminCompanyInsights() {
     return companies.filter((c) => c.companyName.toLowerCase().includes(query));
   }, [companies, search]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
-  const pagedCompanies = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return filtered.slice(start, start + PAGE_SIZE);
-  }, [filtered, page]);
+  const table = useClientTable(filtered, { getValue: columnValue, initialPageSize: PAGE_SIZE, resetKey: search });
+  const pagedCompanies = table.pageRows;
 
   const openEdit = (company) => {
     setEditingCompany(company);
@@ -226,10 +231,7 @@ export default function AdminCompanyInsights() {
               <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <input
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
+                onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search company"
                 className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
               />
@@ -237,15 +239,13 @@ export default function AdminCompanyInsights() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
+            <table className="min-w-full text-left text-sm" style={{ "--serial-start": (table.page - 1) * table.pageSize }}>
               <thead className="bg-slate-50 text-xs uppercase tracking-widest text-slate-400 dark:bg-gray-800/60 dark:text-gray-500">
                 <tr>
-                  <th className="px-6 py-3">Company Name</th>
-                  <th className="px-6 py-3">DSA Accuracy</th>
-                  <th className="px-6 py-3">Key Topics</th>
-                  <th className="px-6 py-3">Min Streak</th>
-                  <th className="px-6 py-3">Interview Score</th>
-                  <th className="px-6 py-3 text-right">Actions</th>
+                  {COLUMNS.map(([key, label]) => (
+                    <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort} className={HEADER_CLASS}>{label}</SortHeader>
+                  ))}
+                  <SortHeader sortable={false} align="right" className={HEADER_CLASS}>Actions</SortHeader>
                 </tr>
               </thead>
               <tbody>
@@ -324,27 +324,7 @@ export default function AdminCompanyInsights() {
             </table>
           </div>
 
-          <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4 text-xs text-slate-500 dark:border-gray-800 dark:text-gray-400">
-            <div>
-              Page {page} of {totalPages}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-              >
-                Prev
-              </button>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-              >
-                Next
-              </button>
-            </div>
-          </div>
+          <TablePager {...table.pager} busy={loading} noun="companies" className="px-6 dark:border-gray-800" />
         </div>
       </div>
 

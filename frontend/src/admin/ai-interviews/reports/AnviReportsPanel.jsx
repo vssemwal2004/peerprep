@@ -2,12 +2,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Activity, CalendarClock, Eye, FileBarChart, Languages, Loader2, RefreshCw, ShieldAlert, X } from "lucide-react";
 import UsagePanel from "./UsagePanel";
+import DateRangeFilter from "../../../components/dateRange/DateRangeFilter";
+import { rangeToQuery } from "../../../components/dateRange/dateRangeModel";
 import AnviReport from "../../../student/anvi/AnviReport";
 import { IntegritySection, WarmupTranscript } from "../../../student/anvi/report/ReportSections";
 import { RESUME_SOURCE_LABELS, endReasonLabel, proctoringOf } from "../../../student/anvi/report/reportModel";
 import { reportApi } from "../api";
-import { Badge, Drawer, EmptyState, Notice, Pagination, Panel, Select, ToneChip, secondaryClass, surfaceClass, tableHeadClass, tableRowClass } from "../ui";
+import { Badge, Drawer, EmptyState, Notice, Panel, Select, ToneChip, secondaryClass, surfaceClass, tableHeadClass, tableRowClass } from "../ui";
 import { formatIst } from "../schedules/scheduleModel";
+import { SortHeader, TablePager, nextSort } from "../../../components/table";
+
+// Keys match the server whitelist; the endpoint accepts 25/50/100 per page.
+const ATTEMPT_COLUMNS = [["student", "Student"], ["interview", "Interview"], ["status", "Status"], ["score", "Score"], ["started", "Started"]];
+const ATTEMPT_PAGE_SIZES = [25, 50, 100];
 
 const STATUS_LABELS = {
   in_progress: "In progress",
@@ -190,6 +197,9 @@ function AttemptsView({ params, setParams }) {
   // ?assignmentId= (from a schedule) narrows the list to that schedule's attempts.
   const assignmentId = params.get("assignmentId") || "";
   const [filters, setFilters] = useState({ interviewId: "", status: "", page: 1, limit: 25, assignmentId });
+  // Attempts started in this period (IST days on the server); all time by default.
+  const [range, setRange] = useState({ preset: "all" });
+  const rangeQuery = JSON.stringify(rangeToQuery(range));
   useEffect(() => { setFilters((current) => (current.assignmentId === assignmentId ? current : { ...current, assignmentId, page: 1 })); }, [assignmentId]);
   const clearAssignment = () => { const next = new URLSearchParams(params); next.delete("assignmentId"); setParams(next); };
   const [data, setData] = useState(null);
@@ -213,13 +223,19 @@ function AttemptsView({ params, setParams }) {
   useEffect(() => {
     let active = true;
     setLoading(true); setError("");
-    reportApi.list(filters).then((value) => { if (active) setData(value); })
+    reportApi.list({ ...filters, ...JSON.parse(rangeQuery) }).then((value) => { if (active) setData(value); })
       .catch((cause) => { if (active) setError(cause.message || "Reports could not be loaded."); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [filters, round]);
+  }, [filters, rangeQuery, round]);
 
   const set = (patch) => setFilters((current) => ({ ...current, page: 1, ...patch }));
+  // Server-side column sort (whitelisted in anviInterview.reports ATTEMPT_SORT_FIELDS); none = newest first.
+  const sort = filters.sortBy ? { key: filters.sortBy, direction: filters.sortOrder } : null;
+  const toggleSort = (key) => {
+    const next = nextSort(sort, key);
+    set({ sortBy: next?.key || undefined, sortOrder: next?.direction || undefined });
+  };
   const rows = data?.attempts || [];
   const interviews = data?.interviews || [];
 
@@ -229,6 +245,7 @@ function AttemptsView({ params, setParams }) {
         <Select aria-label="Filter by interview" value={filters.interviewId} onChange={(event) => set({ interviewId: event.target.value })} className="sm:w-72"
           options={[{ value: "", label: "All my interviews" }, ...interviews.map((row) => ({ value: row.id, label: row.title }))]} />
         <Select aria-label="Filter by status" value={filters.status} onChange={(event) => set({ status: event.target.value })} options={STATUS_OPTIONS} className="sm:w-52" />
+        <DateRangeFilter value={range} onChange={(next) => { setRange(next); set({}); }} label="Started" />
         {filters.assignmentId && <div className="flex flex-wrap items-center gap-2 text-xs sm:ml-auto">
           <ToneChip tone="indigo" icon={CalendarClock}>Showing one schedule&apos;s attempts</ToneChip>
           <button type="button" className={secondaryClass} onClick={clearAssignment}><X size={14} aria-hidden="true" />Show all attempts</button>
@@ -236,7 +253,8 @@ function AttemptsView({ params, setParams }) {
       </div>
       {error && <div className="px-5 pb-4"><Notice error>{error}</Notice></div>}
       {loading && !data ? <p className="py-10 text-center text-sm text-slate-500 dark:text-gray-400" aria-busy="true">Loading reports…</p>
-        : rows.length === 0 ? <EmptyState title="No attempts yet" detail="When students take your published AI interviews, their attempts and AI-generated reports appear here." />
+        : rows.length === 0 ? (range.preset !== "all" ? <EmptyState title="No attempts in this period" detail="Choose a longer period to see older attempts." />
+          : <EmptyState title="No attempts yet" detail="When students take your published AI interviews, their attempts and AI-generated reports appear here." />)
           : <>
           {/* Phones get one card per attempt; the table needs about 880px. */}
           <ul aria-label="ANVI interview attempts" className="divide-y divide-slate-100 dark:divide-gray-800 md:hidden">
@@ -255,12 +273,10 @@ function AttemptsView({ params, setParams }) {
               <caption className="sr-only">ANVI interview attempts</caption>
               <thead className={tableHeadClass}>
                 <tr>
-                  <th scope="col" className="px-5 py-3 font-semibold">Student</th>
-                  <th scope="col" className="px-3 py-3 font-semibold">Interview</th>
-                  <th scope="col" className="px-3 py-3 font-semibold">Status</th>
-                  <th scope="col" className="px-3 py-3 font-semibold">Score</th>
-                  <th scope="col" className="px-3 py-3 font-semibold">Started</th>
-                  <th scope="col" className="px-5 py-3 text-right font-semibold"><span className="sr-only">Actions</span></th>
+                  {ATTEMPT_COLUMNS.map(([key, label], index) => (
+                    <SortHeader key={key} sortKey={key} sort={sort} onSort={toggleSort} className={`${index === 0 ? "px-5" : "px-3"} py-3 tracking-wider`}>{label}</SortHeader>
+                  ))}
+                  <SortHeader sortable={false} align="right" className="px-5 py-3"><span className="sr-only">Actions</span></SortHeader>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
@@ -276,7 +292,17 @@ function AttemptsView({ params, setParams }) {
             </table>
           </div>
           </>}
-      {data?.pagination && rows.length > 0 && <Pagination value={data.pagination} onPage={(page) => setFilters((current) => ({ ...current, page }))} onLimit={(limit) => set({ limit })} />}
+      {data?.pagination && rows.length > 0 && <TablePager
+        page={data.pagination.page}
+        pageSize={data.pagination.limit}
+        total={data.pagination.total}
+        busy={loading}
+        noun="attempts"
+        pageSizeOptions={ATTEMPT_PAGE_SIZES}
+        onPage={(page) => setFilters((current) => ({ ...current, page }))}
+        onPageSize={(limit) => set({ limit })}
+        className="px-5 dark:border-gray-800"
+      />}
     </Panel>
     {openId && <AttemptDrawer attemptId={openId} onClose={closeDrawer} onChanged={refresh} />}
   </div>;

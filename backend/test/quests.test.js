@@ -24,7 +24,8 @@ let mongo, admin, student, problems;
 
 before(async () => {
   process.env.PEERPREP_DEPLOYMENT_ROLE = 'standalone';
-  mongo = await MongoMemoryServer.create({ instance: { ip: '127.0.0.1' } });
+  // A busy machine (e.g. the frontend suite running alongside) can take longer than the default 10 s.
+  mongo = await MongoMemoryServer.create({ instance: { ip: '127.0.0.1', launchTimeout: 60000 } });
   await mongoose.connect(mongo.getUri(), { dbName: 'quests_isolated' });
   await Promise.all(models.map((model) => model.init()));
 });

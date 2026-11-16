@@ -79,3 +79,32 @@ test('plain number search matches either identifier and prefixes can restrict it
   assert.equal(matchesSerialSearch({ displayOrder: 99, sourceNumber: 56 }, parseSerialSearch('#56')), true);
   assert.equal(matchesSerialSearch({ displayOrder: 99, sourceNumber: 56 }, parseSerialSearch('lc:56')), true);
 });
+
+test('comma-separated searches split into serial and text terms', async () => {
+  const { parseSearchList, matchesSearchTerm, firstMatchingTerm, MAX_SEARCH_TERMS } = await import('../src/utils/problemSerial.js');
+  assert.deepEqual(parseSearchList('two sum'), { multi: false, terms: [{ raw: 'two sum', kind: 'text' }] });
+  assert.deepEqual(parseSearchList('12'), { multi: false, terms: [{ raw: '12', kind: 'serial', serial: { kind: 'either', number: 12 } }] });
+  assert.deepEqual(parseSearchList(''), { multi: false, terms: [] });
+  assert.deepEqual(parseSearchList(' , ,'), { multi: false, terms: [] });
+  assert.equal(parseSearchList('12,').multi, false, 'a trailing comma leaves one term');
+
+  const mixed = parseSearchList('1, 15 ,pp 3, lc 42, two  sum, 3sum, Two Sum, #15');
+  assert.equal(mixed.multi, true);
+  assert.deepEqual(mixed.terms.map((term) => term.raw), ['1', '15', 'pp 3', 'lc 42', 'two sum', '3sum', '#15']);
+  assert.deepEqual(mixed.terms.map((term) => term.kind), ['serial', 'serial', 'serial', 'serial', 'text', 'text', 'serial']);
+  assert.deepEqual(mixed.terms[2].serial, { kind: 'peerprep', number: 3 });
+  assert.deepEqual(mixed.terms[3].serial, { kind: 'leetcode', number: 42 });
+
+  const many = parseSearchList(Array.from({ length: 80 }, (_, index) => String(index + 1)).join(','));
+  assert.equal(many.terms.length, MAX_SEARCH_TERMS);
+  assert.equal(many.terms.at(-1).raw, String(MAX_SEARCH_TERMS));
+
+  const question = { displayOrder: 3, sourceNumber: 42, title: 'Two Sum II' };
+  const texts = [question.title];
+  assert.equal(matchesSearchTerm(question, mixed.terms[2], texts), true);
+  assert.equal(matchesSearchTerm(question, mixed.terms[3], texts), true);
+  assert.equal(matchesSearchTerm(question, mixed.terms[0], texts), false);
+  assert.equal(matchesSearchTerm(question, mixed.terms[4], texts), true);
+  assert.equal(matchesSearchTerm(question, mixed.terms[5], texts), false);
+  assert.equal(firstMatchingTerm(question, mixed.terms, texts), 2);
+});

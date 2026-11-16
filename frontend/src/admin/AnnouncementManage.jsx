@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../utils/api';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 
 const typeOptions = [
   { value: '', label: 'All Types' },
@@ -18,6 +19,14 @@ const priorityLabels = {
   high: 'High',
   normal: 'Normal',
   low: 'Low'
+};
+
+const PRIORITY_RANK = { high: 3, normal: 2, low: 1 };
+
+const announcementSortValue = (ann, key) => {
+  if (key === 'priority') return PRIORITY_RANK[ann.priority] || PRIORITY_RANK.normal;
+  if (key === 'expiryDate' || key === 'createdAt') return ann[key] ? new Date(ann[key]) : null;
+  return ann?.[key];
 };
 
 const formatDate = (value) => {
@@ -40,7 +49,8 @@ export default function AnnouncementManage() {
     type: 'motivation',
     status: 'inactive',
     priority: 'normal',
-    expiryDate: ''
+    expiryDate: '',
+    showAsPopup: false
   });
 
   const loadAnnouncements = async () => {
@@ -71,7 +81,8 @@ export default function AnnouncementManage() {
       type: announcement.type || 'motivation',
       status: announcement.status || 'inactive',
       priority: announcement.priority || 'normal',
-      expiryDate: announcement.expiryDate ? new Date(announcement.expiryDate).toISOString().slice(0, 10) : ''
+      expiryDate: announcement.expiryDate ? new Date(announcement.expiryDate).toISOString().slice(0, 10) : '',
+      showAsPopup: Boolean(announcement.showAsPopup)
     });
   };
 
@@ -89,7 +100,8 @@ export default function AnnouncementManage() {
         type: form.type,
         status: form.status,
         priority: form.priority,
-        expiryDate: form.expiryDate || null
+        expiryDate: form.expiryDate || null,
+        showAsPopup: form.showAsPopup
       });
       setAnnouncements((prev) => prev.map((a) => (a._id === editing._id ? res.announcement : a)));
       closeEdit();
@@ -121,6 +133,7 @@ export default function AnnouncementManage() {
   };
 
   const filteredAnnouncements = useMemo(() => announcements, [announcements]);
+  const table = useClientTable(filteredAnnouncements, { getValue: announcementSortValue, resetKey: `${statusFilter}|${typeFilter}` });
 
   return (
     <div className="min-h-screen bg-slate-50 px-6 py-6 dark:bg-gray-900">
@@ -165,13 +178,10 @@ export default function AnnouncementManage() {
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-gray-700 dark:text-slate-400">
                 <tr>
-                  <th className="px-5 py-3">Title</th>
-                  <th className="px-5 py-3">Type</th>
-                  <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Priority</th>
-                  <th className="px-5 py-3">Expiry</th>
-                  <th className="px-5 py-3">Created</th>
-                  <th className="px-5 py-3 text-right">Actions</th>
+                  {[['title', 'Title'], ['type', 'Type'], ['status', 'Status'], ['priority', 'Priority'], ['expiryDate', 'Expiry'], ['createdAt', 'Created']].map(([key, label]) => (
+                    <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort} className="px-5 py-3">{label}</SortHeader>
+                  ))}
+                  <SortHeader sortable={false} align="right" className="px-5 py-3">Actions</SortHeader>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
@@ -184,10 +194,13 @@ export default function AnnouncementManage() {
                     <td colSpan="7" className="px-5 py-6 text-center text-slate-500">No announcements found.</td>
                   </tr>
                 ) : (
-                  filteredAnnouncements.map((ann) => (
+                  table.pageRows.map((ann) => (
                     <tr key={ann._id} className="text-slate-700 dark:text-slate-200">
                       <td className="px-5 py-4">
-                        <div className="font-semibold text-slate-900 dark:text-white">{ann.title}</div>
+                        <div className="flex flex-wrap items-center gap-2 font-semibold text-slate-900 dark:text-white">
+                          {ann.title}
+                          {ann.showAsPopup ? <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 ring-1 ring-inset ring-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/20" title="Shown as a popup when students log in">Popup</span> : null}
+                        </div>
                         <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 line-clamp-2">{ann.message}</div>
                       </td>
                       <td className="px-5 py-4">
@@ -231,6 +244,7 @@ export default function AnnouncementManage() {
               </tbody>
             </table>
           </div>
+          <TablePager {...table.pager} busy={loading} noun="announcements" />
         </div>
       </div>
 
@@ -298,6 +312,15 @@ export default function AnnouncementManage() {
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                 />
               </div>
+              <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 dark:border-gray-700 dark:bg-gray-800/60 dark:text-white">
+                <input
+                  type="checkbox"
+                  checked={form.showAsPopup}
+                  onChange={(e) => setForm((prev) => ({ ...prev, showAsPopup: e.target.checked }))}
+                  className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                />
+                Show as popup when students log in
+              </label>
               <div className="flex items-center justify-end gap-2">
                 <button
                   onClick={closeEdit}

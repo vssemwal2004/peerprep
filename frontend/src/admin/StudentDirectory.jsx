@@ -3,8 +3,9 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckSquare, ChevronLeft, ChevronRight, ClipboardCopy, Columns3, Download, Edit2, Eye, FileDown, FileSpreadsheet, Filter, Loader2, Mail, MoreVertical, Save, Search, ShieldCheck, Trash2, UserX, Users, X } from "lucide-react";
+import { CheckSquare, ClipboardCopy, Columns3, Download, Edit2, Eye, FileDown, FileSpreadsheet, Filter, Loader2, Mail, MoreVertical, Save, Search, ShieldCheck, Trash2, UserX, Users, X } from "lucide-react";
 import ContributionCalendar from "../components/ContributionCalendar";
+import { DataTable, SortHeader, TablePager, PAGE_SIZE_OPTIONS, nextSort, slicePage, sortRows } from "../components/table";
 import { useToast } from "../components/CustomToast";
 import {
   deriveStudentFacets,
@@ -21,6 +22,7 @@ const EMPTY_FILTERS = {
   branch: '',
   course: '',
   college: '',
+  section: '',
   group: '',
   coordinator: '',
   credentialEmailStatus: '',
@@ -35,6 +37,7 @@ const STUDENT_COLUMNS = [
   { key: 'branch', label: 'Branch' },
   { key: 'course', label: 'Course' },
   { key: 'semester', label: 'Semester' },
+  { key: 'section', label: 'Section' },
   { key: 'group', label: 'Group' },
   { key: 'college', label: 'College' },
   { key: 'coordinator', label: 'Coordinator' },
@@ -48,8 +51,113 @@ const STUDENT_COLUMNS = [
 const DEFAULT_STUDENT_COLUMNS = STUDENT_COLUMNS
   .filter((column) => column.key !== 'credentialMail')
   .map((column) => column.key);
+// The list's search, filters, page, page size and order are kept for the browser tab (sessionStorage),
+// so opening a student and pressing Back returns to exactly the same list. Not kept in the URL: admin
+// pages remount on every query-string change (ShellPage key), which would reset the page while typing.
+// An explicit `?search=` / filter in the URL (e.g. from the header search) still wins.
+const LIST_STATE_KEY = 'peerprep.studentDirectory.listState';
+const PAGE_SIZES = PAGE_SIZE_OPTIONS;
+// Every data column sorts from its header; the server sorts the main list (sortBy + sortOrder,
+// whitelisted to these keys in studentController.studentListSort).
+const SORTABLE_STUDENT_COLUMNS = new Set(STUDENT_COLUMNS.map((column) => column.key).filter((key) => key !== 'actions'));
+const CREDENTIAL_MAIL_LABELS = { sent: 'Sent', pending: 'Sending', failed: 'Failed', unconfirmed: 'Unconfirmed' };
+/** Sort value of a student cell (special-students tab, which is sorted in the browser). */
+function studentSortValue(student, key) {
+  switch (key) {
+    case 'student': return student?.name;
+    case 'semester': return Number(student?.semester) || null;
+    case 'coordinator': return student?.teacherId;
+    case 'status': return student?.loginStatus === 'active' ? 'Active' : 'Awaiting login';
+    case 'credentialMail': return CREDENTIAL_MAIL_LABELS[student?.credentialEmailStatus] || 'Not sent';
+    default: return student?.[key];
+  }
+}
+const positiveInt = (value, fallback) => {
+  const number = Number.parseInt(value, 10);
+  return Number.isSafeInteger(number) && number > 0 ? number : fallback;
+};
+function readListState(params) {
+  let saved = {};
+  try { saved = JSON.parse(sessionStorage.getItem(LIST_STATE_KEY) || '{}') || {}; } catch { saved = {}; }
+  const fromUrl = params.has('search') || Object.keys(EMPTY_FILTERS).some((key) => params.has(key));
+  const source = fromUrl ? {} : saved;
+  const savedFilters = source.filters && typeof source.filters === 'object' ? source.filters : {};
+  const size = positiveInt(source.limit, 25);
+  const sortBy = SORTABLE_STUDENT_COLUMNS.has(source.sortBy) ? source.sortBy : '';
+  return {
+    search: fromUrl ? params.get('search') || '' : String(source.search || ''),
+    tab: source.tab === 'special' ? 'special' : 'students',
+    page: positiveInt(source.page, 1),
+    limit: PAGE_SIZES.includes(size) ? size : 25,
+    // No column sort = the original order (upload order, oldest first).
+    sort: sortBy ? { key: sortBy, direction: source.order === 'desc' ? 'desc' : 'asc' } : null,
+    filters: Object.fromEntries(Object.keys(EMPTY_FILTERS).map((key) => [key, String((fromUrl ? params.get(key) : savedFilters[key]) || '')])),
+  };
+}
+
+// Small lists inside the student modals (client-sorted, client-paged).
+const formatDate = (value, options) => (value ? new Date(value).toLocaleDateString('en-US', options) : '');
+const EVENT_COLUMNS = [
+  { key: 'name', label: 'Event name', render: (event) => <span className="whitespace-nowrap">{event.name || '-'}</span> },
+  { key: 'createdAt', label: 'Created on', render: (event) => <span className="whitespace-nowrap">{event.createdAt ? new Date(event.createdAt).toLocaleDateString() : '-'}</span> },
+  { key: 'createdBy', label: 'Created by', value: (event) => event.createdBy || (event.coordinatorId ? 'Coordinator' : 'Admin') },
+];
+const VIDEO_COLUMNS = [
+  {
+    key: 'videoTitle',
+    label: 'Video title',
+    render: (video) => (
+      <>
+        <div className="text-sm font-medium text-slate-900 dark:text-white">{video.videoTitle || 'Untitled Video'}</div>
+        <div className="mt-1 text-xs text-slate-500 dark:text-gray-400">{video.subjectName} • {video.chapterName}</div>
+      </>
+    ),
+  },
+  { key: 'duration', label: 'Watch time', value: (video) => Number(video.duration) || null, render: (video) => <span className="whitespace-nowrap font-medium">{video.durationDisplay || (video.duration > 0 ? `${video.duration}m` : '—')}</span> },
+  {
+    key: 'watchedDate',
+    label: 'Date & time watched',
+    render: (video) => <span className="whitespace-nowrap">{video.watchedDate ? new Date(video.watchedDate).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown date'}</span>,
+  },
+];
+const progressTone = (percentage, strong) => (
+  percentage === 100 ? (strong ? 'bg-green-600' : 'text-green-600 dark:text-green-400')
+    : percentage >= 50 ? (strong ? 'bg-blue-600' : 'text-blue-600 dark:text-blue-400')
+      : percentage > 0 ? (strong ? 'bg-yellow-600' : 'text-yellow-600 dark:text-yellow-400')
+        : (strong ? 'bg-slate-400' : 'text-slate-500 dark:text-gray-400')
+);
+const COURSE_COLUMNS = [
+  {
+    key: 'courseName',
+    label: 'Course name',
+    render: (course) => (
+      <>
+        <div className="text-sm font-medium text-slate-900 dark:text-white">{course.courseName || 'Untitled Course'}</div>
+        <div className="mt-1 text-xs text-slate-500 dark:text-gray-400">{course.semesterName}</div>
+      </>
+    ),
+  },
+  { key: 'enrollmentDate', label: 'Enrollment date', render: (course) => <span className="whitespace-nowrap">{formatDate(course.enrollmentDate, { year: 'numeric', month: 'short', day: 'numeric' }) || 'Unknown date'}</span> },
+  {
+    key: 'progress',
+    label: 'Progress status',
+    value: (course) => Number(course.progressPercentage) || 0,
+    render: (course) => (
+      <div className="flex min-w-40 flex-col gap-1">
+        <div className={`text-sm font-medium ${progressTone(course.progressPercentage, false)}`}>{course.progressStatus || 'Not Started'}</div>
+        <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-gray-700">
+          <div className={`h-2 rounded-full transition-all ${progressTone(course.progressPercentage, true)}`} style={{ width: `${course.progressPercentage || 0}%` }} />
+        </div>
+        <div className="text-xs text-slate-500 dark:text-gray-400">{course.completedTopics || 0} / {course.totalTopics || 0} topics ({course.progressPercentage || 0}%)</div>
+      </div>
+    ),
+  },
+];
+
 const STUDENT_COLUMNS_PREFERENCE_KEY = 'peerprep.studentColumns';
 const STUDENT_COLUMNS_V2_MIGRATION_KEY = 'peerprep.studentColumns.v2';
+// Section was added after column choices were first saved: show it once for everyone.
+const STUDENT_COLUMNS_SECTION_KEY = 'peerprep.studentColumns.section';
 
 export default function StudentDirectory() {
   const { user } = useAuth();
@@ -61,11 +169,12 @@ export default function StudentDirectory() {
   const [students, setStudents] = useState([]);
   const [specialStudents, setSpecialStudents] = useState([]);
   const [filteredStudents, setFilteredStudents] = useState([]);
-  // `?search=` (e.g. from the overview header) pre-fills the search.
-  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || "");
+  // Restored list state (see readListState); `?search=` (e.g. from the overview header) pre-fills the search.
+  const [initialList] = useState(() => readListState(searchParams));
+  const [searchQuery, setSearchQuery] = useState(initialList.search);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("students"); // "students" or "special"
+  const [activeTab, setActiveTab] = useState(initialList.tab); // "students" or "special"
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [activity, setActivity] = useState({});
@@ -77,11 +186,16 @@ export default function StudentDirectory() {
   const [editForm, setEditForm] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [eventsStudent, setEventsStudent] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
-  const [sortOrder, setSortOrder] = useState('asc'); // 'asc' or 'desc'
+  const [currentPage, setCurrentPage] = useState(initialList.page);
+  const [itemsPerPage, setItemsPerPage] = useState(initialList.limit);
+  // Column sort ({ key, direction } or null = original upload order). Sent to the server as sortBy + sortOrder.
+  const [studentSort, setStudentSort] = useState(initialList.sort);
+  const sortBy = studentSort?.key || '';
+  const sortOrder = studentSort?.direction || 'asc';
+  // Only the server-sorted main list refetches when the sort changes.
+  const serverSortKey = activeTab === 'students' ? `${sortBy}:${sortOrder}` : '';
   const [isExporting, setIsExporting] = useState(false);
-  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [filters, setFilters] = useState(initialList.filters);
   const [showFilters, setShowFilters] = useState(false);
   const [managedSemesters, setManagedSemesters] = useState([]);
   const [masterData, setMasterData] = useState([]);
@@ -96,6 +210,7 @@ export default function StudentDirectory() {
         // Older defaults included this column. Hide it once during migration;
         // subsequent explicit selections are preserved.
         if (!migrated) next.delete('credentialMail');
+        if (localStorage.getItem(STUDENT_COLUMNS_SECTION_KEY) !== 'true') next.add('section');
         return next.size ? next : new Set(DEFAULT_STUDENT_COLUMNS);
       }
       return new Set(DEFAULT_STUDENT_COLUMNS);
@@ -104,7 +219,7 @@ export default function StudentDirectory() {
     }
   });
   const [facets, setFacets] = useState({});
-  const [debouncedSearch, setDebouncedSearch] = useState(() => (searchParams.get('search') || '').trim());
+  const [debouncedSearch, setDebouncedSearch] = useState(() => initialList.search.trim());
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 25 });
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
   const [selectedStudentMap, setSelectedStudentMap] = useState({});
@@ -171,14 +286,17 @@ export default function StudentDirectory() {
     branches: mergeFilterOptions(facets.branches, fallbackFacets.branches),
     courses: mergeFilterOptions(facets.courses, fallbackFacets.courses),
     colleges: mergeFilterOptions(facets.colleges, fallbackFacets.colleges),
-    groups: mergeFilterOptions(facets.groups, fallbackFacets.groups),
+    groups: mergeFilterOptions(facets.groups, fallbackFacets.groups, masterData.filter((entry) => entry.category === 'group')),
+    sections: mergeFilterOptions(facets.sections, fallbackFacets.sections, masterData.filter((entry) => entry.category === 'section')),
     coordinators: mergeFilterOptions(facets.coordinators, fallbackFacets.coordinators),
-  }), [facets, fallbackFacets]);
+  }), [facets, fallbackFacets, masterData]);
   const masterOptions = useMemo(() => ({
     course: masterData.filter((entry) => entry.category === 'course'),
     branch: masterData.filter((entry) => entry.category === 'branch'),
     college: masterData.filter((entry) => entry.category === 'campus'),
     semester: masterData.filter((entry) => entry.category === 'semester'),
+    section: masterData.filter((entry) => entry.category === 'section'),
+    group: masterData.filter((entry) => entry.category === 'group'),
   }), [masterData]);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const uploadBatchName = uploadBatches.find((batch) => batch._id === uploadBatchId)?.name || routeBatchName;
@@ -224,6 +342,7 @@ export default function StudentDirectory() {
     { key: 'branch', label: 'Branch', allLabel: 'All branches', options: filterOptions.branches },
     { key: 'course', label: 'Course', allLabel: 'All courses', options: filterOptions.courses },
     { key: 'college', label: 'College', allLabel: 'All colleges', options: filterOptions.colleges },
+    { key: 'section', label: 'Section', allLabel: 'All sections', options: filterOptions.sections },
     { key: 'group', label: 'Group', allLabel: 'All groups', options: filterOptions.groups },
     { key: 'coordinator', label: 'Coordinator', allLabel: 'All coordinators', options: filterOptions.coordinators },
   ];
@@ -232,6 +351,15 @@ export default function StudentDirectory() {
     const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // Remember the list for this browser tab so Back from a student profile restores it.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify({
+        search: debouncedSearch, tab: activeTab, page: currentPage, limit: itemsPerPage, sortBy, order: sortOrder, filters,
+      }));
+    } catch { /* storage blocked (private mode): the list simply starts fresh next time */ }
+  }, [debouncedSearch, activeTab, currentPage, itemsPerPage, sortBy, sortOrder, filters]);
 
   useEffect(() => {
     let mounted = true;
@@ -261,6 +389,7 @@ export default function StudentDirectory() {
   useEffect(() => {
     localStorage.setItem(STUDENT_COLUMNS_PREFERENCE_KEY, JSON.stringify([...visibleColumns]));
     localStorage.setItem(STUDENT_COLUMNS_V2_MIGRATION_KEY, 'true');
+    localStorage.setItem(STUDENT_COLUMNS_SECTION_KEY, 'true');
   }, [visibleColumns]);
 
   useEffect(() => {
@@ -315,16 +444,25 @@ export default function StudentDirectory() {
     loadData();
     // loadData uses a request revision guard to ignore stale search responses.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, sortOrder, filters, currentPage, itemsPerPage, debouncedSearch, uploadBatchId]);
+  }, [activeTab, serverSortKey, filters, currentPage, itemsPerPage, debouncedSearch, uploadBatchId]);
 
   useEffect(() => () => {
     credentialRefreshTimersRef.current.forEach((timer) => clearTimeout(timer));
   }, []);
 
-  const totalPages = pagination.pages || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedStudents = filteredStudents;
+  // The main list is sorted and paged by the server; the special-students list arrives whole and is
+  // sorted and paged here with the same header sort and pager.
+  const isSpecialTab = activeTab === 'special';
+  const sortedSpecialStudents = useMemo(
+    () => (isSpecialTab ? sortRows(filteredStudents, studentSort, studentSortValue) : []),
+    [isSpecialTab, filteredStudents, studentSort],
+  );
+  const paginatedStudents = useMemo(
+    () => (isSpecialTab ? slicePage(sortedSpecialStudents, currentPage, itemsPerPage) : filteredStudents),
+    [isSpecialTab, sortedSpecialStudents, currentPage, itemsPerPage, filteredStudents],
+  );
+  const tableTotal = isSpecialTab ? filteredStudents.length : pagination.total;
   const pageStudentIds = useMemo(
     () => paginatedStudents.map((student) => String(student._id || '')).filter(Boolean),
     [paginatedStudents],
@@ -348,6 +486,17 @@ export default function StudentDirectory() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Header click: ascending → descending → original order. The selection is a set of ids, so it survives a re-sort.
+  const handleSort = (key) => {
+    setStudentSort((current) => nextSort(current, key));
+    setCurrentPage(1);
+  };
+
+  const handlePageSize = (size) => {
+    setItemsPerPage(size);
+    setCurrentPage(1);
+  };
+
   const loadData = async ({ forceRefresh = false } = {}) => {
     const requestId = loadRequestRef.current + 1;
     loadRequestRef.current = requestId;
@@ -358,6 +507,7 @@ export default function StudentDirectory() {
         const data = await api.listAllStudents({
           search: debouncedSearch,
           sortOrder,
+          sortBy,
           ...filters,
           uploadBatchId,
           page: currentPage,
@@ -384,7 +534,8 @@ export default function StudentDirectory() {
         if (nextPagination.page !== currentPage) setCurrentPage(nextPagination.page);
         return nextPagination;
       } else {
-        const data = await api.listAllSpecialStudents('', sortOrder);
+        // Fetched in the original order; the header sort is applied in the browser (sortedSpecialStudents).
+        const data = await api.listAllSpecialStudents('', 'asc');
         if (loadRequestRef.current !== requestId) return;
         setSpecialStudents(data.students || []);
         setFilteredStudents(data.students || []);
@@ -520,6 +671,7 @@ export default function StudentDirectory() {
       const data = await api.listAllStudents({
         search: debouncedSearch,
         sortOrder,
+        sortBy,
         ...filters,
         uploadBatchId,
       });
@@ -718,6 +870,7 @@ export default function StudentDirectory() {
       portfolioUrl: student.portfolioUrl || '',
       semester: student.semester || '',
       group: student.group || '',
+      section: student.section || '',
       teacherId: student.teacherId || ''
     });
   };
@@ -778,8 +931,8 @@ export default function StudentDirectory() {
       try { const d = await api.getStudentStatsByAdmin(s._id); stats = d.stats; } catch { /* export can continue without optional stats */ }
     }
     const rows = [
-      ['Name','Student ID','Email','Course','Branch','College','Semester','Group','Coordinator','Courses Enrolled','Videos Watched','Problems Solved'],
-      [s.name, s.studentId, s.email, s.course, s.branch, s.college, s.semester, s.group, s.teacherId,
+      ['Name','Student ID','Email','Course','Branch','College','Semester','Section','Group','Coordinator','Courses Enrolled','Videos Watched','Problems Solved'],
+      [s.name, s.studentId, s.email, s.course, s.branch, s.college, s.semester, s.section, s.group, s.teacherId,
        stats?.totalCoursesEnrolled ?? '', stats?.totalVideosWatched ?? '', stats?.problemsSolved ?? '']
     ];
     downloadCsv(rows, `student_${s.studentId || s._id}_${new Date().toISOString().slice(0,10)}.csv`);
@@ -803,7 +956,7 @@ export default function StudentDirectory() {
       return;
     }
     const rows = [
-      ['Name', 'Student ID', 'Email', 'Course', 'Branch', 'College', 'Semester', 'Group', 'Coordinator'],
+      ['Name', 'Student ID', 'Email', 'Course', 'Branch', 'College', 'Semester', 'Section', 'Group', 'Coordinator'],
       ...selectedStudents.map((student) => [
         student.name,
         student.studentId,
@@ -812,6 +965,7 @@ export default function StudentDirectory() {
         student.branch,
         student.college,
         student.semester,
+        student.section,
         student.group,
         student.teacherId,
       ]),
@@ -863,6 +1017,7 @@ export default function StudentDirectory() {
       const result = await api.exportStudentsCsv({
         search: searchQuery.trim(),
         sortOrder,
+        sortBy,
         ...filters,
         uploadBatchId,
       });
@@ -873,6 +1028,34 @@ export default function StudentDirectory() {
       setIsExporting(false);
     }
   };
+
+  // The student search sits in the row above the table ("Select page · N visible"), and in the
+  // "No students found" message, so a search with no results can still be changed or cleared.
+  const renderSearchBox = (className = '') => (
+    <form onSubmit={handleSearch} className={className} role="search">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          placeholder="Search name, ID, email, branch, course..."
+          aria-label="Search students"
+          value={searchQuery}
+          onChange={(e) => { clearSelection(); setSearchQuery(e.target.value); setCurrentPage(1); }}
+          className="h-8 w-full rounded-md border border-slate-200 bg-white pl-9 pr-9 text-xs text-slate-700 shadow-sm outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/40"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={clearSearch}
+            aria-label="Clear search"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 transition-colors hover:bg-slate-100 dark:hover:bg-gray-600"
+          >
+            <X className="h-3 w-3 text-slate-500" />
+          </button>
+        )}
+      </div>
+    </form>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50/60 dark:bg-gray-950 flex flex-col">
@@ -905,28 +1088,6 @@ export default function StudentDirectory() {
             </div>
 
             <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-              <form onSubmit={handleSearch} className="min-w-[240px] flex-1 xl:max-w-sm">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search name, ID, email, branch, course..."
-                    value={searchQuery}
-                    onChange={(e) => { clearSelection(); setSearchQuery(e.target.value); setCurrentPage(1); }}
-                    className="h-9 w-full rounded-md border border-slate-200 bg-white pl-9 pr-9 text-xs text-slate-700 shadow-sm outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={clearSearch}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-slate-100 dark:hover:bg-gray-600 transition-colors"
-                    >
-                      <X className="w-3 h-3 text-slate-500" />
-                    </button>
-                  )}
-                </div>
-              </form>
-
               <div className="relative min-w-[190px]">
                 <FileSpreadsheet className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <select
@@ -1034,16 +1195,6 @@ export default function StudentDirectory() {
                 )}
               </div>
 
-              <select
-                value={sortOrder}
-                onChange={(e) => { clearSelection(); setSortOrder(e.target.value); setCurrentPage(1); }}
-                className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
-                aria-label="Sort students"
-              >
-                <option value="asc">Oldest first</option>
-                <option value="desc">Newest first</option>
-              </select>
-
               <button
                 onClick={handleExportCsv}
                 disabled={isExporting || isLoading}
@@ -1080,9 +1231,10 @@ export default function StudentDirectory() {
               <h3 className="text-lg font-semibold text-slate-700 dark:text-white mb-2">No students found</h3>
               <p className="text-slate-500 dark:text-white text-sm">
                 {searchQuery || activeFilterCount > 0
-                  ? "Try adjusting the current filters"
+                  ? "Try adjusting the search or the current filters"
                   : "No students have been registered yet"}
               </p>
+              {(searchQuery || debouncedSearch) && renderSearchBox('mx-auto mt-4 w-full max-w-sm text-left')}
             </div>
           ) : (
             // Students Table (no tabs, clear and scannable)
@@ -1140,7 +1292,9 @@ export default function StudentDirectory() {
                   )}
                 </div>
 
-                <div ref={bulkMenuRef} className="relative self-start sm:self-auto">
+                <div className="flex min-w-0 items-center gap-2 sm:flex-1 sm:justify-end">
+                {renderSearchBox('min-w-0 flex-1 sm:max-w-sm')}
+                <div ref={bulkMenuRef} className="relative shrink-0">
                   <button
                     data-platform-menu-trigger
                     aria-expanded={showBulkMenu}
@@ -1215,9 +1369,11 @@ export default function StudentDirectory() {
                     </div>
                   )}
                 </div>
+                </div>
               </div>
 
-              <div className="overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 dark:border-gray-700">
+              <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700">
+              <div className="overflow-x-auto overflow-y-visible">
               <table className="min-w-full divide-y divide-slate-200" style={{ '--serial-start': startIndex }}>
                 <thead className="bg-slate-50 dark:bg-gray-700">
                   <tr>
@@ -1230,23 +1386,16 @@ export default function StudentDirectory() {
                         className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-gray-600 dark:bg-gray-800"
                       />
                     </th>
-                    {isColumnVisible('student') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Student</th>}
-                    {isColumnVisible('email') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Email</th>}
-                    {isColumnVisible('branch') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Branch</th>}
-                    {isColumnVisible('course') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Course</th>}
-                    {isColumnVisible('semester') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Semester</th>}
-                    {isColumnVisible('group') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Group</th>}
-                    {isColumnVisible('college') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">College</th>}
-                    {isColumnVisible('coordinator') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Coordinator</th>}
-                    {activeTab === "students" && isColumnVisible('status') && (
-                      <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Status</th>
-                    )}
-                    {isColumnVisible('credentialMail') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Credential Mail</th>}
+                    {STUDENT_COLUMNS.filter((column) => column.key !== 'actions' && isColumnVisible(column.key) && (column.key !== 'status' || activeTab === 'students')).map((column) => (
+                      <SortHeader key={column.key} sortKey={column.key} sort={studentSort} onSort={handleSort} className="dark:text-gray-300">
+                        {column.key === 'status' ? 'Status' : column.label}
+                      </SortHeader>
+                    ))}
                     {activeTab === "students" && isColumnVisible('actions') && (
-                      <th scope="col" className="px-3 py-2 text-right text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Actions</th>
+                      <SortHeader sortable={false} align="right" className="dark:text-gray-300">Actions</SortHeader>
                     )}
                     {activeTab === "special" && (
-                      <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Special Events</th>
+                      <SortHeader sortable={false} className="dark:text-gray-300">Special Events</SortHeader>
                     )}
                   </tr>
                 </thead>
@@ -1297,6 +1446,7 @@ export default function StudentDirectory() {
                         {isColumnVisible('branch') && <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.branch || "-"}</td>}
                         {isColumnVisible('course') && <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.course || "-"}</td>}
                         {isColumnVisible('semester') && <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.semester ? `Sem ${s.semester}` : "-"}</td>}
+                        {isColumnVisible('section') && <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.section || "-"}</td>}
                         {isColumnVisible('group') && <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.group || "-"}</td>}
                         {isColumnVisible('college') && <td className="max-w-[180px] px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300"><span className="block truncate">{s.college || "-"}</span></td>}
                         {isColumnVisible('coordinator') && <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.teacherId || "-"}</td>}
@@ -1443,52 +1593,18 @@ export default function StudentDirectory() {
                   })}
                 </tbody>
               </table>
-            </div>
-
-            {/* Pagination Controls */}
-            {filteredStudents.length > 0 && (
-              <div className="mt-3 flex flex-col items-center justify-between gap-2 px-1 sm:flex-row">
-                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-gray-400">
-                  <span>Show</span>
-                  <select
-                    value={itemsPerPage}
-                    onChange={(e) => {
-                      setItemsPerPage(Number(e.target.value));
-                      setCurrentPage(1);
-                    }}
-                    className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-sky-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                  >
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                  <span>
-                    {startIndex + 1}-{Math.min(endIndex, pagination.total)} of {pagination.total.toLocaleString()}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => handlePageChange(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                    aria-label="Previous page"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <span className="min-w-24 text-center text-xs font-medium text-slate-600 dark:text-gray-300">Page {currentPage} of {totalPages}</span>
-
-                  <button
-                    onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                    aria-label="Next page"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
               </div>
-            )}
+              <TablePager
+                page={currentPage}
+                pageSize={itemsPerPage}
+                total={tableTotal}
+                onPage={handlePageChange}
+                onPageSize={handlePageSize}
+                noun="students"
+                busy={isLoading}
+                className="bg-white dark:bg-gray-800"
+              />
+            </div>
             </div>
           )}
         </div>
@@ -1609,6 +1725,7 @@ export default function StudentDirectory() {
                       { label: "Email",               value: selectedStudent.email },
                       { label: "College",             value: selectedStudent.college },
                       { label: "Semester",            value: selectedStudent.semester },
+                      { label: "Section",             value: selectedStudent.section },
                       { label: "Group",               value: selectedStudent.group },
                     ].map(({ label, value }) => (
                       <div key={label} className="bg-slate-50 dark:bg-gray-700/60 rounded-lg px-3 py-2">
@@ -1866,15 +1983,8 @@ export default function StudentDirectory() {
                         {masterOptions.semester.map((entry) => <option key={entry._id} value={entry.name}>Semester {entry.name}</option>)}
                       </select>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">Group</label>
-                      <input
-                        type="text"
-                        value={editForm.group}
-                        onChange={(e) => setEditForm({ ...editForm, group: e.target.value })}
-                        className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-transparent"
-                      />
-                    </div>
+                    <MasterChoiceField label="Section" value={editForm.section} options={masterOptions.section} onChange={(section) => setEditForm({ ...editForm, section })} />
+                    <MasterChoiceField label="Group" value={editForm.group} options={masterOptions.group} onChange={(group) => setEditForm({ ...editForm, group })} />
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">Coordinator ID(s)</label>
                       <input
@@ -1949,31 +2059,15 @@ export default function StudentDirectory() {
             </div>
 
             <div className="px-4 py-3 max-h-80 overflow-y-auto">
-              {Array.isArray(eventsStudent.specialEvents) && eventsStudent.specialEvents.length > 0 ? (
-                <table className="min-w-full text-xs divide-y divide-slate-200 dark:divide-gray-700">
-                  <thead className="bg-slate-50 dark:bg-gray-700/60">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-gray-200">Event Name</th>
-                      <th className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-gray-200">Created On</th>
-                      <th className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-gray-200">Created By</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-gray-700 bg-white dark:bg-gray-800">
-                    {eventsStudent.specialEvents.map((ev) => {
-                      if (!ev) return null;
-                      const createdAt = ev.createdAt ? new Date(ev.createdAt) : null;
-                      const createdOnLabel = createdAt ? createdAt.toLocaleDateString() : '-';
-                      const createdByLabel = ev.createdBy || (ev.coordinatorId ? 'Coordinator' : 'Admin');
-                      return (
-                        <tr key={ev._id || `${ev.name}-${createdOnLabel}`}>
-                          <td className="px-3 py-2 text-slate-800 dark:text-gray-100 whitespace-nowrap">{ev.name || '-'}</td>
-                          <td className="px-3 py-2 text-slate-700 dark:text-gray-200 whitespace-nowrap">{createdOnLabel}</td>
-                          <td className="px-3 py-2 text-slate-700 dark:text-gray-200 whitespace-nowrap">{createdByLabel}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              {Array.isArray(eventsStudent.specialEvents) && eventsStudent.specialEvents.some(Boolean) ? (
+                <DataTable
+                  columns={EVENT_COLUMNS}
+                  rows={eventsStudent.specialEvents.filter(Boolean)}
+                  rowKey={(event, index) => event._id || `${event.name}-${index}`}
+                  initialPageSize={10}
+                  noun="events"
+                  dense
+                />
               ) : (
                 <p className="text-xs text-slate-500 dark:text-gray-300">
                   This student has not been added to any special events yet.
@@ -2027,59 +2121,7 @@ export default function StudentDirectory() {
                       <span className="ml-2 text-slate-600 dark:text-gray-400">Loading videos...</span>
                     </div>
                   ) : videosWatched.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-slate-200 dark:divide-gray-700">
-                        <thead className="bg-slate-50 dark:bg-gray-700">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-700 dark:text-gray-300 uppercase tracking-wider">
-                              Video Title
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-700 dark:text-gray-300 uppercase tracking-wider">
-                              Watch Time
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-700 dark:text-gray-300 uppercase tracking-wider">
-                              Date & Time Watched
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-slate-200 dark:divide-gray-700">
-                          {videosWatched.map((video, index) => {
-                            const watchedDate = video.watchedDate 
-                              ? new Date(video.watchedDate).toLocaleString('en-US', {
-                                  year: 'numeric',
-                                  month: 'short', 
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })
-                              : 'Unknown date';
-                            
-                            return (
-                              <tr key={index} className="hover:bg-slate-50 dark:hover:bg-gray-700/50">
-                                <td className="px-6 py-4">
-                                  <div className="text-sm font-medium text-slate-900 dark:text-white">
-                                    {video.videoTitle || 'Untitled Video'}
-                                  </div>
-                                  <div className="text-xs text-slate-500 dark:text-gray-400 mt-1">
-                                    {video.subjectName} • {video.chapterName}
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm text-slate-900 dark:text-white font-medium">
-                                    {video.durationDisplay || (video.duration > 0 ? `${video.duration}m` : '—')}
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm text-slate-900 dark:text-white">
-                                    {watchedDate}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                    <DataTable columns={VIDEO_COLUMNS} rows={videosWatched} rowKey={(video, index) => video._id || index} initialPageSize={10} noun="videos" />
                   ) : (
                     <div className="text-center py-12">
                       <p className="text-slate-600 dark:text-gray-400">No videos watched yet</p>
@@ -2135,79 +2177,7 @@ export default function StudentDirectory() {
                       <span className="ml-2 text-slate-600 dark:text-gray-400">Loading courses...</span>
                     </div>
                   ) : coursesEnrolled.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-slate-200 dark:divide-gray-700">
-                        <thead className="bg-slate-50 dark:bg-gray-700">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-700 dark:text-gray-300 uppercase tracking-wider">
-                              Course Name
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-700 dark:text-gray-300 uppercase tracking-wider">
-                              Enrollment Date
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-700 dark:text-gray-300 uppercase tracking-wider">
-                              Progress Status
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-slate-200 dark:divide-gray-700">
-                          {coursesEnrolled.map((course, index) => {
-                            const enrollmentDate = course.enrollmentDate 
-                              ? new Date(course.enrollmentDate).toLocaleDateString('en-US', {
-                                  year: 'numeric',
-                                  month: 'short', 
-                                  day: 'numeric'
-                                })
-                              : 'Unknown date';
-                            
-                            const progressColor = 
-                              course.progressPercentage === 100 ? 'text-green-600 dark:text-green-400' :
-                              course.progressPercentage >= 50 ? 'text-blue-600 dark:text-blue-400' :
-                              course.progressPercentage > 0 ? 'text-yellow-600 dark:text-yellow-400' :
-                              'text-slate-500 dark:text-gray-400';
-                            
-                            return (
-                              <tr key={index} className="hover:bg-slate-50 dark:hover:bg-gray-700/50">
-                                <td className="px-6 py-4">
-                                  <div className="text-sm font-medium text-slate-900 dark:text-white">
-                                    {course.courseName || 'Untitled Course'}
-                                  </div>
-                                  <div className="text-xs text-slate-500 dark:text-gray-400 mt-1">
-                                    {course.semesterName}
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm text-slate-900 dark:text-white">
-                                    {enrollmentDate}
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="flex flex-col gap-1">
-                                    <div className={`text-sm font-medium ${progressColor}`}>
-                                      {course.progressStatus || 'Not Started'}
-                                    </div>
-                                    <div className="w-full bg-slate-200 dark:bg-gray-700 rounded-full h-2">
-                                      <div 
-                                        className={`h-2 rounded-full transition-all ${
-                                          course.progressPercentage === 100 ? 'bg-green-600' :
-                                          course.progressPercentage >= 50 ? 'bg-blue-600' :
-                                          course.progressPercentage > 0 ? 'bg-yellow-600' :
-                                          'bg-slate-400'
-                                        }`}
-                                        style={{ width: `${course.progressPercentage || 0}%` }}
-                                      ></div>
-                                    </div>
-                                    <div className="text-xs text-slate-500 dark:text-gray-400">
-                                      {course.completedTopics || 0} / {course.totalTopics || 0} topics ({course.progressPercentage || 0}%)
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                    <DataTable columns={COURSE_COLUMNS} rows={coursesEnrolled} rowKey={(course, index) => course._id || index} initialPageSize={10} noun="courses" />
                   ) : (
                     <div className="text-center py-12">
                       <p className="text-slate-600 dark:text-gray-400">No courses enrolled yet</p>
@@ -2219,6 +2189,28 @@ export default function StudentDirectory() {
           </>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+const EDIT_INPUT_CLASS = 'w-full px-3 py-2 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-transparent';
+
+/** Section / Group in the edit form: a Master Data list when one is set up (keeping an older value), else free text. */
+function MasterChoiceField({ label, value = '', options, onChange }) {
+  const names = options.map((entry) => entry.name);
+  const keepsOld = value && !names.some((name) => name.toLowerCase() === String(value).toLowerCase());
+  return (
+    <div>
+      <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">{label}</label>
+      {options.length ? (
+        <select value={value} onChange={(event) => onChange(event.target.value)} className={EDIT_INPUT_CLASS}>
+          <option value="">No {label.toLowerCase()}</option>
+          {keepsOld && <option value={value}>{value} (not in Master Data)</option>}
+          {options.map((entry) => <option key={entry._id} value={entry.name}>{entry.name}</option>)}
+        </select>
+      ) : (
+        <input type="text" value={value} onChange={(event) => onChange(event.target.value)} className={EDIT_INPUT_CLASS} />
+      )}
     </div>
   );
 }

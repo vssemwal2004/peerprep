@@ -4,6 +4,7 @@ import { reportApi } from "../api";
 import { KpiTile } from "../schedules/scheduleUi";
 import { EmptyState, FilterField, Notice, Panel, Select, ToneChip, inputClass, secondaryClass, tableHeadClass, tableRowClass } from "../ui";
 import { usageApi } from "./usageApi";
+import { SortHeader, TablePager, useClientTable } from "../../../components/table";
 import { USAGE_MAX_DAYS, istDate, presetRange, rangeError } from "./usageRange";
 
 const PRESETS = [
@@ -139,22 +140,62 @@ function HybridKpis({ data }) {
   );
 }
 
+// The usage tables share one shape: every header sorts, the standard pager sits under the table.
+// `columns`: [{ key, label, align?, className? (th extras, e.g. responsive visibility) }].
+function UsageTable({ columns, rows, getValue, caption, tableProps, tableClassName, wrapperClassName = "overflow-x-auto", headClassName = tableHeadClass, children, noun = "rows" }) {
+  const table = useClientTable(rows, { getValue });
+  return (
+    <>
+      <div className={wrapperClassName}>
+        <table data-no-serial {...tableProps} className={`w-full text-left text-sm ${tableClassName}`}>
+          <caption className="sr-only">{caption}</caption>
+          <thead className={headClassName}>
+            <tr>
+              {columns.map((column, index) => (
+                <SortHeader
+                  key={column.key}
+                  sortKey={column.key}
+                  sort={table.sort}
+                  onSort={table.toggleSort}
+                  align={column.align}
+                  className={`py-3 tracking-wider ${index === 0 || index === columns.length - 1 ? "sm:px-5" : ""} ${column.className || ""}`}
+                >{column.label}</SortHeader>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
+            {table.pageRows.map(children)}
+          </tbody>
+        </table>
+      </div>
+      <TablePager {...table.pager} noun={noun} className="sm:px-5 dark:border-gray-800" />
+    </>
+  );
+}
+
+const usdOrNull = (value) => (known(value) ? Number(value) : null);
+const legacyCost = (priced) => (row) => (priced ? usdOrNull(row.estimatedUsd) : usdOrNull(row.estimatedCost));
+const reader = (values) => (row, key) => values[key]?.(row);
+
+const DURATION_COLUMNS = [
+  { key: "length", label: "Length" },
+  { key: "attempts", label: "Attempts", align: "right" },
+  { key: "p50", label: "p50 / p90 per completed", align: "right", className: "hidden sm:table-cell" },
+  { key: "average", label: "Average per completed", align: "right" },
+  { key: "total", label: "Total", align: "right" },
+];
+const durationValue = reader({
+  length: (row) => usdOrNull(row.durationMinutes),
+  attempts: (row) => Number(row.attempts || 0),
+  p50: (row) => usdOrNull(row.perCompleted?.inr?.p50),
+  average: (row) => usdOrNull(row.perCompleted?.inr?.avg),
+  total: (row) => usdOrNull(row.estimatedUsd),
+});
+
 function ByDuration({ rows }) {
   return (
-    <div className="overflow-x-auto">
-      <table data-no-serial data-usage-by-duration className="w-full text-left text-sm sm:min-w-[560px]">
-        <caption className="sr-only">Cost by interview length</caption>
-        <thead className={tableHeadClass}>
-          <tr>
-            <th scope="col" className="px-3 py-3 sm:px-5 font-semibold">Length</th>
-            <th scope="col" className="px-3 py-3 text-right font-semibold">Attempts</th>
-            <th scope="col" className="hidden px-3 py-3 text-right font-semibold sm:table-cell">p50 / p90 per completed</th>
-            <th scope="col" className="px-3 py-3 text-right font-semibold">Average per completed</th>
-            <th scope="col" className="px-3 py-3 sm:px-5 text-right font-semibold">Total</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-          {rows.map((row) => {
+    <UsageTable columns={DURATION_COLUMNS} rows={rows} getValue={durationValue} caption="Cost by interview length" tableProps={{ "data-usage-by-duration": "" }} tableClassName="sm:min-w-[560px]" noun="lengths">
+          {(row) => {
             const per = row.perCompleted || {};
             const inr = per.inr || {};
             return (
@@ -173,30 +214,31 @@ function ByDuration({ rows }) {
                 <CostCell usd={row.estimatedUsd} inr={row.estimatedInr} className="sm:px-5" />
               </tr>
             );
-          })}
-        </tbody>
-      </table>
-    </div>
+          }}
+    </UsageTable>
   );
 }
 
+const KIND_COLUMNS = [
+  { key: "activity", label: "Activity" },
+  { key: "calls", label: "AI calls", align: "right", className: "hidden sm:table-cell" },
+  { key: "tokens", label: "Tokens", align: "right", className: "hidden sm:table-cell" },
+  { key: "share", label: "Share of tokens", className: "hidden w-40 sm:table-cell" },
+  { key: "cost", label: "Estimated cost", align: "right" },
+];
+
 function ByKind({ rows, currency, priced }) {
   const total = rows.reduce((sum, row) => sum + (row.totalTokens || 0), 0);
+  const getValue = useMemo(() => reader({
+    activity: (row) => kindLabel(row.kind),
+    calls: (row) => Number(row.calls || 0),
+    tokens: (row) => Number(row.totalTokens || 0),
+    share: (row) => Number(row.totalTokens || 0),
+    cost: legacyCost(priced),
+  }), [priced]);
   return (
-    <div className="overflow-x-auto">
-      <table data-no-serial data-usage-by-kind className="w-full text-left text-sm sm:min-w-[640px]">
-        <caption className="sr-only">Usage by activity</caption>
-        <thead className={tableHeadClass}>
-          <tr>
-            <th scope="col" className="px-3 py-3 sm:px-5 font-semibold">Activity</th>
-            <th scope="col" className="hidden px-3 py-3 text-right font-semibold sm:table-cell">AI calls</th>
-            <th scope="col" className="hidden px-3 py-3 text-right font-semibold sm:table-cell">Tokens</th>
-            <th scope="col" className="hidden w-40 px-3 py-3 font-semibold sm:table-cell">Share of tokens</th>
-            <th scope="col" className="px-3 py-3 sm:px-5 text-right font-semibold">Estimated cost</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-          {rows.map((row) => {
+    <UsageTable columns={KIND_COLUMNS} rows={rows} getValue={getValue} caption="Usage by activity" tableProps={{ "data-usage-by-kind": "" }} tableClassName="sm:min-w-[640px]" noun="activities">
+          {(row) => {
             const share = total ? Math.round(((row.totalTokens || 0) / total) * 100) : 0;
             return (
               <tr key={row.kind} className={tableRowClass}>
@@ -225,29 +267,39 @@ function ByKind({ rows, currency, priced }) {
                 )}
               </tr>
             );
-          })}
-        </tbody>
-      </table>
-    </div>
+          }}
+    </UsageTable>
   );
 }
 
+const DAY_COLUMNS = [
+  { key: "day", label: "Day" },
+  { key: "sessions", label: "Sessions", align: "right", className: "hidden sm:table-cell" },
+  { key: "liveMinutes", label: "Live minutes", align: "right" },
+  { key: "tokens", label: "Tokens", align: "right", className: "hidden sm:table-cell" },
+  { key: "cost", label: "Estimated cost", align: "right" },
+];
+const INTERVIEW_COLUMNS = [
+  { key: "interview", label: "Interview" },
+  { key: "sessions", label: "Sessions", align: "right" },
+  { key: "liveMinutes", label: "Live minutes", align: "right", className: "hidden sm:table-cell" },
+  { key: "tokens", label: "Tokens", align: "right", className: "hidden sm:table-cell" },
+  { key: "cost", label: "Estimated cost", align: "right" },
+];
+
 function ByDay({ rows, currency, priced }) {
+  // Newest day first unless a header sort is chosen.
+  const newestFirst = useMemo(() => [...rows].reverse(), [rows]);
+  const getValue = useMemo(() => reader({
+    day: (row) => row.day || null,
+    sessions: (row) => Number(row.sessions || 0),
+    liveMinutes: (row) => Number(row.liveMinutes || 0),
+    tokens: (row) => Number(row.totalTokens || 0),
+    cost: legacyCost(priced),
+  }), [priced]);
   return (
-    <div className="max-h-[420px] overflow-auto">
-      <table data-no-serial data-usage-by-day className="w-full text-left text-sm sm:min-w-[560px]">
-        <caption className="sr-only">Usage by day (IST)</caption>
-        <thead className={`${tableHeadClass} sticky top-0`}>
-          <tr>
-            <th scope="col" className="px-3 py-3 sm:px-5 font-semibold">Day</th>
-            <th scope="col" className="hidden px-3 py-3 text-right font-semibold sm:table-cell">Sessions</th>
-            <th scope="col" className="px-3 py-3 text-right font-semibold">Live minutes</th>
-            <th scope="col" className="hidden px-3 py-3 text-right font-semibold sm:table-cell">Tokens</th>
-            <th scope="col" className="px-3 py-3 sm:px-5 text-right font-semibold">Estimated cost</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-          {[...rows].reverse().map((row) => (
+    <UsageTable columns={DAY_COLUMNS} rows={newestFirst} getValue={getValue} caption="Usage by day (IST)" tableProps={{ "data-usage-by-day": "" }} tableClassName="sm:min-w-[560px]" wrapperClassName="max-h-[420px] overflow-auto" headClassName={`${tableHeadClass} sticky top-0`} noun="days">
+          {(row) => (
             <tr key={row.day} className={tableRowClass}>
               <td className="whitespace-nowrap px-3 py-2.5 sm:px-5 text-slate-800 dark:text-gray-200">{dayLabel(row.day)}</td>
               <td className="hidden px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-gray-300 sm:table-cell">{whole.format(row.sessions || 0)}</td>
@@ -259,30 +311,23 @@ function ByDay({ rows, currency, priced }) {
                 <td className="px-3 py-2.5 sm:px-5 text-right tabular-nums text-slate-900 dark:text-white">{money(row.estimatedCost, currency)}</td>
               )}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          )}
+    </UsageTable>
   );
 }
 
 // Optional: a per-interview breakdown, shown when the server sends one (`byInterview`).
 function ByInterview({ rows, currency, titles, priced }) {
+  const getValue = useMemo(() => reader({
+    interview: (row) => row.title || titles.get(row.interviewId) || null,
+    sessions: (row) => Number(row.sessions || 0),
+    liveMinutes: (row) => Number(row.liveMinutes || 0),
+    tokens: (row) => Number(row.totalTokens || 0),
+    cost: legacyCost(priced),
+  }), [priced, titles]);
   return (
-    <div className="overflow-x-auto">
-      <table data-no-serial data-usage-by-interview className="w-full text-left text-sm sm:min-w-[560px]">
-        <caption className="sr-only">Usage by interview</caption>
-        <thead className={tableHeadClass}>
-          <tr>
-            <th scope="col" className="px-3 py-3 sm:px-5 font-semibold">Interview</th>
-            <th scope="col" className="px-3 py-3 text-right font-semibold">Sessions</th>
-            <th scope="col" className="hidden px-3 py-3 text-right font-semibold sm:table-cell">Live minutes</th>
-            <th scope="col" className="hidden px-3 py-3 text-right font-semibold sm:table-cell">Tokens</th>
-            <th scope="col" className="px-3 py-3 sm:px-5 text-right font-semibold">Estimated cost</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-          {rows.map((row) => (
+    <UsageTable columns={INTERVIEW_COLUMNS} rows={rows} getValue={getValue} caption="Usage by interview" tableProps={{ "data-usage-by-interview": "" }} tableClassName="sm:min-w-[560px]" noun="interviews">
+          {(row) => (
             <tr key={row.interviewId} className={tableRowClass}>
               <td className="px-3 py-2.5 sm:px-5 text-slate-800 dark:text-gray-200">{row.title || titles.get(row.interviewId) || "Untitled interview"}</td>
               <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-gray-300">{whole.format(row.sessions || 0)}</td>
@@ -294,10 +339,8 @@ function ByInterview({ rows, currency, titles, priced }) {
                 <td className="px-3 py-2.5 sm:px-5 text-right tabular-nums text-slate-900 dark:text-white">{money(row.estimatedCost, currency)}</td>
               )}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          )}
+    </UsageTable>
   );
 }
 

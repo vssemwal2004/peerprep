@@ -2,7 +2,9 @@ import Assessment from '../models/Assessment.js';
 import Problem from '../models/Problem.js';
 import QuestionLibrary from '../models/QuestionLibrary.js';
 import TestCase from '../models/TestCase.js';
-import { parseSerialSearch, serialSearchClause } from '../utils/problemSerial.js';
+import {
+  matchesSearchTerm, matchesSerialSearch, parseSearchList, parseSerialSearch, serialSearchClause,
+} from '../utils/problemSerial.js';
 
 const LIBRARY_SYNC_COOLDOWN_MS = Math.max(0, Number(process.env.QUESTION_LIBRARY_SYNC_COOLDOWN_MS || 60000));
 
@@ -523,7 +525,62 @@ export async function cleanupDraftQuestionsFromLibrary() {
   console.log(`[Library Cleanup] Removed ${result.deletedCount} invalid questions`);
 }
 
+// Matches nothing: a text term with no searchable characters ("?!") finds no question.
+const NO_MATCH = { _id: { $exists: false } };
+const termTokens = (term) => Array.from(new Set(tokenizeSearchValue(term.raw))).slice(0, 8);
+
+/** Comma-separated search terms ("1, lc 42, two sum"); `multi` only when two or more. */
+export function librarySearchTerms(search = '') {
+  return parseSearchList(search);
+}
+
+/** Mongo filter for one parsed term: indexed serial equality or all-prefix text match. */
+export function librarySearchTermClause(term) {
+  if (term.kind === 'serial') return serialSearchClause(term.serial);
+  const tokens = termTokens(term);
+  return tokens.length ? { searchPrefixes: { $all: tokens } } : NO_MATCH;
+}
+
+/** Aggregation boolean for one term, equivalent to librarySearchTermClause (fields must be present). */
+export function librarySearchTermExpression(term) {
+  if (term.kind === 'serial') {
+    const { kind, number } = term.serial;
+    const display = { $eq: ['$displayOrder', number] };
+    const source = { $eq: ['$sourceNumber', number] };
+    return kind === 'leetcode' ? source : kind === 'peerprep' ? display : { $or: [display, source] };
+  }
+  const tokens = termTokens(term);
+  return tokens.length ? { $setIsSubset: [tokens, { $ifNull: ['$searchPrefixes', []] }] } : false;
+}
+
+/**
+ * In-memory twin of librarySearchTermClause. With `searchPrefixes` loaded it is exact;
+ * otherwise (shared/central rows) text terms are a substring match on title and tags,
+ * as single-term shared search has always been.
+ */
+export function libraryQuestionMatchesTerm(question = {}, term) {
+  if (term.kind === 'serial') return matchesSerialSearch(question, term.serial);
+  if (Array.isArray(question.searchPrefixes)) {
+    const tokens = termTokens(term);
+    const prefixes = new Set(question.searchPrefixes);
+    return tokens.length > 0 && tokens.every((token) => prefixes.has(token));
+  }
+  return matchesSearchTerm(question, term, [question.questionText, question.sourceProblemTitle, ...(question.tags || [])]);
+}
+
+/** Index of the first typed term a question matches, or -1 (typed-order sorting). */
+export function librarySearchTermIndex(question, terms = []) {
+  return terms.findIndex((term) => libraryQuestionMatchesTerm(question, term));
+}
+
+/** Raw terms that matched none of the given questions. */
+export function unmatchedSearchTerms(terms = [], questions = [], matcher = libraryQuestionMatchesTerm) {
+  return terms.filter((term) => !questions.some((question) => matcher(question, term))).map((term) => term.raw);
+}
+
 export function buildLibrarySearchMatch(search = '') {
+  const list = parseSearchList(search);
+  if (list.multi) return { $or: list.terms.map(librarySearchTermClause) };
   const numberSearch = parseSerialSearch(search);
   if (numberSearch) return serialSearchClause(numberSearch);
   const terms = Array.from(new Set(tokenizeSearchValue(search))).slice(0, 8);

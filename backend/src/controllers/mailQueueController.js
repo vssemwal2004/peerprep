@@ -6,6 +6,43 @@ function escapeRegex(value = '') {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Email queue table header sort keys → stored fields. "completed" is sentAt or failedAt, whichever is set.
+const MAIL_JOB_SORT_FIELDS = Object.freeze({
+  recipient: 'to',
+  type: 'type',
+  status: 'status',
+  attempts: 'attempts',
+  createdAt: 'createdAt',
+  completed: 'completedAt',
+  details: 'lastError',
+});
+
+/** Whitelisted sort for the email queue list. Unknown keys fall back to newest first. */
+export function mailJobSort(query = {}) {
+  const key = String(query.sortBy || '');
+  const field = Object.hasOwn(MAIL_JOB_SORT_FIELDS, key) ? MAIL_JOB_SORT_FIELDS[key] : null;
+  if (!field) return { field: 'createdAt', sort: { createdAt: -1, _id: -1 } };
+  const direction = String(query.sortOrder || '').toLowerCase() === 'desc' ? -1 : 1;
+  return { field, sort: { [field]: direction, _id: direction } };
+}
+
+async function findMailJobPage(query, { field, sort }, page, limit) {
+  const populate = { path: 'recipientId', select: 'name studentId coordinatorId', model: User };
+  if (field !== 'completedAt') {
+    return MailJob.find(query).select('-payloadEncrypted -idempotencyKey').populate(populate)
+      .sort(sort).skip((page - 1) * limit).limit(limit).lean();
+  }
+  const jobs = await MailJob.aggregate([
+    { $match: query },
+    { $addFields: { completedAt: { $ifNull: ['$sentAt', '$failedAt'] } } },
+    { $sort: sort },
+    { $skip: (page - 1) * limit },
+    { $limit: limit },
+    { $project: { payloadEncrypted: 0, idempotencyKey: 0, completedAt: 0 } },
+  ]);
+  return MailJob.populate(jobs, populate);
+}
+
 export async function listMailJobs(req, res) {
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 25));
@@ -17,7 +54,7 @@ export async function listMailJobs(req, res) {
   const dateTo = String(req.query.dateTo || '').trim();
 
   if (['queued', 'processing', 'sent', 'failed', 'cancelled'].includes(status)) query.status = status;
-  if (['student_credentials', 'coordinator_onboarding', 'assessment_invitation', 'event_invitation', 'event_cancellation', 'anvi_interview'].includes(type)) query.type = type;
+  if (['student_credentials', 'coordinator_onboarding', 'assessment_invitation', 'event_invitation', 'event_cancellation', 'anvi_interview', 'student_message'].includes(type)) query.type = type;
   if (search) {
     const regex = new RegExp(escapeRegex(search), 'i');
     query.$or = [
@@ -41,13 +78,7 @@ export async function listMailJobs(req, res) {
   }
 
   const [jobs, total, statusRows, typeRows] = await Promise.all([
-    MailJob.find(query)
-      .select('-payloadEncrypted -idempotencyKey')
-      .populate({ path: 'recipientId', select: 'name studentId coordinatorId', model: User })
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean(),
+    findMailJobPage(query, mailJobSort(req.query), page, limit),
     MailJob.countDocuments(query),
     MailJob.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
     MailJob.aggregate([{ $group: { _id: '$type', count: { $sum: 1 } } }]),

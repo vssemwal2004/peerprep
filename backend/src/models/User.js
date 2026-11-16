@@ -47,6 +47,7 @@ const userSchema = new mongoose.Schema({
   college: String,
   semester: { type: Number, min: 1, max: 8 }, // Required for students: current semester (1-8)
   group: String, // Student group (e.g., G1, G2, A, B, etc.)
+  section: { type: String, trim: true }, // Class section, from Master Data "Section" when set up
   uploadBatchIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StudentUploadBatch' }],
 
   // Special student support (for special events)
@@ -120,7 +121,7 @@ userSchema.index({ role: 1, updatedAt: 1 });
 
 attachAdminAnalyticsInvalidation(userSchema, {
   source: 'analytics-cohort',
-  relevantPaths: ['role', 'name', 'email', 'studentId', 'teacherIds', 'course', 'branch', 'college', 'semester', 'group', 'uploadBatchIds', 'isActive'],
+  relevantPaths: ['role', 'name', 'email', 'studentId', 'teacherIds', 'course', 'branch', 'college', 'semester', 'group', 'section', 'uploadBatchIds', 'isActive'],
   documentFilter: (doc) => doc.role === 'student',
 });
 

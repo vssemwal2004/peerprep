@@ -195,6 +195,77 @@ async function assignedStudentsWithoutAttempt(assessment, attemptedIds, remainin
 }
 
 /**
+ * The roster of one (already authorized) assessment: attempt rows, plus, without
+ * `since`, assigned students with no attempt and the canonical counts. Shared by
+ * the live report and the performance report download, so both show the same numbers.
+ * Returns null when the assessment does not exist.
+ */
+export async function buildAssessmentRoster(assessmentId, { since = null } = {}) {
+  const assessment = await loadRosterAssessment(assessmentId);
+  if (!assessment) return null;
+  const passPercentage = passPercentageOf({ passPercentage: assessment.passPercentage });
+
+  const match = { assessmentId: new mongoose.Types.ObjectId(assessmentId) };
+  if (since) match.updatedAt = { $gte: new Date(since.getTime() - ROSTER_CURSOR_OVERLAP_MS) };
+  const docs = await AssessmentSubmission.aggregate([
+    { $match: match },
+    { $sort: { updatedAt: 1, _id: 1 } },
+    { $limit: ROSTER_ROW_LIMIT + 1 },
+    { $project: {
+      studentId: 1, status: 1, evaluationStatus: 1, startedAt: 1, submittedAt: 1, lastSavedAt: 1, timeTakenSec: 1,
+      violationScore: 1, tabSwitches: 1, fullscreenExits: 1, cameraFlags: 1, copyPasteCount: 1, isLate: 1,
+      updatedAt: 1, maxMarks: 1, inconsistentHeartbeatCount: 1,
+      score: evaluatedScoreExpression,
+      aiViolationCount: { $ifNull: ['$aiProctoringSummary.totalViolations', 0] },
+      aiRiskLevel: '$aiProctoringSummary.riskLevel',
+      answeredCount: answeredExpression,
+      deliveredQuestions: { $cond: [
+        { $gt: [{ $size: { $ifNull: ['$deliverySections', []] } }, 0] },
+        questionCountExpression('$deliverySections'),
+        null,
+      ] },
+    } },
+  ]).option({ maxTimeMS: 5000 });
+  const truncated = docs.length > ROSTER_ROW_LIMIT;
+  const page = truncated ? docs.slice(0, ROSTER_ROW_LIMIT) : docs;
+
+  const studentIds = [...new Set(page.map((doc) => String(doc.studentId)))];
+  const students = studentIds.length
+    ? await User.find({ _id: { $in: studentIds } }).select(STUDENT_PROJECTION).maxTimeMS(5000).lean()
+    : [];
+  const byId = new Map(students.map((student) => [String(student._id), student]));
+  const rows = page.map((doc) => submissionRow(doc, byId.get(String(doc.studentId)), assessment, passPercentage));
+
+  if (!since) {
+    const attempted = new Set((truncated ? docs : page).map((doc) => String(doc.studentId)));
+    const waiting = await assignedStudentsWithoutAttempt(assessment, attempted, ROSTER_ROW_LIMIT - rows.length);
+    rows.push(...waiting.map((student) => notStartedRow(student, assessment)));
+  }
+
+  // Canonical counts over the whole roster; a delta only carries changed rows, so no counts there.
+  const counts = since ? null : summarizeAttempts(rows, { passPercentage, totalMarks: finiteOrNull(assessment.totalMarks) });
+  const latest = page.reduce((max, doc) => (doc.updatedAt && (!max || doc.updatedAt > max) ? doc.updatedAt : max), null);
+  return { assessment, passPercentage, rows, counts, truncated, latest };
+}
+
+/** Public assessment header of a roster (also used by the performance report). */
+export function rosterAssessmentInfo(assessment, passPercentage, now = new Date()) {
+  return {
+    _id: String(assessment._id),
+    title: assessment.title || 'Untitled Assessment',
+    totalMarks: finiteOrNull(assessment.totalMarks),
+    passPercentage,
+    totalQuestions: Number(assessment.totalQuestions || 0),
+    startTime: isoOrNull(assessment.startTime),
+    endTime: isoOrNull(assessment.endTime),
+    duration: finiteOrNull(assessment.duration),
+    status: assessmentStatus(assessment, now),
+    resultsReleasedAt: isoOrNull(normalizeAssessmentSettings({ resultsReleasedAt: assessment.resultsReleasedAt }).resultsReleasedAt),
+    showResultsAfterSubmit: Boolean(assessment.showResultsAfterSubmit),
+  };
+}
+
+/**
  * GET /admin/assessment/:id/report/roster[?since=<cursor>]
  * Live report rows. Without `since`: every attempt plus assigned students with
  * no attempt (status 'not_started', submissionId null). With `since`: only
@@ -207,50 +278,9 @@ export async function getAssessmentRoster(req, res) {
     const cursor = parseCursor(req.query?.since);
     if (cursor.invalid) return res.status(400).json({ error: 'Invalid cursor.', code: 'INVALID_CURSOR' });
     const now = new Date();
-    const assessment = await loadRosterAssessment(assessmentId);
-    if (!assessment) return res.status(404).json({ error: 'Assessment not found.', code: 'ASSESSMENT_NOT_FOUND' });
-    const passPercentage = passPercentageOf({ passPercentage: assessment.passPercentage });
-
-    const match = { assessmentId: new mongoose.Types.ObjectId(assessmentId) };
-    if (cursor.since) match.updatedAt = { $gte: new Date(cursor.since.getTime() - ROSTER_CURSOR_OVERLAP_MS) };
-    const docs = await AssessmentSubmission.aggregate([
-      { $match: match },
-      { $sort: { updatedAt: 1, _id: 1 } },
-      { $limit: ROSTER_ROW_LIMIT + 1 },
-      { $project: {
-        studentId: 1, status: 1, evaluationStatus: 1, startedAt: 1, submittedAt: 1, lastSavedAt: 1, timeTakenSec: 1,
-        violationScore: 1, tabSwitches: 1, fullscreenExits: 1, cameraFlags: 1, copyPasteCount: 1, isLate: 1,
-        updatedAt: 1, maxMarks: 1, inconsistentHeartbeatCount: 1,
-        score: evaluatedScoreExpression,
-        aiViolationCount: { $ifNull: ['$aiProctoringSummary.totalViolations', 0] },
-        aiRiskLevel: '$aiProctoringSummary.riskLevel',
-        answeredCount: answeredExpression,
-        deliveredQuestions: { $cond: [
-          { $gt: [{ $size: { $ifNull: ['$deliverySections', []] } }, 0] },
-          questionCountExpression('$deliverySections'),
-          null,
-        ] },
-      } },
-    ]).option({ maxTimeMS: 5000 });
-    const truncated = docs.length > ROSTER_ROW_LIMIT;
-    const page = truncated ? docs.slice(0, ROSTER_ROW_LIMIT) : docs;
-
-    const studentIds = [...new Set(page.map((doc) => String(doc.studentId)))];
-    const students = studentIds.length
-      ? await User.find({ _id: { $in: studentIds } }).select(STUDENT_PROJECTION).maxTimeMS(5000).lean()
-      : [];
-    const byId = new Map(students.map((student) => [String(student._id), student]));
-    const rows = page.map((doc) => submissionRow(doc, byId.get(String(doc.studentId)), assessment, passPercentage));
-
-    if (!cursor.since) {
-      const attempted = new Set((truncated ? docs : page).map((doc) => String(doc.studentId)));
-      const waiting = await assignedStudentsWithoutAttempt(assessment, attempted, ROSTER_ROW_LIMIT - rows.length);
-      rows.push(...waiting.map((student) => notStartedRow(student, assessment)));
-    }
-
-    // Canonical counts over the whole roster; a delta only carries changed rows, so no counts there.
-    const counts = cursor.since ? null : summarizeAttempts(rows, { passPercentage, totalMarks: finiteOrNull(assessment.totalMarks) });
-    const latest = page.reduce((max, doc) => (doc.updatedAt && (!max || doc.updatedAt > max) ? doc.updatedAt : max), null);
+    const roster = await buildAssessmentRoster(assessmentId, { since: cursor.since });
+    if (!roster) return res.status(404).json({ error: 'Assessment not found.', code: 'ASSESSMENT_NOT_FOUND' });
+    const { assessment, passPercentage, rows, counts, truncated, latest } = roster;
     return res.json({
       rows,
       cursor: latest ? new Date(latest).toISOString() : (cursor.since ? cursor.since.toISOString() : now.toISOString()),
@@ -258,19 +288,7 @@ export async function getAssessmentRoster(req, res) {
       counts,
       truncated,
       serverTime: now.toISOString(),
-      assessment: {
-        _id: String(assessment._id),
-        title: assessment.title || 'Untitled Assessment',
-        totalMarks: finiteOrNull(assessment.totalMarks),
-        passPercentage,
-        totalQuestions: Number(assessment.totalQuestions || 0),
-        startTime: isoOrNull(assessment.startTime),
-        endTime: isoOrNull(assessment.endTime),
-        duration: finiteOrNull(assessment.duration),
-        status: assessmentStatus(assessment, now),
-        resultsReleasedAt: isoOrNull(normalizeAssessmentSettings({ resultsReleasedAt: assessment.resultsReleasedAt }).resultsReleasedAt),
-        showResultsAfterSubmit: Boolean(assessment.showResultsAfterSubmit),
-      },
+      assessment: rosterAssessmentInfo(assessment, passPercentage, now),
     });
   } catch (error) { return respondAccessError(res, error); }
 }

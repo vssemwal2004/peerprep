@@ -1,5 +1,6 @@
 import { getApiBase } from "../../utils/apiBase";
 import { reportSessionEnded } from "../../auth/sessionNotice";
+import { rangeToQuery } from "../../components/dateRange/dateRangeModel";
 
 const API_BASE = getApiBase();
 
@@ -70,8 +71,16 @@ export function createPrepAnalysisApi(scope = null) {
   },
   /** The students behind a chart or one part of it: body is a /query body plus `drill`. */
   drill: (body, signal) => request("/drill", { method: "POST", body: withScope(body, scope), signal }),
-  /** One student's own prep for a period (preset such as "90d" or "all"). */
-  student: (id, range = "all", signal) => request(`/students/${encodeURIComponent(id)}?${new URLSearchParams({ range, ...scopeQuery(scope) })}`, { signal }),
+  /** "Select all N matching": every student id behind the table (body.table.search) or a chart part (body.drill). */
+  studentIds: (body, signal) => request("/student-ids", { method: "POST", body: withScope(body, scope), signal }),
+  /** Send email: the admin's own templates, a preview for one student, and the send itself. */
+  email: {
+    templates: (signal) => request("/email/templates", { signal }),
+    preview: (body, signal) => request("/email/preview", { method: "POST", body: withScope(body, scope), signal }),
+    send: (body) => request("/email/send", { method: "POST", body: withScope(body, scope) }),
+  },
+  /** One student's own prep for a period ({ preset } / { preset: "custom", from, to }, or a preset name). */
+  student: (id, range = "all", signal) => request(`/students/${encodeURIComponent(id)}?${new URLSearchParams({ ...rangeToQuery(range), ...scopeQuery(scope) })}`, { signal }),
   /** Downloads a CSV / Excel / PDF file of the filtered students, or (scope "chart") one chart's detail. */
   download: async (body, signal) => saveResponse(await fetch(`${API_BASE}/admin/prep-analysis/export`, {
     method: "POST",
@@ -80,11 +89,25 @@ export function createPrepAnalysisApi(scope = null) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(withScope(body, scope)),
   }), `prep-analysis.${body.format}`),
-  /** Downloads one student's full report (format "xlsx" or "pdf") for a period preset. */
+  /** Downloads one student's full report (format "xlsx" or "pdf") for a period. */
   studentReport: async (id, range = "all", format = "xlsx") => saveResponse(
-    await fetch(`${API_BASE}/admin/prep-analysis/students/${encodeURIComponent(id)}/export?${new URLSearchParams({ range, format, ...scopeQuery(scope) })}`, { credentials: "include" }),
+    await fetch(`${API_BASE}/admin/prep-analysis/students/${encodeURIComponent(id)}/export?${new URLSearchParams({ ...rangeToQuery(range), format, ...scopeQuery(scope) })}`, { credentials: "include" }),
     `prep-report.${format}`,
   ),
+  /** Compare classes: a /query body plus compareBy { dimension, values }. */
+  compare: (body, { signal, refresh = false } = {}) => request("/compare", {
+    method: "POST", body: withScope({ ...body, refresh }, scope), signal, headers: refresh ? { "Cache-Control": "no-cache" } : undefined,
+  }),
+  /** Every student behind one compared value: a /query body plus compareBy { dimension, value }. */
+  compareStudents: (body, signal) => request("/compare/students", { method: "POST", body: withScope(body, scope), signal }),
+  /** Downloads the comparison table (format "xlsx" or "csv"). */
+  compareDownload: async (body, signal) => saveResponse(await fetch(`${API_BASE}/admin/prep-analysis/compare/export`, {
+    method: "POST",
+    credentials: "include",
+    signal,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(withScope(body, scope)),
+  }), `prep-analysis-comparison.${body.format}`),
   };
 }
 

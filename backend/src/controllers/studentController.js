@@ -10,8 +10,11 @@ import crypto from 'crypto';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
 import StudentActivity from '../models/StudentActivity.js';
 import {
+  canonicalizeOptionalStudentFields,
   canonicalizeStudentMasterFields,
+  hasMasterValues,
   loadStudentMasterMaps,
+  resolveOptionalStudentFields,
   resolveStudentMasterFields,
 } from '../services/masterDataService.js';
 import { resolveNewStudentFeatureAccess } from './studentAccessController.js';
@@ -77,6 +80,7 @@ function buildStudentListQuery(user, params = {}) {
         { course: searchRegex },
         { college: searchRegex },
         { group: searchRegex },
+        { section: searchRegex },
         { teacherIds: searchRegex },
       ],
     });
@@ -146,6 +150,7 @@ function buildStudentListQuery(user, params = {}) {
     ['course', 'course'],
     ['college', 'college'],
     ['group', 'group'],
+    ['section', 'section'],
     ['coordinator', 'teacherIds'],
   ].forEach(([paramName, fieldName]) => {
     const value = String(params[paramName] || '').trim().slice(0, 120);
@@ -201,6 +206,7 @@ function loadStudentFacets(baseQuery) {
         courses: stringFacet('course'),
         colleges: stringFacet('college'),
         groups: stringFacet('group'),
+        sections: stringFacet('section'),
         coordinators: stringFacet('teacherIds', true),
       },
     },
@@ -210,21 +216,61 @@ function loadStudentFacets(baseQuery) {
   return promise;
 }
 
+// Column sorts for the student list (keys are the table's column keys). A fixed map, so the query string
+// can never sort by an arbitrary field. `invert` flips the direction so ascending reads A→Z on screen:
+// account status ascending = "Active" (signed in, newest first) before "Awaiting login".
+const STUDENT_LIST_SORTS = {
+  student: { fields: ['name', 'studentId'], text: true },
+  email: { fields: ['email'], text: true },
+  branch: { fields: ['branch'], text: true },
+  course: { fields: ['course'], text: true },
+  semester: { fields: ['semester'] },
+  section: { fields: ['section'], text: true },
+  group: { fields: ['group'], text: true },
+  college: { fields: ['college'], text: true },
+  coordinator: { fields: ['teacherIds'], text: true },
+  status: { fields: ['activeSessionCreatedAt'], invert: true },
+  credentialMail: { fields: ['credentialEmailStatus'], text: true },
+};
+const TEXT_SORT_COLLATION = Object.freeze({ locale: 'en', strength: 2, numericOrdering: true });
+
+/**
+ * Sort for the student list, CSV export and "select all matching": `sortBy` (whitelisted column) +
+ * `sortOrder`. Without a known `sortBy` it is the original order — upload/creation order
+ * ('asc' oldest first, 'desc' newest first). Ties fall back to creation order so pages never overlap.
+ */
+export function studentListSort(params = {}) {
+  const direction = params.sortOrder === 'desc' || params.sortOrder === '-1' ? -1 : 1;
+  const sortBy = String(params.sortBy || '');
+  const column = Object.hasOwn(STUDENT_LIST_SORTS, sortBy) ? STUDENT_LIST_SORTS[sortBy] : null;
+  if (!column) return { sortBy: null, sort: { createdAt: direction, _id: direction }, collation: null };
+  const sign = column.invert ? -direction : direction;
+  const sort = Object.fromEntries(column.fields.map((field) => [field, sign]));
+  return {
+    sortBy,
+    sort: { ...sort, createdAt: 1, _id: 1 },
+    collation: column.text ? TEXT_SORT_COLLATION : null,
+  };
+}
+
+function applyStudentListSort(query, params) {
+  const { sort, collation } = studentListSort(params);
+  query.sort(sort);
+  if (collation) query.collation(collation);
+  return query;
+}
+
 export async function listAllStudents(req, res) {
   try {
-    const { sortOrder, page, limit } = req.query;
+    const { page, limit } = req.query;
     const user = req.user;
     const { baseQuery, query } = buildStudentListQuery(user, req.query);
-    
-    // Sort order: 'asc' or 1 for ascending (oldest first, Excel order), 'desc' or -1 for descending (newest first)
-    const sort = sortOrder === 'desc' || sortOrder === '-1' ? -1 : 1;
-    
+
     const requestedPage = Math.max(1, Number.parseInt(page, 10) || 1);
     const requestedLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 25));
     const paginated = page !== undefined || limit !== undefined;
-    const studentQuery = User.find(query)
-      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl mustChangePassword activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt credentialEmailLastAttemptAt accessScope featureAccess')
-      .sort({ createdAt: sort, _id: sort });
+    const studentQuery = applyStudentListSort(User.find(query)
+      .select('name email studentId course branch college semester group section teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl mustChangePassword activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt credentialEmailLastAttemptAt accessScope featureAccess'), req.query);
     if (paginated) {
       studentQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
     }
@@ -293,6 +339,7 @@ export async function listAllStudents(req, res) {
         courses: mapFacet(facets.courses),
         colleges: mapFacet(facets.colleges),
         groups: mapFacet(facets.groups),
+        sections: mapFacet(facets.sections),
         coordinators: mapFacet(facets.coordinators),
       },
     });
@@ -443,7 +490,7 @@ export async function listPromotionStudents(req, res) {
       return res.status(400).json({ error: 'Semester must be between 1 and 8.' });
     }
     const students = await User.find({ ...promotionStudentScope(req.user), semester })
-      .select('_id name email studentId course branch college semester group teacherIds')
+      .select('_id name email studentId course branch college semester group section teacherIds')
       .sort({ name: 1, studentId: 1 })
       .lean();
     return res.json({ semester, count: students.length, students });
@@ -529,7 +576,7 @@ export async function getStudentById(req, res) {
       : { _id: studentId, role: 'student' };
 
     const student = await User.findOne(query)
-      .select('name email username studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent isActive bio linkedinUrl githubUrl portfolioUrl learnerProgress')
+      .select('name email username studentId course branch college semester group section teacherIds avatarUrl createdAt isSpecialStudent isActive bio linkedinUrl githubUrl portfolioUrl learnerProgress')
       .lean();
 
     if (!student) {
@@ -555,15 +602,14 @@ export async function exportStudentsCsv(req, res) {
   try {
     const user = req.user;
     const { query } = buildStudentListQuery(user, req.query);
-    const sort = req.query.sortOrder === 'desc' || req.query.sortOrder === '-1' ? -1 : 1;
-    
-    const students = await User.find(query)
-      .select('name email studentId course branch college semester group teacherIds bio linkedinUrl githubUrl portfolioUrl')
-      .sort({ createdAt: sort, _id: sort })
+
+    // Same order as the on-screen list (whitelisted sortBy + sortOrder).
+    const students = await applyStudentListSort(User.find(query)
+      .select('name email studentId course branch college semester group section teacherIds bio linkedinUrl githubUrl portfolioUrl'), req.query)
       .lean();
-    
+
     // Build CSV with same columns as upload template
-    const header = 'Name,Email,Studentid,Branch,TeacherId,Semester,Course,College,Group';
+    const header = 'Name,Email,Studentid,Branch,TeacherId,Semester,Course,College,Group,Section';
     const rows = students.map(s => {
       const teacherId = Array.isArray(s.teacherIds) ? s.teacherIds.join(',') : '';
       // Escape fields that might contain commas
@@ -580,12 +626,13 @@ export async function exportStudentsCsv(req, res) {
         s.semester || '',
         escape(s.course),
         escape(s.college),
-        escape(s.group)
+        escape(s.group),
+        escape(s.section)
       ].join(',');
     });
     
     const csv = header + '\n' + rows.join('\n');
-    const hasFilters = ['search', 'semester', 'branch', 'course', 'college', 'group', 'coordinator']
+    const hasFilters = ['search', 'semester', 'branch', 'course', 'college', 'group', 'section', 'coordinator']
       .some((key) => String(req.query[key] || '').trim());
     const filename = hasFilters ? 'students-filtered-export.csv' : 'students-export.csv';
     
@@ -642,7 +689,7 @@ export async function checkStudentsCsv(req, res) {
   // Bulk query existing users in DB to avoid per-row queries
   const existing = await User.find({ $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }] })
     .collation({ locale: 'en', strength: 2 })
-    .select('email studentId name branch course college teacherIds semester group').lean();
+    .select('email studentId name branch course college teacherIds semester group section').lean();
   const existingByEmail = new Map();
   const existingByStudentId = new Map();
   
@@ -686,7 +733,7 @@ export async function checkStudentsCsv(req, res) {
         course: row.course,
         college: row.college,
         semester: row.semester,
-      }, masterMaps));
+      }, masterMaps), canonicalizeOptionalStudentFields({ section: row.section, group: row.group }, masterMaps));
     } catch (error) {
       results.push({
         row: row.__row,
@@ -774,6 +821,7 @@ export async function checkStudentsCsv(req, res) {
       if (existingTeacherIds !== newTeacherIds) changes.push('teacherid');
       if (existingUser.semester !== semesterNum) changes.push('semester');
       if (existingUser.group !== row.group) changes.push('group');
+      if (row.section !== undefined && (existingUser.section || '') !== row.section) changes.push('section');
       
       if (changes.length > 0) {
         results.push({ 
@@ -933,7 +981,7 @@ export async function uploadStudentsCsv(req, res) {
         course: row.course,
         college: row.college,
         semester: row.semester,
-      }, masterMaps));
+      }, masterMaps), canonicalizeOptionalStudentFields({ section: row.section, group: row.group }, masterMaps));
     } catch (error) {
       results.push({
         row: row.__row,
@@ -998,6 +1046,8 @@ export async function uploadStudentsCsv(req, res) {
           teacherIds: parseTeacherIds(teacherid),
           semester: semesterNum,
           group: row.group,
+          // Only a CSV with a Section column changes the section.
+          ...(row.section !== undefined ? { section: row.section } : {}),
         };
         if (requestedFeatureAccess) updateData.featureAccess = requestedFeatureAccess;
         
@@ -1037,6 +1087,7 @@ export async function uploadStudentsCsv(req, res) {
         teacherIds: parseTeacherIds(teacherid),
         semester: semesterNum,
         group: row.group,
+        ...(row.section ? { section: row.section } : {}),
         mustChangePassword: true,
         credentialEmailStatus: 'not_sent',
         featureAccess: requestedFeatureAccess || defaultFeatureAccess,
@@ -1125,7 +1176,7 @@ export async function uploadStudentsCsv(req, res) {
 
 export async function createStudent(req, res) {
   try {
-    const { name, email, studentid, branch, course, college, teacherid, semester, group, featureAccess } = req.body || {};
+    const { name, email, studentid, branch, course, college, teacherid, semester, group, section, featureAccess } = req.body || {};
     const normalizedEmail = normalizeEmailAddress(email);
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     
@@ -1140,7 +1191,14 @@ export async function createStudent(req, res) {
     }
     
     if (!emailRegex.test(normalizedEmail || '')) return res.status(400).json({ error: 'Invalid email format' });
-    const canonicalMasterFields = await resolveStudentMasterFields({ branch, course, college, semester: semesterNum });
+    const masterMaps = await loadStudentMasterMaps();
+    const canonicalMasterFields = canonicalizeStudentMasterFields({ branch, course, college, semester: semesterNum }, masterMaps);
+    // Section / group: one of the Master Data values when the university has set them up, and a
+    // section is required once Master Data has sections.
+    const optionalFields = canonicalizeOptionalStudentFields({ section: section ?? '', group: group ?? '' }, masterMaps);
+    if (!optionalFields.section && hasMasterValues(masterMaps, 'section')) {
+      return res.status(400).json({ error: 'Choose a section.' });
+    }
 
     // Parse and validate multiple coordinator IDs
     const teacherIdList = parseTeacherIds(teacherid);
@@ -1177,10 +1235,9 @@ export async function createStudent(req, res) {
       featureAccess: await resolveNewStudentFeatureAccess(featureAccess, req.user),
     };
     
-    // Add group if provided
-    if (group) {
-      userData.group = group;
-    }
+    // Add group and section if provided
+    if (optionalFields.group) userData.group = optionalFields.group;
+    if (optionalFields.section) userData.section = optionalFields.section;
     
     const user = await User.create(userData);
 
@@ -1231,6 +1288,7 @@ function normalizeRow(r) {
     course: map.course,
     college: map.college,
     group: map.group,
+    section: map.section,
   };
 }
 
@@ -1631,11 +1689,11 @@ export async function bulkDeleteStudents(req, res) {
 export async function updateStudent(req, res) {
   try {
     const { studentId } = req.params;
-    const { name, email, studentId: sid, course, branch, college, semester, group, teacherId, bio, linkedinUrl, githubUrl, portfolioUrl } = req.body;
-    
+    const { name, email, studentId: sid, course, branch, college, semester, teacherId, bio, linkedinUrl, githubUrl, portfolioUrl } = req.body;
+
     // Find student
     const student = await User.findOne({ ...studentScope(req.user), _id: studentId });
-    
+
     if (!student) {
       return res.status(404).json({ error: 'Student not found' });
     }
@@ -1643,6 +1701,12 @@ export async function updateStudent(req, res) {
       { course, branch, college, semester },
       { partial: true },
     );
+    // Section and group are checked against Master Data only when they change, so an older
+    // free-text value never blocks editing the rest of the student.
+    const changedOptional = Object.fromEntries(['section', 'group']
+      .filter((field) => req.body[field] !== undefined && req.body[field] !== null && String(req.body[field]).trim() !== String(student[field] ?? '').trim())
+      .map((field) => [field, req.body[field]]));
+    const optionalFields = Object.keys(changedOptional).length ? await resolveOptionalStudentFields(changedOptional) : {};
     
     // Update fields
     if (name) student.name = name;
@@ -1663,7 +1727,8 @@ export async function updateStudent(req, res) {
     if (canonicalMasterFields.branch) student.branch = canonicalMasterFields.branch;
     if (canonicalMasterFields.college) student.college = canonicalMasterFields.college;
     if (canonicalMasterFields.semester) student.semester = canonicalMasterFields.semester;
-    if (group !== undefined) student.group = group;
+    if (optionalFields.group !== undefined) student.group = optionalFields.group;
+    if (optionalFields.section !== undefined) student.section = optionalFields.section;
     if (bio !== undefined) student.bio = typeof bio === 'string' ? bio.trim() : '';
     if (linkedinUrl !== undefined) student.linkedinUrl = typeof linkedinUrl === 'string' ? linkedinUrl.trim() : '';
     if (githubUrl !== undefined) student.githubUrl = typeof githubUrl === 'string' ? githubUrl.trim() : '';
@@ -1703,6 +1768,7 @@ export async function updateStudent(req, res) {
         college: student.college,
         semester: student.semester,
         group: student.group,
+        section: student.section || '',
         teacherId: Array.isArray(student.teacherIds) ? student.teacherIds.join(', ') : '',
         bio: student.bio || '',
         linkedinUrl: student.linkedinUrl || '',

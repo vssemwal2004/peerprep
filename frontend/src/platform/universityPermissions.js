@@ -4,6 +4,8 @@ export const isControlDeployment = !universityPath;
 // QuickPreps are designed only by the super admin (central platform) or a standalone install's admin.
 export const canAuthorQuickPrep = !isUniversityDeployment;
 const QUICKPREP_ADMIN_PATH = /^\/admin\/(?:quests|quickprep)(?:\/|$)/;
+// QuickPrep → Analysis: the Prep Analysis page opened on its Quick Prep tab.
+export const QUICKPREP_ANALYSIS_PATH = '/admin/analysis?area=quickprep';
 // Student-reported interview companies are moderated once, centrally (or by a standalone install's admin).
 export const canManageInterviewCompanies = !isUniversityDeployment;
 export const SUGGESTED_COMPANIES_PATH = '/admin/settings/suggested-companies';

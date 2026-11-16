@@ -112,6 +112,36 @@ test("lists only attempts of the admin's own interviews, with filters and paging
   assert.equal((await call("/attempts", "GET", { "X-Test-Admin": String(adminB) })).body.attempts.length, 1);
 });
 
+test("the attempt list sorts by a whitelisted column; unknown keys keep newest first", async (t) => {
+  if (skipped) return t.skip("Local sockets are unavailable in this sandbox");
+  const { ready, running } = await seed();
+  const ids = async (query) => (await call(`/attempts?${query}`)).body.attempts.map((row) => row.attemptId);
+  const newest = [String(running._id), String(ready._id)];
+  assert.deepEqual(await ids("sortBy=nope&sortOrder=asc"), newest);
+  assert.deepEqual(await ids("sortBy=started&sortOrder=asc"), [...newest].reverse());
+  // Asha (ready) before Ravi (running) by name; the join does not leak extra fields.
+  const byName = await call("/attempts?sortBy=student&sortOrder=asc");
+  assert.deepEqual(byName.body.attempts.map((row) => row.attemptId), [String(ready._id), String(running._id)]);
+  assert.equal(byName.body.attempts[0].student.name, "Asha Verma");
+  assert.deepEqual(await ids("sortBy=student&sortOrder=desc"), [String(running._id), String(ready._id)]);
+  assert.deepEqual(await ids("sortBy=status&sortOrder=asc"), [String(running._id), String(ready._id)], "in_progress < ready");
+  assert.deepEqual(await ids("sortBy=score&sortOrder=desc"), [String(ready._id), String(running._id)]);
+  assert.equal((await call("/attempts?sortBy=student&limit=25&page=2")).body.attempts.length, 0);
+});
+
+test("the attempt list filters by start date (preset or custom IST days)", async (t) => {
+  if (skipped) return t.skip("Local sockets are unavailable in this sandbox");
+  const { asha, mine, ready, running } = await seed();
+  const old = await attempt(asha, mine._id, { status: "ready", startedAt: new Date("2026-01-10T06:00:00Z") });
+  const ids = async (query) => (await call(`/attempts?${query}`)).body.attempts.map((row) => row.attemptId);
+  assert.deepEqual(await ids("range=7d"), [String(running._id), String(ready._id)]);
+  assert.deepEqual(await ids("range=custom&from=2026-01-10&to=2026-01-10"), [String(old._id)]);
+  assert.equal((await ids("range=all")).length, 3);
+  assert.equal((await ids("")).length, 3, "no range lists every attempt, as before");
+  assert.equal((await call("/attempts?range=custom&from=2026-02-30")).status, 400);
+  assert.equal((await call("/attempts?range=custom&from=2026-02-02&to=2026-02-01")).status, 400);
+});
+
 test("the unfiltered list covers an admin's older interviews beyond the first 500", async (t) => {
   if (skipped) return t.skip("Local sockets are unavailable in this sandbox");
   const old = await interview(adminA, "Oldest round");

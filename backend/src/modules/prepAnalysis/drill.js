@@ -453,7 +453,8 @@ const STUDENT_COLUMNS = [
   { ...text('studentId', 'Student ID', 14), get: (row) => row.studentId },
   { ...count('semester', 'Semester', 9), get: (row) => row.student.semester },
   { ...text('branch', 'Branch', 14), get: (row) => row.student.branch },
-  { ...text('group', 'Group / Section', 12), get: (row) => row.student.group },
+  { ...text('section', 'Section', 12), get: (row) => row.student.section },
+  { ...text('group', 'Group', 12), get: (row) => row.student.group },
 ];
 const DETAIL_STUDENT_COLUMNS = STUDENT_COLUMNS.slice(0, 2);
 const plain = ({ get, ...column }) => column;

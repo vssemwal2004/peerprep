@@ -4,17 +4,18 @@ import {
 } from 'lucide-react';
 
 export const STUDENT_FEATURE_CATALOG = Object.freeze([
+  // Same order and names as the student sidebar.
   { key: 'dashboard', label: 'Dashboard', description: 'Personal overview, progress cards and next actions.', icon: LayoutDashboard, path: '/student/dashboard' },
-  { key: 'quickprep', label: 'QuickPrep', description: 'Curated quests, challenges and guided preparation.', icon: Zap, path: '/student/quickprep' },
+  { key: 'prep_coding', label: 'Prep Coding', description: 'Coding problems, daily challenge and practice submissions.', icon: ListChecks, path: '/problems' },
+  { key: 'quickprep', label: 'Quick Prep', description: 'Curated quests, challenges and guided preparation.', icon: Zap, path: '/student/quickprep' },
+  { key: 'assessments', label: 'Prep Assessment', description: 'Available tests, assessment history, reports and feedback.', icon: ClipboardList, path: '/student/assessments' },
+  { key: 'resume', label: 'Resume', description: 'Create and manage a placement-ready resume.', icon: UserCog, path: '/student/resume' },
+  { key: 'rankings', label: 'Ranking', description: 'University and global leaderboard visibility.', icon: Trophy, path: '/student/rankings' },
+  { key: 'prep_coins', label: 'Prep Coin', description: 'Prep Score, Prep Coin wallet, balance, pricing and transaction history.', icon: Coins, path: '/student/wallet' },
   { key: 'analysis', label: 'Prep Analysis', description: 'Topic coverage, progress, strengths and next steps.', icon: BarChart3, path: '/student/analysis' },
-  { key: 'rankings', label: 'Rankings', description: 'University and global leaderboard visibility.', icon: Trophy, path: '/student/rankings' },
   { key: 'interviews', label: 'Peer Interviews', description: 'One-to-one interview schedules, sessions and feedback.', icon: CalendarDays, path: '/student/interview' },
   { key: 'ai_interviews', label: 'AI Interviews', description: 'AI interview assignments, practice rooms and reports.', icon: Bot, path: '/student/ai-interviews' },
-  { key: 'assessments', label: 'Assessments', description: 'Available tests, assessment history, reports and feedback.', icon: ClipboardList, path: '/student/assessments' },
   { key: 'learning', label: 'Learning Modules', description: 'Semester learning content, lessons and topic progress.', icon: BookOpen, path: '/student/learning' },
-  { key: 'prep_coding', label: 'PrepCoding', description: 'Coding problems, daily challenge and practice submissions.', icon: ListChecks, path: '/problems' },
-  { key: 'resume', label: 'Resume Builder', description: 'Create and manage a placement-ready resume.', icon: UserCog, path: '/student/resume' },
-  { key: 'prep_coins', label: 'Prep Score & Coins', description: 'Prep Coin wallet, balance, pricing and transaction history.', icon: Coins, path: '/student/wallet' },
 ]);
 
 export const ALL_STUDENT_FEATURES = STUDENT_FEATURE_CATALOG.map((feature) => feature.key);

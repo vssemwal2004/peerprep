@@ -18,10 +18,12 @@ import { KpiStrip, ScoreHelpDialog, StudentTable } from "./components/Insights";
 import SheetScope from "./components/SheetScope";
 import StudentDrawer from "./components/StudentDrawer";
 import ViewsMenu from "./components/ViewsMenu";
-import CompareControl, { CompareChip } from "./components/CompareBar";
+import CompareControl, { ClassCompareChip, CompareChip } from "./components/CompareBar";
+import CompareDashboard from "./components/CompareDashboard";
+import { compareTitle } from "./compareModel";
 import { sectionStyle } from "./components/sectionStyles";
 import { Button, IconButton } from "./components/ui";
-import { featureFields, isKpiActive, kpiRule, studentFields, toggleKpi } from "./filterModel";
+import { featureFields, isKpiActive, kpiRule, studentFields, toggleKpi, toQueryRequest } from "./filterModel";
 import { compareRequest, usePrepAnalysis } from "./usePrepAnalysis";
 
 /** "Only: Hard problems · Solved problems by difficulty (12)" with a clear button. */
@@ -82,7 +84,10 @@ function PrepAnalysisView({ scope, embedded }) {
   const {
     catalog, catalogError, fieldMap, areas, area, chooseArea, state, update, layout, areaCharts, setLayout, updateChart, resetLayout,
     table, setTable, data, loading, error, refresh, refreshTick, focus, setFocus, applyView, compare, setCompare,
+    classCompare, setClassCompare,
   } = usePrepAnalysis({ scope });
+  // The compare dashboard's "Change" button reopens the compare dialog.
+  const [compareOpenTick, setCompareOpenTick] = useState(0);
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -121,6 +126,12 @@ function PrepAnalysisView({ scope, embedded }) {
   const emptyIds = useMemo(() => new Set((data?.charts || []).filter((chart) => !buildChartOption(chart, chartTheme(false), "chart")).map((chart) => chart.id)), [data]);
   const compareBody = useMemo(() => (compare ? compareRequest(compare, fieldMap) : null), [compare, fieldMap]);
   const analysis = useMemo(() => ({ state, fieldMap, catalog, entryById, focus, compareRequest: compareBody, scope }), [catalog, compareBody, entryById, fieldMap, focus, scope, state]);
+  // The page's students (filters, focus, comparison) for "Select all matching" and "Send email".
+  const studentsBody = useMemo(() => (catalog ? {
+    ...toQueryRequest({ state, layout: [] }, fieldMap),
+    ...(focus ? { focus } : {}),
+    ...(compareBody ? { compare: compareBody } : {}),
+  } : null), [catalog, compareBody, fieldMap, focus, state]);
   // Each compared group's version of every chart and KPI section, by id / key.
   const sidesFor = useMemo(() => {
     if (!compare || !data?.compare) return () => null;
@@ -129,9 +140,10 @@ function PrepAnalysisView({ scope, embedded }) {
       return own ? { label: side.label, chart: { ...chart, data: own.data, summary: own.summary, studentCount: own.studentCount } } : null;
     }).filter(Boolean);
   }, [compare, data]);
-  const filterChips = (focus || compare) ? <>
+  const filterChips = (focus || compare || classCompare) ? <>
     {focus && <FocusChip label={focus.label} count={data?.meta?.focus?.students} onClear={() => setFocus(null)} />}
     {compare && <CompareChip compare={compare} counts={data?.compare?.map((side) => side.matched)} onClear={() => setCompare(null)} />}
+    {classCompare && <ClassCompareChip label={compareTitle(classCompare, catalog)} onClear={() => setClassCompare(null)} />}
   </> : null;
 
   if (catalogError) return <PageMessage title="Prep Analysis could not load">{catalogError.status === 403 ? "Analysis is not enabled for this university." : catalogError.message}</PageMessage>;
@@ -144,7 +156,7 @@ function PrepAnalysisView({ scope, embedded }) {
   const activeKpi = (data?.kpiGroups || []).flatMap((group) => group.kpis.map((kpi) => ({ section: group.key, kpi, rule: kpiRule(group.key, kpi.id, fieldMap) })))
     .find((entry) => entry.rule && isKpiActive(entry.rule, state));
   const studentList = (title, actions) => (
-    <StudentTable table={data?.students} area={area} loading={loading} onChange={setTable} onOpen={setStudentId} title={title} actions={actions} scoped={Boolean(scope)} />
+    <StudentTable table={data?.students} area={area} loading={loading} onChange={setTable} onOpen={setStudentId} title={title} actions={actions} scoped={Boolean(scope)} requestBody={studentsBody} />
   );
   const settingsEntry = entryById.get(settingsId);
   const charts = data?.charts || [];
@@ -160,8 +172,8 @@ function PrepAnalysisView({ scope, embedded }) {
   return (
     <ToastProvider>
     <main className={`font-sans text-slate-900 dark:text-gray-100 ${embedded ? "overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-gray-800 dark:bg-gray-950" : "min-h-full bg-slate-50 dark:bg-gray-950"}`}>
-      <AnalysisHeader embedded={embedded} areas={areas} area={area} onArea={chooseArea} period={state.range.preset} onPeriod={(preset) => update({ ...state, range: { preset } })}>
-        <CompareControl compare={compare} catalog={catalog} area={area} fieldMap={fieldMap} onApply={setCompare} />
+      <AnalysisHeader embedded={embedded} areas={areas} area={area} onArea={chooseArea} period={state.range} onPeriod={(range) => update({ ...state, range })}>
+        <CompareControl compare={compare} classCompare={classCompare} catalog={catalog} area={area} fieldMap={fieldMap} onApply={setCompare} onApplyClasses={setClassCompare} openRequest={compareOpenTick} />
         {!embedded && <ViewsMenu area={area} state={state} layout={layout} onApply={applyView} />}
         <Button onClick={() => setCustomizeOpen(true)} title="Choose charts" aria-label="Choose charts"><LayoutGrid className="h-3.5 w-3.5" /><span className="hidden 2xl:inline">Charts</span></Button>
         <DownloadMenu catalog={catalog} area={area} areaLabel={areaLabel} state={state} fieldMap={fieldMap} matched={meta?.matched} table={table} focus={focus} />
@@ -169,7 +181,14 @@ function PrepAnalysisView({ scope, embedded }) {
         <IconButton label="Refresh data" onClick={refresh} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></IconButton>
       </AnalysisHeader>
 
-      {fullChart ? (
+      {classCompare && !fullChart ? (
+        <div className="mx-auto max-w-[1680px] space-y-4 px-4 py-4">
+          {sheetScope}
+          <FilterToolbar state={state} catalog={catalog} fieldMap={fieldMap} meta={meta} loading={loading} onOpen={() => setFiltersOpen(true)} onChange={update} extra={filterChips} />
+          <CompareDashboard classCompare={classCompare} catalog={catalog} state={state} fieldMap={fieldMap} focus={focus} refreshTick={refreshTick} areaLabel={areaLabel}
+            onChange={() => setCompareOpenTick((tick) => tick + 1)} onClose={() => setClassCompare(null)} onStudent={setStudentId} />
+        </div>
+      ) : fullChart ? (
         <div className="mx-auto max-w-[1680px] space-y-4 px-4 py-4">
           {sheetScope}
           <ChartFullPage key={fullChart} chartId={fullChart} cardChart={charts.find((chart) => chart.id === fullChart)} entry={entryById.get(fullChart)}
@@ -247,7 +266,7 @@ function PrepAnalysisView({ scope, embedded }) {
       <PartDialog open={openPart} analysis={analysis} layered={Boolean(studentId)} onClose={() => setOpenPart(null)} onStudent={setStudentId}
         onFocus={(part) => { setFocus(focusOn(analysis, openPart.chart, part)); setOpenPart(null); }}
         onOpenFull={fullChart ? undefined : () => { const chartId = openPart?.chart.id; setOpenPart(null); if (chartId) openChart(chartId); }} />
-      {studentId && <StudentDrawer studentId={studentId} range={state.range.preset} onClose={() => setStudentId(null)} />}
+      {studentId && <StudentDrawer studentId={studentId} range={state.range} onClose={() => setStudentId(null)} />}
     </main>
     </ToastProvider>
   );

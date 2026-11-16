@@ -4,7 +4,7 @@ import { lazy as reactLazy, Suspense, useEffect, useCallback, useLayoutEffect, u
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { UniversityPolicyProvider } from './platform/UniversityPolicyContext';
-import { canAdjustPrepScore, canManageInterviewCompanies, isUniversityDeployment, LEGACY_PREP_COIN_PRICING_PATH, PREP_COIN_PRICING_PATH, PREP_SCORE_ADJUSTMENT_PATH, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
+import { canAdjustPrepScore, canManageInterviewCompanies, isUniversityDeployment, LEGACY_PREP_COIN_PRICING_PATH, PREP_COIN_PRICING_PATH, PREP_SCORE_ADJUSTMENT_PATH, QUICKPREP_ANALYSIS_PATH, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
 import { ToastProvider } from './components/CustomToast';
 import AdminProtectedRoute from './admin/AdminProtectedRoute';
 import CoordinatorProtectedRoute from './coordinator/CoordinatorProtectedRoute';
@@ -22,6 +22,7 @@ const AdminLayout = lazy(() => import('./admin/AdminLayout'));
 const CoordinatorLayout = lazy(() => import('./coordinator/CoordinatorLayout'));
 const GlobalSidebar = lazy(() => import('./components/GlobalSidebar'));
 const StudentDashboardHeader = lazy(() => import('./components/StudentDashboardHeader'));
+const AnnouncementPopup = lazy(() => import('./student/AnnouncementPopup'));
 const Footer = lazy(() => import('./components/Footer').then(m => ({ default: m.Footer })));
 
 // Lazy load all route components for code splitting
@@ -49,7 +50,6 @@ const QuestDetail = lazy(() => import("./student/QuestDetail"));
 const QuickPrepList = lazy(() => import("./admin/quickprep/QuickPrepList"));
 const QuickPrepWizard = lazy(() => import("./admin/quickprep/QuickPrepWizard"));
 const QuickPrepView = lazy(() => import("./admin/quickprep/QuickPrepView"));
-const QuickPrepInsights = lazy(() => import("./admin/quickprep/QuickPrepInsights"));
 const EngagementSettings = lazy(() => import('./admin/EngagementSettings'));
 const SuggestedCompanies = lazy(() => import('./admin/companies/SuggestedCompanies'));
 const HelpAndSupport = lazy(() => import("./student/HelpAndSupport"));
@@ -383,6 +383,10 @@ function AppContent() {
           Shows NavbarSkeleton briefly instead of nothing, so the page structure
           streams in progressively (navbar skeleton â†’ navbar â†’ content skeleton â†’ content) */}
       {isStudentShell && (
+        // Announcements marked "show as popup", once after each login (never during tests or interviews).
+        <Suspense fallback={null}><AnnouncementPopup /></Suspense>
+      )}
+      {isStudentShell && (
         <Suspense fallback={null}>
           <GlobalSidebar
             role="student"
@@ -487,7 +491,8 @@ function AppContent() {
         <Route path="/admin/settings/student-access" element={<AdminShell><StudentAccessSettings /></AdminShell>} />
         <Route path="/admin/quickprep" element={<AdminShell><QuickPrepList /></AdminShell>} />
         <Route path="/admin/quickprep/new" element={<AdminShell><QuickPrepWizard /></AdminShell>} />
-        <Route path="/admin/quickprep/insights" element={<AdminShell><QuickPrepInsights /></AdminShell>} />
+        {/* QuickPrep analysis lives in Prep Analysis (Quick Prep tab); old links and bookmarks go there. */}
+        <Route path="/admin/quickprep/insights" element={<Navigate to={QUICKPREP_ANALYSIS_PATH} replace />} />
         <Route path="/admin/quickprep/:id" element={<AdminShell><QuickPrepView /></AdminShell>} />
         <Route path="/admin/quickprep/:id/edit" element={<AdminShell><QuickPrepWizard /></AdminShell>} />
         <Route path="/admin/quickprep/:id/questions/add" element={<QuickPrepLibraryRedirect />} />

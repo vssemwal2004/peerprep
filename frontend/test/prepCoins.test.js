@@ -109,6 +109,8 @@ test('the ledger keeps its filters in the URL and asks the server for them', asy
   api.coinLedger = async (query) => { queries.push(query); return { entries: [{ ...SUMMARY.recent[0] }], nextCursor: null }; };
   await render('/admin/prep-coins/ledger', pages.ledger);
   assert.match(document.body.textContent, /Asha Verma → PeerPrep/);
+  assert.deepEqual([queries[0].page, queries[0].limit], [1, 25], 'the ledger asks for numbered pages');
+  assert.match(document.querySelector('[data-table-pager]').textContent, /Showing 1–1 of 1 movements/);
   await act(async () => [...document.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent === 'Spent').click());
   await settle();
   assert.equal(document.getElementById('where').textContent, '/admin/prep-coins/ledger?kind=spent');

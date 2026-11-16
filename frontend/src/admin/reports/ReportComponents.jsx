@@ -1,5 +1,5 @@
 import {
-  ArrowDownRight, ArrowUpRight, ArrowRight, BookOpen, ChevronDown, ChevronUp,
+  ArrowDownRight, ArrowUpRight, ArrowRight, BookOpen,
   Clock, Copy, Eye, Flag, Search, ShieldAlert, Timer, Trophy, X, CircleDashed,
 } from 'lucide-react';
 import { DonutChart, HorizontalProgress } from './ReportCharts';
@@ -123,16 +123,6 @@ export function FilterChip({ label, onRemove }) {
       {label}
       <button onClick={onRemove} className="rounded-sm p-0.5 hover:bg-sky-100 dark:hover:bg-sky-800"><X className="h-3 w-3" /></button>
     </span>
-  );
-}
-
-/* ═════════════════ SORT HEADER ═════════════════ */
-export function SortHeader({ label, sortKey, currentSort, onSort, align = 'left' }) {
-  const active = currentSort.key === sortKey;
-  return (
-    <th onClick={() => onSort(sortKey)} aria-sort={active ? (currentSort.dir === 'asc' ? 'ascending' : 'descending') : undefined} className={`cursor-pointer select-none whitespace-nowrap px-4 py-3 text-[11px] font-semibold uppercase tracking-wider transition-colors hover:text-sky-600 dark:hover:text-sky-400 ${active ? 'text-slate-800 dark:text-gray-100' : 'text-slate-500 dark:text-gray-400'} ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'}`}>
-      <span className="inline-flex items-center gap-1">{label}{active && (currentSort.dir === 'asc' ? <ChevronUp className="h-3 w-3 text-sky-600" /> : <ChevronDown className="h-3 w-3 text-sky-600" />)}</span>
-    </th>
   );
 }
 

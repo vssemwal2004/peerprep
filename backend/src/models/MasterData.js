@@ -1,7 +1,7 @@
 import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
-const MASTER_DATA_CATEGORIES = ['campus', 'branch', 'semester', 'course'];
+const MASTER_DATA_CATEGORIES = ['campus', 'branch', 'semester', 'course', 'section', 'group'];
 
 const masterDataSchema = new mongoose.Schema({
   category: {

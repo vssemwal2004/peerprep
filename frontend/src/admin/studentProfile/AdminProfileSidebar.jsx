@@ -202,6 +202,7 @@ export default function AdminProfileSidebar({
             <DetailRow icon={<BookOpen className="h-3.5 w-3.5" />} label="Course" value={student?.course} />
             <DetailRow icon={<GitBranch className="h-3.5 w-3.5" />} label="Branch" value={student?.branch} />
             <DetailRow icon={<CalendarRange className="h-3.5 w-3.5" />} label="Semester" value={student?.semester ? `Semester ${student.semester}` : ''} />
+            <DetailRow icon={<Users className="h-3.5 w-3.5" />} label="Section" value={student?.section} />
             <DetailRow icon={<Users className="h-3.5 w-3.5" />} label="Group" value={student?.group} />
             <DetailRow icon={<ShieldCheck className="h-3.5 w-3.5" />} label="Coordinator" value={student?.teacherId || 'Not assigned'} />
             <DetailRow icon={<CalendarClock className="h-3.5 w-3.5" />} label="Joined" value={student?.createdAt ? fmtDate(student.createdAt) : ''} />

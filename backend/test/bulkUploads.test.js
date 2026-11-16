@@ -1,7 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import StudentUploadBatch from '../src/models/StudentUploadBatch.js';
-import { buildBulkUploadCsv, buildDeletePreview } from '../src/controllers/bulkUploadController.js';
+import { buildBulkUploadCsv, buildDeletePreview, bulkUploadSort } from '../src/controllers/bulkUploadController.js';
+
+test('bulk upload list sort is whitelisted and defaults to newest first', () => {
+  assert.deepEqual(bulkUploadSort({}), { field: 'createdAt', sort: { createdAt: -1, _id: -1 } });
+  assert.deepEqual(bulkUploadSort({ sortBy: 'password', sortOrder: 'asc' }), { field: 'createdAt', sort: { createdAt: -1, _id: -1 } });
+  assert.deepEqual(bulkUploadSort({ sortBy: '$where' }).sort, { createdAt: -1, _id: -1 });
+  assert.deepEqual(bulkUploadSort({ sortBy: 'constructor' }).sort, { createdAt: -1, _id: -1 });
+  assert.deepEqual(bulkUploadSort({ sortBy: 'name', sortOrder: 'asc' }).sort, { name: 1, _id: 1 });
+  assert.deepEqual(bulkUploadSort({ sortBy: 'owner', sortOrder: 'desc' }).sort, { uploadedByEmail: -1, _id: -1 });
+  assert.deepEqual(bulkUploadSort({ sortBy: 'result', sortOrder: 'DESC' }).sort, { createdCount: -1, _id: -1 });
+  assert.equal(bulkUploadSort({ sortBy: 'recordCount' }).field, 'recordCount');
+});
 
 test('bulk upload model tracks generalized entity provenance and lifecycle', () => {
   const batch = new StudentUploadBatch({

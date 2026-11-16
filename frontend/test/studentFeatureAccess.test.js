@@ -15,7 +15,9 @@ test('missing access data remains backward-compatible with full access', () => {
 
 test('custom access selects the first permitted landing page', () => {
   const user = { role: 'student', featureAccess: { mode: 'custom', features: ['learning', 'resume'] } };
-  assert.equal(firstStudentFeaturePath(user), '/student/learning');
+  // The catalogue follows the student sidebar order, where Resume comes before Learning.
+  assert.equal(firstStudentFeaturePath(user), '/student/resume');
+  assert.equal(firstStudentFeaturePath({ role: 'student', featureAccess: { mode: 'custom', features: ['learning'] } }), '/student/learning');
   assert.equal(hasStudentFeature(user, 'dashboard'), false);
 });
 

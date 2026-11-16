@@ -5,14 +5,23 @@ import AssessmentReportModal from './assessment-dashboard/AssessmentReportModal'
 import { useStudentAssessmentDashboardData } from './assessment-dashboard/useStudentAssessmentDashboardData';
 import { formatScore, formatShortDate, formatSeconds } from './assessment-dashboard/assessmentDashboardUtils';
 import { RESULT_NOT_ANNOUNCED, isResultAnnounced } from '../utils/assessmentEvaluation';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 
 const PAGE_SIZE = 8;
+const HEADERS = [['name', 'Assessment Name'], ['completed', 'Completed On'], ['result', 'Result'], ['time', 'Time'], ['status', 'Attempt Status']];
+// Unannounced results have no score, so they sort as blanks (always last).
+const historyValue = (row, key) => ({
+  name: row.assessmentName,
+  completed: row.submittedAt || row.dateAttempted,
+  result: isResultAnnounced(row) ? Number(row.score || 0) : null,
+  time: Number.isFinite(Number(row.timeTakenSec)) ? Number(row.timeTakenSec) : null,
+  status: row.status || 'Completed',
+}[key]);
 
 export default function AssessmentHistoryPage() {
   const { dashboard, loading, error } = useStudentAssessmentDashboardData();
   const [selectedReport, setSelectedReport] = useState(null);
   const [query, setQuery] = useState('');
-  const [page, setPage] = useState(1);
 
   const filteredRows = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -21,8 +30,8 @@ export default function AssessmentHistoryPage() {
     return rows.filter((row) => row.assessmentName?.toLowerCase().includes(search));
   }, [dashboard.history, query]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
-  const pagedRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const table = useClientTable(filteredRows, { getValue: historyValue, initialPageSize: PAGE_SIZE, resetKey: query });
+  const pagedRows = table.pageRows;
   const completedCount = dashboard.history?.length || 0;
   // Only announced results count; unreleased or still-evaluating attempts carry no score.
   const announcedRows = (dashboard.history || []).filter(isResultAnnounced);
@@ -59,10 +68,7 @@ export default function AssessmentHistoryPage() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setPage(1);
-              }}
+              onChange={(event) => setQuery(event.target.value)}
               placeholder="Search assessment"
               className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:placeholder:text-gray-500"
             />
@@ -80,11 +86,7 @@ export default function AssessmentHistoryPage() {
                 <table className="min-w-full">
                   <thead className="border-b border-slate-200 bg-slate-50 dark:border-gray-800 dark:bg-gray-950">
                     <tr>
-                      <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Assessment Name</th>
-                      <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Completed On</th>
-                      <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Result</th>
-                      <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Time</th>
-                      <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Attempt Status</th>
+                      {HEADERS.map(([key, label]) => <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort} className="pl-5 pr-5">{label}</SortHeader>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -131,31 +133,8 @@ export default function AssessmentHistoryPage() {
                   </tbody>
                 </table>
               </div>
+              <TablePager {...table.pager} noun="assessments" />
             </div>
-
-            {!pagedRows.length ? null : (
-              <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-gray-900">
-                <span className="text-slate-500">Page {page} of {totalPages}</span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                    disabled={page === 1}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                  >
-                    Prev
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-                    disabled={page === totalPages}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>

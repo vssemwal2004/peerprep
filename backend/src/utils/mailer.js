@@ -80,7 +80,7 @@ export function renderTemplate(template, vars = {}) {
   });
 }
 
-function getDashboardUrl() {
+export function getDashboardUrl() {
   const origin = (process.env.FRONTEND_ORIGIN || 'https://peerprep.co.in').split(',')[0].trim();
   const base = origin.replace(/\/$/, '');
   return currentTenant() ? `${base}/u/${currentTenant().universityId}/` : `${base}/`;

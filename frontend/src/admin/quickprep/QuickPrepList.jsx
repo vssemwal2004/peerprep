@@ -7,7 +7,10 @@ import { Notice, Page, PageHeader, ProgressBar, RowMenu, SearchBox, Segmented, S
 import QuickPrepSummaryDialog from './QuickPrepSummaryDialog';
 import { timeAgo } from './format';
 import useQuickPrepActions, { QUICKPREP_ROOT } from './useQuickPrepActions';
-import { isControlDeployment as central } from '../../platform/universityPermissions';
+import { isControlDeployment as central, QUICKPREP_ANALYSIS_PATH } from '../../platform/universityPermissions';
+import { DataTable } from '../../components/table';
+import WindowChip from '../../student/quests/WindowChip';
+import { hasWindow, windowText } from '../../student/quests/questWindow';
 
 const STATUS_TABS = ['all', 'published', 'draft', 'archived'];
 
@@ -41,12 +44,45 @@ export default function QuickPrepList() {
       && (category === 'all' || quest.category === category)
       && (!term || [quest.title, quest.description, ...quest.companies, ...quest.topics].some((value) => String(value || '').toLowerCase().includes(term))));
   }, [quests, search, status, category]);
+  const stop = (event) => event.stopPropagation();
+  const columns = useMemo(() => [
+    { key: 'title', label: 'QuickPrep', render: (quest) => {
+      const theme = questTheme(quest.theme);
+      const TypeIcon = questCategory(quest.category).icon;
+      return <div className="flex items-center gap-3">
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-sm ${theme.band}`}><TypeIcon className="h-5 w-5" aria-hidden="true" /></span>
+        <div className="flex min-w-0 items-center gap-2">
+          <Link to={`${QUICKPREP_ROOT}/${quest.id}`} title={quest.title} onClick={stop} className="block max-w-[15rem] truncate font-semibold text-slate-900 hover:text-sky-700 dark:text-zinc-50 dark:hover:text-sky-300">{quest.title}</Link>
+          {quest.unavailableCount > 0 && <span className="rounded bg-amber-50 px-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" title="Unpublished in the library and hidden from students">{quest.unavailableCount} unavailable</span>}
+        </div>
+      </div>;
+    } },
+    { key: 'category', label: 'Type', value: (quest) => questCategory(quest.category).label, render: (quest) => {
+      const type = questCategory(quest.category);
+      const TypeIcon = type.icon;
+      return <span className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] font-semibold ${questTheme(quest.theme).soft}`}><TypeIcon className="h-3.5 w-3.5" aria-hidden="true" />{type.label}</span>;
+    } },
+    { key: 'companies', label: 'Companies · Topics', value: (quest) => quest.companies?.[0] || '', render: (quest) => <div className="flex items-center gap-2">
+      <span className="inline-flex max-w-28 items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-zinc-800 dark:text-zinc-300"><Building2 className="h-3 w-3 shrink-0" aria-hidden="true" /><span className="truncate">{quest.companies?.[0] || 'All companies'}</span></span>
+      <button type="button" aria-label={`More details for ${quest.title}`} aria-haspopup="dialog" onClick={(event) => { event.stopPropagation(); event.currentTarget.focus(); setDetailId(quest.id); }} className="shrink-0 rounded-md px-1.5 py-1 text-xs font-semibold text-sky-600 hover:bg-sky-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 dark:text-sky-400 dark:hover:bg-sky-500/10">More</button>
+    </div> },
+    { key: 'questionCount', label: 'Questions', align: 'right', className: 'font-semibold' },
+    { key: 'audience', label: 'Audience', value: (quest) => (central ? null : quest.audience), render: (quest) => <span className="font-semibold tabular-nums">{central ? 'All universities' : <>{quest.audience ?? '—'} <span className="text-xs font-normal text-slate-400">students</span></>}</span> },
+    ...(central ? [] : [
+      { key: 'started', label: 'Started / Done', value: (quest) => quest.stats.enrolled, render: (quest) => <span className="tabular-nums"><span className="font-semibold">{quest.stats.enrolled}</span><span className="text-slate-400"> / </span><span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400"><CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />{quest.stats.completed}</span></span> },
+      { key: 'progress', label: 'Avg. progress', headerClassName: 'w-36', value: (quest) => quest.stats.averageProgress, render: (quest) => <ProgressBar value={quest.stats.averageProgress} tone={questTheme(quest.theme).bar} label={`Average progress for ${quest.title}`} /> },
+    ]),
+    { key: 'status', label: 'Status', render: (quest) => <StatusPill status={quest.status} /> },
+    { key: 'window', label: 'Window', value: (quest) => quest.startsAt || quest.endsAt || null, render: (quest) => <span className="flex flex-col items-start gap-0.5"><WindowChip quest={quest} />{hasWindow(quest) && <span className="text-[11.5px] text-slate-400">{windowText(quest)}</span>}</span> },
+    { key: 'updatedAt', label: 'Updated', className: 'text-[12.5px] text-slate-500', render: (quest) => timeAgo(quest.updatedAt) },
+    { key: 'actions', label: <span className="sr-only">Actions</span>, sortable: false, align: 'right', render: (quest) => <div className="flex justify-end" onClick={stop} role="presentation"><RowMenu name={quest.title} actions={actionsFor(quest)} /></div> },
+  ], [actionsFor]);
 
   return <Page>
     <PageHeader icon={Zap} title="QuickPrep" crumbs={[{ label: 'Admin', to: '/admin/dashboard' }, { label: 'QuickPrep' }]}
       description="Curated question sets for focused practice, such as company sets, topic tracks or a 75 Hard plan. Students earn the badge and XP when they solve every question."
       actions={<>
-        {!central && <Link to={`${QUICKPREP_ROOT}/insights`} className={secondaryButton}><BarChart3 className="h-4 w-4" />Insights</Link>}
+        <Link to={QUICKPREP_ANALYSIS_PATH} className={secondaryButton}><BarChart3 className="h-4 w-4" />Analysis</Link>
         <Link to={`${QUICKPREP_ROOT}/new`} className={primaryButton}><Plus className="h-4 w-4" />Create QuickPrep</Link>
       </>} />
 
@@ -76,55 +112,9 @@ export default function QuickPrepList() {
       {state.loading && !quests.length ? <div className="space-y-2 p-4">{[0, 1, 2, 3].map((key) => <div key={key} className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-zinc-800" />)}</div>
         : !quests.length ? <EmptyState />
           : !visible.length ? <p className="px-4 py-12 text-center text-sm text-slate-500">No QuickPrep matches these filters.</p>
-            : <div className="overflow-x-auto">
-              <table className="w-full min-w-[1180px] whitespace-nowrap text-left text-sm">
-                <thead className="bg-slate-50/80 text-[11.5px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-zinc-900/60 dark:text-zinc-400">
-                  <tr>
-                    <th scope="col" className="py-3 pl-4 pr-3">QuickPrep</th>
-                    <th scope="col" className="px-3 py-3">Type</th>
-                    <th scope="col" className="px-3 py-3">Companies · Topics</th>
-                    <th scope="col" className="px-3 py-3">Questions</th>
-                    <th scope="col" className="px-3 py-3">Audience</th>
-                    {!central && <th scope="col" className="px-3 py-3">Started / Done</th>}
-                    {!central && <th scope="col" className="w-36 px-3 py-3">Avg. progress</th>}
-                    <th scope="col" className="px-3 py-3">Status</th>
-                    <th scope="col" className="px-3 py-3">Updated</th>
-                    <th scope="col" className="py-3 pl-3 pr-4 text-right"><span className="sr-only">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
-                  {visible.map((quest) => {
-                    const theme = questTheme(quest.theme);
-                    const type = questCategory(quest.category);
-                    const TypeIcon = type.icon;
-                    return <tr key={quest.id} onClick={() => navigate(`${QUICKPREP_ROOT}/${quest.id}`)} className={`group cursor-pointer transition hover:bg-sky-50/40 dark:hover:bg-zinc-800/40 ${busyId === quest.id ? 'opacity-60' : ''}`}>
-                      <td className="py-3 pl-4 pr-3">
-                        <div className="flex items-center gap-3">
-                          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-sm ${theme.band}`}><TypeIcon className="h-5 w-5" aria-hidden="true" /></span>
-                          <div className="flex min-w-0 items-center gap-2">
-                            <Link to={`${QUICKPREP_ROOT}/${quest.id}`} title={quest.title} onClick={(event) => event.stopPropagation()} className="block max-w-[15rem] truncate font-semibold text-slate-900 hover:text-sky-700 dark:text-zinc-50 dark:hover:text-sky-300">{quest.title}</Link>
-                            {quest.unavailableCount > 0 && <span className="rounded bg-amber-50 px-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" title="Unpublished in the library and hidden from students">{quest.unavailableCount} unavailable</span>}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3"><span className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] font-semibold ${theme.soft}`}><TypeIcon className="h-3.5 w-3.5" aria-hidden="true" />{type.label}</span></td>
-                      <td className="px-3 py-3"><div className="flex items-center gap-2">
-                        <span className="inline-flex max-w-28 items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-zinc-800 dark:text-zinc-300"><Building2 className="h-3 w-3 shrink-0" aria-hidden="true" /><span className="truncate">{quest.companies?.[0] || 'All companies'}</span></span>
-                        <button type="button" aria-label={`More details for ${quest.title}`} aria-haspopup="dialog" onClick={(event) => { event.stopPropagation(); event.currentTarget.focus(); setDetailId(quest.id); }} className="shrink-0 rounded-md px-1.5 py-1 text-xs font-semibold text-sky-600 hover:bg-sky-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 dark:text-sky-400 dark:hover:bg-sky-500/10">More</button>
-                      </div></td>
-                      <td className="px-3 py-3 font-semibold tabular-nums">{quest.questionCount}</td>
-                      <td className="px-3 py-3 font-semibold tabular-nums">{central ? 'All universities' : <>{quest.audience ?? '—'} <span className="text-xs font-normal text-slate-400">students</span></>}</td>
-                      {!central && <td className="px-3 py-3 tabular-nums"><span className="font-semibold">{quest.stats.enrolled}</span><span className="text-slate-400"> / </span><span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400"><CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />{quest.stats.completed}</span></td>}
-                      {!central && <td className="px-3 py-3"><ProgressBar value={quest.stats.averageProgress} tone={theme.bar} label={`Average progress for ${quest.title}`} /></td>}
-                      <td className="px-3 py-3"><StatusPill status={quest.status} /></td>
-                      <td className="whitespace-nowrap px-3 py-3 text-[12.5px] text-slate-500">{timeAgo(quest.updatedAt)}</td>
-                      <td className="py-3 pl-3 pr-4 text-right" onClick={(event) => event.stopPropagation()}><div className="flex justify-end"><RowMenu name={quest.title} actions={actionsFor(quest)} /></div></td>
-                    </tr>;
-                  })}
-                </tbody>
-              </table>
-            </div>}
-      {visible.length > 0 && <p className="border-t border-slate-100 px-4 py-2.5 text-[12px] text-slate-500 dark:border-zinc-800">Showing {visible.length} of {quests.length} QuickPreps</p>}
+            : <DataTable columns={columns} rows={visible} resetKey={`${search}|${status}|${category}`} noun="QuickPreps"
+              onRowClick={(quest) => navigate(`${QUICKPREP_ROOT}/${quest.id}`)} rowClassName={(quest) => (busyId === quest.id ? 'opacity-60' : '')}
+              className="rounded-none border-0" tableClassName="w-full min-w-[1240px] whitespace-nowrap" />}
     </section>
     {detail && <QuickPrepSummaryDialog quest={detail} central={central} onClose={closeDetails} />}
   </Page>;

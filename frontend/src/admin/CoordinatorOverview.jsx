@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Activity, AlertTriangle, BarChart3, BriefcaseBusiness, CalendarDays, CheckCircle2, Code2, Loader2, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import { api } from '../utils/api';
 import { defaultCoordinatorPermissions } from './coordinatorPermissions';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 
 function formatDate(value) {
   if (!value) return 'Never';
@@ -124,6 +125,55 @@ function SignalPill({ signal }) {
   );
 }
 
+const timeValue = (value) => {
+  const time = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isNaN(time) ? null : time;
+};
+const coordinatorName = (row) => row.name || 'Unnamed coordinator';
+const codingLabel = (row) => (hasCodingAccess(row) ? 'Enabled' : 'Off');
+const lastActiveValue = (row) => timeValue(row.lastActive || row.updatedAt);
+
+const OPERATIONS_COLUMNS = [
+  ['name', 'Coordinator', coordinatorName],
+  ['email', 'Email', (row) => row.email || null],
+  ['status', 'Status', (row) => (row.isActive !== false ? 'Active' : 'Disabled')],
+  ['students', 'Students', (row) => row.studentsAssigned ?? 0],
+  ['events', 'Events', (row) => row.eventsCreated?.total ?? 0],
+  ['permissions', 'Permissions', (row) => row.permissionCount || 0],
+  ['coding', 'Coding Access', codingLabel],
+  ['lastActive', 'Last Active', lastActiveValue],
+];
+const READINESS_COLUMNS = [
+  ['priority', 'Priority', (row) => row.priority],
+  ['name', 'Coordinator', coordinatorName],
+  ['access', 'Access Readiness', (row) => (row.totalPermissions ? row.permissionCount / row.totalPermissions : 0)],
+  ['workload', 'Workload', (row) => row.workloadScore],
+  ['coding', 'Coding', codingLabel],
+  ['lastActive', 'Last Active', lastActiveValue],
+  ['status', 'Status', (row) => row.signal.label],
+  ['action', 'Recommended Action', (row) => row.signal.action],
+];
+const valueReader = (columns) => {
+  const readers = Object.fromEntries(columns.map(([key, , read]) => [key, read]));
+  return (row, key) => readers[key]?.(row);
+};
+const operationsValue = valueReader(OPERATIONS_COLUMNS);
+const readinessValue = valueReader(READINESS_COLUMNS);
+const HEADER_CLASS = 'px-4 py-3';
+
+function SortableHead({ columns, table, trailing }) {
+  return (
+    <thead className="bg-slate-50 dark:bg-white/[0.04]">
+      <tr>
+        {columns.map(([key, label]) => (
+          <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort} className={HEADER_CLASS}>{label}</SortHeader>
+        ))}
+        <SortHeader sortable={false} className={HEADER_CLASS}>{trailing}</SortHeader>
+      </tr>
+    </thead>
+  );
+}
+
 export default function CoordinatorOverview() {
   const [coordinators, setCoordinators] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -169,7 +219,7 @@ export default function CoordinatorOverview() {
     }).sort((a, b) => {
       const priority = { rose: 0, amber: 1, slate: 2, emerald: 3 };
       return (priority[a.signal.tone] ?? 9) - (priority[b.signal.tone] ?? 9) || b.workloadScore - a.workloadScore;
-    });
+    }).map((row, index) => ({ ...row, priority: index + 1 }));
 
     const needsReview = readinessRows.filter((item) => ['rose', 'amber'].includes(item.signal.tone));
     const noWorkload = readinessRows.filter((item) => item.signal.label === 'No Workload');
@@ -178,6 +228,8 @@ export default function CoordinatorOverview() {
 
     return { active, disabled, codingEnabled, recentlyAdded, readinessRows, needsReview, noWorkload, highWorkload, ready };
   }, [coordinators]);
+  const operationsTable = useClientTable(coordinators, { getValue: operationsValue });
+  const readinessTable = useClientTable(model.readinessRows, { getValue: readinessValue });
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
@@ -225,15 +277,9 @@ export default function CoordinatorOverview() {
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-[980px] w-full divide-y divide-slate-100 dark:divide-white/10">
-                  <thead className="bg-slate-50 dark:bg-white/[0.04]">
-                    <tr>
-                      {['Coordinator', 'Email', 'Status', 'Students', 'Events', 'Permissions', 'Coding Access', 'Last Active', 'Action'].map((heading) => (
-                        <th key={heading} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{heading}</th>
-                      ))}
-                    </tr>
-                  </thead>
+                  <SortableHead columns={OPERATIONS_COLUMNS} table={operationsTable} trailing="Action" />
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                    {coordinators.map((coordinator) => (
+                    {operationsTable.pageRows.map((coordinator) => (
                       <tr key={coordinator._id} className="hover:bg-slate-50 dark:hover:bg-white/[0.04]">
                         <td className="px-4 py-3">
                           <div className="font-bold text-slate-950 dark:text-white">{coordinator.name || 'Unnamed coordinator'}</div>
@@ -264,6 +310,7 @@ export default function CoordinatorOverview() {
                   </tbody>
                 </table>
               </div>
+              <TablePager {...operationsTable.pager} noun="coordinators" />
             </section>
 
             <section className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
@@ -313,19 +360,13 @@ export default function CoordinatorOverview() {
 
               <div className="overflow-x-auto">
                 <table className="min-w-[1040px] w-full divide-y divide-slate-100 dark:divide-white/10">
-                  <thead className="bg-slate-50 dark:bg-white/[0.04]">
-                    <tr>
-                      {['Priority', 'Coordinator', 'Access Readiness', 'Workload', 'Coding', 'Last Active', 'Status', 'Recommended Action', 'Manage'].map((heading) => (
-                        <th key={heading} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{heading}</th>
-                      ))}
-                    </tr>
-                  </thead>
+                  <SortableHead columns={READINESS_COLUMNS} table={readinessTable} trailing="Manage" />
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                    {model.readinessRows.map((coordinator, index) => {
+                    {readinessTable.pageRows.map((coordinator) => {
                       const accessPercent = coordinator.totalPermissions ? Math.round((coordinator.permissionCount / coordinator.totalPermissions) * 100) : 0;
                       return (
                         <tr key={coordinator._id} className="hover:bg-slate-50 dark:hover:bg-white/[0.04]">
-                          <td className="px-4 py-3 text-sm font-bold text-slate-500">#{index + 1}</td>
+                          <td className="px-4 py-3 text-sm font-bold text-slate-500">#{coordinator.priority}</td>
                           <td className="px-4 py-3">
                             <div className="font-bold text-slate-950 dark:text-white">{coordinator.name || 'Unnamed coordinator'}</div>
                             <div className="text-xs font-semibold text-slate-500">{coordinator.email || coordinator.coordinatorId || '-'}</div>
@@ -368,6 +409,7 @@ export default function CoordinatorOverview() {
                   </tbody>
                 </table>
               </div>
+              <TablePager {...readinessTable.pager} noun="coordinators" />
             </section>
           </>
         )}

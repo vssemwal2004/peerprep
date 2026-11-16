@@ -2,8 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Edit3, Eye, MoreVertical, Power, Redo2, Trash2, Undo2 } from 'lucide-react';
 import { api } from '../utils/api';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 
 const HISTORY_LIMIT = 50;
+
+const templateSortValue = (tpl, key) => {
+  if (key === 'updatedAt') return tpl.updatedAt ? new Date(tpl.updatedAt) : null;
+  return tpl?.[key];
+};
 
 const areEditFormsEqual = (a, b) => {
   if (a === b) return true;
@@ -237,6 +243,7 @@ export default function EmailTemplates() {
       [tpl.name, tpl.subject, tpl.type].filter(Boolean).some((field) => field.toLowerCase().includes(q))
     );
   }, [templates, search]);
+  const table = useClientTable(filteredTemplates, { getValue: templateSortValue, resetKey: search });
 
   const loadTemplates = async () => {
     setLoading(true);
@@ -475,11 +482,11 @@ export default function EmailTemplates() {
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-gray-700 dark:text-slate-400">
                 <tr>
-                  <th className="px-5 py-3">Template</th>
-                  <th className="px-5 py-3">Subject</th>
-                  <th className="px-5 py-3">Type</th>
-                  <th className="px-5 py-3">Last Updated</th>
-                  <th className="px-5 py-3 text-right">Actions</th>
+                  <SortHeader sortKey="name" sort={table.sort} onSort={table.toggleSort} className="px-5 py-3">Template</SortHeader>
+                  <SortHeader sortKey="subject" sort={table.sort} onSort={table.toggleSort} className="px-5 py-3">Subject</SortHeader>
+                  <SortHeader sortKey="type" sort={table.sort} onSort={table.toggleSort} className="px-5 py-3">Type</SortHeader>
+                  <SortHeader sortKey="updatedAt" sort={table.sort} onSort={table.toggleSort} className="px-5 py-3">Last Updated</SortHeader>
+                  <SortHeader sortable={false} align="right" className="px-5 py-3">Actions</SortHeader>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
@@ -492,7 +499,7 @@ export default function EmailTemplates() {
                     <td colSpan="5" className="px-5 py-6 text-center text-slate-500">No templates found.</td>
                   </tr>
                 ) : (
-                  filteredTemplates.map((tpl) => (
+                  table.pageRows.map((tpl) => (
                     <tr key={tpl._id} className="text-slate-700 dark:text-slate-200">
                       <td className="px-5 py-4">
                         <div className="font-semibold text-slate-900 dark:text-white">{tpl.name}</div>
@@ -529,6 +536,7 @@ export default function EmailTemplates() {
               </tbody>
             </table>
           </div>
+          <TablePager {...table.pager} busy={loading} noun="templates" />
         </div>
       </div>
 

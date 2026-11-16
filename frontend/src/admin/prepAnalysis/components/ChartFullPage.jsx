@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { AlertCircle, ArrowLeft, ChevronLeft, ChevronRight, FileSpreadsheet, Info, Loader2, Search, Sheet, SlidersHorizontal, Sparkles } from "lucide-react";
+import { AlertCircle, ArrowLeft, FileSpreadsheet, Info, Loader2, Search, Sheet, SlidersHorizontal, Sparkles } from "lucide-react";
+import { TablePager } from "../../../components/table";
 import { useAnalysisApi } from "../analysisScope";
 import { chartRequest, useChartDownload } from "../chartActions";
 import { chartInsight } from "../charts/chartInsights";
@@ -126,15 +127,9 @@ export default function ChartFullPage({
             <Sparkles className={`mt-[2px] h-3 w-3 shrink-0 ${style.spark}`} aria-hidden="true" /><span>{insight}</span>
           </p>
         )}
+        {/* Pages of chart items (the server's fixed chunk per chart type), shared by the chart and its table. */}
         {pagination && pagination.pages > 1 && (
-          <div className="flex items-center justify-between gap-2 text-[12px] text-slate-600 dark:text-slate-300">
-            <span className="tabular-nums">{(pagination.offset + 1).toLocaleString()}–{Math.min(pagination.total, pagination.offset + pagination.pageSize).toLocaleString()} of {pagination.total.toLocaleString()}</span>
-            <span className="flex items-center gap-1">
-              <IconButton label="Previous page" disabled={pagination.page <= 1 || full.loading} onClick={() => setPage(pagination.page - 1)}><ChevronLeft className="h-4 w-4" /></IconButton>
-              <span className="tabular-nums">{pagination.page} / {pagination.pages}</span>
-              <IconButton label="Next page" disabled={pagination.page >= pagination.pages || full.loading} onClick={() => setPage(pagination.page + 1)}><ChevronRight className="h-4 w-4" /></IconButton>
-            </span>
-          </div>
+          <TablePager page={pagination.page} pageSize={pagination.pageSize} total={pagination.total} onPage={setPage} busy={full.loading} noun="items" />
         )}
         {view === "table" && <div className="flex">{searchBox}</div>}
         <div className={`max-h-[calc(100vh-14rem)] overflow-y-auto pr-1 transition-opacity ${full.loading ? "opacity-60" : ""}`}>

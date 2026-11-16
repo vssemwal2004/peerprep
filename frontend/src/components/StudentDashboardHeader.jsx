@@ -29,16 +29,17 @@ import HeaderPrepCoin from '../student/prepCoin/HeaderPrepCoin';
 import { featureForStudentPath, hasStudentFeature } from '../student/studentFeatureAccess';
 
 const modules = [
+  // Same order and names as the student sidebar.
   { label: 'Dashboard', hint: 'Your placement overview', to: '/student/dashboard', icon: LayoutDashboard },
-  { label: 'QuickPrep', hint: 'Question sheets prepared by your admin', to: '/student/quickprep', icon: Sparkles },
+  { label: 'Prep Coding', hint: 'Practice problem solving', to: '/problems', icon: Code2 },
+  { label: 'Quick Prep', hint: 'Question sheets prepared by your admin', to: '/student/quickprep', icon: Sparkles },
+  { label: 'Prep Assessment', hint: 'Available tests', to: '/student/assessments', icon: ClipboardList },
+  { label: 'Resume', hint: 'Build your placement resume', to: '/student/resume', icon: UserCog },
+  { label: 'Ranking', hint: 'Your university and global rank', to: '/student/rankings', icon: BarChart3 },
   { label: 'Prep Analysis', hint: 'Progress and skill insights', to: '/student/analysis', icon: BarChart3 },
-  { label: 'Rankings', hint: 'Your university and global rank', to: '/student/rankings', icon: BarChart3 },
   { label: 'Interviews', hint: 'Peer interview sessions', to: '/student/interview', icon: User },
   { label: 'AI Interviews', hint: 'Practice with AI', to: '/student/ai-interviews', icon: Bot },
-  { label: 'Assessments', hint: 'Available tests', to: '/student/assessments', icon: ClipboardList },
   { label: 'Learning', hint: 'Subjects and learning paths', to: '/student/learning', icon: BookOpen },
-  { label: 'PrepCoding', hint: 'Practice problem solving', to: '/problems', icon: Code2 },
-  { label: 'Resume Builder', hint: 'Build your placement resume', to: '/student/resume', icon: UserCog },
 ];
 
 /** PeerPrep's daily-challenge mark: a ticket for the day (as on the dashboard's Today card) with a gold star. */

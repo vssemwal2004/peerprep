@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Loader2, Search, ShieldCheck, SlidersHorizontal, Users, X } from 'lucide-react';
 import { api } from '../utils/api';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 import { defaultCoordinatorPermissions } from './coordinatorPermissions';
 
 function formatDate(value) {
@@ -25,6 +26,24 @@ function hasCodingAccess(coordinator) {
   const permissions = Array.isArray(coordinator.permissions) ? coordinator.permissions : defaultCoordinatorPermissions;
   return permissions.some((permission) => permission.startsWith('coordinator.compiler.'));
 }
+
+const timeValue = (value) => {
+  const time = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isNaN(time) ? null : time;
+};
+const COLUMN_VALUES = {
+  name: (row) => row.name || null,
+  email: (row) => row.email || null,
+  phone: (row) => row.phone || null,
+  department: (row) => row.department || null,
+  role: (row) => row.role || 'coordinator',
+  status: (row) => (row.isActive !== false ? 'Active' : 'Disabled'),
+  permissionCount: (row) => Number(row.permissionCount || 0),
+  coding: (row) => (hasCodingAccess(row) ? 'Enabled' : 'Off'),
+  updated: (row) => timeValue(row.lastPermissionUpdatedAt || row.updatedAt),
+};
+const columnValue = (row, key) => COLUMN_VALUES[key]?.(row);
+const COLUMNS = [['name', 'Coordinator'], ['email', 'Email'], ['phone', 'Phone'], ['department', 'Department'], ['role', 'Role'], ['status', 'Status'], ['permissionCount', 'Permissions'], ['coding', 'Coding Access'], ['updated', 'Last Updated']];
 
 export default function CoordinatorAccess() {
   const navigate = useNavigate();
@@ -59,6 +78,7 @@ export default function CoordinatorAccess() {
       return matchesStatus && matchesSearch;
     });
   }, [coordinators, query, status]);
+  const table = useClientTable(filtered, { getValue: columnValue, resetKey: `${query}|${status}` });
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50/60 dark:bg-gray-950">
@@ -103,17 +123,19 @@ export default function CoordinatorAccess() {
             <p className="mt-2 text-sm text-slate-500">Create a coordinator before assigning access.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 dark:border-gray-700">
+          <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700">
+          <div className="overflow-x-auto overflow-y-visible">
             <table className="w-full min-w-[1050px] divide-y divide-slate-200">
               <thead className="bg-slate-50 dark:bg-gray-700">
                 <tr>
-                  {['Coordinator', 'Email', 'Phone', 'Department', 'Role', 'Status', 'Permissions', 'Coding Access', 'Last Updated', 'Action'].map((heading) => (
-                    <th key={heading} className={`px-3 py-2 text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300 ${heading === 'Action' ? 'text-right' : 'text-left'}`}>{heading}</th>
+                  {COLUMNS.map(([key, heading]) => (
+                    <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort} className="py-2 text-[10px] dark:text-gray-300">{heading}</SortHeader>
                   ))}
+                  <SortHeader sortable={false} align="right" className="py-2 text-[10px] dark:text-gray-300">Action</SortHeader>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white dark:divide-gray-700 dark:bg-gray-800">
-                {filtered.map((coordinator) => (
+                {table.pageRows.map((coordinator) => (
                   <tr key={coordinator._id} onClick={() => navigate(`/admin/coordinator-access/${coordinator._id}`)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-gray-700">
                     <td className="px-3 py-1.5">
                       <div className="flex min-w-[190px] items-center gap-2">
@@ -151,6 +173,8 @@ export default function CoordinatorAccess() {
                 ))}
               </tbody>
             </table>
+          </div>
+          <TablePager {...table.pager} noun="coordinators" className="bg-white dark:bg-gray-800" />
           </div>
         )}
         </div>

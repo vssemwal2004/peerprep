@@ -13,6 +13,7 @@ import { University, Publication, PlatformAudit, PlatformSettings, PlatformCoinW
 import { isControlPlane, isUniversity } from './deployment.js';
 import { controlRequest, universityPolicy } from './client.js';
 import { signInspection, verifyInspection } from './inspectionAuth.js';
+import { inspectionStudentPath, inspectionStudentQuery } from './inspectionStudents.js';
 import User from '../models/User.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import { interviewReportOptions, interviewReportSummaries, saveInterviewReport } from './interviewQuestionReports.js';
@@ -30,7 +31,8 @@ import { seedDefaultMasterData } from '../services/masterDataService.js';
 import { serviceDates } from './servicePeriod.js';
 import { coinAmount, coinRequestId, creditPlatformUser, PLATFORM_WALLET_SCOPE, topUpUniversity } from './coins.js';
 import { accountLimit, withAccountCreationLocks } from './accountLimits.js';
-import { buildOverview, universitySnapshot } from '../services/overviewInsights.js';
+import { buildOverview, overviewRange, universitySnapshot } from '../services/overviewInsights.js';
+import { rangeEcho } from '../utils/dateRange.js';
 import { platformCentralSummary } from './platformInsights.js';
 
 const router = Router();
@@ -130,22 +132,20 @@ function universityName(value) {
 
 const editableFields = { name: universityName, contactEmail, deploymentUrl: frontendUrl, apiUrl: inspectionOrigin };
 
+async function listInspectionStudents({ filter, sort, page, pageSize }) {
+  const [students, total] = await Promise.all([
+    User.find(filter).select('name email studentId course branch college semester group isActive createdAt')
+      .sort(sort).skip((page - 1) * pageSize).limit(pageSize).allowDiskUse(true).lean(),
+    User.countDocuments(filter),
+  ]);
+  return { students, total, page, pageSize };
+}
+
 async function inspectUniversity(req, university, path) {
   if (deploymentRole() === 'shared') {
     const tenant = await getTenant(university.universityId);
     return runForTenant(tenant, async () => {
-      if (path.startsWith('/students?')) {
-        const query = new URL(path, 'http://localhost').searchParams;
-        const page = Math.max(1, Math.min(100000, Number.parseInt(query.get('page'), 10) || 1));
-        const search = String(query.get('search') || '').trim().slice(0, 80);
-        const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const filter = { role: 'student', ...(search ? { $or: ['name', 'studentId', 'email'].map((field) => ({ [field]: { $regex: escaped, $options: 'i' } })) } : {}) };
-        const [students, total] = await Promise.all([
-          User.find(filter).select('name email studentId course branch college semester group isActive createdAt').sort({ _id: -1 }).skip((page - 1) * 25).limit(25).lean(),
-          User.countDocuments(filter),
-        ]);
-        return { students, total, page, pageSize: 25 };
-      }
+      if (path.startsWith('/students?')) return listInspectionStudents(inspectionStudentQuery(new URL(path, 'http://localhost').searchParams));
       const studentId = path.split('/')[2];
       if (!mongoose.isValidObjectId(studentId)) throw new HttpError(400, 'Invalid student ID');
       const student = await User.findOne({ _id: studentId, role: 'student' })
@@ -230,10 +230,14 @@ router.get('/admin/overview', masterOnly, asyncRoute(async (req, res) => {
 
 // Cross-university numbers for the Master Admin overview. Each university is read in its own tenant
 // context; one unreachable database marks only that row as unavailable. Cached briefly because it fans out.
+// ?range=… / ?range=custom&from&to sets the trend period (default 14 days); each period caches separately.
 let insightsCache = null;
 const INSIGHTS_TTL_MS = 60_000;
 router.get('/admin/insights', masterOnly, asyncRoute(async (req, res) => {
-  if (!insightsCache || insightsCache.expires < Date.now() || req.query.refresh === '1') {
+  const now = new Date();
+  const range = overviewRange(req.query, now);
+  const rangeKey = JSON.stringify(rangeEcho(range, 330));
+  if (!insightsCache || insightsCache.expires < Date.now() || insightsCache.rangeKey !== rangeKey || req.query.refresh === '1') {
     const universities = await University.find({ deletedAt: null }).select('+dbUriEncrypted universityId name active logo permissions coinBalance serviceStartDate serviceEndDate studentLimit coordinatorLimit').sort({ name: 1 }).lean();
     const rows = [];
     for (let index = 0; index < universities.length; index += 4) {
@@ -243,7 +247,7 @@ router.get('/admin/insights', masterOnly, asyncRoute(async (req, res) => {
         if (!university.dbUriEncrypted) return { ...base, reachable: false, reason: 'no_database' };
         try {
           const tenant = await getTenant(university.universityId, { includeInactive: true });
-          const snapshot = await runForTenant(tenant, () => universitySnapshot());
+          const snapshot = await runForTenant(tenant, () => universitySnapshot(now, range));
           return { ...base, reachable: true, ...snapshot };
         } catch (error) {
           console.warn('[PlatformInsights] university unavailable', { universityId: university.universityId, error: error?.message });
@@ -253,8 +257,9 @@ router.get('/admin/insights', masterOnly, asyncRoute(async (req, res) => {
     }
     insightsCache = {
       expires: Date.now() + INSIGHTS_TTL_MS,
+      rangeKey,
       // workspace: the main database's own students and activity, counted like a university overview.
-      body: { generatedAt: new Date().toISOString(), universities: rows, central: await platformCentralSummary(), workspace: await buildOverview(req.user) },
+      body: { generatedAt: new Date().toISOString(), range: rangeEcho(range, 330), universities: rows, central: await platformCentralSummary(), workspace: await buildOverview(req.user, now, range) },
     };
   }
   res.set('Cache-Control', 'private, no-store').json(insightsCache.body);
@@ -625,11 +630,9 @@ router.delete('/admin/universities/:id/logo', masterOnly, asyncRoute(async (req,
 router.get('/admin/universities/:id/students', masterOnly, asyncRoute(async (req, res) => {
   const university = await University.findOne({ universityId: req.params.id, deletedAt: null }).lean();
   if (!university) throw new HttpError(404, 'University not found');
-  const page = Math.max(1, Math.min(100000, Number.parseInt(req.query.page, 10) || 1));
-  const search = String(req.query.search || '').trim().slice(0, 80);
-  const path = `/students?page=${page}&search=${encodeURIComponent(search)}`;
-  const data = await inspectUniversity(req, university, path);
-  await audit(req, 'university.students_viewed', university.universityId, { page, searched: Boolean(search) });
+  const query = inspectionStudentQuery(req.query);
+  const data = await inspectUniversity(req, university, inspectionStudentPath(query));
+  await audit(req, 'university.students_viewed', university.universityId, { page: query.page, searched: Boolean(query.search) });
   res.set('Cache-Control', 'no-store').json(data);
 }));
 
@@ -781,19 +784,7 @@ router.get('/tenant/learning/semesters', requireModule('learning'), asyncRoute(a
 }));
 
 router.get('/inspection/students', inspectionOnly, asyncRoute(async (req, res) => {
-  const page = Math.max(1, Math.min(100000, Number.parseInt(req.query.page, 10) || 1));
-  const search = String(req.query.search || '').trim().slice(0, 80);
-  const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const filter = { role: 'student', ...(search ? { $or: [
-    { name: { $regex: escaped, $options: 'i' } },
-    { studentId: { $regex: escaped, $options: 'i' } },
-    { email: { $regex: escaped, $options: 'i' } },
-  ] } : {}) };
-  const [students, total] = await Promise.all([
-    User.find(filter).select('name email studentId course branch college semester group isActive createdAt').sort({ _id: -1 }).skip((page - 1) * 25).limit(25).lean(),
-    User.countDocuments(filter),
-  ]);
-  res.json({ students, total, page, pageSize: 25 });
+  res.json(await listInspectionStudents(inspectionStudentQuery(req.query)));
 }));
 
 router.get('/inspection/students/:studentId', inspectionOnly, asyncRoute(async (req, res) => {

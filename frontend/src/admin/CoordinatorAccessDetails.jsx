@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Check, History, Loader2, RotateCcw, Save, Search, ShieldCheck, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 import { coordinatorPermissionCategories, coordinatorPermissions, defaultCoordinatorPermissions, normalizePermissions } from './coordinatorPermissions';
 
 function formatDate(value) {
@@ -31,6 +32,72 @@ function Stat({ label, value }) {
       <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</div>
       <div className="mt-1 text-sm font-bold text-slate-950 dark:text-white">{value}</div>
     </div>
+  );
+}
+
+const HISTORY_COLUMNS = [['createdAt', 'Updated At'], ['changedBy', 'Changed By'], ['before', 'Before'], ['after', 'After']];
+function historyValue(entry, key) {
+  if (key === 'createdAt') {
+    const time = entry.createdAt ? new Date(entry.createdAt).getTime() : Number.NaN;
+    return Number.isNaN(time) ? null : time;
+  }
+  if (key === 'changedBy') return entry.changedByEmail || 'Admin';
+  if (key === 'before') return entry.previousPermissions?.length || 0;
+  if (key === 'after') return entry.nextPermissions?.length || 0;
+  return entry[key];
+}
+
+const PERMISSION_COLUMNS = [['enabled', 'Access'], ['name', 'Feature'], ['accessType', 'Access Type'], ['description', 'Admin Meaning'], ['usage', 'Coordinator Usage'], ['routes', 'Routes']];
+
+/** One phase's permission matrix: every column sorts, the pager sits underneath. */
+function PermissionTable({ permissions, selectedSet, onToggle, resetKey }) {
+  const getValue = useCallback((permission, key) => {
+    if (key === 'enabled') return selectedSet.has(permission.key) ? 'Enabled' : 'Disabled';
+    if (key === 'routes') return permission.routes?.length ? permission.routes.join(', ') : 'Internal';
+    return permission[key];
+  }, [selectedSet]);
+  const table = useClientTable(permissions, { getValue, resetKey });
+  return (
+    <>
+      <div className="overflow-x-auto">
+        <table className="min-w-[1080px] w-full divide-y divide-slate-100 dark:divide-white/10">
+          <thead className="bg-slate-50 dark:bg-white/[0.04]">
+            <tr>
+              {PERMISSION_COLUMNS.map(([key, heading]) => (
+                <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort} className="px-4 py-3">{heading}</SortHeader>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+            {table.pageRows.map((permission) => {
+              const enabled = selectedSet.has(permission.key);
+              return (
+                <tr key={permission.key} className={enabled ? 'bg-sky-50/40 dark:bg-sky-400/5' : 'hover:bg-slate-50 dark:hover:bg-white/[0.04]'}>
+                  <td className="px-4 py-3">
+                    <Toggle checked={enabled} onChange={() => onToggle(permission.key)} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-sm font-bold text-slate-950 dark:text-white">{permission.name}</div>
+                    <div className="mt-1 text-[11px] font-semibold text-slate-400">{permission.key}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 dark:border-white/10 dark:bg-gray-950 dark:text-slate-300">
+                      {permission.accessType}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm font-semibold leading-6 text-slate-600 dark:text-slate-300">{permission.description}</td>
+                  <td className="px-4 py-3 text-sm font-semibold leading-6 text-slate-500 dark:text-slate-400">{permission.usage}</td>
+                  <td className="px-4 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {permission.routes?.length ? permission.routes.join(', ') : 'Internal'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <TablePager {...table.pager} noun="permissions" />
+    </>
   );
 }
 
@@ -103,6 +170,7 @@ export default function CoordinatorAccessDetails() {
       }))
       .filter((category) => category.permissions.length);
   }, [activePhase, accessFilter, query, selectedSet]);
+  const historyTable = useClientTable(history, { getValue: historyValue });
 
   const togglePermission = (key) => {
     setSelected((current) => {
@@ -288,43 +356,7 @@ export default function CoordinatorAccessDetails() {
                     </button>
                   </div>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-[1080px] w-full divide-y divide-slate-100 dark:divide-white/10">
-                    <thead className="bg-slate-50 dark:bg-white/[0.04]">
-                      <tr>
-                        {['Access', 'Feature', 'Access Type', 'Admin Meaning', 'Coordinator Usage', 'Routes'].map((heading) => (
-                          <th key={heading} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{heading}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                      {category.permissions.map((permission) => {
-                        const enabled = selectedSet.has(permission.key);
-                        return (
-                          <tr key={permission.key} className={enabled ? 'bg-sky-50/40 dark:bg-sky-400/5' : 'hover:bg-slate-50 dark:hover:bg-white/[0.04]'}>
-                            <td className="px-4 py-3">
-                              <Toggle checked={enabled} onChange={() => togglePermission(permission.key)} />
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="text-sm font-bold text-slate-950 dark:text-white">{permission.name}</div>
-                              <div className="mt-1 text-[11px] font-semibold text-slate-400">{permission.key}</div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 dark:border-white/10 dark:bg-gray-950 dark:text-slate-300">
-                                {permission.accessType}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-sm font-semibold leading-6 text-slate-600 dark:text-slate-300">{permission.description}</td>
-                            <td className="px-4 py-3 text-sm font-semibold leading-6 text-slate-500 dark:text-slate-400">{permission.usage}</td>
-                            <td className="px-4 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                              {permission.routes?.length ? permission.routes.join(', ') : 'Internal'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <PermissionTable permissions={category.permissions} selectedSet={selectedSet} onToggle={togglePermission} resetKey={`${query}|${accessFilter}`} />
               </section>
             );
           }) : (
@@ -358,13 +390,13 @@ export default function CoordinatorAccessDetails() {
             <table className="min-w-full divide-y divide-slate-100 dark:divide-white/10">
               <thead className="bg-slate-50 dark:bg-white/[0.04]">
                 <tr>
-                  {['Updated At', 'Changed By', 'Before', 'After'].map((heading) => (
-                    <th key={heading} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{heading}</th>
+                  {HISTORY_COLUMNS.map(([key, heading]) => (
+                    <SortHeader key={key} sortKey={key} sort={historyTable.sort} onSort={historyTable.toggleSort} className="px-4 py-3">{heading}</SortHeader>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                {history.length ? history.map((entry, index) => (
+                {historyTable.pageRows.length ? historyTable.pageRows.map((entry, index) => (
                   <tr key={`${entry.createdAt}-${index}`}>
                     <td className="px-4 py-3 text-xs font-semibold text-slate-500">{formatDate(entry.createdAt)}</td>
                     <td className="px-4 py-3 text-xs font-semibold text-slate-500">{entry.changedByEmail || 'Admin'}</td>
@@ -378,6 +410,7 @@ export default function CoordinatorAccessDetails() {
                 )}
               </tbody>
             </table>
+            <TablePager {...historyTable.pager} noun="changes" />
           </div>
         </div>
       ) : null}

@@ -1,14 +1,17 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, ArrowDownLeft, ArrowUpRight, Building2, Gift, Layers, ReceiptText, RotateCcw, Send, Tag, Trophy, Users } from 'lucide-react';
 import { api } from '../../utils/api';
 import { DonutChart, StackedBars } from '../../overview/charts';
 import { CardHeader, CardLink, EmptyHint, Glass, KpiTile, SkeletonRows } from '../../overview/ui';
-import { relativeTime, weekChange } from '../../overview/overviewModel';
+import { periodPhrase, periodShort, relativeTime, weekChange } from '../../overview/overviewModel';
+import DateRangeFilter from '../../components/dateRange/DateRangeFilter';
+import { rangeLabel, rangeToQuery } from '../../components/dateRange/dateRangeModel';
 import UniversityBadge from '../universities/UniversityBadge';
 import PrepCoinIcon from '../../components/prepCoin/PrepCoinIcon';
 import { CoinAmount, CoinPage, KindChip, LiveBadge } from './shared';
 import { buttonClass, formatCoins, useLive } from './coinModel';
+import { SortHeader, TablePager, useClientTable } from '../../components/table';
 
 const FLOW_SERIES = [
   { key: 'issued', label: 'Issued', color: '#0284c7' },
@@ -16,15 +19,33 @@ const FLOW_SERIES = [
   { key: 'spent', label: 'Spent', color: '#f59e0b' },
   { key: 'refunded', label: 'Refunded', color: '#94a3b8' },
 ];
-const loadSummary = () => api.coinConsoleSummary();
+const COIN_PRESETS = ['7d', '30d', '90d', '180d', '365d'];
+const FEATURE_COLUMNS = [['label', 'Feature'], ['price', 'Price'], ['freePerMonth', 'Free / month'], ['uses', 'Paid uses'], ['spent', 'Spent'], ['refunded', 'Refunded']];
+const featureValue = (feature, key) => {
+  if (key === 'label') return feature.label || null;
+  const value = Number(feature[key]);
+  return Number.isFinite(value) ? value : null;
+};
 
 export default function PrepCoinsOverview() {
-  const { data, error, loading, updatedAt } = useLive(loadSummary, 30_000);
+  // The period for flow, spending and "passed on" figures; balances are always current.
+  const [range, setRange] = useState({ preset: '30d' });
+  const query = JSON.stringify(rangeToQuery(range));
+  const loadSummary = useCallback(() => api.coinConsoleSummary(JSON.parse(query)), [query]);
+  const { data, error, loading, updatedAt, reload } = useLive(loadSummary, 30_000);
+  const firstLoad = useRef(true);
+  useEffect(() => {
+    if (firstLoad.current) { firstLoad.current = false; return; }
+    void reload();
+  }, [query, reload]);
+  const short = periodShort(range);
+  const period = periodPhrase(rangeLabel(range));
   const showSkeleton = loading && !data;
   const features = Array.isArray(data?.features) ? data.features : [];
   const topHolders = Array.isArray(data?.topHolders) ? data.topHolders : [];
   const universities = Array.isArray(data?.universities) ? data.universities : [];
   const recent = Array.isArray(data?.recent) ? data.recent : [];
+  const featureTable = useClientTable(features, { getValue: featureValue });
 
   const view = useMemo(() => {
     if (!data) return null;
@@ -37,10 +58,10 @@ export default function PrepCoinsOverview() {
     { label: 'In circulation', value: formatCoins(view.circulation), helper: `${formatCoins(view.totals.holders)} account wallets hold coins`, Icon: Layers, color: '#d97706' },
     { label: 'University wallets', value: formatCoins(view.totals.universityWallets), helper: 'Ready for admins to pass on', Icon: Building2, color: '#0284c7', to: '/admin/prep-coins/wallets' },
     { label: 'With students', value: formatCoins(view.totals.students), helper: `Coordinators hold ${formatCoins(view.totals.coordinators)}`, Icon: Users, color: '#10b981', to: '/admin/prep-coins/wallets?tab=accounts' },
-    { label: 'Free uses · 30 days', value: formatCoins(view.month.freeUses), helper: `${formatCoins(view.month.charges)} paid uses`, Icon: Gift, color: '#059669' },
-    { label: 'Issued · 30 days', value: formatCoins(view.month.issued), helper: 'Top-ups and direct credits', Icon: ArrowDownLeft, color: '#0284c7', trend: view.series('issued'), delta: weekChange(view.series('issued')), to: '/admin/prep-coins/ledger?kind=issued' },
-    { label: 'Spent · 30 days', value: formatCoins(view.month.spent), helper: 'On paid student features', Icon: ArrowUpRight, color: '#f59e0b', trend: view.series('spent'), delta: weekChange(view.series('spent')), to: '/admin/prep-coins/ledger?kind=spent' },
-    { label: 'Refunded · 30 days', value: formatCoins(view.month.refunded), helper: `${formatCoins(view.month.refunds)} refunded uses`, Icon: RotateCcw, color: '#64748b', trend: view.series('refunded'), to: '/admin/prep-coins/ledger?kind=refunded' },
+    { label: `Free uses · ${short}`, value: formatCoins(view.month.freeUses), helper: `${formatCoins(view.month.charges)} paid uses`, Icon: Gift, color: '#059669' },
+    { label: `Issued · ${short}`, value: formatCoins(view.month.issued), helper: 'Top-ups and direct credits', Icon: ArrowDownLeft, color: '#0284c7', trend: view.series('issued'), delta: weekChange(view.series('issued')), to: '/admin/prep-coins/ledger?kind=issued' },
+    { label: `Spent · ${short}`, value: formatCoins(view.month.spent), helper: 'On paid student features', Icon: ArrowUpRight, color: '#f59e0b', trend: view.series('spent'), delta: weekChange(view.series('spent')), to: '/admin/prep-coins/ledger?kind=spent' },
+    { label: `Refunded · ${short}`, value: formatCoins(view.month.refunded), helper: `${formatCoins(view.month.refunds)} refunded uses`, Icon: RotateCcw, color: '#64748b', trend: view.series('refunded'), to: '/admin/prep-coins/ledger?kind=refunded' },
     { label: 'Waiting to settle', value: formatCoins(view.month.pending), helper: 'Charges still being confirmed', Icon: ReceiptText, color: view.month.pending ? '#e11d48' : '#10b981' },
   ] : [];
 
@@ -48,6 +69,7 @@ export default function PrepCoinsOverview() {
     <CoinPage title="Overview" subtitle="Every Prep Coin across PeerPrep and its universities, updated live"
       live={<LiveBadge updatedAt={updatedAt} loading={loading} />}
       actions={<>
+        <DateRangeFilter value={range} onChange={setRange} presets={COIN_PRESETS} align="right" label="Coin period" />
         <Link to="/admin/prep-coins/issue" className={buttonClass.primary}><Send className="h-4 w-4" />Issue coins</Link>
         <Link to="/admin/prep-coins/ledger" className={buttonClass.secondary}><ReceiptText className="h-4 w-4" />Ledger</Link>
       </>}>
@@ -59,7 +81,7 @@ export default function PrepCoinsOverview() {
 
       <div className="mt-4 grid gap-4 xl:grid-cols-12">
         <Glass className="p-5 xl:col-span-8">
-          <CardHeader title="Coin flow" subtitle="Daily movements, last 30 days" Icon={ReceiptText} action={<CardLink to="/admin/prep-coins/ledger">Open ledger</CardLink>} />
+          <CardHeader title="Coin flow" subtitle={`Daily movements, ${period}`} Icon={ReceiptText} action={<CardLink to="/admin/prep-coins/ledger">Open ledger</CardLink>} />
           {view ? <StackedBars data={view.trend} series={FLOW_SERIES} height={240} /> : <div className="h-[240px] animate-pulse rounded-xl bg-slate-200/60 dark:bg-white/[0.05]" />}
           <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-500 dark:text-slate-400">
             {FLOW_SERIES.map((item) => <span key={item.key} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />{item.label}</span>)}
@@ -81,13 +103,13 @@ export default function PrepCoinsOverview() {
 
       <div className="mt-4 grid gap-4 xl:grid-cols-12">
         <Glass className="p-5 xl:col-span-6">
-          <CardHeader title="Paid features" subtitle="Prices and spending, last 30 days" Icon={Tag} action={<CardLink to="/admin/prep-coins/pricing">Edit prices</CardLink>} />
+          <CardHeader title="Paid features" subtitle={`Prices and spending, ${period}`} Icon={Tag} action={<CardLink to="/admin/prep-coins/pricing">Edit prices</CardLink>} />
           {showSkeleton ? <SkeletonRows rows={2} /> : (
             <div className="-mx-2 overflow-x-auto">
-              <table className="w-full min-w-[460px] text-left text-xs">
-                <thead><tr className="text-[11px] text-slate-500 dark:text-slate-400">{['Feature', 'Price', 'Free / month', 'Paid uses', 'Spent', 'Refunded'].map((heading) => <th key={heading} className="px-2 pb-2 font-medium">{heading}</th>)}</tr></thead>
+              <table className="w-full min-w-[460px] text-left text-xs" style={{ '--serial-start': (featureTable.page - 1) * featureTable.pageSize }}>
+                <thead><tr className="text-[11px] text-slate-500 dark:text-slate-400">{FEATURE_COLUMNS.map(([key, heading]) => <SortHeader key={key} sortKey={key} sort={featureTable.sort} onSort={featureTable.toggleSort} className="px-2 pb-2 pt-0 text-[11px] font-medium normal-case tracking-normal text-slate-500 dark:text-slate-400">{heading}</SortHeader>)}</tr></thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                  {features.map((feature) => (
+                  {featureTable.pageRows.map((feature) => (
                     <tr key={feature.key}>
                       <td className="px-2 py-3 font-semibold text-slate-900 dark:text-white">{feature.label}</td>
                       <td className="px-2 py-3">{feature.price ? <CoinAmount value={feature.price} /> : <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200">Free</span>}</td>
@@ -99,6 +121,7 @@ export default function PrepCoinsOverview() {
                   ))}
                 </tbody>
               </table>
+              <TablePager {...featureTable.pager} noun="features" className="dark:border-white/5" />
             </div>
           )}
           {data && !features.some((feature) => feature.price) ? <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">No feature has a price yet, so students use everything for free.</p> : null}
@@ -118,7 +141,7 @@ export default function PrepCoinsOverview() {
           ) : <EmptyHint>No account holds coins yet.</EmptyHint>}
         </Glass>
         <Glass className="p-5 xl:col-span-3">
-          <CardHeader title="University wallets" subtitle="Balance · passed on in 30 days" Icon={Building2} action={<CardLink to="/admin/prep-coins/wallets">All</CardLink>} />
+          <CardHeader title="University wallets" subtitle={`Balance · passed on, ${period}`} Icon={Building2} action={<CardLink to="/admin/prep-coins/wallets">All</CardLink>} />
           {showSkeleton ? <SkeletonRows /> : universities.length ? (
             <ul className="space-y-2.5">
               {universities.slice(0, 6).map((university) => (

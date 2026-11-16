@@ -40,8 +40,11 @@ test('large remote lists render only the requested page and expose pagination', 
   const events = Array.from({ length: 25 }, (_, index) => ({ _id: `round${index}`, name: `Interview ${index}`, status: 'published', participantCount: 10, selectedCount: 20 }));
   const markup = renderToStaticMarkup(h(Browser, { events, remote: true, search: '', view: 'all', pagination: { total: 5000, pages: 200, page: 2, limit: 25 }, onSearchChange() {}, onViewChange() {}, onSelect() {}, onPageChange() {}, onPageSizeChange() {} }));
   assert.equal((markup.match(/role="listitem"/g) || []).length, 25);
-  assert.ok(markup.includes('26–50 of 5000 interviews'));
-  assert.ok(markup.includes('Interviews per page'));
+  // Shared TablePager: "Showing 26–50 of 5,000 interviews", rows-per-page select, First/Last jumps.
+  assert.match(markup, /26–50<\/strong> of <strong[^>]*>5,000<\/strong> interviews/);
+  assert.ok(markup.includes('Rows per page'));
+  assert.ok(markup.includes('aria-label="First page"') && markup.includes('aria-label="Last page"'));
+  assert.ok(markup.includes('aria-label="Page 200"'), 'Last page number is reachable from the pager');
   assert.ok(markup.includes('Actions for Interview 0'));
 });
 

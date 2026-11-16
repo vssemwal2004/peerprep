@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, CircleCheck, Layers, PlayCircle, RefreshCw, Search, Sparkles, Zap } from 'lucide-react';
 import QuestCard from './QuestCard';
 import { QUEST_CATEGORIES, questCategory, questPercent, questState, questTheme } from './questTheme';
+import { questWindowStatus, sortByWindow, windowNote } from './questWindow';
 
 const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2';
 
@@ -16,6 +17,7 @@ function ActiveQuest({ quest }) {
       <Link to={`/student/quickprep/${quest.slug}`} className={`rounded text-[15px] font-semibold text-slate-950 hover:text-sky-700 dark:text-zinc-50 dark:hover:text-sky-300 ${focusRing}`}>{quest.title}</Link>
       <p className="mt-0.5 truncate text-[12.5px] text-slate-500 dark:text-zinc-400">
         {quest.lastProblem ? <>Last opened: <span className="font-medium text-slate-700 dark:text-zinc-200">{quest.lastProblem.title}</span></> : 'Started, no question opened yet'}
+        {windowNote(quest) && <span className="text-amber-700 dark:text-amber-300"> · {windowNote(quest)}</span>}
       </p>
       <div className="mt-2 flex items-center gap-3">
         <span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]" role="progressbar" aria-label={`${quest.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
@@ -34,15 +36,17 @@ function ActiveQuest({ quest }) {
 export default function QuestsSection({ quests, loading, error, onRetry }) {
   const [category, setCategory] = useState('all');
   const [search, setSearch] = useState('');
-  const active = quests.filter((quest) => questState(quest) === 'active')
+  // Only sheets inside their start–end time can be continued; ended ones are view-only.
+  const active = quests.filter((quest) => questState(quest) === 'active' && questWindowStatus(quest) === 'open')
     .sort((a, b) => new Date(b.lastViewedAt || b.startedAt || 0) - new Date(a.lastViewedAt || a.startedAt || 0));
   const used = new Set(quests.map((quest) => quest.category));
   const filters = QUEST_CATEGORIES.filter((entry) => used.has(entry.value));
   const term = search.trim().toLowerCase();
-  const visible = quests.filter((quest) => (category === 'all' || quest.category === category)
-    && (!term || [quest.title, quest.description, ...(quest.companies || []), ...(quest.topics || [])].some((value) => String(value || '').toLowerCase().includes(term))));
+  // Open sheets first, then upcoming, then ended.
+  const visible = sortByWindow(quests.filter((quest) => (category === 'all' || quest.category === category)
+    && (!term || [quest.title, quest.description, ...(quest.companies || []), ...(quest.topics || [])].some((value) => String(value || '').toLowerCase().includes(term)))));
   const completed = quests.filter((quest) => questState(quest) === 'completed').length;
-  const xpLeft = quests.filter((quest) => !quest.completedAt).reduce((sum, quest) => sum + (quest.rewardXp || 0), 0);
+  const xpLeft = quests.filter((quest) => !quest.completedAt && questWindowStatus(quest) !== 'ended').reduce((sum, quest) => sum + (quest.rewardXp || 0), 0);
 
   return <section aria-labelledby="quests-title" className="quests-section mt-8">
     <header className="flex flex-wrap items-end justify-between gap-3">
@@ -87,7 +91,7 @@ export default function QuestsSection({ quests, loading, error, onRetry }) {
         </div>
         {!visible.length ? <p className="mt-4 rounded-2xl border border-dashed border-slate-300 px-6 py-10 text-center text-[13px] text-slate-500 dark:border-white/10 dark:text-zinc-400">No QuickPrep matches. <button type="button" onClick={() => { setSearch(''); setCategory('all'); }} className="font-semibold text-sky-700 underline dark:text-sky-300">Show all</button></p>
           : <ul className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{visible.map((quest) => <li key={quest.id} className="flex"><div className="flex w-full flex-col [&>a]:flex-1"><QuestCard quest={quest} /></div></li>)}</ul>}
-        <p className="mt-3 flex items-center gap-1 text-[12px] text-slate-400"><ArrowRight className="h-3 w-3" aria-hidden="true" />Questions you already solved count the moment you start a QuickPrep.</p>
+        <p className="mt-3 flex items-center gap-1 text-[12px] text-slate-400"><ArrowRight className="h-3 w-3" aria-hidden="true" />Questions you already solved count the moment you start a QuickPrep. A QuickPrep with a start and end time counts only solves made between them.</p>
       </>}
   </section>;
 }

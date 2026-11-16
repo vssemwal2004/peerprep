@@ -119,6 +119,18 @@ const questSchema = new Schema({
   semesters: { type: [Number], default: [] },
   status: { type: String, enum: ['draft', 'published', 'archived'], default: 'draft' },
   publishedAt: { type: Date, default: null },
+  // Optional attempt window. Without one the sheet is always open. Students cannot start a sheet outside
+  // it, and only solves made inside it count toward the sheet's progress, completion, XP and badge.
+  startsAt: { type: Date, default: null },
+  endsAt: {
+    type: Date,
+    default: null,
+    validate: {
+      // Document saves only (query updates validate in questService): the end must follow the start.
+      validator(value) { return !value || !(this?.startsAt instanceof Date) || value > this.startsAt; },
+      message: 'The end time must be after the start time.',
+    },
+  },
   createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
   updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });

@@ -21,7 +21,7 @@ export const FACT_LIMITS = Object.freeze({ maxCohort: 50000, maxQueryMs: 30000, 
 
 export async function loadCohort(user) {
   const students = await User.find(authorizedStudentBaseFilter(user))
-    .select('_id name email studentId semester group branch course college teacherIds uploadBatchIds isActive')
+    .select('_id name email studentId semester group section branch course college teacherIds uploadBatchIds isActive')
     .sort({ name: 1, _id: 1 })
     .limit(FACT_LIMITS.maxCohort + 1)
     .lean();

@@ -77,7 +77,7 @@ export function ComingUpCard({ items, loading, error, onRetry, canAssessments, c
       </ul>
         : !error && <p className="mt-2.5 text-[13px] text-slate-500 dark:text-zinc-400">Nothing scheduled yet</p>}
     {(canAssessments || canEvents || canInterviews) && <div className="mt-3 flex gap-2">
-      {canAssessments && <Link to="/student/assessments" className={`group ${railChip} ${focusRing}`}>Assessments<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
+      {canAssessments && <Link to="/student/assessments" className={`group ${railChip} ${focusRing}`}>Prep Assessment<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
       {canEvents && <Link to="/student/interview" className={`group ${railChip} ${focusRing}`}>Interviews<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
       {canInterviews && <Link to="/student/ai-interviews" className={`group ${railChip} ${focusRing}`}>AI interviews<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
     </div>}

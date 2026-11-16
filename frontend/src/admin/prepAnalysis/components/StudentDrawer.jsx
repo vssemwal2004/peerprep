@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { SortHeader, TablePager, useClientTable } from "../../../components/table";
 import { AlertCircle, AlertTriangle, CheckCircle2, FileSpreadsheet, FileText, Flag, Lightbulb, Loader2, UserRound } from "lucide-react";
 import { useAnalysisApi } from "../analysisScope";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
 import { DIFFICULTY_COLORS, OUTCOME_COLORS } from "../charts/chartTheme";
-import { RANGE_PRESETS } from "../filterModel";
+import { normalizeDateRange, rangeLabel } from "../../../components/dateRange/dateRangeModel";
 import { lastSeenText, studentHighlights } from "../studentInsights";
 import { ChartBody } from "./ChartCard";
 import { formatScore } from "../../../student/prepScore/formatScore";
@@ -219,10 +220,28 @@ const REASON_TEXT = { fast: "Very fast", pasted: "Mostly pasted" };
  * the student actively worked and how much was pasted from outside the editor. "Needs review" is
  * judged on the first accepted solve of a question only, and is a prompt to look, not a verdict.
  */
+const submissionValue = (row, key) => {
+  switch (key) {
+    case "result": return (VERDICTS[row.status] || [row.status])[0];
+    case "ownWork": return row.reasons.length ? row.reasons.map((reason) => REASON_TEXT[reason]).join(" · ") : row.firstSolve ? "OK" : null;
+    default: return row[key];
+  }
+};
+const SUBMISSION_COLUMNS = [
+  { key: "submittedAt", label: "Submitted" },
+  { key: "title", label: "Question" },
+  { key: "result", label: "Result" },
+  { key: "startedAt", label: "Started", title: "When the question was opened in that visit" },
+  { key: "activeMs", label: "Time taken", align: "right", title: "Active time (tab in use) · total time open" },
+  { key: "pastedShare", label: "Pasted", align: "right", title: "Share of the submitted code pasted from outside the editor" },
+  { key: "ownWork", label: "Own work" },
+];
+
 function SubmissionHistorySection({ submissions }) {
   const [onlyReview, setOnlyReview] = useState(false);
   const flagged = submissions.filter((row) => row.reasons.length).length;
-  const shown = onlyReview ? submissions.filter((row) => row.reasons.length) : submissions;
+  const shown = useMemo(() => (onlyReview ? submissions.filter((row) => row.reasons.length) : submissions), [onlyReview, submissions]);
+  const table = useClientTable(shown, { getValue: submissionValue, resetKey: onlyReview });
   return (
     <Section
       section="coding"
@@ -235,21 +254,18 @@ function SubmissionHistorySection({ submissions }) {
       ) : <span className="text-[11px] text-slate-500">Latest {submissions.length}</span>}
     >
       {submissions.length === 0 ? <p className="text-[12px] text-slate-500">No practice submissions in this period.</p> : (
-        <div className="max-h-[360px] overflow-auto rounded-lg border border-slate-100 dark:border-gray-800">
-          <table className="w-full min-w-[640px] text-left text-[11.5px]">
-            <thead className="sticky top-0 bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500 dark:bg-gray-800 dark:text-gray-400">
+        <div className="overflow-hidden rounded-lg border border-slate-100 dark:border-gray-800">
+        <div className="max-h-[360px] overflow-auto">
+          <table className="w-full min-w-[640px] text-left text-[11.5px]" style={{ "--serial-start": (table.page - 1) * table.pageSize }}>
+            <thead className="sticky top-0 bg-slate-50 dark:bg-gray-800">
               <tr>
-                <th className="px-2.5 py-2 font-semibold">Submitted</th>
-                <th className="px-2.5 py-2 font-semibold">Question</th>
-                <th className="px-2.5 py-2 font-semibold">Result</th>
-                <th className="px-2.5 py-2 font-semibold" title="When the question was opened in that visit">Started</th>
-                <th className="px-2.5 py-2 text-right font-semibold" title="Active time (tab in use) · total time open">Time taken</th>
-                <th className="px-2.5 py-2 text-right font-semibold" title="Share of the submitted code pasted from outside the editor">Pasted</th>
-                <th className="px-2.5 py-2 font-semibold">Own work</th>
+                {SUBMISSION_COLUMNS.map((column) => (
+                  <SortHeader key={column.key} sortKey={column.key} sort={table.sort} onSort={table.toggleSort} align={column.align} title={column.title} className="whitespace-nowrap">{column.label}</SortHeader>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-              {shown.map((row, index) => {
+              {table.pageRows.map((row, index) => {
                 const [verdict, tone] = VERDICTS[row.status] || [row.status, "text-slate-600"];
                 return (
                   <tr key={`${row.submittedAt}-${index}`} className={row.reasons.length ? "bg-amber-50/60 dark:bg-amber-500/[0.06]" : ""}>
@@ -274,6 +290,8 @@ function SubmissionHistorySection({ submissions }) {
               })}
             </tbody>
           </table>
+        </div>
+        <TablePager {...table.pager} noun="submissions" className="dark:border-gray-800" />
         </div>
       )}
       <p className="mt-2 text-[10.5px] text-slate-400">Flags mark first solves that were very fast for their difficulty or mostly pasted. They are a reason to look, not proof of copying.</p>
@@ -405,21 +423,23 @@ function ReportDownload({ studentId, range }) {
 export default function StudentDrawer({ studentId, range = "all", onClose }) {
   const api = useAnalysisApi();
   const [state, setState] = useState({ loading: true, error: null, profile: null });
+  const rangeKey = JSON.stringify(typeof range === "string" ? { preset: range } : range || { preset: "all" });
   useEffect(() => {
     if (!studentId) return undefined;
     const controller = new AbortController();
     setState({ loading: true, error: null, profile: null });
-    api.student(studentId, range, controller.signal)
+    api.student(studentId, JSON.parse(rangeKey), controller.signal)
       .then((profile) => setState({ loading: false, error: null, profile }))
       .catch((error) => { if (error.name !== "AbortError") setState({ loading: false, error, profile: null }); });
     return () => controller.abort();
-  }, [api, range, studentId]);
+    // The period travels as text, so a new but equal range object never refetches.
+  }, [api, rangeKey, studentId]);
   if (!studentId) return null;
   const { profile, loading, error } = state;
   const student = profile?.student;
-  const period = RANGE_PRESETS.find((preset) => preset.value === range)?.label || "All time";
+  const period = rangeLabel(range);
   const highlights = studentHighlights(profile);
-  const classLine = student ? [student.semester ? `Semester ${student.semester}` : "", student.branch, student.course, student.group, student.college].filter(Boolean).join(" · ") : "";
+  const classLine = student ? [student.semester ? `Semester ${student.semester}` : "", student.branch, student.course, student.section ? `Section ${student.section}` : "", student.group, student.college].filter(Boolean).join(" · ") : "";
   return (
     <Drawer open onClose={onClose} width="max-w-[780px]" title={student?.name || "Student"} subtitle={student ? `${student.studentId || student.email} · ${period}` : period}>
       {loading && <div className="flex h-60 items-center justify-center text-[12px] text-slate-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading this student…</div>}
@@ -472,7 +492,7 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
           {profile.learning && <LearningSection learning={profile.learning} />}
           {profile.interview && <InterviewSection interview={profile.interview} />}
           {profile.assessment && <AssessmentSection assessment={profile.assessment} />}
-          <p className="text-center text-[10.5px] text-slate-400">Only this student's own work in {period.toLowerCase()} is shown. Students are never compared with each other here.</p>
+          <p className="text-center text-[10.5px] text-slate-400">Only this student's own work in {normalizeDateRange(range).preset === "custom" ? period : period.toLowerCase()} is shown. Students are never compared with each other here.</p>
         </div>
       )}
     </Drawer>

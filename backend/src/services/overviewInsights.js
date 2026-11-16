@@ -16,6 +16,7 @@ import { PrepScoreState, StudentPrepScore } from '../models/StudentPrepScore.js'
 import { isUniversity } from '../platform/deployment.js';
 import { universityPolicy } from '../platform/client.js';
 import { hasCoordinatorPermission } from './coordinatorPermissions.js';
+import { parseDateRange, parseDayKey, rangeDayKeys, rangeEcho } from '../utils/dateRange.js';
 
 // Dashboard numbers for admins and coordinators. Every figure is counted in the database for the
 // viewer's own scope: the university's licensed modules, the coordinator's permissions and, for
@@ -39,6 +40,33 @@ export function trendDays(now = new Date(), days = TREND_DAYS) {
   const today = startOfDay(now.getTime());
   return Array.from({ length: days }, (_, index) => dayKey(new Date(today.getTime() - (days - 1 - index) * DAY_MS)));
 }
+
+/**
+ * The dashboard period from the query string (?range=30d or ?range=custom&from&to, Indian calendar
+ * days). Without one it is the last 14 days, as before. "All time" is not offered: a daily trend
+ * needs a first day.
+ */
+export function overviewRange(query = {}, now = new Date()) {
+  return parseDateRange(query, {
+    defaultPreset: '14d', aliases: { '14d': TREND_DAYS }, presets: ['7d', '30d', '90d', '180d', '365d'], offsetMinutes: 330, now,
+  });
+}
+
+/**
+ * The days and bounds a period covers. `start`/`end` bound the period's totals (end null = now);
+ * `fetchStart` also reaches back to yesterday so "Today at a glance" works whatever the period.
+ */
+export function overviewWindow(range, now = new Date()) {
+  const time = now.getTime();
+  const days = rangeDayKeys(range, { offsetMinutes: 330, now, fallbackDays: TREND_DAYS });
+  const start = days.length ? parseDayKey(days[0], 330) : (range?.from || startOfDay(time));
+  const end = range?.to && range.to < now ? range.to : null;
+  const yesterday = startOfDay(time - DAY_MS);
+  return { days, start, end, fetchStart: start < yesterday ? start : yesterday, glanceDays: trendDays(now, 2) };
+}
+
+const periodOf = (window) => ({ $gte: window.start, ...(window.end ? { $lte: window.end } : {}) });
+const sumDaysOf = (map, days) => days.reduce((total, day) => total + (map?.get(day) || 0), 0);
 
 async function dailyCounts(Model, match, field) {
   const rows = await Model.aggregate([
@@ -88,12 +116,16 @@ export async function overviewAccess(user) {
   };
 }
 
-export async function buildOverview(user, now = new Date()) {
+export async function buildOverview(user, now = new Date(), range = overviewRange({}, now)) {
   const access = await overviewAccess(user);
   const { safe, failed } = collector();
   const time = now.getTime();
-  const days = trendDays(now);
-  const trendStart = startOfDay(time - (TREND_DAYS - 1) * DAY_MS);
+  // Period figures (trend, submissions, scores, feedback…) follow the chosen range; "active this
+  // week", "joined in 30 days" and live counts are fixed windows by meaning.
+  const window = overviewWindow(range, now);
+  const { days } = window;
+  const period = periodOf(window);
+  const fetched = { $gte: window.fetchStart };
   const todayStart = startOfDay(time);
   const weekStart = new Date(time - 7 * DAY_MS);
   const monthStart = new Date(time - 30 * DAY_MS);
@@ -106,7 +138,7 @@ export async function buildOverview(user, now = new Date()) {
   const countStudents = (ids) => (ids.length
     ? User.countDocuments({ ...studentFilter, _id: { $in: ids } }).maxTimeMS(QUERY_MS) : 0);
 
-  const result = { generatedAt: now.toISOString(), role: user.role, ownScope: access.ownScope, access, days };
+  const result = { generatedAt: now.toISOString(), role: user.role, ownScope: access.ownScope, access, days, range: rangeEcho(range, 330) };
   const series = {};
   const pending = {};
 
@@ -139,7 +171,7 @@ export async function buildOverview(user, now = new Date()) {
       User.countDocuments({ ...studentFilter, mustChangePassword: true }).maxTimeMS(QUERY_MS),
       User.countDocuments({ ...studentFilter, credentialEmailStatus: 'failed' }).maxTimeMS(QUERY_MS),
       access.coordinators ? User.countDocuments({ role: 'coordinator' }).maxTimeMS(QUERY_MS) : null,
-      dailyCounts(StudentActivity, { activityType: 'LOGIN', date: { $gte: trendStart }, ...byStudent('studentId') }, 'date'),
+      dailyCounts(StudentActivity, { activityType: 'LOGIN', date: fetched, ...byStudent('studentId') }, 'date'),
     ]);
     series.logins = logins;
     if (access.students) {
@@ -151,18 +183,18 @@ export async function buildOverview(user, now = new Date()) {
 
   if (access.coding) {
     result.coding = await safe('coding', async () => {
-      const match = { mode: 'submit', assessmentId: null, createdAt: { $gte: trendStart }, ...byStudent('user') };
+      const match = { mode: 'submit', assessmentId: null, ...byStudent('user') };
       const [problems, difficulty, submits, practice, coders] = await Promise.all([
         Problem.countDocuments(PUBLIC_PROBLEMS).maxTimeMS(QUERY_MS),
         Submission.aggregate([
-          { $match: match },
+          { $match: { ...match, createdAt: period } },
           { $group: { _id: { $toLower: { $ifNull: ['$problemSnapshot.difficulty', 'medium'] } }, attempts: { $sum: 1 }, accepted: { $sum: { $cond: [{ $eq: ['$status', 'AC'] }, 1, 0] } } } },
         ]).option({ maxTimeMS: QUERY_MS }),
-        dailyCounts(Submission, match, 'createdAt'),
-        dailyCounts(QuestionPracticeAttempt, { createdAt: { $gte: trendStart }, ...byStudent('studentId') }, 'createdAt'),
+        dailyCounts(Submission, { ...match, createdAt: fetched }, 'createdAt'),
+        dailyCounts(QuestionPracticeAttempt, { createdAt: fetched, ...byStudent('studentId') }, 'createdAt'),
         Submission.distinct('user', { mode: 'submit', createdAt: activityWindow, ...byStudent('user') }).maxTimeMS(QUERY_MS),
       ]);
-      series.coding = new Map(days.map((day) => [day, (submits.get(day) || 0) + (practice.get(day) || 0)]));
+      series.coding = new Map([...new Set([...submits.keys(), ...practice.keys()])].map((day) => [day, (submits.get(day) || 0) + (practice.get(day) || 0)]));
       const attempts = difficulty.reduce((sum, row) => sum + row.attempts, 0);
       const accepted = difficulty.reduce((sum, row) => sum + row.accepted, 0);
       const level = (name) => difficulty.find((row) => row._id === name) || { attempts: 0, accepted: 0 };
@@ -189,13 +221,13 @@ export async function buildOverview(user, now = new Date()) {
         Assessment.countDocuments({ ...published, startTime: { $gt: now } }).maxTimeMS(QUERY_MS),
         Assessment.countDocuments({ ...published, endTime: { $gte: now, $lte: new Date(time + DAY_MS) } }).maxTimeMS(QUERY_MS),
         AssessmentSubmission.countDocuments({ ...submissionScope, status: 'in_progress' }).maxTimeMS(QUERY_MS),
-        AssessmentSubmission.countDocuments({ ...submissionScope, updatedAt: { $gte: trendStart }, $or: [{ status: 'violation' }, { violationScore: { $gt: 0 } }] }).maxTimeMS(QUERY_MS),
+        AssessmentSubmission.countDocuments({ ...submissionScope, updatedAt: period, $or: [{ status: 'violation' }, { violationScore: { $gt: 0 } }] }).maxTimeMS(QUERY_MS),
         AssessmentSubmission.aggregate([
-          { $match: { ...submissionScope, status: 'submitted', submittedAt: { $gte: trendStart }, maxMarks: { $gt: 0 } } },
+          { $match: { ...submissionScope, status: 'submitted', submittedAt: period, maxMarks: { $gt: 0 } } },
           { $project: { pct: { $min: [100, { $max: [0, { $multiply: [{ $divide: [{ $ifNull: ['$score', 0] }, '$maxMarks'] }, 100] }] }] } } },
           { $bucket: { groupBy: '$pct', boundaries: SCORE_BOUNDARIES, default: 'other', output: { n: { $sum: 1 }, total: { $sum: '$pct' } } } },
         ]).option({ maxTimeMS: QUERY_MS }),
-        dailyCounts(AssessmentSubmission, { ...submissionScope, status: 'submitted', submittedAt: { $gte: trendStart } }, 'submittedAt'),
+        dailyCounts(AssessmentSubmission, { ...submissionScope, status: 'submitted', submittedAt: fetched }, 'submittedAt'),
       ]);
       series.assessments = submitted;
       // $bucket omits empty buckets, so match each band by its lower boundary.
@@ -207,7 +239,7 @@ export async function buildOverview(user, now = new Date()) {
       pending.flaggedAttempts = flagged;
       return {
         published: publishedCount, drafts, live, upcoming, inProgress, flagged,
-        submissions: [...submitted.values()].reduce((sum, n) => sum + n, 0),
+        submissions: sumDaysOf(submitted, days),
         averageScore: graded ? round(totalPct / graded) : null,
         scoreBands: bands,
       };
@@ -225,10 +257,10 @@ export async function buildOverview(user, now = new Date()) {
         Event.countDocuments({ ...active, startDate: { $gt: now, $lte: new Date(time + 2 * DAY_MS) } }).maxTimeMS(QUERY_MS),
         Pair.aggregate([{ $match: pairScope }, { $group: { _id: '$status', n: { $sum: 1 } } }]).option({ maxTimeMS: QUERY_MS }),
         Feedback.aggregate([
-          { $match: { ...pairScope, createdAt: { $gte: trendStart }, ...byStudent('to') } },
+          { $match: { ...pairScope, createdAt: period, ...byStudent('to') } },
           { $group: { _id: null, n: { $sum: 1 }, avg: { $avg: '$marks' } } },
         ]).option({ maxTimeMS: QUERY_MS }),
-        dailyCounts(Feedback, { ...pairScope, createdAt: { $gte: trendStart }, ...byStudent('to') }, 'createdAt'),
+        dailyCounts(Feedback, { ...pairScope, createdAt: fetched, ...byStudent('to') }, 'createdAt'),
       ]);
       series.interviews = feedbackTrend;
       const pairCount = Object.fromEntries(pairs.map((row) => [row._id, row.n]));
@@ -245,33 +277,36 @@ export async function buildOverview(user, now = new Date()) {
 
   if (access.aiInterviews) {
     result.aiInterviews = await safe('aiInterviews', async () => {
-      const completed = await dailyCounts(InterviewEngagementReceipt, { completedAt: { $gte: trendStart }, ...byStudent('studentId') }, 'completedAt');
+      const completed = await dailyCounts(InterviewEngagementReceipt, { completedAt: fetched, ...byStudent('studentId') }, 'completedAt');
       series.aiInterviews = completed;
-      return { completed: [...completed.values()].reduce((sum, n) => sum + n, 0) };
+      return { completed: sumDaysOf(completed, days) };
     }, null);
   }
 
   if (access.learning) {
     result.learning = await safe('learning', async () => {
       const [completed, learners] = await Promise.all([
-        dailyCounts(Progress, { completed: true, completedAt: { $gte: trendStart }, ...byStudent('studentId') }, 'completedAt'),
+        dailyCounts(Progress, { completed: true, completedAt: fetched, ...byStudent('studentId') }, 'completedAt'),
         Progress.distinct('studentId', { lastAccessedAt: activityWindow, ...byStudent('studentId') }).maxTimeMS(QUERY_MS),
       ]);
       series.learning = completed;
-      return { topicsCompleted: [...completed.values()].reduce((sum, n) => sum + n, 0), activeLearners: await countStudents(learners) };
+      return { topicsCompleted: sumDaysOf(completed, days), activeLearners: await countStudents(learners) };
     }, null);
   }
 
   result.prepScore = await safe('prepScore', () => prepScoreSummary(byStudent('studentId'), access.students), null);
 
-  result.trend = days.map((day) => ({
+  const dayRow = (day) => ({
     date: day,
     coding: series.coding?.get(day) || 0,
     assessments: series.assessments?.get(day) || 0,
     interviews: (series.interviews?.get(day) || 0) + (series.aiInterviews?.get(day) || 0),
     learning: series.learning?.get(day) || 0,
     logins: series.logins?.get(day) || 0,
-  }));
+  });
+  result.trend = days.map(dayRow);
+  // [yesterday, today] whatever the period, for "Today at a glance".
+  result.glance = window.glanceDays.map(dayRow);
 
   result.upcoming = await safe('upcoming', () => upcomingItems(access, assessmentScope, eventScope, now), []);
   result.recent = access.activity
@@ -342,11 +377,12 @@ async function recentActivity(filter) {
 }
 
 // Light per-university snapshot for the Master Admin overview. Runs inside one tenant's context.
-export async function universitySnapshot(now = new Date()) {
+export async function universitySnapshot(now = new Date(), range = overviewRange({}, now)) {
   const time = now.getTime();
-  const trendStart = startOfDay(time - (TREND_DAYS - 1) * DAY_MS);
+  const window = overviewWindow(range, now);
+  const trendStart = window.fetchStart;
   const weekStart = new Date(time - 7 * DAY_MS);
-  const days = trendDays(now);
+  const { days } = window;
   const [students, coordinators, newStudents, active, activity, prep] = await Promise.all([
     User.countDocuments({ role: 'student' }).maxTimeMS(QUERY_MS),
     User.countDocuments({ role: 'coordinator' }).maxTimeMS(QUERY_MS),
@@ -373,5 +409,6 @@ export async function universitySnapshot(now = new Date()) {
     students, coordinators, newStudents, activeWeek: active,
     prepScoreAverage: prep?.average ?? null,
     trend: days.map((date) => ({ date, coding: coding.get(date) || 0, assessments: assessments.get(date) || 0, learning: learning.get(date) || 0, interviews: interviews.get(date) || 0 })),
+    glance: window.glanceDays.map((date) => ({ date, coding: coding.get(date) || 0, assessments: assessments.get(date) || 0, learning: learning.get(date) || 0, interviews: interviews.get(date) || 0 })),
   };
 }

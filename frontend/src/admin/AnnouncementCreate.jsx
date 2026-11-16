@@ -25,7 +25,8 @@ export default function AnnouncementCreate() {
     type: 'motivation',
     status: 'inactive',
     priority: 'normal',
-    expiryDate: ''
+    expiryDate: '',
+    showAsPopup: false
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -50,10 +51,11 @@ export default function AnnouncementCreate() {
         type: form.type,
         status: statusOverride || form.status,
         priority: form.priority,
-        expiryDate: form.expiryDate || null
+        expiryDate: form.expiryDate || null,
+        showAsPopup: form.showAsPopup
       });
       setSuccess(statusOverride === 'active' ? 'Announcement published.' : 'Announcement saved.');
-      setForm((prev) => ({ ...prev, title: '', message: '' }));
+      setForm((prev) => ({ ...prev, title: '', message: '', showAsPopup: false }));
     } catch (err) {
       setError(err?.message || 'Failed to save announcement');
     } finally {
@@ -155,6 +157,19 @@ export default function AnnouncementCreate() {
                 />
               </div>
             </div>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/60">
+              <input
+                type="checkbox"
+                checked={form.showAsPopup}
+                onChange={(e) => updateField('showAsPopup', e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-slate-800 dark:text-white">Show as popup when students log in</span>
+                <span className="block text-xs text-slate-500 dark:text-slate-400">Students see it once after each login while it is active.</span>
+              </span>
+            </label>
 
             <div className="flex flex-wrap items-center gap-3 pt-2">
               <button

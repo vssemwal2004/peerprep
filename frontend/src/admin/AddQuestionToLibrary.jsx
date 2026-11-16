@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Save, Code2, ArrowLeft, ArrowDown, ArrowUp, Copy, Download, Upload, FileSpreadsheet, MoreVertical, Pencil, Plus, BookOpenText, ListChecks, AlignLeft, CircleDot, Eye, Search, Trash2, CheckCircle2, ChevronLeft, ChevronRight, FileText, SlidersHorizontal, X } from 'lucide-react';
 import QuestionBuilder, { QuestionImageUploader, RequiredLabel } from './assessment/components/QuestionBuilder';
@@ -8,6 +8,12 @@ import AuthoringStepper from './library/AuthoringStepper';
 import { downloadQuestionCsvTemplate, downloadQuestionImportErrorCsv } from './library/questionImportTemplates';
 import { queueQuestionSelection } from './assessment/assessmentProblemSelectionStore';
 import { createAssessmentOnlyQuestionSelections } from './assessment/assessmentQuestionRetention';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
+
+const importReviewValue = (row, key) => ({
+  row: Number(row.rowNumber), status: row.status === 'valid' ? 'Ready' : 'Error', question: row.questionText === '—' ? '' : row.questionText,
+  options: row.optionCount, answer: row.answer, result: row.message,
+}[key]);
 
 const QUESTION_TYPES = [
   { value: 'mcq', label: 'MCQ', description: 'Single, multiple or passage based', Icon: ListChecks },
@@ -906,7 +912,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
       || question.passage?.title?.toLowerCase().includes(normalizedNavigatorSearch)
       || question.passage?.text?.toLowerCase().includes(normalizedNavigatorSearch)
       || String(index + 1) === normalizedNavigatorSearch);
-  const importReviewRows = importPreview
+  const importReviewRows = useMemo(() => (importPreview
     ? [
       ...(importPreview.rows || []).map((row) => ({
         rowNumber: row.__importRow,
@@ -925,7 +931,9 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
         message: error.message,
       })),
     ].sort((left, right) => Number(left.rowNumber) - Number(right.rowNumber))
-    : [];
+    : []), [importPreview, type]);
+  // Read-only import review: sortable headers (e.g. Status to gather errors) and the shared pager.
+  const importTable = useClientTable(importReviewRows, { getValue: importReviewValue, resetKey: importPreview });
   const selectedQuestionType = QUESTION_TYPES.find((questionType) => questionType.value === type) || QUESTION_TYPES[0];
   const editorTopRef = useRef(null);
   const contentComplete = questions.every((question) => question.questionText?.trim()
@@ -1159,10 +1167,17 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
               <div className="max-h-80 overflow-auto border-y border-slate-100 dark:border-gray-800">
                 <table className="min-w-full text-left text-xs">
                   <thead className="sticky top-0 z-10 bg-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:bg-gray-800 dark:text-gray-400">
-                    <tr><th className="w-16 px-4 py-2.5">Row</th><th className="w-24 px-3 py-2.5">Status</th><th className="min-w-64 px-3 py-2.5">Question</th>{type === 'mcq' && <th className="w-20 px-3 py-2.5">Options</th>}<th className="w-28 px-3 py-2.5">Answer</th><th className="min-w-56 px-3 py-2.5">Check result</th></tr>
+                    <tr>
+                      <SortHeader sortKey="row" sort={importTable.sort} onSort={importTable.toggleSort} className="w-16">Row</SortHeader>
+                      <SortHeader sortKey="status" sort={importTable.sort} onSort={importTable.toggleSort} className="w-24">Status</SortHeader>
+                      <SortHeader sortKey="question" sort={importTable.sort} onSort={importTable.toggleSort} className="min-w-64">Question</SortHeader>
+                      {type === 'mcq' && <SortHeader sortKey="options" sort={importTable.sort} onSort={importTable.toggleSort} className="w-20">Options</SortHeader>}
+                      <SortHeader sortKey="answer" sort={importTable.sort} onSort={importTable.toggleSort} className="w-28">Answer</SortHeader>
+                      <SortHeader sortKey="result" sort={importTable.sort} onSort={importTable.toggleSort} className="min-w-56">Check result</SortHeader>
+                    </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-                    {importReviewRows.slice(0, 100).map((row) => (
+                    {importTable.pageRows.map((row) => (
                       <tr key={`${row.rowNumber}-${row.status}`} className={row.status === 'error' ? 'bg-rose-50/50 dark:bg-rose-950/10' : 'hover:bg-slate-50 dark:hover:bg-gray-800/40'}>
                         <td className="px-4 py-3 font-mono text-[11px] text-slate-500">{row.rowNumber}</td>
                         <td className="px-3 py-3"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${row.status === 'valid' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'}`}>{row.status === 'valid' ? <CheckCircle2 className="h-3 w-3" /> : <X className="h-3 w-3" />}{row.status === 'valid' ? 'Ready' : 'Error'}</span></td>
@@ -1175,7 +1190,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
                   </tbody>
                 </table>
               </div>
-              {importReviewRows.length > 100 && <div className="border-b border-slate-100 px-5 py-2 text-[10px] text-slate-500 dark:border-gray-800 dark:text-gray-400">Showing the first 100 of {importReviewRows.length} rows. All valid rows will be imported.</div>}
+              <TablePager {...importTable.pager} noun="rows" className="border-b border-slate-100 dark:border-gray-800" />
 
               <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
                 <p className="text-[11px] text-slate-500 dark:text-gray-400">{importPreview.errors.length ? 'Download the error sheet, correct those rows, then upload it again.' : 'All rows are ready. Confirm to add them to the question list.'}</p>

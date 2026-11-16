@@ -19,6 +19,11 @@ function parseExpiryDate(value) {
   return expiry;
 }
 
+/** The "show as popup at login" switch from a form or JSON body. */
+export function parseShowAsPopup(value) {
+  return value === true || value === 'true' || value === 1 || value === '1' || value === 'on';
+}
+
 function emitAnnouncementUpdate() {
   const io = getIo();
   if (io) {
@@ -27,7 +32,7 @@ function emitAnnouncementUpdate() {
 }
 
 export async function createAnnouncement(req, res) {
-  const { title, message, type, status, priority, expiryDate } = req.body || {};
+  const { title, message, type, status, priority, expiryDate, showAsPopup } = req.body || {};
   if (!title || !message) throw new HttpError(400, 'Title and message are required');
 
   const announcement = await Announcement.create({
@@ -36,6 +41,7 @@ export async function createAnnouncement(req, res) {
     type: type || 'motivation',
     status: status || 'inactive',
     priority: priority || 'normal',
+    showAsPopup: parseShowAsPopup(showAsPopup),
     createdBy: req.user?._id,
     expiryDate: parseExpiryDate(expiryDate)
   });
@@ -52,6 +58,7 @@ export async function createAnnouncement(req, res) {
       status: { from: null, to: announcement.status },
       priority: { from: null, to: announcement.priority },
       type: { from: null, to: announcement.type },
+      showAsPopup: { from: null, to: announcement.showAsPopup },
     },
     metadata: { announcementId: String(announcement._id) },
     req,
@@ -82,7 +89,7 @@ export async function updateAnnouncement(req, res) {
   if (!before) throw new HttpError(404, 'Announcement not found');
 
   const updates = {};
-  const fields = ['title', 'message', 'type', 'status', 'priority', 'expiryDate'];
+  const fields = ['title', 'message', 'type', 'status', 'priority', 'expiryDate', 'showAsPopup'];
   fields.forEach((field) => {
     if (Object.prototype.hasOwnProperty.call(req.body || {}, field)) {
       updates[field] = req.body[field];
@@ -97,6 +104,9 @@ export async function updateAnnouncement(req, res) {
   }
   if (Object.prototype.hasOwnProperty.call(updates, 'expiryDate')) {
     updates.expiryDate = parseExpiryDate(updates.expiryDate) || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'showAsPopup')) {
+    updates.showAsPopup = parseShowAsPopup(updates.showAsPopup);
   }
 
   const announcement = await Announcement.findByIdAndUpdate(id, updates, { new: true });

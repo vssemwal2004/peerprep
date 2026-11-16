@@ -6,6 +6,28 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Users, Loader2, X, Download } from "lucide-react";
 import Fuse from "fuse.js";
 import ContributionCalendar from "../components/ContributionCalendar";
+import { SortHeader, TablePager, useClientTable } from "../components/table";
+
+const SEARCH_STATE_KEY = 'peerprep.coordinatorStudents.search';
+
+const STUDENT_COLUMNS = [
+  { key: 'student', label: 'Student' },
+  { key: 'email', label: 'Email' },
+  { key: 'branch', label: 'Branch' },
+  { key: 'course', label: 'Course' },
+  { key: 'semester', label: 'Semester' },
+  { key: 'section', label: 'Section' },
+  { key: 'group', label: 'Group' },
+  { key: 'college', label: 'College' },
+  { key: 'coordinator', label: 'Coordinator Assigned' },
+];
+/** Sort value per column; with no column sort the list keeps the search-relevance order. */
+const studentSortValue = (student, key) => {
+  if (key === 'student') return student.name;
+  if (key === 'semester') return Number(student.semester) || null;
+  if (key === 'coordinator') return student.teacherId;
+  return student[key];
+};
 
 export default function CoordinatorStudents() {
   const navigate = useNavigate();
@@ -14,8 +36,15 @@ export default function CoordinatorStudents() {
   const uploadBatchName = searchParams.get('batchName') || '';
   const [students, setStudents] = useState([]);
   const [filteredStudents, setFilteredStudents] = useState([]);
-  // `?search=` (e.g. from the overview header) pre-fills the search.
-  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || "");
+  // `?search=` (e.g. from the overview header) pre-fills the search; otherwise the last search in this
+  // browser tab is restored, so Back from a student profile keeps the searched list.
+  const [searchQuery, setSearchQuery] = useState(() => {
+    if (searchParams.has('search')) return searchParams.get('search') || '';
+    try { return sessionStorage.getItem(SEARCH_STATE_KEY) || ''; } catch { return ''; }
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem(SEARCH_STATE_KEY, searchQuery); } catch { /* storage blocked */ }
+  }, [searchQuery]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -73,6 +102,8 @@ export default function CoordinatorStudents() {
       setFilteredStudents(filtered);
     }
   }, [searchQuery, students, fuse]);
+
+  const table = useClientTable(filteredStudents, { getValue: studentSortValue, resetKey: searchQuery.trim() });
 
   const fetchStudents = useCallback(async () => {
     setIsLoading(true);
@@ -221,8 +252,8 @@ export default function CoordinatorStudents() {
       try { const d = await api.getStudentStatsByAdmin(s._id); stats = d.stats; } catch { /* export can continue without optional stats */ }
     }
     const rows = [
-      ['Name','Student ID','Email','Course','Branch','College','Semester','Group','Coordinator','Courses Enrolled','Videos Watched'],
-      [s.name, s.studentId, s.email, s.course, s.branch, s.college, s.semester, s.group, s.teacherId,
+      ['Name','Student ID','Email','Course','Branch','College','Semester','Section','Group','Coordinator','Courses Enrolled','Videos Watched'],
+      [s.name, s.studentId, s.email, s.course, s.branch, s.college, s.semester, s.section, s.group, s.teacherId,
        stats?.totalCoursesEnrolled ?? '', stats?.totalVideosWatched ?? '']
     ];
     downloadCsv(rows, `student_${s.studentId || s._id}_${new Date().toISOString().slice(0,10)}.csv`);
@@ -233,8 +264,8 @@ export default function CoordinatorStudents() {
     setIsDownloadingAll(true);
     try {
       const rows = [
-        ['Name','Student ID','Email','Course','Branch','College','Semester','Group','Coordinator'],
-        ...students.map(s => [s.name, s.studentId, s.email, s.course, s.branch, s.college, s.semester, s.group, s.teacherId])
+        ['Name','Student ID','Email','Course','Branch','College','Semester','Section','Group','Coordinator'],
+        ...students.map(s => [s.name, s.studentId, s.email, s.course, s.branch, s.college, s.semester, s.section, s.group, s.teacherId])
       ];
       downloadCsv(rows, `my_students_${new Date().toISOString().slice(0,10)}.csv`);
     } finally {
@@ -353,22 +384,18 @@ export default function CoordinatorStudents() {
             </div>
           ) : (
             // Students Table
-            <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-gray-700">
-              <table className="min-w-full divide-y divide-slate-200 dark:divide-gray-700">
+            <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 dark:divide-gray-700" style={{ '--serial-start': (table.page - 1) * table.pageSize }}>
                 <thead className="bg-slate-50 dark:bg-gray-700">
                   <tr>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-gray-300">Student</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-gray-300">Email</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-gray-300">Branch</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-gray-300">Course</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-gray-300">Semester</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-gray-300">Group</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-gray-300">College</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-gray-300">Coordinator Assigned</th>
+                    {STUDENT_COLUMNS.map((column) => (
+                      <SortHeader key={column.key} sortKey={column.key} sort={table.sort} onSort={table.toggleSort} className="px-4 py-2 dark:text-gray-300">{column.label}</SortHeader>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-gray-700 bg-white dark:bg-gray-800">
-                  {filteredStudents.map((s) => {
+                  {table.pageRows.map((s) => {
                     const initial = s.name?.charAt(0)?.toUpperCase() || "?";
                     return (
                       <tr key={s._id} className="hover:bg-slate-50 dark:hover:bg-gray-700 cursor-pointer" onClick={() => openStudentProfile(s)}>
@@ -395,6 +422,7 @@ export default function CoordinatorStudents() {
                         <td className="px-4 py-2 text-slate-700 dark:text-gray-300 text-sm">{s.branch || "-"}</td>
                         <td className="px-4 py-2 text-slate-600 dark:text-gray-400 text-sm">{s.course || "-"}</td>
                         <td className="px-4 py-2 text-slate-600 dark:text-gray-400 text-sm">{s.semester || "-"}</td>
+                        <td className="px-4 py-2 text-slate-600 dark:text-gray-400 text-sm">{s.section || "-"}</td>
                         <td className="px-4 py-2 text-slate-600 dark:text-gray-400 text-sm">{s.group || "-"}</td>
                         <td className="px-4 py-2 text-slate-600 dark:text-gray-400 text-sm max-w-[200px]"><span className="truncate block">{s.college || "-"}</span></td>
                         <td className="px-4 py-2 text-slate-700 dark:text-gray-300 text-sm">{s.teacherId || "-"}</td>
@@ -403,6 +431,8 @@ export default function CoordinatorStudents() {
                   })}
                 </tbody>
               </table>
+            </div>
+            <TablePager {...table.pager} noun="students" className="bg-white dark:bg-gray-800" />
             </div>
           )}
         </div>
@@ -471,6 +501,7 @@ export default function CoordinatorStudents() {
                       { label: "Email",               value: selectedStudent.email },
                       { label: "College",             value: selectedStudent.college },
                       { label: "Semester",            value: selectedStudent.semester },
+                      { label: "Section",             value: selectedStudent.section },
                       { label: "Group",               value: selectedStudent.group },
                     ].map(({ label, value }) => (
                       <div key={label} className="bg-slate-50 dark:bg-gray-700/60 rounded-lg px-3 py-2">
@@ -527,7 +558,7 @@ export default function CoordinatorStudents() {
                       <div className="text-center py-4 text-xs text-slate-400">Loading activity...</div>
                     ) : (
                       <ContributionCalendar
-                        activityByDate={activity}
+                        activity={activity}
                         title="Student Activity"
                         year={selectedYear}
                         availableYears={availableYears}

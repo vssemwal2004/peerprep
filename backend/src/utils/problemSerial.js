@@ -127,3 +127,62 @@ export function matchesSerialSearch(question, search) {
   return Number(question.displayOrder) === search.number
     || Number(question.sourceNumber) === search.number;
 }
+
+export const MAX_SEARCH_TERMS = 50;
+const MAX_TERM_LENGTH = 100;
+
+/**
+ * Split a question search into comma-separated terms ("1, 15, lc 42, two sum").
+ * Each term is a number (parseSerialSearch kinds) or text. Duplicates are dropped
+ * case-insensitively and at most MAX_SEARCH_TERMS are kept. `multi` is true only
+ * when two or more terms remain, so single-term searches keep their old path.
+ */
+const NUMBER_KIND_PREFIX = { peerprep: 'pp', leetcode: 'lc' };
+
+/**
+ * The question pickers' "PeerPrep No. / LeetCode No." toggle. A bare number ("2", "#2") in the search
+ * is rewritten to the chosen side ("pp 2" / "lc 2"), so every search path parses it the same way.
+ * Explicit prefixes ("lc 2", "pp 2") and text terms are left alone; any other `numberKind` changes nothing
+ * (a bare number then matches either number, as before).
+ */
+export function applyNumberKind(search, numberKind) {
+  const prefix = NUMBER_KIND_PREFIX[String(numberKind || '').toLowerCase()];
+  const text = typeof search === 'string' ? search : '';
+  if (!prefix || !text) return text;
+  return text.split(',').map((part) => {
+    const match = part.trim().match(/^#?(\d{1,9})$/);
+    return match ? `${prefix} ${match[1]}` : part;
+  }).join(',');
+}
+
+export function parseSearchList(raw) {
+  const seen = new Set();
+  const terms = [];
+  for (const part of String(raw ?? '').split(',')) {
+    const value = part.trim().replace(/\s+/g, ' ').slice(0, MAX_TERM_LENGTH);
+    const key = value.toLowerCase();
+    if (!value || seen.has(key)) continue;
+    seen.add(key);
+    const serial = parseSerialSearch(value);
+    terms.push(serial ? { raw: value, kind: 'serial', serial } : { raw: value, kind: 'text' });
+    if (terms.length >= MAX_SEARCH_TERMS) break;
+  }
+  return { multi: terms.length > 1, terms };
+}
+
+/**
+ * Whether one parsed term matches an in-memory question. Serial terms use
+ * matchesSerialSearch on displayOrder/sourceNumber; text terms are a
+ * case-insensitive substring match on any of `texts` (title, tags, ...).
+ */
+export function matchesSearchTerm(question, term, texts = []) {
+  if (!term) return true;
+  if (term.kind === 'serial') return matchesSerialSearch(question, term.serial);
+  const needle = term.raw.toLowerCase();
+  return texts.some((value) => String(value ?? '').toLowerCase().includes(needle));
+}
+
+/** Index of the first term an item matches (for typed-order sorting), or -1. */
+export function firstMatchingTerm(question, terms, texts = []) {
+  return terms.findIndex((term) => matchesSearchTerm(question, term, texts));
+}

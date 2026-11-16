@@ -2,14 +2,17 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, Check, Sparkles, Zap } from 'lucide-react';
 import useQuests from '../quests/useQuests';
 import { questCategory, questPercent, questState, questTheme } from '../quests/questTheme';
+import { questWindowStatus } from '../quests/questWindow';
 import { card, focusRing, Skeleton, textLink, Unavailable } from './ui';
 
 /** QuickPreps in progress first; otherwise a few to start. Each row lifts and reveals its action on hover. */
 export default function QuestsCard() {
   const { quests, loading, error, reload } = useQuests();
-  const active = quests.filter((quest) => questState(quest) === 'active')
+  // Only sheets inside their start–end time (or without one) can be started or continued.
+  const workable = quests.filter((quest) => questWindowStatus(quest) === 'open');
+  const active = workable.filter((quest) => questState(quest) === 'active')
     .sort((a, b) => new Date(b.lastViewedAt || b.startedAt || 0) - new Date(a.lastViewedAt || a.startedAt || 0));
-  const fresh = quests.filter((quest) => questState(quest) === 'new');
+  const fresh = workable.filter((quest) => questState(quest) === 'new');
   const shown = [...active, ...fresh].slice(0, 3);
   const completed = quests.filter((quest) => questState(quest) === 'completed').length;
 

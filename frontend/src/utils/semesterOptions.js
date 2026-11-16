@@ -60,6 +60,7 @@ export function deriveStudentFacets(students = []) {
     courses: mergeFilterOptions(students.map((student) => student.course)),
     colleges: mergeFilterOptions(students.map((student) => student.college)),
     groups: mergeFilterOptions(students.map((student) => student.group)),
+    sections: mergeFilterOptions(students.map((student) => student.section)),
     coordinators: mergeFilterOptions(students.flatMap((student) => (
       Array.isArray(student.teacherIds)
         ? student.teacherIds
@@ -76,6 +77,7 @@ export function filterStudentsLocally(students = [], options = {}) {
     ['course', 'course'],
     ['college', 'college'],
     ['group', 'group'],
+    ['section', 'section'],
   ];
 
   return students.filter((student) => {
@@ -87,6 +89,7 @@ export function filterStudentsLocally(students = [], options = {}) {
       student.course,
       student.college,
       student.group,
+      student.section,
       ...(Array.isArray(student.teacherIds) ? student.teacherIds : [student.teacherId]),
     ].some((value) => String(value || '').toLocaleLowerCase().includes(search));
     if (!matchesSearch) return false;

@@ -35,6 +35,31 @@ const SUFFIXES = new Set(('inc incorporated ltd limited pvt private llc llp corp
 
 const cleanName = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
 const intIn = (value, min, max, fallback) => Math.min(max, Math.max(min, Math.floor(Number(value)) || fallback));
+const timeOf = (value) => { const time = value ? new Date(value).getTime() : NaN; return Number.isNaN(time) ? null : time; };
+const sortCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+// Admin table header sort: only whitelisted columns, blanks last in either direction, ties keep the default order.
+function sortByColumn(rows, readers, query) {
+  const read = Object.hasOwn(readers, String(query.sortBy || '')) ? readers[query.sortBy] : null;
+  if (!read) return rows;
+  const sign = String(query.sortOrder || '').toLowerCase() === 'desc' ? -1 : 1;
+  const blank = (value) => value === null || value === undefined || value === '';
+  return rows.map((row, index) => ({ row, index, value: read(row) })).sort((a, b) => {
+    if (blank(a.value) || blank(b.value)) return (blank(a.value) - blank(b.value)) || a.index - b.index;
+    const diff = typeof a.value === 'number' && typeof b.value === 'number' ? a.value - b.value : sortCollator.compare(String(a.value), String(b.value));
+    return diff * sign || a.index - b.index;
+  }).map(({ row }) => row);
+}
+const STATUS_LABELS = { pending: 'Pending', approved: 'Approved', merged: 'Merged', rejected: 'Rejected' };
+const REQUEST_SORTS = {
+  company: (row) => row.name, students: (row) => row.voters, questions: (row) => row.questions, universities: (row) => row.universities,
+  requested: (row) => timeOf(row.lastRequestedAt), status: (row) => STATUS_LABELS[row.status] || row.status,
+  // The suggestion column is shown only for pending and rejected names.
+  suggestion: (row) => (['pending', 'rejected'].includes(row.status) ? row.suggestion?.name || null : null),
+};
+const TAG_SORTS = {
+  question: (row) => row.questionTitle, source: (row) => (row.scopeKey === 'control' ? 'Central' : 'University'), company: (row) => row.company,
+  confirmations: (row) => row.voters, status: (row) => (row.verified ? 'Verified' : 'Collecting'), lastReported: (row) => timeOf(row.latestDate),
+};
 export const companyKeyOf = (name) => cleanName(name).toLocaleLowerCase('en-US');
 
 export function similarityKey(name) {
@@ -260,12 +285,15 @@ export async function listCompanySuggestions(query = {}) {
   const rows = await suggestionRows(catalog, threshold, groups);
   const counts = { pending: 0, approved: 0, merged: 0, rejected: 0, all: rows.length };
   rows.forEach((row) => { counts[row.status] += 1; });
-  const filtered = rows.filter((row) => (status === 'all' || row.status === status)
+  const matching = rows.filter((row) => (status === 'all' || row.status === status)
     && (!search || [row.key, row.name, ...row.variants].some((value) => companyKeyOf(value).includes(search))))
     .sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) || b.voters - a.voters
       || new Date(b.lastRequestedAt || 0) - new Date(a.lastRequestedAt || 0) || a.key.localeCompare(b.key));
+  // Suggestions are edit-distance work, so they are computed for every row only when sorting by them.
+  const bySuggestion = query.sortBy === 'suggestion';
+  const filtered = sortByColumn(bySuggestion ? matching.map((row) => withSuggestion(row, catalog)) : matching, REQUEST_SORTS, query);
   return {
-    rows: filtered.slice((page - 1) * limit, page * limit).map((row) => withSuggestion(row, catalog)), counts, threshold,
+    rows: filtered.slice((page - 1) * limit, page * limit).map((row) => (bySuggestion ? row : withSuggestion(row, catalog))), counts, threshold,
     verifiedTags: groups.filter((group) => group.reporters.size >= threshold).length,
     catalog: [...catalog.byKey.values()].map(({ key, name }) => ({ key, name })).sort((a, b) => a.name.localeCompare(b.name)),
     pagination: { page, limit, total: filtered.length, pages: Math.max(1, Math.ceil(filtered.length / limit)) },
@@ -325,6 +353,7 @@ export async function companyTagProgress(query = {}) {
   const status = ['verified', 'collecting'].includes(query.status) ? query.status : 'all';
   const search = companyKeyOf(String(query.search || '').slice(0, 80));
   const limit = intIn(query.limit, 1, 500, 100);
+  const page = intIn(query.page, 1, 100000, 1);
   const [threshold, groups] = await Promise.all([voteThreshold(), companyVoteGroups()]);
   const ids = [...new Set(groups.map((group) => String(group.questionId)))];
   const titles = new Map((ids.length ? await QuestionLibrary.find({ _id: { $in: ids } }).select('questionText').lean() : [])
@@ -339,5 +368,7 @@ export async function companyTagProgress(query = {}) {
   }).filter((row) => (status === 'all' || row.verified === (status === 'verified'))
     && (!search || [row.company, row.questionTitle].some((value) => companyKeyOf(value).includes(search))))
     .sort((a, b) => b.voters - a.voters || new Date(b.latestDate) - new Date(a.latestDate));
-  return { rows: rows.slice(0, limit), threshold };
+  const sorted = sortByColumn(rows, TAG_SORTS, query);
+  return { rows: sorted.slice((page - 1) * limit, page * limit), threshold,
+    pagination: { page, limit, total: sorted.length, pages: Math.max(1, Math.ceil(sorted.length / limit)) } };
 }

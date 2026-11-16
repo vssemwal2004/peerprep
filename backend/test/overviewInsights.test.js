@@ -7,7 +7,7 @@ import Submission from '../src/models/Submission.js';
 import Assessment from '../src/models/Assessment.js';
 import AssessmentSubmission from '../src/models/AssessmentSubmission.js';
 import StudentActivity from '../src/models/StudentActivity.js';
-import { buildOverview, trendDays } from '../src/services/overviewInsights.js';
+import { buildOverview, overviewRange, trendDays } from '../src/services/overviewInsights.js';
 import { platformCentralSummary } from '../src/platform/platformInsights.js';
 
 const now = new Date('2026-10-11T12:00:00Z');
@@ -79,6 +79,25 @@ test('admin overview counts every student, module and pending item', async () =>
   assert.equal(data.trend.at(-1).logins, 1);
   assert.equal(data.upcoming[0].title, 'Arrays test');
   assert.equal(data.upcoming[0].live, true);
+});
+
+test('a chosen period limits the trend and period totals, not "today at a glance"', async () => {
+  const yesterdayOnly = overviewRange({ range: 'custom', from: '2026-10-10', to: '2026-10-10' }, now);
+  const data = await buildOverview(admin, now, yesterdayOnly);
+  assert.deepEqual(data.range, { range: 'custom', from: '2026-10-10', to: '2026-10-10' });
+  assert.deepEqual(data.trend.map((row) => row.date), ['2026-10-10']);
+  assert.equal(data.trend[0].coding, 1);
+  assert.equal(data.coding.attempts, 1, 'only the WA submission from yesterday');
+  assert.equal(data.assessments.submissions, 0, 'both submissions were today');
+  assert.equal(data.assessments.averageScore, null);
+  assert.deepEqual(data.glance.map((row) => row.coding), [1, 2], 'yesterday and today stay visible');
+
+  const month = await buildOverview(admin, now, overviewRange({ range: '30d' }, now));
+  assert.equal(month.trend.length, 30);
+  assert.equal(month.coding.attempts, 3);
+  assert.equal((await buildOverview(admin, now)).trend.length, 14, 'no range keeps the 14-day default');
+  assert.throws(() => overviewRange({ range: 'all' }, now), (error) => error.status === 400);
+  assert.throws(() => overviewRange({ range: 'custom', from: '2026-10-11', to: '2026-10-01' }, now), (error) => error.status === 400);
 });
 
 test('the Master Admin central summary counts platform-owned content and accounts', async () => {

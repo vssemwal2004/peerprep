@@ -52,7 +52,7 @@ import {
   Inbox,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { canManageInterviewCompanies, isControlDeployment, isUniversityDeployment, PREP_COIN_PRICING_PATH, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
+import { canManageInterviewCompanies, isControlDeployment, isUniversityDeployment, PREP_COIN_PRICING_PATH, QUICKPREP_ANALYSIS_PATH, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
@@ -68,7 +68,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       return [{
         type: 'group',
         key: 'assessments',
-        label: 'Assessments',
+        label: 'Prep Assessment',
         icon: ClipboardList,
         items: [
           { label: 'Available Tests', to: '/student/assessments', icon: ClipboardList },
@@ -77,17 +77,15 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
         ],
       }];
     }
+    // Order agreed with the university (2026-11): the seven core items first, then the remaining features.
     return [
       { type: 'link', label: 'Dashboard', to: '/student/dashboard', icon: LayoutDashboard, featureKey: 'dashboard' },
-      { type: 'link', label: 'QuickPrep', to: '/student/quickprep', icon: Zap, featureKey: 'quickprep' },
-      { type: 'link', label: 'Prep Analysis', to: '/student/analysis', icon: BarChart3, featureKey: 'analysis' },
-      { type: 'link', label: 'Rankings', to: '/student/rankings', icon: BarChart3, featureKey: 'rankings' },
-      { type: 'link', label: 'Interviews', to: '/student/interview', icon: CalendarDays, featureKey: 'interviews' },
-      { type: 'link', label: 'AI Interviews', to: '/student/ai-interviews', icon: Bot, featureKey: 'ai_interviews' },
+      { type: 'link', label: 'Prep Coding', to: '/problems', icon: ListChecks, featureKey: 'prep_coding' },
+      { type: 'link', label: 'Quick Prep', to: '/student/quickprep', icon: Zap, featureKey: 'quickprep' },
       {
         type: 'group',
         key: 'assessments',
-        label: 'Assessments',
+        label: 'Prep Assessment',
         icon: ClipboardList,
         featureKey: 'assessments',
         items: [
@@ -96,10 +94,13 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
           { label: 'History', to: '/student/assessment-history', icon: History },
         ],
       },
+      { type: 'link', label: 'Resume', to: '/student/resume', icon: UserCog, featureKey: 'resume' },
+      { type: 'link', label: 'Ranking', to: '/student/rankings', icon: Trophy, featureKey: 'rankings' },
+      { type: 'link', label: 'Prep Coin', to: '/student/wallet', icon: Wallet, featureKey: 'prep_coins' },
+      { type: 'link', label: 'Prep Analysis', to: '/student/analysis', icon: BarChart3, featureKey: 'analysis' },
+      { type: 'link', label: 'Interviews', to: '/student/interview', icon: CalendarDays, featureKey: 'interviews' },
+      { type: 'link', label: 'AI Interviews', to: '/student/ai-interviews', icon: Bot, featureKey: 'ai_interviews' },
       { type: 'link', label: 'Learning', to: '/student/learning', icon: BookOpen, featureKey: 'learning' },
-      { type: 'link', label: 'PrepCoding', to: '/problems', icon: ListChecks, featureKey: 'prep_coding' },
-      { type: 'link', label: 'Resume Builder', to: '/student/resume', icon: UserCog, featureKey: 'resume' },
-      { type: 'link', label: 'Prep Coins', to: '/student/wallet', icon: Wallet, featureKey: 'prep_coins' },
     ];
   }
   if (role === 'coordinator') {
@@ -348,8 +349,9 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
     items: [
       { label: 'All QuickPreps', to: '/admin/quickprep', icon: ListChecks, match: (loc) => /^\/admin\/quickprep(\/(?!new$|insights$)[^/]+(\/(edit|questions\/add))?)?\/?$/.test(loc.pathname) },
       { label: 'Create QuickPrep', to: '/admin/quickprep/new', icon: CirclePlus },
-      // Student progress lives in each university, so the central platform has no QuickPrep insights.
-      ...(isControlDeployment ? [] : [{ label: 'Insights', to: '/admin/quickprep/insights', icon: BarChart3 }]),
+      // Opens Prep Analysis on its Quick Prep tab.
+      { label: 'Analysis', to: QUICKPREP_ANALYSIS_PATH, icon: BarChart3,
+        match: (loc) => loc.pathname === '/admin/analysis' && new URLSearchParams(loc.search).get('area') === 'quickprep' },
     ],
   };
   const announcements = {

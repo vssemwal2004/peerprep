@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Check, Plus, Save, Sparkles, Trash2, Trophy } from 'lucide-react';
 import { api } from '../utils/api';
 import { canAuthorQuickPrep, isUniversityDeployment } from '../platform/universityPermissions';
 import BadgeEmblem from '../student/profile/BadgeEmblem';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 
 const access = { coding: 'questions', learning: 'learning', assessments: 'assessments', interviews: 'interviews', events: 'events' };
 const labels = { coding: 'Coding questions', learning: 'Learning', assessments: 'Assessments', interviews: 'AI interviews', events: 'Peer interviews' };
 const field = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100';
 const panel = 'rounded-xl border border-slate-200 bg-white p-5 dark:border-zinc-800 dark:bg-[#242424]';
 // Only the daily challenge is assigned now; weekly/monthly settings are kept in stored policies but not edited.
+const LEVEL_COLUMNS = [['level', 'Level'], ['title', 'Name'], ['xp', 'XP'], ['mastery', 'Mastery'], ['days', 'Active days']];
 const numericFields = [['dailyMinutes', 'Daily time budget (minutes)', 10, 45], ['dailyXp', 'Daily challenge XP', 0, 100]];
 
 export default function EngagementSettings() {
@@ -19,6 +21,8 @@ export default function EngagementSettings() {
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [saving, setSaving] = useState(false);
   const [custom, setCustom] = useState({ title: '', metric: 'activeDays', target: 10 });
   const requestId = useRef(0);
+  const levels = useMemo(() => data?.levels || [], [data]);
+  const levelTable = useClientTable(levels);
   const query = `?${new URLSearchParams({ ...(selectedCollege ? { college: selectedCollege } : {}), ...(cohort !== 'all' ? { semester: cohort.split(':')[1] } : {}) })}`;
   const load = useCallback(async () => {
     const id = ++requestId.current;
@@ -74,7 +78,7 @@ export default function EngagementSettings() {
         </section>
         <div className="flex items-center justify-end"><button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"><Save size={16} />{saving ? 'Saving…' : 'Save progression policy'}</button></div>
       </form>}
-      {data && <section className={panel}><h2 className="flex items-center gap-2 font-semibold"><BookOpen size={17} className="text-sky-500" />Level requirements</h2><p className="mt-1 text-xs text-slate-500">All three conditions are required. XP cannot substitute for mastery. Levels never drop when a student takes a break.</p><div className="mt-3 overflow-x-auto"><table className="w-full text-left text-xs"><thead className="text-slate-500"><tr>{['Level', 'Name', 'XP', 'Mastery', 'Active days'].map((label) => <th key={label} className="px-2 py-2 font-medium">{label}</th>)}</tr></thead><tbody>{data.levels.map((level) => <tr key={level.level} className="border-t border-slate-100 dark:border-zinc-800"><td className="px-2 py-2">{level.level}</td><td className="px-2 py-2 font-semibold">{level.title}</td><td className="px-2 py-2">{level.xp}</td><td className="px-2 py-2">{level.mastery}%</td><td className="px-2 py-2">{level.days}</td></tr>)}</tbody></table></div></section>}
+      {data && <section className={panel}><h2 className="flex items-center gap-2 font-semibold"><BookOpen size={17} className="text-sky-500" />Level requirements</h2><p className="mt-1 text-xs text-slate-500">All three conditions are required. XP cannot substitute for mastery. Levels never drop when a student takes a break.</p><div className="mt-3 overflow-x-auto"><table className="w-full text-left text-xs"><thead className="text-slate-500"><tr>{LEVEL_COLUMNS.map(([key, label]) => <SortHeader key={key} sortKey={key} sort={levelTable.sort} onSort={levelTable.toggleSort} className="px-2 py-2">{label}</SortHeader>)}</tr></thead><tbody>{levelTable.pageRows.map((level) => <tr key={level.level} className="border-t border-slate-100 dark:border-zinc-800"><td className="px-2 py-2">{level.level}</td><td className="px-2 py-2 font-semibold">{level.title}</td><td className="px-2 py-2">{level.xp}</td><td className="px-2 py-2">{level.mastery}%</td><td className="px-2 py-2">{level.days}</td></tr>)}</tbody></table></div><TablePager {...levelTable.pager} noun="levels" /></section>}
       {analytics && <section className={panel}><h2 className="font-semibold">Last 30 days</h2><p className="mt-1 text-xs text-slate-500">{analytics.activeStudents} students earned rewards · {analytics.xp} XP awarded</p><div className="mt-4 grid gap-3 sm:grid-cols-3">{['daily'].map((kind) => { const row = analytics.missions.find((m) => m._id === kind); return <div key={kind} className="rounded-lg bg-slate-50 p-3 dark:bg-zinc-900/50"><p className="text-xs capitalize text-slate-500">{kind} completion</p><p className="mt-1 text-xl font-semibold">{row?.assigned ? Math.round(row.completed / row.assigned * 100) : 0}%</p><p className="text-xs text-slate-400">{row?.completed || 0} / {row?.assigned || 0} plans</p></div>; })}</div></section>}
     </div>
   </div>;

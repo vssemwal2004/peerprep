@@ -36,8 +36,9 @@ export const EXPORT_COLUMNS = [
   { key: 'semester', label: 'Semester', group: 'Student details', module: 'student', kind: 'number', width: 9, get: (row) => row.student.semester },
   { key: 'course', label: 'Course', group: 'Student details', module: 'student', width: 14, get: (row) => row.student.course },
   { key: 'branch', label: 'Branch', group: 'Student details', module: 'student', width: 18, get: (row) => row.student.branch },
-  { key: 'college', label: 'College / University', group: 'Student details', module: 'student', width: 22, get: (row) => row.student.college },
-  { key: 'group', label: 'Group / Section', group: 'Student details', module: 'student', width: 12, get: (row) => row.student.group },
+  { key: 'college', label: 'Campus', group: 'Student details', module: 'student', width: 22, get: (row) => row.student.college },
+  { key: 'section', label: 'Section', group: 'Student details', module: 'student', width: 12, get: (row) => row.student.section },
+  { key: 'group', label: 'Group', group: 'Student details', module: 'student', width: 12, get: (row) => row.student.group },
   { key: 'coordinators', label: 'Coordinators', group: 'Student details', module: 'student', width: 18, get: (row) => list(row.student.coordinators) },
   { key: 'lists', label: 'Uploaded lists', group: 'Student details', module: 'student', width: 22, get: (row) => list(row.student.batchNames) },
   { key: 'account', label: 'Account', group: 'Student details', module: 'student', width: 10, get: (row) => (row.student.status === 'inactive' ? 'Disabled' : 'Active') },
@@ -216,7 +217,7 @@ export async function renderXlsx(report) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'PeerPrep Prep Analysis';
   workbook.created = report.generatedAt;
-  const sheet = workbook.addWorksheet('Students', { properties: { defaultRowHeight: 18 } });
+  const sheet = workbook.addWorksheet(report.sheetName || 'Students', { properties: { defaultRowHeight: 18 } });
   const width = report.columns.length;
   sheet.columns = report.columns.map((column) => ({ key: column.key, width: Math.max(column.width || 12, Math.min(40, column.label.length + 2)) }));
 

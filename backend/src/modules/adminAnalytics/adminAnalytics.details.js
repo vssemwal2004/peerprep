@@ -44,6 +44,15 @@ const DEFAULT_SORTS = Object.freeze({
   'source-mix': { by: 'value', direction: 'desc' },
 });
 
+// Every column of a detail table sorts from its header. Besides the named fields, list-shaped graphs may be
+// sorted by any other row field: plain identifiers only, read as the row's own property (paginateGraphRows).
+// The student × topic heatmap sorts students before building a page, so only its named fields apply.
+const ROW_SORT_FIELD = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+function sortFieldAllowed(graphId, by) {
+  if (SORT_FIELDS[graphId].includes(by)) return true;
+  return graphId !== 'topic-student-heatmap' && ROW_SORT_FIELD.test(by);
+}
+
 function boundedInteger(value, fallback, min, max, label) {
   if (value === undefined || value === null || value === '') return fallback;
   const number = Number(value);
@@ -61,7 +70,7 @@ export function validateGraphDetailsRequest(graphId, input = {}) {
   const requestedSort = input.sort && typeof input.sort === 'object' ? input.sort : {};
   const fallback = DEFAULT_SORTS[graphId];
   const sort = { by: String(requestedSort.by || fallback.by), direction: String(requestedSort.direction || fallback.direction) };
-  if (!SORT_FIELDS[graphId].includes(sort.by)) throw new HttpError(400, 'Unsupported graph detail sort field.');
+  if (!sortFieldAllowed(graphId, sort.by)) throw new HttpError(400, 'Unsupported graph detail sort field.');
   if (!['asc', 'desc'].includes(sort.direction)) throw new HttpError(400, 'Graph detail sort direction must be asc or desc.');
   if (input.refresh === true || input.cache?.bypass === true) query.cache.bypass = true;
   return { query, page, limit, search, sort };
@@ -91,10 +100,11 @@ function compareValues(left, right) {
 export function paginateGraphRows(graph, { page, limit, search, sort }) {
   const extracted = rowsAndColumns(graph);
   const needle = search.toLocaleLowerCase('en-US');
+  const field = (row) => (row && typeof row === 'object' && Object.hasOwn(row, sort.by) ? row[sort.by] : undefined);
   const rows = extracted.rows.map((row, index) => ({ row, index }))
     .filter(({ row }) => matchesSearch(row, needle))
     .sort((left, right) => {
-      const result = compareValues(left.row?.[sort.by], right.row?.[sort.by]);
+      const result = compareValues(field(left.row), field(right.row));
       return (sort.direction === 'desc' ? -result : result) || left.index - right.index;
     });
   const totalRows = rows.length;

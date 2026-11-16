@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Building2, CalendarCheck, Check, CircleDashed, Layers, LoaderCircle, Play, RefreshCw, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Building2, CalendarCheck, CalendarClock, Check, CircleDashed, Layers, LoaderCircle, Lock, Play, RefreshCw, Sparkles } from 'lucide-react';
+import { formatWhen, hasWindow, questWindowStatus, windowNote, windowText } from './quests/questWindow';
 import { api } from '../utils/api';
 import BadgeEmblem from './profile/BadgeEmblem';
 import { DifficultyMix } from './quests/QuestCard';
 import { DIFFICULTY_TONES, questCategory, questPercent, questTheme } from './quests/questTheme';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
 
 const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2';
 const FILTERS = [['all', 'All'], ['todo', 'To solve'], ['solved', 'Solved']];
@@ -16,15 +18,27 @@ function StatusMark({ status }) {
   return <span title="Not started" className="flex h-7 w-7 items-center justify-center text-slate-300 transition-colors group-hover:text-sky-400 dark:text-zinc-600"><CircleDashed className="h-6 w-6" aria-hidden="true" /><span className="sr-only">Not started</span></span>;
 }
 
+// Rows keep their QuickPrep position as "#", whatever the filter, sort or page.
 function groupBySection(items) {
   const groups = [];
-  for (const [index, item] of items.entries()) {
+  for (const item of items) {
     const name = item.section || '';
     if (!groups.length || groups.at(-1).name !== name) groups.push({ name, items: [] });
-    groups.at(-1).items.push({ ...item, number: index + 1 });
+    groups.at(-1).items.push(item);
   }
   return groups;
 }
+
+const STATUS_RANK = { solved: 2, attempted: 1 };
+const DIFFICULTY_RANK = { Easy: 1, Medium: 2, Hard: 3 };
+const QUESTION_VALUES = {
+  status: (item) => STATUS_RANK[item.status] || 0,
+  number: (item) => item.number,
+  title: (item) => item.title || null,
+  difficulty: (item) => DIFFICULTY_RANK[item.difficulty] || null,
+};
+const questionValue = (item, key) => QUESTION_VALUES[key]?.(item);
+const HEAD = 'tracking-wider text-slate-400 dark:text-zinc-500';
 
 export default function QuestDetail() {
   const { slug } = useParams();
@@ -50,12 +64,15 @@ export default function QuestDetail() {
 
   const quest = state.quest;
   const numbered = useMemo(() => (quest?.items || []).map((item, index) => ({ ...item, number: index + 1 })), [quest]);
-  const groups = useMemo(() => groupBySection(numbered.filter((item) => filter === 'all' || (filter === 'solved' ? item.status === 'solved' : item.status !== 'solved'))).map((group) => ({
+  const visible = useMemo(() => numbered.filter((item) => filter === 'all' || (filter === 'solved' ? item.status === 'solved' : item.status !== 'solved')), [filter, numbered]);
+  const table = useClientTable(visible, { getValue: questionValue, initialPageSize: 50, resetKey: filter });
+  // In QuickPrep order the page keeps its section headings; a column sort lists the rows without them.
+  const groups = useMemo(() => (table.sort ? [{ name: '', items: table.pageRows }] : groupBySection(table.pageRows)).filter((group) => group.items.length).map((group) => ({
     ...group,
     // Section progress counts the whole section, not just the filtered rows.
     solved: numbered.filter((item) => (item.section || '') === group.name && item.status === 'solved').length,
     total: numbered.filter((item) => (item.section || '') === group.name).length,
-  })), [filter, numbered]);
+  })), [table.sort, table.pageRows, numbered]);
   const start = async () => {
     setStarting(true);
     try { setState({ quest: (await api.startQuest(slug)).quest, loading: false, error: '' }); }
@@ -82,6 +99,7 @@ export default function QuestDetail() {
   const badge = { ...quest.badge, earned: Boolean(quest.completedAt) };
   const companies = quest.companies?.length ? quest.companies : quest.company ? [quest.company] : [];
   const attempted = quest.items.filter((item) => item.status === 'attempted').length;
+  const openState = questWindowStatus(quest);
 
   return <div className="min-h-screen bg-[#f6f7f9] pb-12 font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:text-zinc-100">
     <main className="mx-auto w-full max-w-[1200px] px-4 pt-5 sm:px-6 lg:px-8">
@@ -102,6 +120,8 @@ export default function QuestDetail() {
             <div className="mt-5 flex flex-wrap items-center gap-3">
               {quest.completedAt
                 ? <span className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-[14px] font-semibold text-emerald-700"><CalendarCheck className="h-4 w-4" aria-hidden="true" />Completed {new Date(quest.completedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                : openState !== 'open'
+                  ? <span className="inline-flex items-center gap-2 rounded-xl bg-white/90 px-4 py-2.5 text-[14px] font-semibold text-slate-700"><Lock className="h-4 w-4" aria-hidden="true" />{windowNote(quest)}</span>
                 : !quest.started
                   ? <button type="button" onClick={start} disabled={starting} className={`inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-[14px] font-semibold text-slate-900 shadow transition-transform hover:-translate-y-px disabled:opacity-70 ${focusRing}`}>
                     {starting ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4 fill-current" aria-hidden="true" />}Start QuickPrep
@@ -111,6 +131,7 @@ export default function QuestDetail() {
                   </Link>}
               <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2.5 text-[13px] font-medium ring-1 ring-inset ring-white/25"><Sparkles className="h-4 w-4 text-amber-200" aria-hidden="true" />{quest.rewardXp} XP</span>
               <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2.5 text-[13px] font-medium ring-1 ring-inset ring-white/25"><Layers className="h-4 w-4" aria-hidden="true" />{quest.total} questions</span>
+              {openState === 'open' && hasWindow(quest) && <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2.5 text-[13px] font-medium ring-1 ring-inset ring-white/25" title={windowText(quest)}><CalendarClock className="h-4 w-4" aria-hidden="true" />{windowNote(quest) || windowText(quest)}</span>}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-5 rounded-2xl bg-white/10 p-4 ring-1 ring-inset ring-white/20 backdrop-blur-sm">
@@ -145,16 +166,18 @@ export default function QuestDetail() {
           </div>
         </div>
         {state.error && <p role="alert" className="px-5 pt-3 text-[13px] text-rose-600 dark:text-rose-300">{state.error}</p>}
-        {!groups.length ? <p className="px-6 py-12 text-center text-[13px] text-slate-500 dark:text-zinc-400">{filter === 'solved' ? 'Nothing solved yet. Your first one is a click away.' : 'Every question is solved. Nicely done!'}</p>
-          : <table className="w-full text-left text-sm">
-            <caption className="sr-only">Questions in {quest.title}, in order</caption>
+        {openState === 'ended' && !quest.completedAt && <p role="status" className="mx-5 mt-3 flex items-center gap-2 rounded-xl bg-slate-100 px-3.5 py-2.5 text-[13px] text-slate-600 dark:bg-white/[0.05] dark:text-zinc-300"><Lock className="h-4 w-4 shrink-0" aria-hidden="true" />This QuickPrep has ended. You can review it, but new solves no longer count toward it.</p>}
+        {openState === 'upcoming' ? <p className="flex flex-col items-center gap-2 px-6 py-12 text-center text-[13px] text-slate-500 dark:text-zinc-400"><CalendarClock className="h-6 w-6 text-amber-500" aria-hidden="true" />The questions appear when it opens: {formatWhen(quest.startsAt)}.</p>
+          : !groups.length ? <p className="px-6 py-12 text-center text-[13px] text-slate-500 dark:text-zinc-400">{filter === 'solved' ? 'Nothing solved yet. Your first one is a click away.' : 'Every question is solved. Nicely done!'}</p>
+          : <><table className="w-full text-left text-sm" style={{ '--serial-start': (table.page - 1) * table.pageSize }}>
+            <caption className="sr-only">Questions in {quest.title}{table.sort ? '' : ', in order'}</caption>
             <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-400 max-sm:hidden dark:bg-white/[0.02] dark:text-zinc-500">
               <tr>
-                <th scope="col" className="w-14 py-2.5 pl-5">Status</th>
-                <th scope="col" className="w-12 px-2 py-2.5">#</th>
-                <th scope="col" className="px-3 py-2.5">Question</th>
-                <th scope="col" className="w-28 px-3 py-2.5">Difficulty</th>
-                <th scope="col" className="w-32 py-2.5 pl-3 pr-5 text-right"><span className="sr-only">Open</span></th>
+                <SortHeader sortKey="status" sort={table.sort} onSort={table.toggleSort} className={`w-14 py-2.5 pl-5 ${HEAD}`}>Status</SortHeader>
+                <SortHeader sortKey="number" sort={table.sort} onSort={table.toggleSort} className={`w-12 px-2 py-2.5 ${HEAD}`}>#</SortHeader>
+                <SortHeader sortKey="title" sort={table.sort} onSort={table.toggleSort} className={`px-3 py-2.5 ${HEAD}`}>Question</SortHeader>
+                <SortHeader sortKey="difficulty" sort={table.sort} onSort={table.toggleSort} className={`w-28 px-3 py-2.5 ${HEAD}`}>Difficulty</SortHeader>
+                <SortHeader sortable={false} align="right" className={`w-32 py-2.5 pl-3 pr-5 ${HEAD}`}><span className="sr-only">Open</span></SortHeader>
               </tr>
             </thead>
             {groups.map((group) => <tbody key={`${group.name}-${group.items[0].key}`} className="divide-y divide-[#f1f2f5] dark:divide-white/[0.05]">
@@ -193,7 +216,8 @@ export default function QuestDetail() {
                 </tr>;
               })}
             </tbody>)}
-          </table>}
+          </table>
+          <TablePager {...table.pager} noun="questions" className="border-[#eef0f3] dark:border-white/[0.06]" /></>}
       </section>
     </main>
   </div>;

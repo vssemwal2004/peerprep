@@ -9,7 +9,6 @@ import {
   EmptyState,
   Field,
   Notice,
-  Pagination,
   Select,
   TextArea,
   TextInput,
@@ -17,6 +16,7 @@ import {
   secondaryClass,
   surfaceClass,
 } from "./ui";
+import { TablePager } from "../../components/table";
 
 export function ResourcePicker({ kind, selected, onSelect, disabled }) {
   const [open, setOpen] = useState(false);
@@ -59,6 +59,7 @@ export function ResourcePicker({ kind, selected, onSelect, disabled }) {
 export function ResourceList({ kind, picker = false, onSelect }) {
   const [search, setSearch] = useState(""),
     [page, setPage] = useState(1),
+    [limit, setLimit] = useState(25),
     [editor, setEditor] = useState(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -68,9 +69,10 @@ export function ResourceList({ kind, picker = false, onSelect }) {
       interviewApi.resources(kind, {
         search: settled,
         page,
+        limit,
         active: picker ? "true" : "",
       }),
-    [kind, settled, page, picker],
+    [kind, settled, page, limit, picker],
   );
   const isProfile = kind === "profiles";
   const start = () =>
@@ -188,7 +190,20 @@ export function ResourceList({ kind, picker = false, onSelect }) {
               ))}
             </ul>
           )}
-          <Pagination value={remote.result?.pagination} onPage={setPage} />
+          {remote.result?.pagination && (
+            <TablePager
+              page={remote.result.pagination.page || page}
+              pageSize={limit}
+              pageSizeOptions={[25, 50, 100]}
+              total={remote.result.pagination.total || 0}
+              onPage={setPage}
+              onPageSize={(value) => {
+                setLimit(value);
+                setPage(1);
+              }}
+              noun={isProfile ? "profiles" : "companies"}
+            />
+          )}
         </div>
       )}
       {editor && (

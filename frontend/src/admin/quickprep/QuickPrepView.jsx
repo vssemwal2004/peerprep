@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
-  Award, Building2, CalendarDays, CircleCheck, Download, Eye, EyeOff, Gauge, Globe2, GraduationCap, Layers, LibraryBig, Pencil, Rocket, Sparkles, Tags, TriangleAlert, Users, UsersRound,
+  Award, Building2, CalendarClock, CalendarDays, CircleCheck, Download, Eye, EyeOff, Gauge, Globe2, GraduationCap, Layers, LibraryBig, Pencil, Rocket, Sparkles, Tags, TriangleAlert, Users, UsersRound,
 } from 'lucide-react';
 import { api } from '../../utils/api';
 import { questCategory, questTheme } from '../../student/quests/questTheme';
 import { Chips, DifficultyPill, MixBar, Notice, Page, Breadcrumbs, ProgressBar, RowMenu, SearchBox, Segmented, StatCard, StatusPill, card, secondaryButton } from './ui';
 import { formatDate, plural, timeAgo } from './format';
 import useQuickPrepActions, { QUICKPREP_ROOT, quickPrepLibraryUrl } from './useQuickPrepActions';
+import useDebouncedValue from './useDebouncedValue';
+import { DataTable } from '../../components/table';
+import WindowChip from '../../student/quests/WindowChip';
+import { windowText } from '../../student/quests/questWindow';
+import PerformanceReportMenu from '../../components/PerformanceReportMenu';
 
 const initials = (name) => String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join('');
 
@@ -54,7 +59,6 @@ export default function QuickPrepView() {
   const central = Boolean(quest.central);
   const issues = visibility(quest, summary);
   const reach = summary.audience ? Math.round((summary.started / summary.audience) * 100) : 0;
-
   return <Page>
     <Breadcrumbs items={[{ label: 'QuickPrep', to: QUICKPREP_ROOT }, { label: quest.title }]} />
     {notice && !message && <Notice tone="success">{notice}</Notice>}
@@ -68,6 +72,7 @@ export default function QuickPrepView() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-2.5 py-1 text-[12px] font-semibold ring-1 ring-inset ring-white/25"><TypeIcon className="h-3.5 w-3.5" aria-hidden="true" />{type.label}</span>
               <span className="rounded-full bg-white px-0.5"><StatusPill status={quest.status} /></span>
+              <span className="rounded-full bg-white px-0.5"><WindowChip quest={quest} /></span>
             </div>
             <h1 id="quickprep-title" className="mt-3 text-[26px] font-semibold tracking-[-0.02em]">{quest.title}</h1>
             {quest.description && <p className="mt-1.5 text-sm leading-relaxed text-white/85">{quest.description}</p>}
@@ -78,6 +83,7 @@ export default function QuickPrepView() {
             {quest.status === 'published'
               ? <button type="button" disabled={busyId === quest.id} onClick={() => setStatus(quest, 'draft')} className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-100 disabled:opacity-60"><EyeOff className="h-4 w-4" />Unpublish</button>
               : <button type="button" disabled={busyId === quest.id || !quest.questionCount} onClick={() => setStatus(quest, 'published')} className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-100 disabled:opacity-60"><Rocket className="h-4 w-4" />Publish</button>}
+            {!central && <PerformanceReportMenu kind="quickprep" id={quest.id} />}
             <span className="rounded-xl bg-white"><RowMenu name={quest.title} actions={actionsFor(quest, { includeView: false })} /></span>
           </div>
         </div>
@@ -89,6 +95,7 @@ export default function QuickPrepView() {
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><Award className="h-3.5 w-3.5" />Reward</dt><dd className="mt-1 font-semibold">{quest.rewardXp} XP <span className="font-normal text-slate-500">· {quest.badgeTitle || `${quest.title} Finisher`}</span></dd></div>
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><CalendarDays className="h-3.5 w-3.5" />Created</dt><dd className="mt-1">{formatDate(quest.createdAt)}</dd></div>
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><Rocket className="h-3.5 w-3.5" />Published</dt><dd className="mt-1">{quest.publishedAt ? formatDate(quest.publishedAt) : 'Not yet'}</dd></div>
+        <div className="min-w-0 sm:col-span-2"><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><CalendarClock className="h-3.5 w-3.5" />Start and end time</dt><dd className="mt-1 flex flex-wrap items-center gap-2"><WindowChip quest={quest} /><span>{windowText(quest)}</span></dd></div>
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><Eye className="h-3.5 w-3.5" />Student link</dt><dd className="mt-1 font-mono text-[12.5px] text-slate-600 dark:text-zinc-300">/student/quickprep/{quest.slug}</dd></div>
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><Layers className="h-3.5 w-3.5" />Difficulty mix</dt><dd className="mt-1.5"><MixBar difficulty={quest.difficulty} /></dd></div>
       </dl>
@@ -123,51 +130,46 @@ export default function QuickPrepView() {
 }
 
 function QuestionsTable({ questions, started, quest, central = false }) {
+  const columns = useMemo(() => [
+    { key: 'position', label: '#', align: 'right', headerClassName: 'w-12', className: 'text-[12.5px] text-slate-400' },
+    { key: 'title', label: 'Question', render: (question) => <><p className={`max-w-[20rem] truncate font-medium ${question.available ? '' : 'text-slate-400 line-through'}`}>{question.title}</p><p className="text-[11.5px] text-slate-400">{!question.available ? 'Unpublished in the library' : question.source === 'shared' ? 'Shared catalog' : 'University library'}</p></> },
+    { key: 'section', label: 'Section', value: (question) => question.section || null, className: 'text-[12.5px] text-slate-600 dark:text-zinc-300' },
+    { key: 'difficulty', label: 'Difficulty', value: (question) => ({ Easy: 1, Medium: 2, Hard: 3 }[question.difficulty] ?? null), render: (question) => <DifficultyPill difficulty={question.difficulty} /> },
+    { key: 'tags', label: 'Topics', value: (question) => question.tags, render: (question) => <Chips values={question.tags} /> },
+    ...(central ? [] : [
+      { key: 'solvedBy', label: 'Solved by', align: 'right', className: 'font-semibold text-emerald-600 dark:text-emerald-400' },
+      { key: 'attemptedBy', label: 'Attempting', align: 'right', className: 'text-amber-600 dark:text-amber-400' },
+      { key: 'solveRate', label: 'Solve rate', headerClassName: 'w-44', render: (question) => (started ? <ProgressBar value={question.solveRate} tone="bg-emerald-500" label={`Solve rate for ${question.title}`} /> : <span className="text-xs text-slate-400">No starters yet</span>) },
+    ]),
+  ], [central, started]);
   if (!questions.length) return <div className="px-6 py-12 text-center text-sm text-slate-500">No questions yet. <Link to={quickPrepLibraryUrl(quest)} className="font-semibold text-sky-700 underline dark:text-sky-300">Add from the library</Link></div>;
-  return <div className="overflow-x-auto">
-    <table className="w-full min-w-[920px] text-left text-sm">
-      <thead className="bg-slate-50/80 text-[11.5px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-zinc-900/60 dark:text-zinc-400">
-        <tr>
-          <th scope="col" className="w-12 py-3 pl-4">#</th>
-          <th scope="col" className="px-3 py-3">Question</th>
-          <th scope="col" className="px-3 py-3">Section</th>
-          <th scope="col" className="px-3 py-3">Difficulty</th>
-          <th scope="col" className="px-3 py-3">Topics</th>
-          {!central && <th scope="col" className="px-3 py-3 text-right">Solved by</th>}
-          {!central && <th scope="col" className="px-3 py-3 text-right">Attempting</th>}
-          {!central && <th scope="col" className="w-44 py-3 pl-3 pr-4">Solve rate</th>}
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
-        {questions.map((question) => <tr key={question.key} className="transition hover:bg-slate-50/70 dark:hover:bg-zinc-800/40">
-          <td className="py-3 pl-4 text-[12.5px] tabular-nums text-slate-400">{question.position}</td>
-          <td className="px-3 py-3"><p className={`max-w-[20rem] truncate font-medium ${question.available ? '' : 'text-slate-400 line-through'}`}>{question.title}</p><p className="text-[11.5px] text-slate-400">{!question.available ? 'Unpublished in the library' : question.source === 'shared' ? 'Shared catalog' : 'University library'}</p></td>
-          <td className="px-3 py-3 text-[12.5px] text-slate-600 dark:text-zinc-300">{question.section || <span className="text-slate-400">—</span>}</td>
-          <td className="px-3 py-3"><DifficultyPill difficulty={question.difficulty} /></td>
-          <td className="px-3 py-3"><Chips values={question.tags} /></td>
-          {!central && <td className="px-3 py-3 text-right font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{question.solvedBy}</td>}
-          {!central && <td className="px-3 py-3 text-right tabular-nums text-amber-600 dark:text-amber-400">{question.attemptedBy}</td>}
-          {!central && <td className="py-3 pl-3 pr-4">{started ? <ProgressBar value={question.solveRate} tone="bg-emerald-500" label={`Solve rate for ${question.title}`} /> : <span className="text-xs text-slate-400">No starters yet</span>}</td>}
-        </tr>)}
-      </tbody>
-    </table>
-  </div>;
+  // The "#" column is the question's position in the sheet, so no extra S.No. column.
+  return <DataTable columns={columns} rows={questions} rowKey={(question) => question.key} noun="questions" serial={false} className="rounded-none border-0" tableClassName="w-full min-w-[920px]" />;
 }
+
+const studentMatches = (student, term) => !term || [student.name, student.email, student.rollNumber].some((value) => String(value || '').toLowerCase().includes(term));
 
 function StudentsTable({ students, title }) {
   const [search, setSearch] = useState('');
+  const term = useDebouncedValue(search.trim().toLowerCase(), 250);
   const [filter, setFilter] = useState('all');
-  const [sort, setSort] = useState('progress');
-  const rows = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const list = students.filter((student) => (filter === 'all' || (filter === 'completed' ? student.completedAt : !student.completedAt))
-      && (!term || `${student.name} ${student.rollNumber}`.toLowerCase().includes(term)));
-    const by = { progress: (a, b) => b.progress - a.progress, recent: (a, b) => new Date(b.lastViewedAt || b.startedAt || 0) - new Date(a.lastViewedAt || a.startedAt || 0), name: (a, b) => a.name.localeCompare(b.name) };
-    return [...list].sort(by[sort]);
-  }, [students, search, filter, sort]);
+  const rows = useMemo(() => students.filter((student) => (filter === 'all' || (filter === 'completed' ? student.completedAt : !student.completedAt))
+    && studentMatches(student, term)), [students, term, filter]);
+  const columns = useMemo(() => [
+    { key: 'name', label: 'Student', render: (student) => <div className="flex items-center gap-2.5"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-sky-600 text-[11.5px] font-semibold text-white">{initials(student.name)}</span><div className="min-w-0"><p className="truncate font-semibold">{student.name}</p><p className="truncate text-[11.5px] text-slate-400">{student.rollNumber || '—'}{student.email ? ` · ${student.email}` : ''}</p></div></div> },
+    { key: 'semester', label: 'Semester', align: 'right' },
+    { key: 'progress', label: 'Progress', headerClassName: 'w-48', render: (student) => <ProgressBar value={student.progress} tone={student.completedAt ? 'bg-emerald-500' : 'bg-sky-500'} label={`${student.name} progress`} /> },
+    { key: 'solved', label: 'Solved', align: 'right', render: (student) => <span className="font-semibold">{student.solved}<span className="font-normal text-slate-400">/{student.total}</span></span> },
+    { key: 'attempted', label: 'Attempted', align: 'right', className: 'text-amber-600 dark:text-amber-400' },
+    { key: 'startedAt', label: 'Started', className: 'whitespace-nowrap text-[12.5px] text-slate-500', render: (student) => formatDate(student.startedAt) },
+    { key: 'lastViewedAt', label: 'Last active', className: 'whitespace-nowrap text-[12.5px] text-slate-500', render: (student) => timeAgo(student.lastViewedAt) },
+    { key: 'completedAt', label: 'Status', render: (student) => (student.completedAt
+      ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11.5px] font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><CircleCheck className="h-3 w-3" />Completed {formatDate(student.completedAt)}</span>
+      : <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11.5px] font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">In progress</span>) },
+  ], []);
   const exportCsv = () => {
-    const csv = toCsv([['Name', 'Roll number', 'Semester', 'Solved', 'Attempted', 'Total', 'Progress %', 'Started', 'Last active', 'Completed'],
-      ...rows.map((row) => [row.name, row.rollNumber, row.semester ?? '', row.solved, row.attempted, row.total, row.progress, formatDate(row.startedAt), row.lastViewedAt ? formatDate(row.lastViewedAt) : '', row.completedAt ? formatDate(row.completedAt) : ''])]);
+    const csv = toCsv([['Name', 'Email', 'Roll number', 'Semester', 'Solved', 'Attempted', 'Total', 'Progress %', 'Started', 'Last active', 'Completed'],
+      ...rows.map((row) => [row.name, row.email || '', row.rollNumber, row.semester ?? '', row.solved, row.attempted, row.total, row.progress, formatDate(row.startedAt), row.lastViewedAt ? formatDate(row.lastViewedAt) : '', row.completedAt ? formatDate(row.completedAt) : ''])]);
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url; link.download = `${title.replace(/[^\w-]+/g, '-').toLowerCase()}-students.csv`; link.click();
@@ -176,44 +178,10 @@ function StudentsTable({ students, title }) {
   if (!students.length) return <div className="px-6 py-12 text-center"><Users className="mx-auto h-8 w-8 text-slate-300" aria-hidden="true" /><p className="mt-2 text-sm font-semibold">No students have started yet</p><p className="text-[13px] text-slate-500">A student appears here when they start it or open one of its questions.</p></div>;
   return <>
     <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3 dark:border-zinc-800">
-      <SearchBox value={search} onChange={setSearch} placeholder="Search by name or roll number" label="Search students" />
+      <SearchBox value={search} onChange={setSearch} placeholder="Search name, email or student ID" label="Search students" />
       <Segmented label="Status" value={filter} onChange={setFilter} options={[{ value: 'all', label: 'All' }, { value: 'progress', label: 'In progress' }, { value: 'completed', label: 'Completed' }]} />
-      <label className="sr-only" htmlFor="student-sort">Sort by</label>
-      <select id="student-sort" value={sort} onChange={(event) => setSort(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900">
-        <option value="progress">Most progress</option><option value="recent">Recently active</option><option value="name">Name A–Z</option>
-      </select>
       <button type="button" onClick={exportCsv} className={secondaryButton}><Download className="h-4 w-4" />Export CSV</button>
     </div>
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[920px] text-left text-sm">
-        <thead className="bg-slate-50/80 text-[11.5px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-zinc-900/60 dark:text-zinc-400">
-          <tr>
-            <th scope="col" className="py-3 pl-4 pr-3">Student</th>
-            <th scope="col" className="px-3 py-3">Semester</th>
-            <th scope="col" className="w-48 px-3 py-3">Progress</th>
-            <th scope="col" className="px-3 py-3 text-right">Solved</th>
-            <th scope="col" className="px-3 py-3 text-right">Attempted</th>
-            <th scope="col" className="px-3 py-3">Started</th>
-            <th scope="col" className="px-3 py-3">Last active</th>
-            <th scope="col" className="py-3 pl-3 pr-4">Status</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
-          {rows.map((student) => <tr key={student.id} className="transition hover:bg-slate-50/70 dark:hover:bg-zinc-800/40">
-            <td className="py-3 pl-4 pr-3"><div className="flex items-center gap-2.5"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 text-[11.5px] font-semibold text-white">{initials(student.name)}</span><div className="min-w-0"><p className="truncate font-semibold">{student.name}</p><p className="text-[11.5px] text-slate-400">{student.rollNumber || '—'}</p></div></div></td>
-            <td className="px-3 py-3 tabular-nums">{student.semester ?? '—'}</td>
-            <td className="px-3 py-3"><ProgressBar value={student.progress} tone={student.completedAt ? 'bg-emerald-500' : 'bg-sky-500'} label={`${student.name} progress`} /></td>
-            <td className="px-3 py-3 text-right font-semibold tabular-nums">{student.solved}<span className="font-normal text-slate-400">/{student.total}</span></td>
-            <td className="px-3 py-3 text-right tabular-nums text-amber-600 dark:text-amber-400">{student.attempted}</td>
-            <td className="whitespace-nowrap px-3 py-3 text-[12.5px] text-slate-500">{formatDate(student.startedAt)}</td>
-            <td className="whitespace-nowrap px-3 py-3 text-[12.5px] text-slate-500">{timeAgo(student.lastViewedAt)}</td>
-            <td className="py-3 pl-3 pr-4">{student.completedAt
-              ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11.5px] font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><CircleCheck className="h-3 w-3" />Completed {formatDate(student.completedAt)}</span>
-              : <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11.5px] font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">In progress</span>}</td>
-          </tr>)}
-        </tbody>
-      </table>
-      {!rows.length && <p className="px-4 py-10 text-center text-sm text-slate-500">No students match.</p>}
-    </div>
+    <DataTable columns={columns} rows={rows} resetKey={`${term}|${filter}`} noun="students" empty="No students match." className="rounded-none border-0" tableClassName="w-full min-w-[920px]" />
   </>;
 }

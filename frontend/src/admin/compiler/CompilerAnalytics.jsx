@@ -31,6 +31,20 @@ import {
 import { api } from "../../utils/api";
 import { useToast } from "../../components/CustomToast";
 import { LoadingPanel } from "./CompilerUi";
+import { SortHeader, TablePager, useClientTable } from "../../components/table";
+
+const conversionRateOf = (problem) => (problem.studentsAttempted > 0
+  ? Math.round((problem.studentsSolved / problem.studentsAttempted) * 1000) / 10
+  : null);
+const PROBLEM_CONVERSION_VALUES = {
+  title: (problem) => problem.title || null,
+  studentsAttempted: (problem) => problem.studentsAttempted,
+  studentsSolved: (problem) => problem.studentsSolved,
+  conversionRate: conversionRateOf,
+  conversionGap: (problem) => problem.conversionGap,
+};
+const problemConversionValue = (problem, key) => PROBLEM_CONVERSION_VALUES[key]?.(problem);
+const PROBLEM_HEADER = "py-3 text-[10px] font-bold text-slate-500 dark:text-gray-400";
 
 const TOPIC_COLORS = [
   "#0284c7",
@@ -558,6 +572,10 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
       || String(problem.difficulty || "").toLowerCase().includes(query)
     ));
   }, [allProblemConversionData, problemSearch]);
+  const problemTable = useClientTable(filteredProblemConversionData, {
+    getValue: problemConversionValue,
+    resetKey: `${problemSearch}|${problemDetailsOpen}`,
+  });
   const problemCountScale = useMemo(
     () => getNiceCountScale(Math.max(0, ...problemConversionData.map((item) => item.studentsAttempted))),
     [problemConversionData],
@@ -1334,18 +1352,16 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
               <table data-no-serial className="min-w-[660px] w-full text-left">
                 <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgba(226,232,240,1)] dark:bg-gray-800 dark:text-gray-400 dark:shadow-[0_1px_0_0_rgba(55,65,81,1)]">
                   <tr>
-                    <th className="px-5 py-3">Question</th>
-                    <th className="px-3 py-3 text-right">Attempted</th>
-                    <th className="px-3 py-3 text-right">Solved</th>
-                    <th className="px-3 py-3 text-right">Conversion</th>
-                    <th className="px-5 py-3 text-right">Gap</th>
+                    <SortHeader sortKey="title" sort={problemTable.sort} onSort={problemTable.toggleSort} className={`px-5 ${PROBLEM_HEADER}`}>Question</SortHeader>
+                    <SortHeader sortKey="studentsAttempted" sort={problemTable.sort} onSort={problemTable.toggleSort} align="right" className={`px-3 ${PROBLEM_HEADER}`}>Attempted</SortHeader>
+                    <SortHeader sortKey="studentsSolved" sort={problemTable.sort} onSort={problemTable.toggleSort} align="right" className={`px-3 ${PROBLEM_HEADER}`}>Solved</SortHeader>
+                    <SortHeader sortKey="conversionRate" sort={problemTable.sort} onSort={problemTable.toggleSort} align="right" className={`px-3 ${PROBLEM_HEADER}`}>Conversion</SortHeader>
+                    <SortHeader sortKey="conversionGap" sort={problemTable.sort} onSort={problemTable.toggleSort} align="right" className={`px-5 ${PROBLEM_HEADER}`}>Gap</SortHeader>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-                  {filteredProblemConversionData.map((problem) => {
-                    const conversionRate = problem.studentsAttempted > 0
-                      ? Math.round((problem.studentsSolved / problem.studentsAttempted) * 1000) / 10
-                      : 0;
+                  {problemTable.pageRows.map((problem) => {
+                    const conversionRate = conversionRateOf(problem) ?? 0;
                     return (
                       <tr key={problem.problemId} className="text-xs text-slate-700 hover:bg-sky-50/50 dark:text-gray-300 dark:hover:bg-sky-950/20">
                         <td className="px-5 py-3">
@@ -1371,6 +1387,7 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
                 </tbody>
               </table>
             </div>
+            <TablePager {...problemTable.pager} noun="questions" className="shrink-0 px-5 dark:border-gray-800" />
           </aside>
         </div>,
         document.body,

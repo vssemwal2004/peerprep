@@ -461,7 +461,7 @@ test('the students behind each part of a chart add up to what the chart shows', 
   assert.equal(behind('top-students').length, rows.filter((row) => row.coding.submissions > 0).length, 'everyone who practised, ranked');
 
   const easy = drillStudents(chartOf('difficulty-split'), rows, 'Easy', {});
-  assert.deepEqual(easy.columns.slice(0, 6).map((column) => column.key), ['name', 'studentId', 'semester', 'branch', 'group', 'prepScore'], 'student details come first');
+  assert.deepEqual(easy.columns.slice(0, 7).map((column) => column.key), ['name', 'studentId', 'semester', 'branch', 'section', 'group', 'prepScore'], 'student details come first');
   assert.ok(easy.items.every((item) => item.values.solvedHere > 0));
   const detail = drillDetail(chartOf('difficulty-split'), rows, 'Easy', {});
   assert.ok(detail.items.length > 0 && detail.items.every((item) => item.values.difficulty === 'Easy'), 'one row per student and Easy problem');

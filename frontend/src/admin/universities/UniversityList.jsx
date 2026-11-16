@@ -5,6 +5,7 @@ import { useUniversities } from './useUniversities';
 import { enabledModules, portalUrl, STATUS_META, universityHealth } from './universityModel';
 import { ButtonLink, Card, EmptyState, LoadingBlock, Notice, PageHeader, pageShell, Pill, helper, inputClass } from './ui';
 import UniversityBadge from './UniversityBadge';
+import { SortHeader, TablePager, useClientTable } from '../../components/table';
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -12,11 +13,15 @@ const FILTERS = [
   { key: 'attention', label: 'Needs attention', test: (health) => health.needsAttention },
   { key: 'disabled', label: 'Disabled', test: (health) => health.status === 'disabled' },
 ];
-const SORTS = {
-  name: (left, right) => left.university.name.localeCompare(right.university.name),
-  newest: (left, right) => new Date(right.university.createdAt || 0) - new Date(left.university.createdAt || 0),
-  ending: (left, right) => (left.health.daysLeft ?? Infinity) - (right.health.daysLeft ?? Infinity),
+const COLUMN_VALUES = {
+  name: ({ university }) => university.name,
+  status: ({ health }) => STATUS_META[health.status]?.label || health.status,
+  modules: ({ university }) => enabledModules(university).length,
+  service: ({ university, health }) => (university.serviceStartDate && university.serviceEndDate ? health.daysLeft : null),
+  limits: ({ university }) => university.studentLimit ?? null,
+  coins: ({ university }) => Number(university.coinBalance || 0),
 };
+const columnValue = (row, key) => COLUMN_VALUES[key]?.(row);
 
 function servicePeriod({ university, health }) {
   if (!university.serviceStartDate || !university.serviceEndDate) return 'Not set';
@@ -29,7 +34,6 @@ export default function UniversityList() {
   const { universities, loading, error } = useUniversities();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
-  const [sort, setSort] = useState('name');
 
   const rows = useMemo(() => universities.map((university) => ({ university, health: universityHealth(university) })), [universities]);
   const counts = useMemo(() => Object.fromEntries(FILTERS.map(({ key, test }) => [key, test ? rows.filter((row) => test(row.health)).length : rows.length])), [rows]);
@@ -38,9 +42,10 @@ export default function UniversityList() {
     const test = FILTERS.find((item) => item.key === filter)?.test;
     return rows
       .filter((row) => !test || test(row.health))
-      .filter(({ university }) => !term || [university.name, university.universityId, university.contactEmail].some((value) => String(value || '').toLowerCase().includes(term)))
-      .sort(SORTS[sort]);
-  }, [rows, query, filter, sort]);
+      .filter(({ university }) => !term || [university.name, university.universityId, university.contactEmail].some((value) => String(value || '').toLowerCase().includes(term)));
+  }, [rows, query, filter]);
+  const table = useClientTable(visible, { getValue: columnValue, initialSort: { key: 'name', direction: 'asc' }, resetKey: `${filter}|${query}` });
+  const header = (key, label, extra = {}) => <SortHeader sortKey={key} sort={table.sort} onSort={table.toggleSort} className="pl-0" {...extra}>{label}</SortHeader>;
 
   if (loading) return <LoadingBlock label="Loading universities…" />;
   return (
@@ -64,11 +69,6 @@ export default function UniversityList() {
               </button>
             ))}
           </div>
-          <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">Sort
-            <select className={`${inputClass} w-auto py-1.5`} value={sort} onChange={(event) => setSort(event.target.value)}>
-              <option value="name">Name</option><option value="newest">Newest first</option><option value="ending">Service ending first</option>
-            </select>
-          </label>
         </div>
 
         <div className="mt-4">
@@ -78,13 +78,14 @@ export default function UniversityList() {
               {universities.length ? 'Try another search or filter.' : 'Add a university to give its students their own PeerPrep portal.'}
             </EmptyState>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[820px] text-left text-sm" data-no-serial>
                 <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800">
-                  <tr><th className="py-2 pr-3 font-semibold">University</th><th className="py-2 pr-3 font-semibold">Status</th><th className="py-2 pr-3 font-semibold">Modules</th><th className="py-2 pr-3 font-semibold">Service</th><th className="py-2 pr-3 font-semibold">Account limits</th><th className="py-2 pr-3 text-right font-semibold">Prep Coins</th><th className="py-2" /></tr>
+                  <tr>{header('name', 'University')}{header('status', 'Status')}{header('modules', 'Modules')}{header('service', 'Service')}{header('limits', 'Account limits')}{header('coins', 'Prep Coins', { align: 'right' })}<th className="py-2"><span className="sr-only">Actions</span></th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {visible.map((row) => {
+                  {table.pageRows.map((row) => {
                     const { university, health } = row;
                     const modules = enabledModules(university);
                     return (
@@ -112,6 +113,8 @@ export default function UniversityList() {
                 </tbody>
               </table>
             </div>
+            <TablePager {...table.pager} noun="universities" />
+            </>
           )}
         </div>
       </Card>

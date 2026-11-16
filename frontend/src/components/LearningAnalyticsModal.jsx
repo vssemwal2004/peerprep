@@ -19,6 +19,92 @@ import {
   Download
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { SortHeader, TablePager, useClientTable } from './table';
+
+const formatTime = (seconds) => {
+  if (!seconds) return '0s';
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (mins > 0) return `${mins}m ${secs}s`;
+  return `${secs}s`;
+};
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return 'N/A';
+  return new Date(dateStr).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+const watchedSortValue = (student, key) => {
+  if (key === 'status') return student.completed ? 'Completed' : 'In Progress';
+  if (key === 'lastAccessedAt') return student.lastAccessedAt ? new Date(student.lastAccessedAt) : null;
+  if (key === 'videoWatchedSeconds') return Number(student.videoWatchedSeconds) || 0;
+  return student[key];
+};
+
+/** One topic's "Students Who Watched" table: sortable columns, paged under the table. */
+function WatchedStudentsTable({ students, searchQuery }) {
+  const table = useClientTable(students, { getValue: watchedSortValue, resetKey: searchQuery });
+  const header = { sort: table.sort, onSort: table.toggleSort };
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-gray-600">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs bg-white dark:bg-gray-800">
+          <thead>
+            <tr className="bg-slate-50 dark:bg-gray-700 border-b border-slate-200 dark:border-gray-600">
+              <SortHeader sortKey="name" {...header}>Student Name</SortHeader>
+              <SortHeader sortKey="email" {...header} className="hidden sm:table-cell">Email</SortHeader>
+              <SortHeader sortKey="status" {...header} align="center">Status</SortHeader>
+              <SortHeader sortKey="videoWatchedSeconds" {...header} align="center" className="hidden md:table-cell">Watch Time</SortHeader>
+              <SortHeader sortKey="lastAccessedAt" {...header} align="right">Last Watched</SortHeader>
+            </tr>
+          </thead>
+          <tbody>
+            {table.pageRows.map(student => (
+              <tr key={student._id} className="border-b border-slate-100 dark:border-gray-700 last:border-0 hover:bg-sky-50 dark:hover:bg-gray-700/50 transition-colors">
+                <td className="py-3 px-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 bg-sky-100 dark:bg-sky-800 rounded-full flex items-center justify-center text-[10px] font-bold text-sky-600 dark:text-sky-300 flex-shrink-0">
+                      {student.name?.charAt(0)?.toUpperCase() || '?'}
+                    </span>
+                    <span className="font-semibold text-slate-800 dark:text-gray-200 truncate max-w-[150px]">{student.name}</span>
+                  </div>
+                </td>
+                <td className="py-3 px-3 text-slate-600 dark:text-gray-400 truncate max-w-[180px] hidden sm:table-cell">{student.email}</td>
+                <td className="py-3 px-3 text-center">
+                  {student.completed ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300 rounded-full text-[10px] font-bold">
+                      <CheckCircle2 className="w-3 h-3" /> Completed
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 rounded-full text-[10px] font-bold">
+                      <Clock className="w-3 h-3" /> In Progress
+                    </span>
+                  )}
+                </td>
+                <td className="py-3 px-3 text-center text-slate-700 dark:text-gray-300 font-semibold hidden md:table-cell">
+                  {formatTime(student.videoWatchedSeconds)}
+                </td>
+                <td className="py-3 px-3 text-right text-slate-500 dark:text-gray-400 text-[10px] whitespace-nowrap">
+                  {formatDate(student.lastAccessedAt)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {students.length === 0 && (
+          <p className="text-xs text-slate-400 dark:text-gray-500 text-center py-4">No matching students found</p>
+        )}
+      </div>
+      <TablePager {...table.pager} noun="students" />
+    </div>
+  );
+}
 
 export default function LearningAnalyticsModal({ isOpen, onClose, semesterId, subjectId, subjectName }) {
   const [analytics, setAnalytics] = useState(null);
@@ -71,25 +157,6 @@ export default function LearningAnalyticsModal({ isOpen, onClose, semesterId, su
       (s.email && s.email.toLowerCase().includes(q)) ||
       (s.studentId && s.studentId.toLowerCase().includes(q))
     );
-  };
-
-  const formatTime = (seconds) => {
-    if (!seconds) return '0s';
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    if (mins > 0) return `${mins}m ${secs}s`;
-    return `${secs}s`;
-  };
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return 'N/A';
-    return new Date(dateStr).toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
   };
 
   const downloadNotStartedCsv = () => {
@@ -528,54 +595,7 @@ export default function LearningAnalyticsModal({ isOpen, onClose, semesterId, su
                                                       </div>
                                                       Students Who Watched ({topic.viewedCount})
                                                     </h5>
-                                                    <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-gray-600">
-                                                      <table className="w-full text-xs bg-white dark:bg-gray-800">
-                                                        <thead>
-                                                          <tr className="bg-slate-50 dark:bg-gray-700 border-b border-slate-200 dark:border-gray-600">
-                                                            <th className="text-left py-3 px-3 text-slate-600 dark:text-gray-300 font-semibold">Student Name</th>
-                                                            <th className="text-left py-3 px-3 text-slate-600 dark:text-gray-300 font-semibold hidden sm:table-cell">Email</th>
-                                                            <th className="text-center py-3 px-3 text-slate-600 dark:text-gray-300 font-semibold">Status</th>
-                                                            <th className="text-center py-3 px-3 text-slate-600 dark:text-gray-300 font-semibold hidden md:table-cell">Watch Time</th>
-                                                            <th className="text-right py-3 px-3 text-slate-600 dark:text-gray-300 font-semibold">Last Watched</th>
-                                                          </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                          {filterStudents(topic.viewedStudents).map(student => (
-                                                            <tr key={student._id} className="border-b border-slate-100 dark:border-gray-700 last:border-0 hover:bg-sky-50 dark:hover:bg-gray-700/50 transition-colors">
-                                                              <td className="py-3 px-3">
-                                                                <div className="flex items-center gap-2">
-                                                                  <span className="w-7 h-7 bg-sky-100 dark:bg-sky-800 rounded-full flex items-center justify-center text-[10px] font-bold text-sky-600 dark:text-sky-300 flex-shrink-0">
-                                                                    {student.name?.charAt(0)?.toUpperCase() || '?'}
-                                                                  </span>
-                                                                  <span className="font-semibold text-slate-800 dark:text-gray-200 truncate max-w-[150px]">{student.name}</span>
-                                                                </div>
-                                                              </td>
-                                                              <td className="py-3 px-3 text-slate-600 dark:text-gray-400 truncate max-w-[180px] hidden sm:table-cell">{student.email}</td>
-                                                              <td className="py-3 px-3 text-center">
-                                                                {student.completed ? (
-                                                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300 rounded-full text-[10px] font-bold">
-                                                                    <CheckCircle2 className="w-3 h-3" /> Completed
-                                                                  </span>
-                                                                ) : (
-                                                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 rounded-full text-[10px] font-bold">
-                                                                    <Clock className="w-3 h-3" /> In Progress
-                                                                  </span>
-                                                                )}
-                                                              </td>
-                                                              <td className="py-3 px-3 text-center text-slate-700 dark:text-gray-300 font-semibold hidden md:table-cell">
-                                                                {formatTime(student.videoWatchedSeconds)}
-                                                              </td>
-                                                              <td className="py-3 px-3 text-right text-slate-500 dark:text-gray-400 text-[10px] whitespace-nowrap">
-                                                                {formatDate(student.lastAccessedAt)}
-                                                              </td>
-                                                            </tr>
-                                                          ))}
-                                                        </tbody>
-                                                      </table>
-                                                      {filterStudents(topic.viewedStudents).length === 0 && (
-                                                        <p className="text-xs text-slate-400 dark:text-gray-500 text-center py-4">No matching students found</p>
-                                                      )}
-                                                    </div>
+                                                    <WatchedStudentsTable students={filterStudents(topic.viewedStudents)} searchQuery={searchQuery} />
                                                   </div>
                                                 )}
 

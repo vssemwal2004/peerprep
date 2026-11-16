@@ -1,6 +1,7 @@
-import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Search, X, Paperclip } from 'lucide-react';
+import { ArrowRight, CalendarDays, Search, X, Paperclip } from 'lucide-react';
 import { interviewStatus } from './interviewSetup';
 import InterviewActionMenu from './InterviewActionMenu';
+import { TablePager, useClientTable } from '../table';
 
 const control = 'h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 focus:ring-2 focus:ring-sky-200 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200';
 const columns = 'xl:grid-cols-[minmax(150px,1.5fr)_105px_90px_minmax(100px,1fr)_95px_85px_32px]';
@@ -15,10 +16,12 @@ export default function InterviewBrowser({ events, search, onSearchChange, view,
     const status = interviewStatus(event);
     return view === 'active' ? status === 'live' : view === 'upcoming' ? status === 'scheduled' : view === 'previous' ? status === 'completed' : true;
   });
-  const total = pagination?.total ?? filtered.length;
-  const page = pagination?.page || 1;
-  const limit = pagination?.limit || 25;
-  const pages = pagination?.pages || 1;
+  // Remote lists are paged by the server; a local list is paged here with the same pager.
+  const local = useClientTable(filtered, { paginate: !pagination, resetKey: `${search}|${view}` });
+  const rows = pagination ? filtered : local.pageRows;
+  const pager = pagination
+    ? { page: pagination.page || 1, pageSize: pagination.limit || 25, total: pagination.total ?? filtered.length, onPage: onPageChange, onPageSize: onPageSizeChange, busy: loading }
+    : { ...local.pager, busy: loading };
   return <section aria-label="Interview list" aria-busy={loading}>
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <div className="relative min-w-48 flex-1">
@@ -34,7 +37,7 @@ export default function InterviewBrowser({ events, search, onSearchChange, view,
     {error ? <div role="alert" className="rounded-xl border border-rose-200 p-5 text-center text-sm text-rose-600"><p>{error}</p><button type="button" onClick={onRetry} className={control + ' mt-3'}>Retry loading</button></div> : loading ? <div role="status" className="space-y-2.5"><span className="sr-only">Loading interviews</span>{Array.from({ length: 5 }, (_, i) => <div key={i} className="h-20 animate-pulse rounded-xl border border-slate-200 bg-slate-100 dark:border-gray-800 dark:bg-gray-900" />)}</div> : filtered.length ? <>
       <div className={'mb-1.5 hidden items-center gap-x-3 px-4 text-[10px] font-semibold uppercase tracking-wider text-slate-400 xl:grid ' + columns}><span>Interview</span><span>Date</span><span>Time</span><span>Students</span><span>Access</span><span>Status</span><span className="sr-only">Actions</span></div>
       <div role="list" className="space-y-2.5">
-        {filtered.map((event) => {
+        {rows.map((event) => {
           const status = interviewStatus(event);
           const color = status === 'live' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : status === 'scheduled' ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300' : status === 'cancelled' ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300' : 'border-slate-200 bg-slate-100 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300';
           const joined = event.participantCount ?? (Array.isArray(event.participants) ? event.participants.length : null);
@@ -59,9 +62,6 @@ export default function InterviewBrowser({ events, search, onSearchChange, view,
         })}
       </div>
     </> : <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center dark:border-gray-700 dark:bg-gray-900"><CalendarDays className="h-6 w-6 text-slate-300" /><h2 className="mt-3 text-sm font-semibold text-slate-700 dark:text-gray-200">{search ? 'No matching interviews' : 'No interviews in this view'}</h2><p className="mt-1 text-xs text-slate-500">Try another search or clear the filters.</p><button type="button" className={control + ' mt-3'} onClick={() => { onSearchChange(''); onViewChange('all'); onTypeChange?.('all'); onLifecycleChange?.('all'); }}>Clear filters</button></div>}
-    {!error && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-      <span aria-live="polite">{loading ? 'Loading…' : total ? ((page - 1) * limit + 1) + '–' + Math.min(page * limit, total) + ' of ' + total + ' interviews' : '0 interviews'}</span>
-      {pagination && <div className="flex items-center gap-2"><select aria-label="Interviews per page" value={limit} disabled={loading} onChange={(e) => onPageSizeChange(Number(e.target.value))} className={control}><option value={25}>25 / page</option><option value={50}>50 / page</option><option value={100}>100 / page</option></select><button type="button" aria-label="Previous page" disabled={loading || page <= 1} onClick={() => onPageChange(page - 1)} className={control + ' disabled:opacity-40'}><ChevronLeft className="h-4 w-4" /></button><span>{page} / {pages}</span><button type="button" aria-label="Next page" disabled={loading || page >= pages} onClick={() => onPageChange(page + 1)} className={control + ' disabled:opacity-40'}><ChevronRight className="h-4 w-4" /></button></div>}
-    </div>}
+    {!error && <div className="mt-4"><TablePager {...pager} noun="interviews" /></div>}
   </section>;
 }

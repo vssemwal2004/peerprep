@@ -54,7 +54,7 @@ export function buildStudentReport({ row, profile, times = new Map(), range, gen
   sections.push(pairs('Profile', [
     ['Name', student.name], ['Student ID', student.studentId || '—'], ['Email', student.email || '—'],
     ['Semester', student.semester ?? '—'], ['Course', student.course || '—'], ['Branch', student.branch || '—'],
-    ['College / University', student.college || '—'], ['Group / Section', student.group || '—'],
+    ['Campus', student.college || '—'], ['Section', student.section || '—'], ['Group', student.group || '—'],
     ...(forStudent ? [] : [['Uploaded lists', (student.batchNames || []).join(', ') || '—'], ['Account', student.status === 'inactive' ? 'Disabled' : 'Active']]),
     ['Period', periodText(range)], ['Generated', generatedAt.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })],
   ]));

@@ -1,6 +1,20 @@
 import ProblemAssetImages from '../../components/ProblemAssetImages';
 import { normalizeRichText } from './problemStatementFormatting';
 
+/**
+ * Splits a table row on "|" that is not escaped as "\|". Written as a loop because a regex
+ * lookbehind is a parse-time SyntaxError in Safari before 16.4 and would break every page that
+ * loads this module (the problem page, assessments, the compiler admin).
+ */
+function splitTableCells(row) {
+  const cells = [''];
+  for (let index = 0; index < row.length; index += 1) {
+    if (row[index] === '|' && row[index - 1] !== '\\') cells.push('');
+    else cells[cells.length - 1] += row[index];
+  }
+  return cells;
+}
+
 const INLINE_CODE_CLASS = 'rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[0.88em] font-normal text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200';
 
 function renderSemanticText(text, keyPrefix) {
@@ -107,7 +121,7 @@ export function RichTextPreview({ content, className = '', lead = false }) {
   lines.forEach((line) => {
     const trimmed = line.trim();
     const tableCells = /^\|.*\|$/.test(trimmed)
-      ? trimmed.slice(1, -1).split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, '|'))
+      ? splitTableCells(trimmed.slice(1, -1)).map((cell) => cell.trim().replace(/\\\|/g, '|'))
       : null;
     const tableDivider = tableCells?.every((cell) => /^:?-{3,}:?$/.test(cell));
     if (tableCells && tableCells.length >= 2) {

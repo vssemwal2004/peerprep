@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2, RefreshCw, Users } from 'lucide-react';
 import { api } from '../../utils/api';
+import { SortHeader, TablePager, useClientTable } from '../../components/table';
 import { card, helperText, inputClass, sectionTitle } from './fields';
 
 const PLATFORM = { id: 'platform', name: 'PeerPrep students (no university)' };
+const impactValue = (row, key) => ({ student: row.name, now: row.before?.score, after: row.after?.score }[key]);
 
 function Stat({ label, value }) {
   return <div className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/60"><p className={helperText}>{label}</p><p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900 dark:text-white">{value}</p></div>;
@@ -25,6 +27,8 @@ export default function ImpactPanel({ config, universities = [], disabled }) {
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const topRows = useMemo(() => impact?.top || [], [impact]);
+  const table = useClientTable(topRows, { getValue: impactValue, resetKey: impact });
 
   useEffect(() => {
     let live = true;
@@ -69,9 +73,13 @@ export default function ImpactPanel({ config, universities = [], disabled }) {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[420px] text-sm" data-no-serial>
                 <caption className={`mb-2 text-left ${helperText}`}>Top {impact.top.length} with these values</caption>
-                <thead className="text-xs uppercase tracking-wide text-slate-500"><tr><th className="py-2 text-left font-semibold">Student</th><th className="py-2 text-right font-semibold">Now</th><th className="py-2 text-right font-semibold">With these values</th></tr></thead>
+                <thead className="text-xs uppercase tracking-wide text-slate-500"><tr>
+                  <SortHeader sortKey="student" sort={table.sort} onSort={table.toggleSort}>Student</SortHeader>
+                  <SortHeader sortKey="now" sort={table.sort} onSort={table.toggleSort} align="right">Now</SortHeader>
+                  <SortHeader sortKey="after" sort={table.sort} onSort={table.toggleSort} align="right">With these values</SortHeader>
+                </tr></thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {impact.top.map((row, index) => (
+                  {table.pageRows.map((row, index) => (
                     <tr key={`${row.name}-${index}`}>
                       <td className="py-2 font-medium text-slate-800 dark:text-slate-200">{row.name}</td>
                       <td className="py-2 text-right tabular-nums text-slate-500">{row.before.score} <span className="text-xs">(#{row.before.rank ?? '–'})</span></td>
@@ -82,6 +90,7 @@ export default function ImpactPanel({ config, universities = [], disabled }) {
               </table>
             </div>
           )}
+          {impact.top.length > 0 && <TablePager {...table.pager} noun="students" />}
         </div>
       )}
     </section>

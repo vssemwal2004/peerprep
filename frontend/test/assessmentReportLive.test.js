@@ -207,7 +207,9 @@ test('report page: KPIs and charts from the roster, client filter/sort, release 
     const text = document.body.textContent;
     assert.deepEqual(rosterCalls, [null], 'one full roster load for the selected assessment');
     assert.ok(text.includes('Placement Mock · 4 candidates'));
-    assert.ok(text.includes('3 started · 1 not started'), 'not-started students count toward the roster');
+    // Headline tiles: label, count, sub-line. Attempted = in progress + finished; the not-started student still counts.
+    assert.match(text, /Attempted3\s*1 not started/, 'not-started students count toward the roster');
+    assert.match(text, /Not started1\s*25% of candidates/, 'the not-started tile counts the placeholder row');
     assert.ok(text.includes('90%'), 'average/min/max are percentages of the single graded attempt');
     assert.ok(text.includes('76-100%') && !text.includes('91-100'), 'four percentage buckets');
     for (const label of ['Passed', 'Failed', 'Evaluating', 'In progress', 'Not started']) assert.ok(text.includes(label), `outcome legend has ${label}`);
@@ -227,7 +229,8 @@ test('report page: KPIs and charts from the roster, client filter/sort, release 
     const rowKeys = () => [...document.querySelectorAll('tbody tr[data-row-key]')].map((tr) => tr.getAttribute('data-row-key'));
     assert.deepEqual(rowKeys(), ['s3', 's1', 's2', 'u4'], 'default sort by status: in progress first, not started last');
     const statusHeader = [...document.querySelectorAll('th')].find((th) => th.textContent.trim() === 'Status');
-    await act(async () => statusHeader.click());
+    // The header's label is the sort button (the cell itself is not clickable; the arrow opens the column menu).
+    await act(async () => statusHeader.querySelector('button').click());
     assert.deepEqual(rowKeys(), ['u4', 's1', 's2', 's3'], 'status column flips to descending; equal statuses stay in name order');
 
     const search = document.querySelector('input[aria-label="Search candidates"]');

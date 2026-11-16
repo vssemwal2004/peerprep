@@ -10,9 +10,25 @@ import { useAuth } from '../context/AuthContext';
 import { ActivityTrendChart, BandChart, BarRows, DonutChart, StackedBars } from './charts';
 import { CardHeader, CardLink, EmptyHint, Glass, KpiTile, MiniStat, OverviewShell, Segmented, SkeletonRows, ToneDot } from './ui';
 import { AssessmentPanel, CodingPanel, InterviewPanel, LearningPanel, TodayRow } from './OverviewDashboard';
-import { MODULE_META, formatNumber, greeting, linksFor, pendingRows, percent, relativeTime, weekChange, whenLabel } from './overviewModel';
+import { MODULE_META, OVERVIEW_PRESETS, formatNumber, greeting, linksFor, pendingRows, percent, periodPhrase, periodShort, relativeTime, weekChange, whenLabel } from './overviewModel';
+import DateRangeFilter from '../components/dateRange/DateRangeFilter';
+import { rangeLabel, rangeToQuery } from '../components/dateRange/dateRangeModel';
 import { MODULES, STATUS_META, actionLabel, universityHealth } from '../admin/universities/universityModel';
 import UniversityBadge from '../admin/universities/UniversityBadge';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
+
+const UNIVERSITY_COLUMNS = [['name', 'University'], ['status', 'Status'], ['students', 'Students'], ['activeWeek', 'Active · 7 days'], ['modules', 'Modules'], ['setup', 'Setup'], ['serviceEnds', 'Service ends']];
+const UNIVERSITY_HEADER = 'px-2 pb-2 pt-0 text-[11px] font-medium normal-case tracking-normal text-slate-500 dark:text-slate-400';
+const UNIVERSITY_VALUES = {
+  name: (row) => row.name || null,
+  status: (row) => STATUS_META[row.health?.status]?.label || row.health?.status || null,
+  students: (row) => (row.reachable ? Number(row.students || 0) : null),
+  activeWeek: (row) => (row.reachable && row.students ? Number(row.activeWeek || 0) / row.students : null),
+  modules: (row) => MODULES.filter((module) => row.modules?.[module.key]).length,
+  setup: (row) => ['dbConfigured', 'judgeConfigured', 'interviewConfigured'].filter((key) => row.registration?.[key]).length + (row.registration?.logo?.url ? 1 : 0),
+  serviceEnds: (row) => row.health?.daysLeft ?? null,
+};
+const universityValue = (row, key) => UNIVERSITY_VALUES[key]?.(row);
 
 const SERIES = ['coding', 'assessments', 'interviews', 'learning'];
 const STATUS_COLORS = { live: '#10b981', expiring: '#f59e0b', scheduled: '#0284c7', expired: '#e11d48', disabled: '#94a3b8' };
@@ -85,16 +101,22 @@ export default function PlatformOverview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sortBy, setSortBy] = useState('attention');
+  // Engagement period: the trend, module panels and coding totals follow it.
+  const [range, setRange] = useState({ preset: '30d' });
+  const rangeQuery = JSON.stringify(rangeToQuery(range));
+  const periodLabel = rangeLabel(range);
+  const period = periodPhrase(periodLabel);
+  const short = periodShort(range);
 
   const load = useCallback(async (refresh = false) => {
     setLoading(true);
     setError('');
-    const [base, live] = await Promise.allSettled([api.platformOverview(), api.platformInsights({ refresh })]);
+    const [base, live] = await Promise.allSettled([api.platformOverview(), api.platformInsights({ refresh, range: JSON.parse(rangeQuery) })]);
     if (base.status === 'fulfilled') setOverview(base.value);
     if (live.status === 'fulfilled') setInsights(live.value);
     if (base.status === 'rejected' || live.status === 'rejected') setError((base.reason || live.reason)?.message || 'Some platform figures could not be loaded.');
     setLoading(false);
-  }, []);
+  }, [rangeQuery]);
   useEffect(() => { load(); }, [load]);
 
   const model = useMemo(() => {
@@ -106,17 +128,22 @@ export default function PlatformOverview() {
     const workspace = insights?.workspace || null;
     const central = insights?.central || null;
 
-    // One 14-day series: the main database plus every connected university, matched by date.
-    const days = workspace?.trend?.map((day) => day.date) || connected[0]?.trend?.map((day) => day.date) || [];
-    const trend = days.map((date) => {
-      const point = { date };
-      for (const key of SERIES) {
-        point[key] = (workspace?.trend?.find((day) => day.date === date)?.[key] || 0)
-          + connected.reduce((total, row) => total + (row.trend?.find((day) => day.date === date)?.[key] || 0), 0);
-      }
-      point.logins = workspace?.trend?.find((day) => day.date === date)?.logins || 0;
-      return point;
-    });
+    // One series for the chosen period: the main database plus every connected university, matched by date.
+    const combine = (field) => {
+      const days = workspace?.[field]?.map((day) => day.date) || connected[0]?.[field]?.map((day) => day.date) || [];
+      const index = (rows) => new Map((rows || []).map((day) => [day.date, day]));
+      const sources = [index(workspace?.[field]), ...connected.map((row) => index(row[field]))];
+      const own = sources[0];
+      return days.map((date) => {
+        const point = { date };
+        for (const key of SERIES) point[key] = sources.reduce((total, source) => total + (source.get(date)?.[key] || 0), 0);
+        point.logins = own.get(date)?.logins || 0;
+        return point;
+      });
+    };
+    const trend = combine('trend');
+    // [yesterday, today] whatever the period; older servers only send the trend.
+    const glanceRows = workspace?.glance?.length === 2 ? combine('glance') : trend.slice(-2);
     const totals = trend.map((day) => SERIES.reduce((total, key) => total + day[key], 0));
     const universityStudents = connected.reduce((total, row) => total + row.students, 0);
     const mainStudents = workspace?.people?.students || 0;
@@ -135,7 +162,7 @@ export default function PlatformOverview() {
       central?.prepScore.draftPending && { key: 'prep-draft', tone: 'sky', label: 'A Prep Score draft is waiting to be published', to: '/admin/settings/prep-score-adjustment' },
       central && central.coins.pricedFeatures === 0 && { key: 'pricing', tone: 'slate', label: 'No Prep Coin prices set: every paid feature is free', to: '/admin/settings/prep-coin-pricing' },
       central?.mail.failed > 0 && { key: 'mail', tone: 'rose', label: `${central.mail.failed} email${central.mail.failed === 1 ? '' : 's'} failed in 30 days`, to: '/admin/email-queue' },
-      ...pendingRows(workspace?.pending, ADMIN_LINKS).map((row) => ({ ...row, label: `Main database: ${row.label.charAt(0).toLowerCase()}${row.label.slice(1)}` })),
+      ...pendingRows(workspace?.pending, ADMIN_LINKS, short).map((row) => ({ ...row, label: `Main database: ${row.label.charAt(0).toLowerCase()}${row.label.slice(1)}` })),
     ].filter(Boolean);
 
     const renewals = registrations
@@ -145,7 +172,7 @@ export default function PlatformOverview() {
       .slice(0, 5);
 
     return {
-      registrations, rows, connected, workspace, central, trend, totals, statusCounts, attention, renewals,
+      registrations, rows, connected, workspace, central, trend, glance: glanceRows, totals, statusCounts, attention, renewals,
       mainStudents, universityStudents,
       students: mainStudents + universityStudents,
       activeWeek: (workspace?.people?.activeWeek || 0) + connected.reduce((total, row) => total + row.activeWeek, 0),
@@ -155,7 +182,7 @@ export default function PlatformOverview() {
       coinsHeld: registrations.reduce((total, university) => total + (university.coinBalance || 0), 0),
       adoption: MODULES.map((module) => ({ label: module.label, value: registrations.filter((university) => university.permissions?.[module.key]).length })),
     };
-  }, [overview, insights]);
+  }, [overview, insights, short]);
 
   const sortedRows = useMemo(() => [...model.rows].sort((a, b) => {
     if (sortBy === 'students') return (b.students || 0) - (a.students || 0);
@@ -163,6 +190,10 @@ export default function PlatformOverview() {
     const weight = (row) => (row.reachable ? 0 : 2) + (row.health.needsAttention ? 1 : 0);
     return weight(b) - weight(a) || a.name.localeCompare(b.name);
   }), [model.rows, sortBy]);
+  // Column headers sort on top of the "Sort universities" order; picking that order clears them.
+  const universityTable = useClientTable(sortedRows, { getValue: universityValue });
+  const { setSort: setUniversitySort } = universityTable;
+  useEffect(() => { setUniversitySort(null); }, [sortBy, setUniversitySort]);
 
   const showSkeleton = loading && !insights;
   const ws = model.workspace;
@@ -176,7 +207,7 @@ export default function PlatformOverview() {
     { label: 'Total students', value: formatNumber(model.students), helper: `${formatNumber(model.mainStudents)} main · ${formatNumber(model.universityStudents)} universities`, Icon: Users, color: '#0284c7', to: '/admin/students' },
     { label: 'Active this week', value: formatNumber(model.activeWeek), helper: `${percent(model.activeWeek, model.students)}% of students`, Icon: Activity, color: '#10b981', trend: model.totals, delta: weekChange(model.totals) },
     { label: 'Not signed in yet', value: formatNumber(ws?.pending?.notActivated), helper: 'Main database accounts', Icon: UserX, color: '#e11d48', to: '/admin/students' },
-    { label: 'Coding submissions', value: formatNumber(model.codingSubmissions), helper: ws?.coding?.acceptanceRate != null ? `${Math.round(ws.coding.acceptanceRate)}% accepted · 14 days` : 'Last 14 days', Icon: Code2, color: MODULE_META.coding.color, trend: model.trend.map((day) => day.coding), delta: weekChange(model.trend.map((day) => day.coding)), to: '/admin/analysis?source=coding' },
+    { label: 'Coding submissions', value: formatNumber(model.codingSubmissions), helper: ws?.coding?.acceptanceRate != null ? `${Math.round(ws.coding.acceptanceRate)}% accepted · ${short}` : periodLabel, Icon: Code2, color: MODULE_META.coding.color, trend: model.trend.map((day) => day.coding), delta: weekChange(model.trend.map((day) => day.coding)), to: '/admin/analysis?source=coding' },
     { label: 'Average Prep Score', value: ws?.prepScore?.average ?? '—', helper: `${formatNumber(ws?.prepScore?.scored)} scored · ${central?.prepScore.version ? `policy v${central.prepScore.version}` : 'default policy'}`, Icon: Gauge, color: '#0ea5e9', to: '/admin/analysis' },
     {
       label: 'Coding problems', value: formatNumber(problemTotal), helper: problems ? `${formatNumber(problems.published)} published · ${formatNumber(problems.draft)} drafts` : 'Shared catalogue', Icon: FileQuestion, color: '#d97706', to: '/admin/library/coding/problems',
@@ -215,6 +246,7 @@ export default function PlatformOverview() {
           { label: 'Active this week', value: formatNumber(model.activeWeek), hint: `${percent(model.activeWeek, model.students)}% of ${formatNumber(model.students)} students`, Icon: Activity, tone: 'sky' },
           { label: 'Prep Coins held', value: formatNumber(model.coinsHeld), hint: 'by universities', Icon: Coins, tone: 'amber', to: '/admin/prep-coins/wallets' },
         ]}
+        period={<DateRangeFilter value={range} onChange={setRange} presets={OVERVIEW_PRESETS} align="right" label="Engagement period" />}
         shortcuts={[
           ...SECTIONS.map((section) => ({ label: section.label, href: `#${section.id}` })),
           { label: 'Universities', to: '/admin/universities/all', Icon: Building2 },
@@ -263,7 +295,7 @@ export default function PlatformOverview() {
         </Glass>
       </div>
 
-      <SectionTitle id="engagement" title="Engagement" subtitle="What students did over the last 14 days" />
+      <SectionTitle id="engagement" title="Engagement" subtitle={`What students did, ${period}`} />
       <div className="grid gap-4 xl:grid-cols-12">
         <Glass className="p-5 xl:col-span-8">
           <CardHeader title="Student activity" subtitle="Main database plus every connected university" Icon={Activity} action={<CardLink to="/admin/activity">Activity log</CardLink>} />
@@ -273,8 +305,8 @@ export default function PlatformOverview() {
           <CardHeader title="Today at a glance" subtitle="Compared with yesterday" Icon={CalendarClock} />
           {showSkeleton ? <SkeletonRows rows={4} /> : (
             <ul className="divide-y divide-slate-100 dark:divide-white/5">
-              {SERIES.map((key) => <TodayRow key={key} label={MODULE_META[key].label} color={MODULE_META[key].color} today={model.trend.at(-1)?.[key] || 0} yesterday={model.trend.at(-2)?.[key] || 0} />)}
-              <TodayRow label="Student sign-ins" color={MODULE_META.logins.color} today={model.trend.at(-1)?.logins || 0} yesterday={model.trend.at(-2)?.logins || 0} />
+              {SERIES.map((key) => <TodayRow key={key} label={MODULE_META[key].label} color={MODULE_META[key].color} today={model.glance.at(-1)?.[key] || 0} yesterday={model.glance.at(-2)?.[key] || 0} />)}
+              <TodayRow label="Student sign-ins" color={MODULE_META.logins.color} today={model.glance.at(-1)?.logins || 0} yesterday={model.glance.at(-2)?.logins || 0} />
             </ul>
           )}
           <div className="mt-4 grid grid-cols-2 gap-2">
@@ -285,10 +317,10 @@ export default function PlatformOverview() {
       </div>
       {ws ? (
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {ws.coding ? <CodingPanel coding={ws.coding} links={ADMIN_LINKS} /> : null}
-          {ws.assessments ? <AssessmentPanel assessments={ws.assessments} links={ADMIN_LINKS} /> : null}
-          {ws.mockInterviews || ws.aiInterviews ? <InterviewPanel mock={ws.mockInterviews} ai={ws.aiInterviews} links={ADMIN_LINKS} /> : null}
-          {ws.learning ? <LearningPanel learning={ws.learning} students={ws.people.students} links={ADMIN_LINKS} /> : null}
+          {ws.coding ? <CodingPanel coding={ws.coding} links={ADMIN_LINKS} period={period} /> : null}
+          {ws.assessments ? <AssessmentPanel assessments={ws.assessments} links={ADMIN_LINKS} period={period} short={short} /> : null}
+          {ws.mockInterviews || ws.aiInterviews ? <InterviewPanel mock={ws.mockInterviews} ai={ws.aiInterviews} links={ADMIN_LINKS} period={period} short={short} /> : null}
+          {ws.learning ? <LearningPanel learning={ws.learning} students={ws.people.students} links={ADMIN_LINKS} short={short} /> : null}
         </div>
       ) : null}
 
@@ -299,14 +331,15 @@ export default function PlatformOverview() {
             action={<Segmented label="Sort universities" value={sortBy} onChange={setSortBy} options={[{ value: 'attention', label: 'Needs attention' }, { value: 'students', label: 'Students' }, { value: 'name', label: 'Name' }]} />} />
           {showSkeleton ? <SkeletonRows rows={4} /> : sortedRows.length ? (
             <div className="-mx-2 overflow-x-auto">
-              <table className="w-full min-w-[880px] text-left text-xs">
+              <table className="w-full min-w-[880px] text-left text-xs" style={{ '--serial-start': (universityTable.page - 1) * universityTable.pageSize }}>
                 <thead>
                   <tr className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {['University', 'Status', 'Students', 'Active · 7 days', 'Modules', 'Setup', 'Service ends', ''].map((heading) => <th key={heading} className="px-2 pb-2 font-medium">{heading}</th>)}
+                    {UNIVERSITY_COLUMNS.map(([key, heading]) => <SortHeader key={key} sortKey={key} sort={universityTable.sort} onSort={universityTable.toggleSort} className={UNIVERSITY_HEADER}>{heading}</SortHeader>)}
+                    <SortHeader sortable={false} className={UNIVERSITY_HEADER}><span className="sr-only">Manage</span></SortHeader>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                  {sortedRows.map((row) => {
+                  {universityTable.pageRows.map((row) => {
                     const registration = row.registration;
                     const page = `/admin/universities/${encodeURIComponent(row.universityId)}`;
                     const left = row.health.daysLeft;
@@ -355,6 +388,7 @@ export default function PlatformOverview() {
                   })}
                 </tbody>
               </table>
+              <TablePager {...universityTable.pager} noun="universities" className="dark:border-white/5" />
             </div>
           ) : <EmptyHint action={<CardLink to="/admin/universities/new">Add the first university</CardLink>}>No universities yet.</EmptyHint>}
         </Glass>

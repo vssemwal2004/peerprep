@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, Award, Building2, Check, Layers, Sparkles } from 'lucide-react';
+import { ArrowRight, Award, Building2, CalendarClock, Check, Layers, Lock, Sparkles } from 'lucide-react';
 import { DIFFICULTY_TONES, questCategory, questPercent, questState, questTheme } from './questTheme';
+import { questWindowStatus, windowNote } from './questWindow';
 
 const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2';
 
@@ -35,7 +36,12 @@ export default function QuestCard({ quest, preview = false }) {
   const state = questState(quest);
   const percent = questPercent(quest);
   const companies = quest.companies?.length ? quest.companies : quest.company ? [quest.company] : [];
-  const cta = state === 'completed' ? 'Review' : state === 'active' ? 'Continue' : 'Start QuickPrep';
+  const openState = questWindowStatus(quest);
+  const note = windowNote(quest);
+  // Outside its window a sheet is locked: before it opens nothing can be attempted, after it ends it is view-only.
+  const locked = openState !== 'open' && state !== 'completed';
+  const cta = state === 'completed' ? 'Review' : openState === 'upcoming' ? note : openState === 'ended' ? 'View · Ended' : state === 'active' ? 'Continue' : 'Start QuickPrep';
+  const CtaIcon = locked ? Lock : ArrowRight;
   const Wrapper = preview ? 'div' : Link;
   const wrapperProps = preview ? {} : { to: `/student/quickprep/${quest.slug}` };
   return <Wrapper {...wrapperProps} className={`group relative flex flex-col overflow-hidden rounded-2xl border border-[#e9eaee] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:border-transparent hover:shadow-[0_22px_44px_-24px_rgba(15,23,42,0.45)] motion-reduce:transform-none dark:border-white/[0.07] dark:bg-[#232325] ${focusRing}`}>
@@ -56,6 +62,9 @@ export default function QuestCard({ quest, preview = false }) {
       </div>
     </div>
     <div className="flex flex-1 flex-col p-4">
+      {note && <p className={`mb-1.5 inline-flex items-center gap-1 self-start rounded-md px-1.5 py-0.5 text-[11.5px] font-semibold ${openState === 'upcoming' ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' : openState === 'ended' ? 'bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-zinc-400' : 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300'}`}>
+        <CalendarClock className="h-3 w-3" aria-hidden="true" />{note}
+      </p>}
       <h3 className="line-clamp-2 text-[16.5px] font-semibold leading-snug tracking-[-0.015em] text-slate-950 transition-colors group-hover:text-sky-700 dark:text-zinc-50 dark:group-hover:text-sky-300">{quest.title}</h3>
       {quest.description && <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-slate-500 dark:text-zinc-400">{quest.description}</p>}
       {quest.topics?.length > 0 && <div className="mt-2.5 flex flex-wrap gap-1">
@@ -69,8 +78,8 @@ export default function QuestCard({ quest, preview = false }) {
         <div className={`min-w-0 rounded-lg px-2 py-1.5 ${theme.soft}`}><dt className="flex items-center gap-1 text-[10.5px] opacity-80"><Award className="h-3 w-3" aria-hidden="true" />Badge</dt><dd className="mt-0.5 truncate font-semibold" title={quest.badge?.title}>{quest.badge?.title || '—'}</dd></div>
       </dl>
       <div className="mt-auto pt-4">
-        <span className={`flex items-center justify-between rounded-xl px-3.5 py-2.5 text-[13px] font-semibold transition-colors ${state === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' : 'bg-slate-900 text-white group-hover:bg-sky-600 dark:bg-white dark:text-slate-900 dark:group-hover:bg-sky-400'}`}>
-          {cta}<ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" aria-hidden="true" />
+        <span className={`flex items-center justify-between gap-2 rounded-xl px-3.5 py-2.5 text-[13px] font-semibold transition-colors ${state === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' : locked ? 'bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-zinc-300' : 'bg-slate-900 text-white group-hover:bg-sky-600 dark:bg-white dark:text-slate-900 dark:group-hover:bg-sky-400'}`}>
+          <span className="truncate">{cta}</span><CtaIcon className={`h-4 w-4 shrink-0 ${locked ? '' : 'transition-transform duration-300 group-hover:translate-x-1'}`} aria-hidden="true" />
         </span>
       </div>
     </div>

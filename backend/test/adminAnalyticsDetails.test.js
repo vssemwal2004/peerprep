@@ -66,6 +66,25 @@ test('detail row search, numeric sorting, and empty out-of-range pages are stabl
   assert.equal(empty.pagination.hasNext, false);
 });
 
+test('detail sort accepts any plain row field for list graphs, only named fields for the heatmap', () => {
+  assert.deepEqual(validateGraphDetailsRequest('student-ranking', { query: {}, sort: { by: 'studentId', direction: 'asc' } }).sort, { by: 'studentId', direction: 'asc' });
+  assert.deepEqual(validateGraphDetailsRequest('student-ranking', { query: {} }).sort, { by: 'value', direction: 'desc' }, 'default unchanged');
+  for (const by of ['__proto__', 'a.b', 'name ', '$gt', '1abc', 'x'.repeat(41)]) {
+    assert.throws(() => validateGraphDetailsRequest('student-ranking', { query: {}, sort: { by } }), /sort field/, by);
+  }
+  assert.throws(() => validateGraphDetailsRequest('topic-student-heatmap', { query: {}, sort: { by: 'email' } }), /sort field/);
+  assert.equal(validateGraphDetailsRequest('topic-student-heatmap', { query: {}, sort: { by: 'studentId' } }).sort.by, 'studentId');
+
+  const graph = { id: 'student-ranking', data: [
+    { studentId: 'c', name: 'Chen', value: 1 },
+    { studentId: 'a', name: 'Aman', value: 2 },
+    { studentId: 'b', name: 'Bhavya', value: 3 },
+  ] };
+  assert.deepEqual(paginateGraphRows(graph, { page: 1, limit: 10, search: '', sort: { by: 'studentId', direction: 'asc' } }).rows.map((row) => row.studentId), ['a', 'b', 'c']);
+  // An inherited name (e.g. "constructor") reads nothing, so the original order is kept.
+  assert.deepEqual(paginateGraphRows(graph, { page: 1, limit: 10, search: '', sort: { by: 'constructor', direction: 'asc' } }).rows.map((row) => row.studentId), ['c', 'a', 'b']);
+});
+
 test('detail cache keys are distinct across graph, page, search, and sort', () => {
   const base = { page: 1, limit: 25, search: '', sort: { by: 'value', direction: 'desc' } };
   const first = buildGraphDetailsCacheKey('query', 'student-ranking', base);

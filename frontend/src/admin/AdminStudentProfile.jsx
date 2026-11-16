@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   UserRound,
+  Zap,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
@@ -23,6 +24,7 @@ import PrepScoreCard from './studentProfile/PrepScoreCard';
 import ProfileTabs from './studentProfile/ProfileTabs';
 import OverviewTab from './studentProfile/OverviewTab';
 import CodingTab from './studentProfile/CodingTab';
+import QuickPrepTab from './studentProfile/QuickPrepTab';
 import AssessmentsTab from './studentProfile/AssessmentsTab';
 import InterviewsTab from './studentProfile/InterviewsTab';
 import LearningTab from './studentProfile/LearningTab';
@@ -35,6 +37,7 @@ const MotionDiv = motion.div;
 const TABS = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'coding', label: 'Coding', icon: Code2 },
+  { id: 'quickprep', label: 'Quick Prep', icon: Zap },
   { id: 'assessments', label: 'Assessments', icon: ClipboardList },
   { id: 'interviews', label: 'Interviews', icon: MessageSquare },
   { id: 'learning', label: 'Learning', icon: BookOpenCheck },
@@ -86,9 +89,10 @@ export default function AdminStudentProfile() {
   const closeBadgesGallery = useCallback(() => setBadgesGallery(null), []);
 
   const requestedTab = searchParams.get('tab');
+  // Quick Prep sheets are coding question sets, so they follow the questions module like the Coding tab.
   const activeTab = TAB_IDS.has(requestedTab) && (
-    !['coding', 'assessments', 'interviews', 'learning'].includes(requestedTab)
-    || visible[{ coding: 'questions' }[requestedTab] || requestedTab]
+    !['coding', 'quickprep', 'assessments', 'interviews', 'learning'].includes(requestedTab)
+    || visible[{ coding: 'questions', quickprep: 'questions' }[requestedTab] || requestedTab]
   ) ? requestedTab : 'overview';
   const panelRef = useRef(null);
   const tabBarRef = useRef(null);
@@ -402,8 +406,8 @@ export default function AdminStudentProfile() {
     return parts.join(' · ');
   }, [activeDays, currentStreak, levelSolved, stats?.mostUsedLanguage]);
 
-  const tabs = TABS.filter((tab) => !['coding', 'assessments', 'interviews', 'learning'].includes(tab.id)
-    || visible[{ coding: 'questions' }[tab.id] || tab.id]).map((tab) => {
+  const tabs = TABS.filter((tab) => !['coding', 'quickprep', 'assessments', 'interviews', 'learning'].includes(tab.id)
+    || visible[{ coding: 'questions', quickprep: 'questions' }[tab.id] || tab.id]).map((tab) => {
     if (tab.id === 'coding') return { ...tab, count: compiler?.attemptedProblems?.length ?? null };
     if (tab.id === 'assessments') return { ...tab, count: num(assessmentMetrics.attempts) };
     if (tab.id === 'interviews') return { ...tab, count: num(interviewMetrics.totalPairs) };
@@ -528,6 +532,7 @@ export default function AdminStudentProfile() {
                 />
               ) : null}
               {activeTab === 'coding' ? <CodingTab stats={stats} compiler={compiler} codingTotals={codingTotals} acceptance={acceptance} /> : null}
+              {activeTab === 'quickprep' ? <QuickPrepTab studentId={studentId} /> : null}
               {activeTab === 'assessments' ? <AssessmentsTab stats={stats} /> : null}
               {activeTab === 'interviews' ? <InterviewsTab stats={stats} /> : null}
               {activeTab === 'learning' ? (

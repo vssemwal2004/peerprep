@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { LayoutGrid, Loader2, Plus, RotateCcw, SlidersHorizontal, Users, X } from "lucide-react";
 import { useAnalysisApi, useAnalysisScope } from "../analysisScope";
 import {
-  MAX_GROUPS, RANGE_PRESETS, countActive, countRules, defaultFilterState, featureFields, groupName, groupText, isRuleComplete, newGroup, nodeId,
+  MAX_GROUPS, RANGE_PRESET_VALUES, countActive, countRules, defaultFilterState, featureFields, groupName, groupText, isRuleComplete, newGroup, nodeId,
   optionLookup, rankMetrics, rankText, setRule, studentFields, switchArea, toQueryRequest, valueParts,
 } from "../filterModel";
+import DateRangeFilter from "../../../components/dateRange/DateRangeFilter";
 import { GroupCard, GroupFilters, RankEditor } from "./GroupEditor";
 import { AREA_ICONS } from "./sectionStyles";
-import { Button, Drawer, fieldSelectClass, focusRing } from "./ui";
+import { Button, Drawer, focusRing } from "./ui";
 
 const AREA_HINTS = {
   all: "Every feature together",
@@ -115,12 +116,10 @@ export function FilterDrawer({ open, state, catalog, fieldMap, matched, onApply,
       <div className="space-y-3 bg-slate-50 p-3 sm:p-4 dark:bg-gray-950">
         <Step number={1} title="What do you want to analyse?"
           aside={(
-            <label className="flex items-center gap-2 text-[12px] font-semibold text-slate-600 dark:text-gray-300">
+            <div className="flex items-center gap-2 text-[12px] font-semibold text-slate-600 dark:text-gray-300">
               Activity from
-              <select className={`${fieldSelectClass} w-36`} value={draft.range.preset} onChange={(event) => setDraft({ ...draft, range: { preset: event.target.value } })}>
-                {RANGE_PRESETS.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}
-              </select>
-            </label>
+              <DateRangeFilter value={draft.range} onChange={(range) => setDraft({ ...draft, range })} presets={RANGE_PRESET_VALUES} align="right" />
+            </div>
           )}>
           {/* Inside an assessment report the area is fixed: switching it would drop the test filters. */}
           {scoped ? (

@@ -77,6 +77,23 @@ function buildActivityQuery(req) {
   return conditions.length === 1 ? conditions[0] : { $and: conditions };
 }
 
+// Activity table column → stored field. Unknown keys keep the default newest-first order.
+const ACTIVITY_SORT_FIELDS = Object.freeze({
+  time: 'createdAt',
+  actor: 'userEmail',
+  action: 'actionType',
+  record: 'targetType',
+  description: 'description',
+});
+
+function activitySort(query = {}) {
+  const key = String(query.sortBy || '');
+  const field = Object.hasOwn(ACTIVITY_SORT_FIELDS, key) ? ACTIVITY_SORT_FIELDS[key] : null;
+  if (!field) return { createdAt: -1 };
+  const direction = query.sortOrder === 'asc' ? 1 : -1;
+  return field === 'createdAt' ? { createdAt: direction, _id: direction } : { [field]: direction, createdAt: -1, _id: -1 };
+}
+
 // Log activity helper function
 const logActivity = async ({
   userEmail,
@@ -127,7 +144,7 @@ const getActivities = async (req, res) => {
 
     const [activities, total] = await Promise.all([
       Activity.find(query)
-        .sort({ createdAt: -1 })
+        .sort(activitySort(req.query))
         .skip(skip)
         .limit(limitNum)
         .lean(),
@@ -258,6 +275,8 @@ const cleanupOldActivities = async (daysToKeep = 90) => {
 };
 
 export {
+  ACTIVITY_SORT_FIELDS,
+  activitySort,
   logActivity,
   getActivities,
   getActivityStats,

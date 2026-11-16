@@ -19,17 +19,33 @@ import { buttonClass, Card } from "./components/ui";
 
 const PERIOD_KEY = "peerprep:analysis:period:v1";
 
-/** The period from the address (?period=…), else the last one used, else 30 days. */
-function initialRange(searchParams) {
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The saved period: a preset id ("30d", older visits) or a custom range as JSON. */
+function savedRange() {
   let saved = "";
   try { saved = window.localStorage.getItem(PERIOD_KEY) || ""; } catch { /* none saved */ }
-  const period = searchParams.get("period") || saved || "30d";
-  if (period === "custom") {
+  if (!saved.startsWith("{")) return saved ? { period: saved } : null;
+  try {
+    const value = JSON.parse(saved);
+    return value?.period === "custom" && DAY.test(value.from) && DAY.test(value.to) && value.from <= value.to ? { period: "custom", from: value.from, to: value.to } : null;
+  } catch { return null; }
+}
+
+/**
+ * The period from the address (?period=…), else the last one used (custom ranges included, so a
+ * section change, which remounts the page, keeps it), else 30 days.
+ */
+function initialRange(searchParams) {
+  const fromAddress = searchParams.get("period");
+  if (fromAddress === "custom") {
     const from = searchParams.get("from") || "";
     const to = searchParams.get("to") || "";
-    return from && to ? { period, from, to } : { period: "30d" };
+    return DAY.test(from) && DAY.test(to) && from <= to ? { period: "custom", from, to } : { period: "30d" };
   }
-  return PERIOD_IDS.has(period) ? { period } : { period: "30d" };
+  const chosen = fromAddress ? { period: fromAddress } : savedRange() || { period: "30d" };
+  if (chosen.period === "custom") return chosen;
+  return PERIOD_IDS.has(chosen.period) && chosen.period !== "custom" ? chosen : { period: "30d" };
 }
 
 function Skeleton() {
@@ -62,7 +78,7 @@ export default function StudentInsightsPage() {
 
   const changeRange = (next) => {
     const value = next.period === "custom" ? { period: "custom", from: next.from, to: next.to } : { period: next.period };
-    if (value.period !== "custom") { try { window.localStorage.setItem(PERIOD_KEY, value.period); } catch { /* this visit only */ } }
+    try { window.localStorage.setItem(PERIOD_KEY, value.period === "custom" ? JSON.stringify(value) : value.period); } catch { /* this visit only */ }
     setRange(value);
   };
   const download = async (format) => {

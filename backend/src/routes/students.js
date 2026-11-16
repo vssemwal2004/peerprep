@@ -8,6 +8,7 @@ import { getStudentAccess, getStudentAccessPolicy, updateStudentAccess, updateSt
 import { authorizeStudent } from '../middleware/authorization.js';
 import { uploadLimiter, bulkOperationLimiter } from '../middleware/rateLimiter.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
+import { studentQuickPrepReport } from '../services/questService.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -31,6 +32,16 @@ router.get('/:studentId/activity', requireAuth, authorizeStudent('studentId'), g
 router.get('/:studentId/stats', requireAuth, authorizeStudent('studentId'), getStudentStats);
 router.get('/:studentId/videos-watched', requireAuth, authorizeStudent('studentId'), getStudentVideosWatched);
 router.get('/:studentId/courses-enrolled', requireAuth, authorizeStudent('studentId'), getStudentCoursesEnrolled);
+// Staff-only: the student's QuickPrep sheets for the profile's Quick Prep tab (coordinators see only their own students).
+router.get('/:studentId/quickprep', requireAuth, requireCoordinatorPermission('coordinator.students.profile'), async (req, res, next) => {
+	try {
+		res.set('Cache-Control', 'private, no-store');
+		res.json(await studentQuickPrepReport(req.user, req.params.studentId));
+	} catch (error) {
+		if (error?.status || error?.statusCode) return res.status(error.status || error.statusCode).json({ error: error.message });
+		next(error);
+	}
+});
 // SECURITY: Rate limit bulk operations
 router.post('/check', requireAuth, requireCoordinatorPermission('coordinator.students.create'), uploadLimiter, bulkOperationLimiter, upload.single('file'), checkStudentsCsv);
 router.post('/upload', requireAuth, requireCoordinatorPermission('coordinator.students.create'), uploadLimiter, bulkOperationLimiter, invalidateResponseCache('students'), upload.single('file'), uploadStudentsCsv);

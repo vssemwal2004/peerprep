@@ -64,7 +64,12 @@ export function usePrepAnalysis({ scope = null } = {}) {
   // "Only these students": the students behind one part of a chart, chosen from its popup.
   const [focus, setFocusState] = useState(null);
   // Compare: two named groups of students ({ label, group } each, groups as in the filter drawer).
-  const [compare, setCompare] = useState(null);
+  const [compare, setCompareState] = useState(null);
+  // Compare classes: { dimension: "section" | "group" | "college" | …, values: [{ value, label }] }.
+  // One comparison at a time: picking one ends the other.
+  const [classCompare, setClassCompareState] = useState(null);
+  const setCompare = useCallback((next) => { setCompareState(next); if (next) setClassCompareState(null); }, []);
+  const setClassCompare = useCallback((next) => { setClassCompareState(next); if (next) setCompareState(null); }, []);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -127,7 +132,8 @@ export function usePrepAnalysis({ scope = null } = {}) {
   const chooseArea = useCallback((next) => {
     if (scoped) return;
     setState((current) => switchArea(current, next, fieldMap, catalog));
-    setTableState(baseTable);
+    // The student search box follows the admin from section to section.
+    setTableState((current) => ({ ...baseTable, search: current.search || "" }));
     // A focus belongs to a chart of the area it was chosen in.
     setFocusState(null);
   }, [baseTable, catalog, fieldMap, scoped]);
@@ -153,5 +159,6 @@ export function usePrepAnalysis({ scope = null } = {}) {
     catalog, catalogError, fieldMap, areas, area, chooseArea,
     state: effectiveState, update, layout: layout || [], areaCharts, setLayout, updateChart, resetLayout,
     table, setTable, data, loading, error, refresh, refreshTick, focus, setFocus, applyView, layouts, compare, setCompare,
+    classCompare, setClassCompare,
   };
 }

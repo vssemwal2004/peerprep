@@ -11,10 +11,78 @@ import {
   ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
   Pencil, Copy, X, MoreVertical, Lock, Unlock, Globe, ShieldOff,
   RotateCcw, CheckCircle2, AlertTriangle, FileCheck2, Mail, Send, Loader2,
-  Users, UserMinus, UserPlus, ChevronLeft, ChevronRight, BarChart3,
+  Users, UserMinus, UserPlus, BarChart3, ArrowDown, ArrowUp, ArrowUpDown,
 } from 'lucide-react';
 import AssessmentLifecycleSidebar from './assessment/components/AssessmentLifecycleSidebar';
 import { deriveStudentFacets, filterStudentsLocally, mergeSemesterOptions } from '../utils/semesterOptions';
+import { SortHeader, TablePager, nextSort, useClientTable } from '../components/table';
+
+/** Sort button for a CSS-grid header cell; the same look and asc → desc → off cycle as the shared SortHeader. */
+function GridSortButton({ sortKey, sort, onSort, children }) {
+  const active = sort?.key === sortKey;
+  const Icon = !active ? ArrowUpDown : sort.direction === 'asc' ? ArrowUp : ArrowDown;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      title={`Sort by ${children}`}
+      className={`group inline-flex max-w-full items-center gap-1 rounded-md text-left outline-none transition-colors [letter-spacing:inherit] [text-transform:inherit] focus-visible:ring-2 focus-visible:ring-sky-500/60 ${active ? 'text-sky-700 dark:text-sky-300' : 'hover:text-slate-700 dark:hover:text-gray-200'}`}
+    >
+      <span className="truncate">{children}</span>
+      <Icon aria-hidden="true" className={`h-3 w-3 shrink-0 ${active ? 'opacity-100' : 'opacity-40 group-hover:opacity-80'}`} />
+      <span className="sr-only">{active ? (sort.direction === 'asc' ? ', sorted ascending' : ', sorted descending') : ', not sorted'}</span>
+    </button>
+  );
+}
+
+const ELIGIBLE_VIOLATIONS = (student) => Number(student.submission?.tabSwitches || 0)
+  + Number(student.submission?.fullscreenExits || 0)
+  + Number(student.submission?.cameraFlags || 0)
+  + Number(student.submission?.copyPasteCount || 0);
+const finiteOrNull = (value) => {
+  const number = Number(value);
+  return value === null || value === undefined || value === '' || !Number.isFinite(number) ? null : number;
+};
+const ELIGIBLE_VALUES = {
+  student: (row) => row.name || row.email || null,
+  studentId: (row) => row.studentId || null,
+  assessmentSet: (row) => finiteOrNull(row.assessmentSet),
+  course: (row) => row.course || null,
+  branch: (row) => row.branch || null,
+  semester: (row) => row.semester ?? null,
+  group: (row) => row.group || null,
+  submission: (row) => row.submission?.status || 'none',
+  score: (row) => finiteOrNull(row.submission?.score),
+  violations: (row) => ELIGIBLE_VIOLATIONS(row),
+};
+const eligibleValue = (row, key) => ELIGIBLE_VALUES[key]?.(row);
+
+// Candidate picker sorts on the server (/students/list sortBy whitelist); 'createdAt' is its default order.
+const CANDIDATE_COLUMNS = [['student', 'Student'], ['studentId', 'Student ID'], ['course', 'Course / Branch'], ['semester', 'Semester'], ['createdAt', 'Added On']];
+const CANDIDATE_SERVER_SORTS = new Set(['student', 'course', 'semester', 'createdAt']);
+
+const timeOfDay = (value) => {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.getHours() * 60 + date.getMinutes() : null;
+};
+const assessmentTime = (value) => {
+  const time = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isNaN(time) ? null : time;
+};
+const assessmentLifecycleLabel = (assessment) => (assessment.lifecycleStatus === 'draft'
+  ? 'Draft'
+  : assessment.lifecycleStatus === 'archived' || assessment.isVisible === false ? 'Archived' : assessment.status);
+const ASSESSMENT_VALUES = {
+  title: (row) => row.title || null,
+  date: (row) => assessmentTime(row.startTime),
+  time: (row) => timeOfDay(row.startTime),
+  content: (row) => Number(row.totalQuestions || 0),
+  completion: (row) => (Number(row.assignedCount || 0) > 0 ? Number(row.completedCount || 0) / Number(row.assignedCount) : 0),
+  access: (row) => (row.isVisible !== false ? 'Visible' : 'Hidden'),
+  status: (row) => assessmentLifecycleLabel(row) || null,
+};
+const assessmentValue = (row, key) => ASSESSMENT_VALUES[key]?.(row);
+const ASSESSMENT_COLUMNS = [['title', 'Assessment'], ['date', 'Date'], ['time', 'Time'], ['content', 'Content'], ['completion', 'Completion'], ['access', 'Access'], ['status', 'Status']];
 
 const statusStyles = {
   Draft: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -477,6 +545,8 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
   const [managedSemesters, setManagedSemesters] = useState([]);
   const [candidateSemesterFacets, setCandidateSemesterFacets] = useState([]);
   const [candidatePagination, setCandidatePagination] = useState({ page: 1, pages: 1, total: 0 });
+  const [candidatePageSize, setCandidatePageSize] = useState(25);
+  const [candidateSort, setCandidateSort] = useState({ key: 'createdAt', direction: 'desc' });
   const [allStudents, setAllStudents] = useState([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
@@ -523,12 +593,16 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
     const requestId = candidateRequestRef.current + 1;
     candidateRequestRef.current = requestId;
     setLoadingCandidates(true);
+    // No column sort = the list's default order: newest registrations first.
+    const sortBy = candidateSort && candidateSort.key !== 'createdAt' ? candidateSort.key : undefined;
+    const sortOrder = candidateSort ? candidateSort.direction : 'desc';
     api.listAllStudents({
       search: debouncedCandidateSearch,
       semester: candidateSemester,
-      sortOrder: 'desc',
+      sortBy,
+      sortOrder,
       page: candidatePagination.page,
-      limit: 25,
+      limit: candidatePageSize,
     })
       .then((data) => {
         if (candidateRequestRef.current !== requestId) return;
@@ -540,10 +614,10 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
             search: debouncedCandidateSearch,
             semester: candidateSemester,
           });
-          const pages = Math.max(1, Math.ceil(locallyFiltered.length / 25));
+          const pages = Math.max(1, Math.ceil(locallyFiltered.length / candidatePageSize));
           const page = Math.min(candidatePagination.page, pages);
-          const offset = (page - 1) * 25;
-          nextStudents = locallyFiltered.slice(offset, offset + 25);
+          const offset = (page - 1) * candidatePageSize;
+          nextStudents = locallyFiltered.slice(offset, offset + candidatePageSize);
           nextPagination = { page, pages, total: locallyFiltered.length };
         }
         setAllStudents(nextStudents);
@@ -559,15 +633,19 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
         if (candidateRequestRef.current === requestId) setLoadingCandidates(false);
       });
     return undefined;
-  }, [addMode, candidatePagination.page, candidateSemester, debouncedCandidateSearch, toast]);
+  }, [addMode, candidatePagination.page, candidatePageSize, candidateSemester, candidateSort, debouncedCandidateSearch, toast]);
 
   const assignedIds = useMemo(() => new Set(students.map((student) => String(student._id))), [students]);
   const selectedCandidateIdSet = useMemo(() => new Set(selectedCandidateIds), [selectedCandidateIds]);
-  const candidateStudents = useMemo(() => {
-    return allStudents
-      .filter((student) => !assignedIds.has(String(student._id)))
-      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-  }, [allStudents, assignedIds]);
+  // The server already returns this page in the chosen order; only hide students who are assigned.
+  const candidateStudents = useMemo(
+    () => allStudents.filter((student) => !assignedIds.has(String(student._id))),
+    [allStudents, assignedIds],
+  );
+  const sortCandidates = (key) => {
+    setCandidateSort((current) => nextSort(current, key));
+    setCandidatePagination((current) => ({ ...current, page: 1 }));
+  };
   const candidateSemesterOptions = useMemo(
     () => mergeSemesterOptions(
       managedSemesters,
@@ -579,8 +657,8 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
 
   const filteredStudents = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return students;
-    return students.filter((student) => [
+    if (!query && setFilter === 'all') return students;
+    return students.filter((student) => (!query || [
       student.name,
       student.email,
       student.studentId,
@@ -590,9 +668,10 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
       student.group,
       student.assessmentSet,
       student.submission?.status,
-    ].some((value) => String(value || '').toLowerCase().includes(query))
+    ].some((value) => String(value || '').toLowerCase().includes(query)))
       && (setFilter === 'all' || String(student.assessmentSet || 'unassigned') === setFilter));
   }, [students, search, setFilter]);
+  const eligibleTable = useClientTable(filteredStudents, { getValue: eligibleValue, resetKey: `${search}|${setFilter}` });
 
   const selectedStudentIdSet = useMemo(() => new Set(selectedStudentIds), [selectedStudentIds]);
   const questionSetCount = Number(assessmentDetails?.questionSetCount || 1);
@@ -816,7 +895,7 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
               </div>
             </div>
 
-            <div className="mt-4 max-h-72 overflow-auto rounded-lg border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+            <div className="mt-4 max-h-72 overflow-auto rounded-t-lg border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
               {loadingCandidates ? (
                 <div className="flex items-center justify-center p-6 text-sm text-slate-500">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin text-sky-600" />
@@ -826,13 +905,15 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
                 <div className="p-6 text-center text-sm text-slate-500">No recently added students are available to add.</div>
               ) : (
                 <div className="min-w-[760px]">
-                  <div className="grid grid-cols-[36px_1.4fr_1fr_1fr_90px_120px] border-b border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+                  <div className="sticky top-0 z-10 grid grid-cols-[36px_1.4fr_1fr_1fr_90px_120px] border-b border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
                     <div />
-                    <div>Student</div>
-                    <div>Student ID</div>
-                    <div>Course / Branch</div>
-                    <div>Semester</div>
-                    <div>Added On</div>
+                    {CANDIDATE_COLUMNS.map(([key, label]) => (
+                      <div key={key}>
+                        {CANDIDATE_SERVER_SORTS.has(key)
+                          ? <GridSortButton sortKey={key} sort={candidateSort} onSort={sortCandidates}>{label}</GridSortButton>
+                          : label}
+                      </div>
+                    ))}
                   </div>
                   {candidateStudents.map((student) => {
                     const studentId = String(student._id || student.id || student.studentId || student.email || '');
@@ -873,35 +954,21 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
               )}
             </div>
 
+            <div className="rounded-b-lg border-x border-b border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+              <TablePager
+                page={candidatePagination.page}
+                pageSize={candidatePageSize}
+                total={Number(candidatePagination.total) || 0}
+                onPage={(page) => setCandidatePagination((current) => ({ ...current, page }))}
+                onPageSize={(size) => { setCandidatePageSize(size); setCandidatePagination((current) => ({ ...current, page: 1 })); }}
+                busy={loadingCandidates}
+                noun="students"
+                className="border-t-0"
+              />
+            </div>
+
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="text-xs font-semibold text-slate-600 dark:text-gray-300">{selectedCandidateIds.length} selected</div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    title="Previous candidate page"
-                    aria-label="Previous candidate page"
-                    disabled={loadingCandidates || candidatePagination.page <= 1}
-                    onClick={() => setCandidatePagination((current) => ({ ...current, page: current.page - 1 }))}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="min-w-[72px] text-center text-[10px] text-slate-500 dark:text-gray-400">
-                    Page {candidatePagination.page} of {candidatePagination.pages || 1}
-                  </span>
-                  <button
-                    type="button"
-                    title="Next candidate page"
-                    aria-label="Next candidate page"
-                    disabled={loadingCandidates || candidatePagination.page >= (candidatePagination.pages || 1)}
-                    onClick={() => setCandidatePagination((current) => ({ ...current, page: current.page + 1 }))}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
-                  >
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
+              <div className="text-xs font-semibold text-slate-600 dark:text-gray-300">{selectedCandidateIds.length} selected</div>
               <button
                 type="button"
                 onClick={addSelectedStudents}
@@ -924,32 +991,28 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
           ) : filteredStudents.length === 0 ? (
             <div className="p-10 text-center text-sm text-slate-500">No eligible students found.</div>
           ) : (
-            <table className="min-w-[1240px] w-full text-left text-sm">
+            <table className="min-w-[1240px] w-full text-left text-sm" style={{ '--serial-start': (eligibleTable.page - 1) * eligibleTable.pageSize }}>
               <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
                 <tr>
                   <th className="w-12 px-4 py-3"><input type="checkbox" aria-label="Select all visible students" checked={filteredStudents.length > 0 && filteredStudents.every((student) => selectedStudentIdSet.has(String(student._id)))} onChange={(event) => { const visibleIds = filteredStudents.map((student) => String(student._id)); setSelectedStudentIds((current) => event.target.checked ? Array.from(new Set([...current, ...visibleIds])) : current.filter((id) => !visibleIds.includes(id))); }} /></th>
-                  <th className="px-6 py-3">Student</th>
-                  <th className="px-4 py-3">Student ID</th>
-                  {questionSetEnabled && <th className="px-4 py-3">Assigned Set</th>}
-                  <th className="px-4 py-3">Course</th>
-                  <th className="px-4 py-3">Branch</th>
-                  <th className="px-4 py-3">Semester</th>
-                  <th className="px-4 py-3">Group</th>
-                  <th className="px-4 py-3">Submission</th>
-                  <th className="px-4 py-3">Score</th>
-                  <th className="px-4 py-3">Violations</th>
-                  <th className="px-6 py-3 text-right">Actions</th>
+                  {[
+                    ['student', 'Student', 'px-6 py-3'],
+                    ['studentId', 'Student ID'],
+                    ...(questionSetEnabled ? [['assessmentSet', 'Assigned Set']] : []),
+                    ['course', 'Course'], ['branch', 'Branch'], ['semester', 'Semester'], ['group', 'Group'],
+                    ['submission', 'Submission'], ['score', 'Score'], ['violations', 'Violations'],
+                  ].map(([key, label, padding = 'px-4 py-3']) => (
+                    <SortHeader key={key} sortKey={key} sort={eligibleTable.sort} onSort={eligibleTable.toggleSort} className={`${padding} text-xs font-bold tracking-wider dark:text-gray-400`}>{label}</SortHeader>
+                  ))}
+                  <SortHeader sortable={false} align="right" className="px-6 py-3 text-xs font-bold tracking-wider dark:text-gray-400">Actions</SortHeader>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-                {filteredStudents.map((student) => {
+                {eligibleTable.pageRows.map((student) => {
                   const status = student.submission?.status || 'none';
                   const score = Number(student.submission?.score);
                   const maxMarks = Number(student.submission?.maxMarks);
-                  const violations = Number(student.submission?.tabSwitches || 0)
-                    + Number(student.submission?.fullscreenExits || 0)
-                    + Number(student.submission?.cameraFlags || 0)
-                    + Number(student.submission?.copyPasteCount || 0);
+                  const violations = ELIGIBLE_VIOLATIONS(student);
                   return (
                     <tr key={student._id} className={busyId === student._id ? 'opacity-60' : 'hover:bg-slate-50 dark:hover:bg-sky-400/5'}>
                       <td className="px-4 py-4"><input type="checkbox" aria-label={`Select ${student.name || student.email || student.studentId}`} checked={selectedStudentIdSet.has(String(student._id))} onChange={() => setSelectedStudentIds((current) => current.includes(String(student._id)) ? current.filter((id) => id !== String(student._id)) : [...current, String(student._id)])} /></td>
@@ -990,6 +1053,7 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
             </table>
           )}
         </div>
+        {!loading && <TablePager {...eligibleTable.pager} noun="students" className="shrink-0 bg-white dark:bg-gray-900" />}
       </motion.div>
     </div>
   );
@@ -1250,6 +1314,8 @@ export default function AssessmentDashboard() {
       return new Date(right.updatedAt || right.createdAt || 0).getTime() - new Date(left.updatedAt || left.createdAt || 0).getTime();
     });
   }, [assessments, filters, activeTab]);
+  // Column headers sort on top of the "Sort" menu's order; picking a menu order clears the column sort.
+  const assessmentTable = useClientTable(filtered, { getValue: assessmentValue, resetKey: `${activeTab}|${JSON.stringify(filters)}` });
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this assessment and all submissions?')) return;
@@ -1380,7 +1446,7 @@ export default function AssessmentDashboard() {
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <span className="whitespace-nowrap rounded-lg bg-slate-100 px-2.5 py-2 text-xs font-medium text-slate-600 dark:bg-gray-800 dark:text-gray-300">{filtered.length} assessment{filtered.length === 1 ? '' : 's'}</span>
-                <select value={filters.sort} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))} className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-600 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                <select value={filters.sort} onChange={(event) => { assessmentTable.setSort(null); setFilters((current) => ({ ...current, sort: event.target.value })); }} aria-label="Sort assessments" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-600 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
                   <option value="updated">Recently updated</option>
                   <option value="oldest">Oldest created</option>
                   <option value="start">Start time</option>
@@ -1407,26 +1473,18 @@ export default function AssessmentDashboard() {
             ) : (
               <div role="list" className="space-y-2.5">
                 <div className="sticky top-0 z-20 -mx-1 isolate hidden grid-cols-[minmax(190px,1.5fr)_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px] items-center gap-x-3 bg-slate-50 px-5 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 shadow-[0_1px_0_0_rgb(226,232,240)] xl:grid dark:bg-gray-950 dark:text-gray-500 dark:shadow-[0_1px_0_0_rgb(31,41,55)]">
-                  <span>Assessment</span>
-                  <span>Date</span>
-                  <span>Time</span>
-                  <span>Content</span>
-                  <span>Completion</span>
-                  <span>Access</span>
-                  <span>Status</span>
+                  {ASSESSMENT_COLUMNS.map(([key, label]) => (
+                    <span key={key} className="min-w-0"><GridSortButton sortKey={key} sort={assessmentTable.sort} onSort={assessmentTable.toggleSort}>{label}</GridSortButton></span>
+                  ))}
                   <span className="sr-only">Actions</span>
                 </div>
-                {filtered.map((assessment) => {
+                {assessmentTable.pageRows.map((assessment) => {
                   const completedCount = Number(assessment.completedCount || 0);
                   const assignedCount = Number(assessment.assignedCount || 0);
                   const completionPercent = assignedCount > 0
                     ? Math.min(100, Math.round((completedCount / assignedCount) * 100))
                     : 0;
-                  const lifecycleStatus = assessment.lifecycleStatus === 'draft'
-                    ? 'Draft'
-                    : assessment.lifecycleStatus === 'archived' || assessment.isVisible === false
-                      ? 'Archived'
-                      : assessment.status;
+                  const lifecycleStatus = assessmentLifecycleLabel(assessment);
                   const openPath = assessment.lifecycleStatus !== 'draft' && (assessment.status === 'Completed' || assessment.manuallyCompletedAt)
                     ? `${rolePrefix}/assessment/reports?assessmentId=${encodeURIComponent(assessment._id)}`
                     : `${rolePrefix}/assessment/${assessment._id}`;
@@ -1530,6 +1588,9 @@ export default function AssessmentDashboard() {
                     </article>
                   );
                 })}
+                <div className="rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                  <TablePager {...assessmentTable.pager} noun="assessments" className="border-t-0" />
+                </div>
               </div>
             )}
           </section>

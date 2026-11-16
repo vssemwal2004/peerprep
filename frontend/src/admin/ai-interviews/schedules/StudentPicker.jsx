@@ -3,7 +3,8 @@ import { AlertTriangle, CheckCheck, Filter, ListChecks, Loader2, Search, UserPlu
 import { api } from "../../../utils/api";
 import InterviewStudentEditor from "../../../components/interviews/InterviewStudentEditor";
 import { useDebounced } from "../useRemote";
-import { Drawer, FilterField, Notice, Pagination, Select, ToneChip, ghostClass, inputClass, primaryClass, secondaryClass, surfaceClass, tableHeadClass } from "../ui";
+import { SortHeader, TablePager, nextSort } from "../../../components/table";
+import { Drawer, FilterField, Notice, Select, ToneChip, ghostClass, inputClass, primaryClass, secondaryClass, surfaceClass, tableHeadClass } from "../ui";
 import { CheckBox, ConfirmDialog, Initials, OutcomePill, Segmented } from "./scheduleUi";
 import { BOOKING_META, MAX_COHORT, departmentLabel, formatIst, hasFilter, isRemovableTarget, yearLabel } from "./scheduleModel";
 
@@ -44,13 +45,13 @@ function AssignedTag({ row }) {
   </span>;
 }
 
-function useStudentPage({ search, semester, branch, page, limit }) {
+function useStudentPage({ search, semester, branch, page, limit, sortBy, sortOrder }) {
   const [state, setState] = useState({ students: [], pagination: { page: 1, pages: 1, total: 0, limit }, facets: {}, loading: true, error: "" });
   const ticket = useRef(0);
   useEffect(() => {
     const mine = ++ticket.current;
     setState((current) => ({ ...current, loading: true, error: "" }));
-    api.listAllStudents({ search, semester, branch, page, limit, sortOrder: "asc" })
+    api.listAllStudents({ search, semester, branch, page, limit, sortOrder, ...(sortBy ? { sortBy } : {}) })
       .then((data) => {
         if (mine !== ticket.current) return;
         const students = Array.isArray(data?.students) ? data.students : [];
@@ -62,9 +63,13 @@ function useStudentPage({ search, semester, branch, page, limit }) {
         }));
       })
       .catch((cause) => { if (mine === ticket.current) setState((current) => ({ ...current, students: [], loading: false, error: cause.message || "Students could not be loaded." })); });
-  }, [search, semester, branch, page, limit]);
+  }, [search, semester, branch, page, limit, sortBy, sortOrder]);
   return state;
 }
+
+// Headers sort on the server across every page. Each key is one of /students/list's whitelisted sortBy
+// columns (studentController STUDENT_LIST_SORTS: "student" = name then roll no., "branch" = department,
+// "semester" = year). With no header chosen the list keeps registration order.
 
 /** The searchable, paginated student table with row checkboxes. */
 function PickTable({ mode, selectedIds, assigned, onToggle, onAddMany, onRemoveMany, onBusyChange }) {
@@ -73,10 +78,13 @@ function PickTable({ mode, selectedIds, assigned, onToggle, onAddMany, onRemoveM
   const [branch, setBranch] = useState("");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(PAGE_SIZE);
+  const [sort, setSort] = useState(null);
   const [bulk, setBulk] = useState(false);
   const [bulkError, setBulkError] = useState("");
   const settled = useDebounced(search.trim(), 300);
-  const { students, pagination, facets, loading, error } = useStudentPage({ search: settled, semester, branch, page, limit });
+  const { students, pagination, facets, loading, error } = useStudentPage({ search: settled, semester, branch, page, limit, sortBy: sort?.key, sortOrder: sort?.direction || "asc" });
+  const toggleSort = (key) => { setSort((current) => nextSort(current, key)); setPage(1); };
+  const header = (key, label, className = "") => <SortHeader sortKey={key} sort={sort} onSort={toggleSort} className={className}>{label}</SortHeader>;
   useEffect(() => { onBusyChange?.(bulk); }, [bulk, onBusyChange]);
   const narrowed = Boolean(settled || semester || branch);
   const locked = (student) => {
@@ -118,11 +126,12 @@ function PickTable({ mode, selectedIds, assigned, onToggle, onAddMany, onRemoveM
         <thead className={tableHeadClass}>
           <tr>
             <th scope="col" className="w-12 px-4 py-2.5"><CheckBox label="Select every student on this page" checked={allOnPage} indeterminate={onPage > 0} disabled={!selectable.length} onChange={togglePage} /></th>
-            <th scope="col" className="px-2 py-2.5 font-semibold">Student</th>
-            <th scope="col" className="px-3 py-2.5 font-semibold">Roll / ID</th>
-            <th scope="col" className="px-3 py-2.5 font-semibold">Email</th>
-            <th scope="col" className="px-3 py-2.5 font-semibold">Department</th>
-            <th scope="col" className="px-4 py-2.5 font-semibold">Year</th>
+            {header("student", "Student", "pl-2")}
+            {/* /students/list has no roll-number-only sort; "Student" already orders by name, then roll no. */}
+            <SortHeader sortable={false}>Roll / ID</SortHeader>
+            {header("email", "Email")}
+            {header("branch", "Department")}
+            {header("semester", "Year", "pr-4")}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
@@ -155,7 +164,7 @@ function PickTable({ mode, selectedIds, assigned, onToggle, onAddMany, onRemoveM
         </tbody>
       </table>
     </div>
-    <Pagination value={pagination} onPage={setPage} onLimit={(value) => { setLimit(value); setPage(1); }} />
+    <TablePager page={pagination.page} pageSize={limit} total={pagination.total} onPage={setPage} onPageSize={(value) => { setLimit(value); setPage(1); }} busy={loading} noun="students" />
   </div>;
 }
 

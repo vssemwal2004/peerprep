@@ -1,10 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Search, RefreshCw, ChevronLeft, ChevronRight, Filter, X, Activity } from 'lucide-react';
+import { Download, Search, RefreshCw, Filter, X, Activity } from 'lucide-react';
 import { api } from '../utils/api';
 import { getApiBase } from '../utils/apiBase';
 import { useToast } from '../components/CustomToast';
+import { SortHeader, TablePager, nextSort } from '../components/table';
+
+const PAGE_SIZE = 20;
+// Keys match the server sort whitelist in adminActivityController (ACTIVITY_SORT_FIELDS).
+const COLUMNS = [['time', 'Date & Time'], ['actor', 'Email ID'], ['action', 'Action'], ['record', 'Target'], ['description', 'Description']];
+const HEADER_CLASS = 'px-4 py-3 text-sm font-semibold normal-case tracking-normal text-slate-500 dark:text-gray-400';
 
 const actionTypeColors = {
   CREATE: 'text-green-600 dark:text-green-400',
@@ -30,7 +36,8 @@ export default function CoordinatorActivity() {
   const [refreshing, setRefreshing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [sort, setSort] = useState(null);
   const [totalActivities, setTotalActivities] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchInput, setSearchInput] = useState('');
@@ -52,8 +59,12 @@ export default function CoordinatorActivity() {
 
       const params = new URLSearchParams({
         page: page.toString(),
-        limit: '20'
+        limit: String(pageSize)
       });
+      if (sort) {
+        params.append('sortBy', sort.key);
+        params.append('sortOrder', sort.direction);
+      }
 
       if (searchQuery) {
         params.append('search', searchQuery);
@@ -76,9 +87,8 @@ export default function CoordinatorActivity() {
       }
 
       const response = await api.getActivities(params.toString());
-      setActivities(response.activities);
-      setTotalPages(response.pagination.pages);
-      setTotalActivities(response.pagination.total);
+      setActivities(response.activities || []);
+      setTotalActivities(Number(response.pagination?.total) || 0);
     } catch (error) {
       console.error('Failed to load activities:', error);
       toast.error('Failed to load activity log');
@@ -86,7 +96,12 @@ export default function CoordinatorActivity() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [page, searchQuery, filters, toast]);
+  }, [page, pageSize, sort, searchQuery, filters, toast]);
+
+  const toggleSort = (key) => {
+    setSort((value) => nextSort(value, key));
+    setPage(1);
+  };
 
   useEffect(() => {
     loadActivities();
@@ -427,14 +442,12 @@ export default function CoordinatorActivity() {
           ) : (
             <>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-gray-700">
+                <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-gray-700" style={{ '--serial-start': (page - 1) * pageSize }}>
                   <thead className="bg-slate-50 dark:bg-gray-800">
                     <tr>
-                      <th className="px-4 py-3 text-left font-semibold text-slate-500 dark:text-gray-400">Date & Time</th>
-                      <th className="px-4 py-3 text-left font-semibold text-slate-500 dark:text-gray-400">Email ID</th>
-                      <th className="px-4 py-3 text-left font-semibold text-slate-500 dark:text-gray-400">Action</th>
-                      <th className="px-4 py-3 text-left font-semibold text-slate-500 dark:text-gray-400">Target</th>
-                      <th className="px-4 py-3 text-left font-semibold text-slate-500 dark:text-gray-400">Description</th>
+                      {COLUMNS.map(([key, label]) => (
+                        <SortHeader key={key} sortKey={key} sort={sort} onSort={toggleSort} className={HEADER_CLASS}>{label}</SortHeader>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 bg-white dark:divide-gray-700 dark:bg-gray-900">
@@ -513,28 +526,16 @@ export default function CoordinatorActivity() {
                 </table>
               </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 border-t border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-900/50 text-sm text-slate-500 dark:text-gray-400">
-                  <p>Page {page} of {totalPages}</p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                      className="rounded-xl border border-slate-200 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700"
-                    >
-                      <ChevronLeft className="w-4 h-4 inline" /> Previous
-                    </button>
-                    <button
-                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages}
-                      className="rounded-xl border border-slate-200 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700"
-                    >
-                      Next <ChevronRight className="w-4 h-4 inline" />
-                    </button>
-                  </div>
-                </div>
-              )}
+              <TablePager
+                page={page}
+                pageSize={pageSize}
+                total={totalActivities}
+                busy={refreshing}
+                noun="activities"
+                onPage={setPage}
+                onPageSize={(size) => { setPageSize(size); setPage(1); }}
+                className="bg-slate-50 px-4 dark:bg-gray-900/50"
+              />
             </>
           )}
         </div>

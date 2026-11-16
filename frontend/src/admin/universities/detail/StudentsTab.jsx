@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { GraduationCap, Search, X } from 'lucide-react';
 import { api } from '../../../utils/api';
+import { SortHeader, TablePager, nextSort } from '../../../components/table';
 import { Button, Card, EmptyState, Notice, Pill, helper, inputClass } from '../ui';
+
+const INITIAL_QUERY = { page: 1, pageSize: 25, term: '', sort: null };
 
 function StudentPanel({ detail, onClose }) {
   const { student } = detail;
@@ -23,18 +26,26 @@ function StudentPanel({ detail, onClose }) {
 export default function StudentsTab({ university }) {
   const id = university.universityId;
   const [search, setSearch] = useState('');
+  const [query, setQuery] = useState(INITIAL_QUERY);
   const [view, setView] = useState(null);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const latest = useRef(0);
 
-  const load = useCallback(async (page = 1, term = '') => {
+  const load = useCallback(async ({ page, pageSize, term, sort }) => {
+    const ticket = latest.current + 1;
+    latest.current = ticket;
     setLoading(true); setError('');
-    try { setView(await api.platformStudents(id, page, term)); }
-    catch (cause) { setView(null); setError(cause.message || 'Student records are unavailable.'); }
-    finally { setLoading(false); }
+    try {
+      const result = await api.platformStudents(id, page, term, { pageSize, sortBy: sort?.key, sortOrder: sort?.direction });
+      if (latest.current === ticket) setView(result);
+    } catch (cause) {
+      if (latest.current === ticket) { setView(null); setError(cause.message || 'Student records are unavailable.'); }
+    } finally { if (latest.current === ticket) setLoading(false); }
   }, [id]);
-  useEffect(() => { void load(1, ''); }, [load]);
+  useEffect(() => { void load(query); }, [load, query]);
+  const update = (patch) => setQuery((current) => ({ ...current, ...patch }));
 
   async function open(studentId) {
     setError('');
@@ -42,10 +53,12 @@ export default function StudentsTab({ university }) {
     catch (cause) { setError(cause.message || 'Student details are unavailable.'); }
   }
 
-  const pages = view ? Math.max(1, Math.ceil(view.total / view.pageSize)) : 1;
+  const header = (key, label) => (
+    <SortHeader sortKey={key} sort={query.sort} onSort={(sortKey) => update({ sort: nextSort(query.sort, sortKey), page: 1 })} className="pl-0">{label}</SortHeader>
+  );
   return (
     <Card id="students-title" title="Students" icon={GraduationCap} description="Read-only, from this university's database. Students are created and edited by the university's own admins.">
-      <form className="flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); void load(1, search); }}>
+      <form className="flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); setQuery((current) => ({ ...current, term: search.trim(), page: 1 })); }}>
         <label className="relative min-w-[16rem] flex-1">
           <span className="sr-only">Search students</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
@@ -56,12 +69,11 @@ export default function StudentsTab({ university }) {
       {error && <div className="mt-3"><Notice tone="danger">{error}</Notice></div>}
       <div className={`mt-4 grid gap-4 ${detail ? 'lg:grid-cols-[minmax(0,1fr)_22rem]' : ''}`}>
         <div className="min-w-0">
-          {view && view.students.length === 0 ? <EmptyState icon={GraduationCap} title={search ? 'No student matches' : 'No students yet'}>{search ? 'Try another name or ID.' : 'The university admin adds students from its own portal.'}</EmptyState> : view && (
+          {view && view.students.length === 0 && view.total === 0 ? <EmptyState icon={GraduationCap} title={query.term ? 'No student matches' : 'No students yet'}>{query.term ? 'Try another name or ID.' : 'The university admin adds students from its own portal.'}</EmptyState> : view && (
             <>
-              <p className={helper}>{view.total.toLocaleString()} student{view.total === 1 ? '' : 's'}</p>
-              <div className="mt-2 overflow-x-auto">
+              <div className="overflow-x-auto">
                 <table className="w-full min-w-[560px] text-left text-sm" data-no-serial>
-                  <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800"><tr><th className="py-2 pr-3 font-semibold">Name</th><th className="py-2 pr-3 font-semibold">Student ID</th><th className="py-2 pr-3 font-semibold">Course</th><th className="py-2 pr-3 font-semibold">Status</th><th className="py-2" /></tr></thead>
+                  <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800"><tr>{header('name', 'Name')}{header('studentId', 'Student ID')}{header('course', 'Course')}{header('status', 'Status')}<th className="py-2"><span className="sr-only">Actions</span></th></tr></thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {view.students.map((student) => (
                       <tr key={student._id} className={detail?.student?._id === student._id ? 'bg-sky-50/60 dark:bg-sky-950/20' : ''}>
@@ -75,11 +87,15 @@ export default function StudentsTab({ university }) {
                   </tbody>
                 </table>
               </div>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <Button variant="ghost" disabled={loading || view.page <= 1} onClick={() => load(view.page - 1, search)}>Previous</Button>
-                <span className={helper}>Page {view.page} of {pages}</span>
-                <Button variant="ghost" disabled={loading || view.page >= pages} onClick={() => load(view.page + 1, search)}>Next</Button>
-              </div>
+              <TablePager
+                page={view.page || query.page}
+                pageSize={view.pageSize || query.pageSize}
+                total={view.total || 0}
+                busy={loading}
+                noun="students"
+                onPage={(page) => update({ page })}
+                onPageSize={(pageSize) => update({ pageSize, page: 1 })}
+              />
             </>
           )}
         </div>

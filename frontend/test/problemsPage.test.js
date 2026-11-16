@@ -87,14 +87,15 @@ const byText = (selector, pattern, scope = document) => [...scope.querySelectorA
 const lastCall = () => calls.at(-1);
 const click = (node) => act(async () => node.click());
 
-test('companies lead the page, topics and the calendar sit in the right rail, lists on the left', async () => {
+test('companies lead the page, lists and the calendar sit on the left, topics in their own rail', async () => {
   await mount();
   const companies = document.querySelector('section[aria-labelledby="companies-title"]');
-  const rail = document.querySelector('aside[aria-label="Practice calendar and topics"]');
-  const library = document.querySelector('aside[aria-label="Library"]');
+  const rail = document.querySelector('aside[aria-label="Topics"]');
+  const library = document.querySelector('aside[aria-label="Library and practice calendar"]');
   assert.ok(companies && rail && library);
   assert.ok(companies.compareDocumentPosition(library) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING, 'Companies come before the columns');
-  assert.ok(rail.querySelector('#topics-title') && rail.querySelector('#practice-calendar-title'), 'Topics moved into the right rail with the calendar');
+  assert.ok(rail.querySelector('#topics-title'), 'Topics have their own rail');
+  assert.ok(library.querySelector('#practice-calendar-title'), 'The calendar sits under the lists');
   assert.equal(companies.querySelector('#topics-title'), null);
   assert.match(library.textContent, /All questions20.*Favorites0.*Your lists/);
   assert.doesNotMatch(document.body.textContent, /Question type|One line|Short answer/, 'The question-type filter is removed');
@@ -116,7 +117,7 @@ test('company, topic and difficulty controls drive the real query and can be rem
   await click(byText('section[aria-labelledby="companies-title"] button', /^GGoogle7$/));
   assert.equal(lastCall().companies, 'Google');
   assert.equal(lastCall().sortBy, 'latestInterviewDate', 'A company view lists the most recently asked first');
-  await click(byText('aside[aria-label="Practice calendar and topics"] button', /^Graph4$/));
+  await click(byText('aside[aria-label="Topics"] button', /^Graph4$/));
   assert.equal(lastCall().tags, 'Graph');
   assert.equal('type' in lastCall(), false, 'No question-type filter is sent');
   await click(byText('[role="radiogroup"][aria-label="Difficulty"] button', /^Hard$/));
@@ -130,7 +131,7 @@ test('company, topic and difficulty controls drive the real query and can be rem
 
 test('choosing a topic shows its name and real question count above the list', async () => {
   await mount();
-  await click(byText('aside[aria-label="Practice calendar and topics"] button', /^Array12$/));
+  await click(byText('aside[aria-label="Topics"] button', /^Array12$/));
   const header = document.querySelector('section[aria-labelledby="selection-title"]');
   assert.equal(header.querySelector('#selection-title').textContent, 'Array');
   assert.match(header.textContent, /Topic.*12 questions in this topic/);
@@ -148,8 +149,9 @@ test('a catalogue with a thousand topics stays compact and opens a searchable to
   api.listPracticeQuestions = async (params) => ({ ...(await original(params)), filters: { totalProblems: 5000, tagCounts: many, companyCounts: [] } });
   await mount();
   const panel = document.querySelector('section[aria-labelledby="topics-title"]');
-  assert.ok(panel.querySelectorAll('ul > li').length <= 11, 'The rail shows only the most common topics');
-  await click(byText('button', /Browse all 1,200 topics/, panel));
+  // "All topics" + the 20 most common topics.
+  assert.ok(panel.querySelectorAll('ul > li').length <= 21, 'The rail shows only the most common topics');
+  await click(byText('button', /View all 1,200 topics/, panel));
   const browser = document.querySelector('[role="dialog"][aria-labelledby="topic-browser-title"]');
   assert.equal(browser.querySelectorAll('ul > li').length, 1200, 'Every topic is reachable');
   const search = browser.querySelector('input');
@@ -214,18 +216,39 @@ test('the list asks for one page at a time, 25 rows by default, and the pager mo
   await click(document.querySelector('button[aria-label="Next page"]'));
   assert.deepEqual([lastCall().page, lastCall().limit], [2, 25]);
   assert.match(document.body.textContent, /Showing 26–50 of 3,924/);
-  assert.match(document.querySelector('ul[aria-busy] li').textContent, /26Question 26/, 'Rows are numbered by their question number');
+  assert.match(document.querySelector('ul[aria-busy] li').textContent, /26\.?Question 26/, 'Rows are numbered by their question number');
   await click(document.querySelector('button[aria-label="Page 157"]'));
   assert.equal(lastCall().page, 157);
   assert.match(document.body.textContent, /Showing 3,901–3,924 of 3,924/);
 });
 
-test('rows per page offers 25, 50 and 100, is remembered, and starts again at page 1', async () => {
+test('the pager jumps to the first and last page, and column headers sort the list on the server', async () => {
+  pagedCatalog(300);
+  await mount();
+  const columns = document.querySelector('[aria-label="Sort questions by column"]');
+  await click(document.querySelector('button[aria-label="Last page"]'));
+  assert.equal(lastCall().page, 12);
+  assert.match(document.body.textContent, /Showing 276–300 of 300 questions/);
+  await click(document.querySelector('button[aria-label="First page"]'));
+  assert.equal(lastCall().page, 1);
+  await click(document.querySelector('button[aria-label="Next page"]'));
+  await click(byText('button', /^Title/, columns));
+  assert.deepEqual([lastCall().sortBy, lastCall().sortOrder, lastCall().page], ['title', 'asc', 1], 'Sorting starts again at page 1');
+  await click(byText('button', /^Title/, columns));
+  assert.deepEqual([lastCall().sortBy, lastCall().sortOrder], ['title', 'desc']);
+  await click(byText('button', /^Title/, columns));
+  assert.deepEqual([lastCall().sortBy, lastCall().sortOrder], ['displayOrder', 'asc']);
+  await click(byText('button', /^Difficulty/, columns));
+  assert.deepEqual([lastCall().sortBy, lastCall().sortOrder], ['difficulty', 'asc']);
+  assert.equal(byText('label', /Sort questions/).querySelector('select').value, 'difficulty-asc', 'The sort menu follows the header');
+});
+
+test('rows per page offers the standard 10, 25, 50 and 100, is remembered, and starts again at page 1', async () => {
   pagedCatalog(300);
   await mount();
   await click(document.querySelector('button[aria-label="Next page"]'));
-  const select = byText('label', /^Rows/).querySelector('select');
-  assert.deepEqual([...select.options].map((option) => option.value), ['25', '50', '100']);
+  const select = byText('label', /^Rows per page/).querySelector('select');
+  assert.deepEqual([...select.options].map((option) => option.value), ['10', '25', '50', '100']);
   const before = calls.length;
   await act(async () => { select.value = '100'; select.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
   assert.equal(calls.length, before + 1, 'Changing the size does not first reload the old page');

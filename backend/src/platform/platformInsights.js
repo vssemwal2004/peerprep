@@ -38,13 +38,14 @@ export function coinDays(now = new Date(), days = 30) {
 }
 
 // Daily coin movements grouped into issued / passed on / spent / refunded, plus totals per kind.
-export async function coinFlow(now = new Date(), days = 30, match = {}) {
-  const since = new Date(now.getTime() - days * DAY_MS);
+// `window` ({ days: ['YYYY-MM-DD'…], start, end }) replaces the last `days` days with a chosen period.
+export async function coinFlow(now = new Date(), days = 30, match = {}, window = null) {
+  const since = window?.start || new Date(now.getTime() - days * DAY_MS);
   const rows = await PlatformCoinMovement.aggregate([
-    { $match: { ...match, createdAt: { $gte: since } } },
+    { $match: { ...match, createdAt: { $gte: since, ...(window?.end ? { $lte: window.end } : {}) } } },
     { $group: { _id: { day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: TIMEZONE } }, kind: '$kind' }, amount: { $sum: '$amount' }, n: { $sum: 1 } } },
   ]).option({ maxTimeMS: QUERY_MS });
-  const trend = coinDays(now, days).map((date) => {
+  const trend = (window?.days || coinDays(now, days)).map((date) => {
     const today = rows.filter((row) => row._id.day === date);
     const total = (kinds) => today.filter((row) => kinds.includes(row._id.kind)).reduce((sum, row) => sum + row.amount, 0);
     return { date, issued: total(COIN_IN), shared: total(COIN_SHARED), spent: total(['student_spend']), refunded: total(['student_refund']) };

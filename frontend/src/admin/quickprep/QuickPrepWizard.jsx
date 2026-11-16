@@ -1,14 +1,30 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Building2, Check, ClipboardList, Flame, Gauge, GraduationCap, Layers, LibraryBig, Rocket, Save, Sparkles, Tags, Trash2, TriangleAlert, Users, X, Zap,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Building2, CalendarClock, Check, ClipboardList, Flame, Gauge, GraduationCap, Layers, LibraryBig, Rocket, Save, Sparkles, Tags, Trash2, TriangleAlert, Users, X, Zap,
 } from 'lucide-react';
 import { api } from '../../utils/api';
 import QuestCard from '../../student/quests/QuestCard';
 import { QUEST_CATEGORIES, QUEST_THEMES } from '../../student/quests/questTheme';
+import { fromLocalInput, questWindowStatus, toLocalInput, windowError, windowText } from '../../student/quests/questWindow';
+import WindowChip from '../../student/quests/WindowChip';
 import { Chips, DifficultyPill, MixBar, MultiSelect, Notice, Page, PageHeader, SelectMenu, StatusPill, card, inputClass, primaryButton, secondaryButton } from './ui';
 import { plural } from './format';
 import { QUICKPREP_ROOT, quickPrepLibraryUrl } from './useQuickPrepActions';
+import { SortHeader, TablePager, useClientTable } from '../../components/table';
+
+// Questions step table: [sort key, header, width class]. Rows are { item, position } entries.
+const QUESTION_COLUMNS = [['title', 'Question', ''], ['difficulty', 'Difficulty', ''], ['tags', 'Topics', ''], ['companies', 'Companies', ''], ['section', 'Section', 'w-44']];
+const DIFFICULTY_RANK = { Easy: 1, Medium: 2, Hard: 3 };
+const QUESTION_VALUES = {
+  position: (entry) => entry.position,
+  title: (entry) => entry.item.title || null,
+  difficulty: (entry) => DIFFICULTY_RANK[entry.item.difficulty] ?? null,
+  tags: (entry) => entry.item.tags || [],
+  companies: (entry) => entry.item.companies || [],
+  section: (entry) => entry.item.section || null,
+};
+const questionValue = (entry, key) => QUESTION_VALUES[key]?.(entry);
 
 const STEPS = [
   { key: 'details', label: 'Details', hint: 'Name, type, companies and topics', icon: ClipboardList },
@@ -17,8 +33,11 @@ const STEPS = [
 ];
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
 const XP_PRESETS = [25, 50, 100, 200];
-const blank = { title: '', description: '', category: 'company', companies: [], topics: [], difficulties: [], theme: 'sky', rewardXp: 50, badgeTitle: '', semesters: [], items: [], status: 'draft' };
-const toForm = (quest) => ({ ...blank, ...Object.fromEntries(Object.keys(blank).map((key) => [key, quest[key] ?? blank[key]])), companies: quest.companies || [] });
+const blank = { title: '', description: '', category: 'company', companies: [], topics: [], difficulties: [], theme: 'sky', rewardXp: 50, badgeTitle: '', semesters: [], items: [], status: 'draft', startsAt: '', endsAt: '' };
+// startsAt / endsAt live in the form as datetime-local text ("YYYY-MM-DDTHH:mm", local time).
+const toForm = (quest) => ({ ...blank, ...Object.fromEntries(Object.keys(blank).map((key) => [key, quest[key] ?? blank[key]])), companies: quest.companies || [],
+  startsAt: toLocalInput(quest.startsAt), endsAt: toLocalInput(quest.endsAt) });
+const windowPayload = (form) => ({ startsAt: fromLocalInput(form.startsAt), endsAt: fromLocalInput(form.endsAt) });
 const itemPayload = (items) => items.map(({ source, problemId, section }) => ({ source, problemId, section: section || '' }));
 const detailsPayload = (form) => ({ title: form.title, description: form.description, category: form.category, companies: form.companies, topics: form.topics, difficulties: form.difficulties, theme: form.theme });
 
@@ -91,7 +110,9 @@ export default function QuickPrepWizard() {
     navigate(quickPrepLibraryUrl({ id, title: form.title }));
   };
   const finish = async (status) => {
-    const quest = await save({ ...detailsPayload(form), items: itemPayload(form.items), rewardXp: Number(form.rewardXp), badgeTitle: form.badgeTitle, semesters: form.semesters, status });
+    const invalid = windowError(form.startsAt, form.endsAt);
+    if (invalid) { setMessage({ tone: 'error', text: invalid }); return; }
+    const quest = await save({ ...detailsPayload(form), items: itemPayload(form.items), rewardXp: Number(form.rewardXp), badgeTitle: form.badgeTitle, semesters: form.semesters, ...windowPayload(form), status });
     if (quest) navigate(`${QUICKPREP_ROOT}/${quest.id}`, { state: { notice: status === 'published' ? `“${quest.title}” is live for students.` : `“${quest.title}” saved as a draft.` } });
   };
 
@@ -101,7 +122,7 @@ export default function QuickPrepWizard() {
     const available = form.items.filter((item) => item.available !== false);
     const difficulty = available.reduce((mix, item) => { if (mix[item.difficulty] !== undefined) mix[item.difficulty] += 1; return mix; }, { Easy: 0, Medium: 0, Hard: 0 });
     return { id: 'preview', slug: saved?.slug || 'preview', title: form.title || 'Your QuickPrep name', description: form.description, category: form.category, company: form.companies[0] || '', companies: form.companies, topics: form.topics,
-      theme: form.theme, rewardXp: Number(form.rewardXp) || 0, badge: { title: form.badgeTitle || `${form.title || 'QuickPrep'} Finisher` }, total: available.length, solved: 0, difficulty, started: false };
+      theme: form.theme, rewardXp: Number(form.rewardXp) || 0, badge: { title: form.badgeTitle || `${form.title || 'QuickPrep'} Finisher` }, total: available.length, solved: 0, difficulty, started: false, ...windowPayload(form) };
   }, [form, saved]);
 
   if (loading) return <Page><div className="h-24 animate-pulse rounded-2xl bg-slate-200 dark:bg-zinc-800" /><div className="h-96 animate-pulse rounded-2xl bg-slate-200 dark:bg-zinc-800" /></Page>;
@@ -225,6 +246,10 @@ function QuestionsStep({ form, set, dirty, busy, onLibrary, onSave, onBack, onNe
   const keyOf = (item) => `${item.source}:${item.problemId}`;
   const toggle = (key) => setSelected((previous) => { const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key); return next; });
   const allSelected = items.length > 0 && items.every((item) => selected.has(keyOf(item)));
+  // Rows keep their real position: sorting is only a view, and reordering works on the student order.
+  const entries = useMemo(() => items.map((item, position) => ({ item, position })), [items]);
+  const table = useClientTable(entries, { getValue: questionValue });
+  const canReorder = !table.sort || (table.sort.key === 'position' && table.sort.direction === 'asc');
 
   return <>
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -260,23 +285,20 @@ function QuestionsStep({ form, set, dirty, busy, onLibrary, onSave, onBack, onNe
         <p className="mx-auto mt-1 max-w-md text-sm text-slate-500 dark:text-zinc-400">Open the library, tick the questions you want and choose “Add to QuickPrep”. They will appear here to order and group.</p>
         <button type="button" onClick={onLibrary} className={`${primaryButton} mt-5`}><LibraryBig className="h-4 w-4" />Open library</button>
       </div>
-        : <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-sm">
+        : <><div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-left text-sm" style={{ '--serial-start': (table.page - 1) * table.pageSize }}>
             <thead className="bg-slate-50/80 text-[11.5px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-zinc-900/60 dark:text-zinc-400">
               <tr>
-                <th scope="col" className="w-10 py-3 pl-4"><input type="checkbox" checked={allSelected} onChange={() => setSelected(allSelected ? new Set() : new Set(items.map(keyOf)))} aria-label="Select all questions" className="h-4 w-4 rounded accent-sky-600" /></th>
-                <th scope="col" className="w-10 px-2 py-3">#</th>
-                <th scope="col" className="px-3 py-3">Question</th>
-                <th scope="col" className="px-3 py-3">Difficulty</th>
-                <th scope="col" className="px-3 py-3">Topics</th>
-                <th scope="col" className="px-3 py-3">Companies</th>
-                <th scope="col" className="w-44 px-3 py-3">Section</th>
-                <th scope="col" className="py-3 pl-3 pr-4 text-right">Order</th>
+                <SortHeader sortable={false} className="w-10 py-3 pl-4"><input type="checkbox" checked={allSelected} onChange={() => setSelected(allSelected ? new Set() : new Set(items.map(keyOf)))} aria-label="Select all questions" className="h-4 w-4 rounded accent-sky-600" /></SortHeader>
+                <SortHeader sortKey="position" sort={table.sort} onSort={table.toggleSort} title="Student order" className="w-10 px-2 py-3 text-[11.5px]">#</SortHeader>
+                {QUESTION_COLUMNS.map(([key, label, width]) => <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort} className={`${width} px-3 py-3 text-[11.5px]`}>{label}</SortHeader>)}
+                <SortHeader sortable={false} align="right" className="py-3 pl-3 pr-4 text-[11.5px]">Order</SortHeader>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
-              {items.map((item, index) => {
+              {table.pageRows.map(({ item, position: index }) => {
                 const key = keyOf(item);
+                const reorderHint = canReorder ? undefined : 'Clear the column sort to reorder';
                 return <tr key={key} className={`transition hover:bg-slate-50/70 dark:hover:bg-zinc-800/40 ${selected.has(key) ? 'bg-sky-50/50 dark:bg-sky-500/5' : ''}`}>
                   <td className="py-2.5 pl-4"><input type="checkbox" checked={selected.has(key)} onChange={() => toggle(key)} aria-label={`Select ${item.title}`} className="h-4 w-4 rounded accent-sky-600" /></td>
                   <td className="px-2 py-2.5 text-[12.5px] tabular-nums text-slate-400">{index + 1}</td>
@@ -290,8 +312,8 @@ function QuestionsStep({ form, set, dirty, busy, onLibrary, onSave, onBack, onNe
                   <td className="px-3 py-2.5"><input value={item.section || ''} list="quickprep-sections" onChange={(event) => update(items.map((entry, position) => (position === index ? { ...entry, section: event.target.value } : entry)))} placeholder="No section" aria-label={`Section for ${item.title}`} className="w-full rounded-lg border border-transparent bg-slate-50 px-2.5 py-1.5 text-[13px] outline-none hover:border-slate-200 focus:border-sky-400 focus:bg-white dark:bg-zinc-900 dark:hover:border-zinc-700" /></td>
                   <td className="py-2.5 pl-3 pr-4">
                     <div className="flex justify-end gap-0.5">
-                      <button type="button" onClick={() => move(index, -1)} disabled={index === 0} aria-label={`Move ${item.title} up`} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-zinc-800"><ArrowUp className="h-4 w-4" /></button>
-                      <button type="button" onClick={() => move(index, 1)} disabled={index === items.length - 1} aria-label={`Move ${item.title} down`} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-zinc-800"><ArrowDown className="h-4 w-4" /></button>
+                      <button type="button" onClick={() => move(index, -1)} disabled={!canReorder || index === 0} title={reorderHint} aria-label={`Move ${item.title} up`} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-zinc-800"><ArrowUp className="h-4 w-4" /></button>
+                      <button type="button" onClick={() => move(index, 1)} disabled={!canReorder || index === items.length - 1} title={reorderHint} aria-label={`Move ${item.title} down`} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-zinc-800"><ArrowDown className="h-4 w-4" /></button>
                       <button type="button" onClick={() => update(items.filter((_, position) => position !== index))} aria-label={`Remove ${item.title}`} className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10"><X className="h-4 w-4" /></button>
                     </div>
                   </td>
@@ -299,7 +321,8 @@ function QuestionsStep({ form, set, dirty, busy, onLibrary, onSave, onBack, onNe
               })}
             </tbody>
           </table>
-        </div>}
+        </div>
+        <TablePager {...table.pager} noun="questions" className="dark:border-zinc-800" /></>}
     </section>
     <StepFooter>
       <button type="button" onClick={onBack} disabled={busy} className={secondaryButton}><ArrowLeft className="h-4 w-4" />Details</button>
@@ -325,6 +348,12 @@ function PublishStep({ form, set, saved, preview, busy, onBack, onFinish }) {
       ? { ok: true, warn: true, label: 'Students can see it', detail: 'Delivered to every university with coding enabled' }
       : { ok: (saved?.audience ?? 1) > 0, warn: true, label: 'Students can see it', detail: saved?.audience !== null && saved?.audience !== undefined ? `${plural(saved.audience, 'student')} in the saved audience` : 'Counted after saving' },
   ];
+  const windowProblem = windowError(form.startsAt, form.endsAt);
+  const draftWindow = { startsAt: fromLocalInput(form.startsAt), endsAt: fromLocalInput(form.endsAt) };
+  const windowState = questWindowStatus(draftWindow);
+  checks.push(windowProblem
+    ? { ok: false, label: 'Start and end time', detail: windowProblem }
+    : { ok: windowState !== 'ended', warn: true, label: 'Start and end time', detail: windowState === 'ended' ? 'The end time has passed: students cannot start it' : windowText(draftWindow) });
   const ready = checks.filter((check) => !check.warn).every((check) => check.ok);
   const published = saved?.status === 'published';
   return <>
@@ -339,6 +368,20 @@ function PublishStep({ form, set, saved, preview, busy, onBack, onFinish }) {
               return <button key={semester} type="button" aria-pressed={on} onClick={() => set('semesters', on ? form.semesters.filter((value) => value !== semester) : [...form.semesters, semester].sort((a, b) => a - b))}
                 className={`min-w-[3rem] rounded-xl border px-3 py-2 text-sm font-semibold transition ${on ? 'border-sky-500 bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300' : 'border-slate-200 text-slate-600 hover:border-slate-300 dark:border-zinc-700 dark:text-zinc-300'}`}>Sem {semester}</button>;
             })}
+          </div>
+        </section>
+        <section className={`${card} grid gap-4 p-5 md:grid-cols-2`} aria-labelledby="window-title">
+          <div className="flex flex-wrap items-center gap-2 md:col-span-2">
+            <h2 id="window-title" className="flex items-center gap-2 text-base font-semibold"><CalendarClock className="h-4 w-4 text-sky-600" />Start and end time</h2>
+            {!windowProblem && <WindowChip quest={draftWindow} />}
+            <span className="ml-auto text-[12px] text-slate-400">Optional · your local time</span>
+          </div>
+          <Field label="Starts"><input type="datetime-local" value={form.startsAt} max={form.endsAt || undefined} onChange={(event) => set('startsAt', event.target.value)} aria-invalid={Boolean(windowProblem) || undefined} className={inputClass} /></Field>
+          <Field label="Ends"><input type="datetime-local" value={form.endsAt} min={form.startsAt || undefined} onChange={(event) => set('endsAt', event.target.value)} aria-invalid={Boolean(windowProblem) || undefined} className={inputClass} /></Field>
+          <div className="flex flex-wrap items-center gap-2 md:col-span-2">
+            {windowProblem ? <p role="alert" className="text-[12.5px] font-medium text-rose-600 dark:text-rose-400">{windowProblem}</p>
+              : <p className="text-[12.5px] text-slate-500 dark:text-zinc-400">Students can start it only inside this window; solves after the end do not count.</p>}
+            {(form.startsAt || form.endsAt) && <button type="button" onClick={() => { set('startsAt', ''); set('endsAt', ''); }} className="ml-auto text-[12.5px] font-semibold text-sky-700 hover:underline dark:text-sky-300">Clear</button>}
           </div>
         </section>
         <section className={`${card} grid gap-4 p-5 md:grid-cols-2`} aria-labelledby="reward-title">

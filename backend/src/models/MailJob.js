@@ -4,7 +4,8 @@ import mongoose from 'mongoose';
 const mailJobSchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ['student_credentials', 'coordinator_onboarding', 'assessment_invitation', 'event_invitation', 'event_cancellation', 'anvi_interview'],
+    // student_message: an admin's own email template sent to chosen students from Prep Analysis.
+    enum: ['student_credentials', 'coordinator_onboarding', 'assessment_invitation', 'event_invitation', 'event_cancellation', 'anvi_interview', 'student_message'],
     required: true,
     index: true,
   },

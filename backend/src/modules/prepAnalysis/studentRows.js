@@ -348,6 +348,7 @@ export function buildStudentRows({
         branch: student.branch || '',
         college: student.college || '',
         group: student.group || '',
+        section: student.section || '',
         coordinators: (student.teacherIds || []).map(String),
         batches: (student.uploadBatchIds || []).map(String),
         batchNames: (student.uploadBatchIds || []).map((batchId) => batchNames.get(String(batchId))).filter(Boolean),

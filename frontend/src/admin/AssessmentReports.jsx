@@ -13,15 +13,16 @@ import {
   formatDuration, formatDateTime,
 } from './reports/ReportComponents';
 import ColumnHeader from './reports/ColumnHeader';
-import PageNav from './reports/PageNav';
+import { TablePager } from '../components/table';
 import ReportDetailDrawer from './reports/ReportDetailDrawer';
 import ReportViolationModal from './reports/ReportViolationModal';
 import ReportOverview from './reports/ReportOverview';
 import RosterFilterSheet from './reports/RosterFilterSheet';
 import LiveRefreshControl from './reports/LiveRefreshControl';
+import PerformanceReportMenu from '../components/PerformanceReportMenu';
 import useLiveAssessmentRoster, { DEFAULT_REFRESH_INTERVAL_MS } from './reports/useLiveAssessmentRoster';
 import {
-  ACADEMIC_DIMENSIONS, COLUMN_FILTERS, DEFAULT_ROSTER_FILTERS, ROSTER_EVALUATION_OPTIONS, ROSTER_PAGE_SIZES,
+  ACADEMIC_DIMENSIONS, COLUMN_FILTERS, DEFAULT_ROSTER_FILTERS, ROSTER_EVALUATION_OPTIONS,
   ROSTER_STATUS_OPTIONS, ROSTER_TYPE_OPTIONS, academicValue, activeAcademicKeys, activeColumnFilterKeys,
   columnOptions, computeRosterStats, filterRosterRows, hasActiveRosterFilters, paginateRows, rowHasViolations,
   rowOutcome, rowViolationCount, sortRosterRows,
@@ -29,8 +30,6 @@ import {
 
 // Charts are heavy; the analysis loads only when its tab is first opened.
 const ReportAnalysis = lazy(() => import('./reports/ReportAnalysis'));
-
-const PAGE_SIZES = ROSTER_PAGE_SIZES;
 
 const ROSTER_COLUMN_LABELS = {
   student: 'Candidate', status: 'Status', progress: 'Progress', score: 'Score',
@@ -1027,9 +1026,6 @@ export default function AssessmentReports() {
       });
   }, [allAssessments, assessments, assessmentSearch]);
 
-  const totalPages = pageData.totalPages;
-  const currentPage = pageData.page;
-
   const openViolationsFor = useCallback((rowKey) => {
     const row = roster.rows.find((entry) => entry.key === rowKey);
     if (row?.submissionId) void openViolationReport(row.submissionId);
@@ -1214,6 +1210,7 @@ export default function AssessmentReports() {
                   onIntervalChange={changeRefreshInterval}
                   onRefresh={() => { void roster.refresh(); setShellVersion((value) => value + 1); }}
                 />
+                <PerformanceReportMenu kind="assessment" id={selectedAssessmentId} compact />
                 <button
                   type="button"
                   onClick={() => setShowExportModal(true)}
@@ -1411,9 +1408,6 @@ export default function AssessmentReports() {
                       </div>
                     )}
                   </div>
-                  <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} aria-label="Rows per page" className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                    {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / page</option>)}
-                  </select>
                 </div>
               </div>
 
@@ -1493,18 +1487,16 @@ export default function AssessmentReports() {
                 </table>
               </div>
 
-              <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 dark:border-gray-700">
-                <span className="text-xs text-slate-500 dark:text-gray-400">
-                  {visibleRows.length ? (
-                    <>
-                      Showing <span className="font-semibold text-slate-700 dark:text-gray-300">{pageData.start + 1}–{pageData.start + pageData.rows.length}</span> of{' '}
-                      <span className="font-semibold text-slate-700 dark:text-gray-300">{visibleRows.length}</span>
-                      {visibleRows.length !== tabRows.length ? ` (filtered from ${tabRows.length})` : ''} candidates
-                    </>
-                  ) : '0 candidates'}
-                </span>
-                <PageNav page={currentPage} totalPages={totalPages} onPage={setPage} />
-              </div>
+              <TablePager
+                page={pageData.page}
+                pageSize={pageSize}
+                total={visibleRows.length}
+                onPage={setPage}
+                onPageSize={setPageSize}
+                noun={visibleRows.length !== tabRows.length ? `candidates (filtered from ${tabRows.length})` : 'candidates'}
+                className="shrink-0 dark:border-gray-700"
+              />
+
             </div>
           </div>
         </div>

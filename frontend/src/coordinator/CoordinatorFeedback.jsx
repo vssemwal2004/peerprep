@@ -19,6 +19,22 @@ import {
   Calendar,
   ChevronRight
 } from 'lucide-react';
+import { SortHeader, TablePager, useClientTable } from '../components/table';
+
+const feedbackSortValue = (row, key) => {
+  if (key === 'marks') { const value = parseFloat(row.marks); return Number.isFinite(value) ? value : null; }
+  if (key === 'submittedAt') return row.submittedAt ? new Date(row.submittedAt) : null;
+  return row[key];
+};
+const FEEDBACK_COLUMNS = [
+  { key: 'event', label: 'Event' },
+  { key: 'interviewer', label: 'Mentor' },
+  { key: 'interviewee', label: 'Candidate' },
+  { key: 'intervieweeCollege', label: 'College' },
+  { key: 'marks', label: 'Marks' },
+  { key: 'comments', label: 'Comments' },
+  { key: 'submittedAt', label: 'Submitted' },
+];
 
 // Feedback Card Component for Mobile
 const FeedbackCard = ({ feedback }) => (
@@ -212,6 +228,7 @@ export default function CoordinatorFeedback() {
   const [college, setCollege] = useState('');
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
+  const table = useClientTable(feedback, { getValue: feedbackSortValue, resetKey: `${selectedEventId}|${college}` });
 
   const loadEvents = async () => {
     try { 
@@ -433,9 +450,12 @@ export default function CoordinatorFeedback() {
                     <p className="text-xs mt-0.5">Try adjusting your filters</p>
                   </div>
                 ) : (
-                  feedback.map((f, index) => (
-                    <FeedbackCard key={f.id || index} feedback={f} />
-                  ))
+                  <>
+                    {table.pageRows.map((f, index) => (
+                      <FeedbackCard key={f.id || index} feedback={f} />
+                    ))}
+                    <div className="rounded-lg bg-white dark:bg-gray-800"><TablePager {...table.pager} noun="records" /></div>
+                  </>
                 )}
               </div>
 
@@ -457,31 +477,13 @@ export default function CoordinatorFeedback() {
                     <table className="w-full">
                       <thead className="bg-slate-50 dark:bg-gray-700 border-b border-slate-200 dark:border-gray-600">
                         <tr>
-                          <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 dark:text-gray-300 uppercase tracking-wider">
-                            Event
-                          </th>
-                          <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 dark:text-gray-300 uppercase tracking-wider">
-                            Mentor
-                          </th>
-                          <th className="p-2.5 text-left text-xs font-semibold text-slate-600 dark:text-gray-300 uppercase tracking-wider">
-                            Candidate
-                          </th>
-                          <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 dark:text-gray-300 uppercase tracking-wider">
-                            College
-                          </th>
-                          <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 dark:text-gray-300 uppercase tracking-wider">
-                            Marks
-                          </th>
-                          <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 dark:text-gray-300 uppercase tracking-wider">
-                            Comments
-                          </th>
-                          <th className="py-2 px-3 text-left text-xs font-semibold text-slate-600 dark:text-gray-300 uppercase tracking-wider">
-                            Submitted
-                          </th>
+                          {FEEDBACK_COLUMNS.map((column) => (
+                            <SortHeader key={column.key} sortKey={column.key} sort={table.sort} onSort={table.toggleSort}>{column.label}</SortHeader>
+                          ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 dark:divide-gray-700">
-                        {feedback.map((f, index) => (
+                        {table.pageRows.map((f, index) => (
                           <motion.tr
                             key={f.id || index}
                             initial={{ opacity: 0 }}
@@ -521,6 +523,7 @@ export default function CoordinatorFeedback() {
                     </table>
                     </div>
                   )}
+                  {feedback.length > 0 && <TablePager {...table.pager} noun="records" />}
                 </motion.div>
               </div>
             </>

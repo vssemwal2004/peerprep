@@ -20,7 +20,7 @@ import { prepareFunctionSourceForExecution } from '../services/functionProblemAd
 import { sqlStatementKinds } from '../services/sqlMutationContractService.js';
 import { questionQuickPreps } from '../services/questService.js';
 import { persistedTestCaseInputLimitBytes } from '../services/trustedLargeInputPolicyService.js';
-import { parseSerialSearch, serialSearchClause } from '../utils/problemSerial.js';
+import { applyNumberKind, parseSearchList, parseSerialSearch, serialSearchClause } from '../utils/problemSerial.js';
 import { cloneProblemForAssessment } from '../services/assessmentProblemCloneService.js';
 
 const STATUS_MAP = {
@@ -1390,9 +1390,40 @@ export async function getCompilerOverview(req, res) {
   });
 }
 
+/** One comma-separated search term: serial equality, or a case-insensitive title/tag/company match. */
+function problemSearchTermClause(term) {
+  if (term.kind === 'serial') return serialSearchClause(term.serial);
+  const regex = new RegExp(sanitizeSearchQuery(term.raw), 'i');
+  return { $or: [{ title: regex }, { tags: regex }, { companyTags: regex }] };
+}
+
+/** Aggregation twin of problemSearchTermClause, used to rank rows by typed order. */
+function problemSearchTermExpression(term) {
+  if (term.kind === 'serial') {
+    const { kind, number } = term.serial;
+    const display = { $eq: ['$displayOrder', number] };
+    const source = { $eq: ['$sourceNumber', number] };
+    return kind === 'leetcode' ? source : kind === 'peerprep' ? display : { $or: [display, source] };
+  }
+  const regex = sanitizeSearchQuery(term.raw);
+  const anyLabel = (field) => ({ $anyElementTrue: [{ $map: {
+    input: { $cond: [{ $isArray: field }, field, []] },
+    as: 'label',
+    in: { $regexMatch: { input: { $toString: '$$label' }, regex, options: 'i' } },
+  } }] });
+  return { $or: [
+    { $regexMatch: { input: { $toString: { $ifNull: ['$title', ''] } }, regex, options: 'i' } },
+    anyLabel('$tags'),
+    anyLabel('$companyTags'),
+  ] };
+}
+
 export async function listProblems(req, res) {
   const { page, limit } = validatePagination(req.query.page, req.query.limit);
-  const rawSearch = String(req.query.search || '').trim().slice(0, 200);
+  const staffPicker = isAdminRequest(req) || isCoordinatorRequest(req);
+  // Staff pickers' PeerPrep/LeetCode toggle: what a bare number means ("2" → "pp 2" / "lc 2").
+  const typedSearch = staffPicker ? applyNumberKind(String(req.query.search || ''), req.query.numberKind) : String(req.query.search || '');
+  const rawSearch = typedSearch.trim().slice(0, 200);
   const numberSearch = parseSerialSearch(rawSearch);
   const search = sanitizeSearchQuery(rawSearch);
   const difficulty = String(req.query.difficulty || '').trim();
@@ -1444,7 +1475,13 @@ export async function listProblems(req, res) {
     };
   }
 
-  if (search) {
+  // Staff pickers accept several comma-separated names/numbers; students keep the single-term search.
+  const searchList = staffPicker
+    ? parseSearchList(typedSearch.slice(0, 2000))
+    : { multi: false, terms: [] };
+  if (searchList.multi) {
+    query.$and = [{ $or: searchList.terms.map(problemSearchTermClause) }];
+  } else if (search) {
     if (numberSearch) {
       query.$and = [serialSearchClause(numberSearch)];
     } else {
@@ -1462,7 +1499,31 @@ export async function listProblems(req, res) {
     acceptanceRate: { 'stats.acceptanceRate': sortOrder, updatedAt: -1 },
   };
 
-  const problemsPromise = sortBy === 'difficulty'
+  let termHits = new Set();
+  const difficultyRankStage = {
+    $addFields: { difficultySortRank: { $switch: { branches: DIFFICULTY_SORT_BRANCHES, default: 4 } } },
+  };
+  // Several terms: rows follow the typed order of the first term they match, then the chosen sort.
+  const problemsPromise = searchList.multi
+    ? Problem.aggregate([
+      { $match: query },
+      { $addFields: { __termHits: searchList.terms.map((term, index) => ({ $cond: [problemSearchTermExpression(term), index, -1] })) } },
+      { $addFields: { __termRank: { $min: { $filter: { input: '$__termHits', cond: { $gte: ['$$this', 0] } } } } } },
+      ...(sortBy === 'difficulty' ? [difficultyRankStage] : []),
+      { $facet: {
+        rows: [
+          { $sort: { __termRank: 1, ...(sortBy === 'difficulty' ? { difficultySortRank: sortOrder, title: 1, updatedAt: -1 } : (sortMap[sortBy] || sortMap.updatedAt)) } },
+          { $skip: (page - 1) * limit },
+          { $limit: limit },
+          { $project: { editorial: 0, editorialMeta: 0, __termHits: 0 } },
+        ],
+        hits: [{ $unwind: '$__termHits' }, { $match: { __termHits: { $gte: 0 } } }, { $group: { _id: '$__termHits' } }],
+      } },
+    ]).then(([result = {}]) => {
+      termHits = new Set((result.hits || []).map((entry) => entry._id));
+      return result.rows || [];
+    })
+    : sortBy === 'difficulty'
     ? Problem.aggregate([
       { $match: query },
       {
@@ -1527,9 +1588,16 @@ export async function listProblems(req, res) {
     : problemsResult;
 
   res.json({
-    problems: problems.map((problem) => serializeProblem(problem, {
-      studentStatus: problem.studentStatus || null,
-      includeEditorial: false,
+    ...(searchList.multi ? {
+      searchTerms: searchList.terms.map((term) => term.raw),
+      unmatchedTerms: searchList.terms.filter((term, index) => !termHits.has(index)).map((term) => term.raw),
+    } : {}),
+    problems: problems.map((problem) => ({
+      ...serializeProblem(problem, {
+        studentStatus: problem.studentStatus || null,
+        includeEditorial: false,
+      }),
+      ...(searchList.multi ? { searchTermIndex: Number.isInteger(problem.__termRank) ? problem.__termRank : -1 } : {}),
     })),
     pagination: {
       page,

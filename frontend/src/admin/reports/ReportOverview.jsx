@@ -3,6 +3,7 @@ import {
   Activity, AlertTriangle, CheckCircle2, Clock, Flag, LineChart, PlayCircle,
   ShieldAlert, Trophy, Users,
 } from 'lucide-react';
+import { SortHeader, TablePager, useClientTable } from '../../components/table';
 import { formatDateTime, formatDuration } from './ReportComponents';
 import {
   ACADEMIC_DIMENSIONS, DISTRIBUTION_BUCKETS, formatRelativeAge, groupBreakdown, rowEvaluationState,
@@ -79,6 +80,9 @@ function MetaPair({ label, children }) {
   );
 }
 
+// "Not set" sorts last, like any other blank value.
+const groupLineValue = (line, key) => (key === 'label' ? (line.value === '' ? null : line.label) : line[key]);
+
 /** Candidates, finished, average and pass rate for each course / branch / semester / group. */
 function GroupBreakdown({ rows, passPercentage }) {
   // Only details at least one candidate has filled in are offered.
@@ -91,7 +95,11 @@ function GroupBreakdown({ rows, passPercentage }) {
   const splitting = dimensions.find((dimension) => new Set(rows.map((row) => row[dimension.key] ?? '')).size > 1);
   const key = dimensions.some((dimension) => dimension.key === chosen) ? chosen : (splitting || dimensions[0])?.key;
   const lines = useMemo(() => (key ? groupBreakdown(rows, key, { passPercentage }) : []), [key, passPercentage, rows]);
+  const table = useClientTable(lines, { getValue: groupLineValue, initialPageSize: 10, resetKey: key });
   if (!dimensions.length) return null;
+  const header = (sortKey, label, align, padding = 'px-2') => (
+    <SortHeader sortKey={sortKey} sort={table.sort} onSort={table.toggleSort} align={align} className={`${padding} py-1.5 text-[10.5px] font-semibold tracking-wide text-slate-400 dark:text-gray-500`}>{label}</SortHeader>
+  );
   return (
     <Panel
       icon={Users}
@@ -117,15 +125,15 @@ function GroupBreakdown({ rows, passPercentage }) {
         <table data-no-serial className="w-full text-left text-xs">
           <thead className="sticky top-0 bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-400 dark:bg-gray-800 dark:text-gray-500">
             <tr>
-              <th className="px-3.5 py-1.5 font-semibold">{dimensions.find((dimension) => dimension.key === key)?.label}</th>
-              <th className="px-2 py-1.5 text-right font-semibold">Cand.</th>
-              <th className="px-2 py-1.5 text-right font-semibold">Done</th>
-              <th className="px-2 py-1.5 text-right font-semibold">Avg</th>
-              <th className="px-3.5 py-1.5 text-right font-semibold">Pass</th>
+              {header('label', dimensions.find((dimension) => dimension.key === key)?.label, 'left', 'px-3.5')}
+              {header('candidates', 'Cand.', 'right')}
+              {header('finished', 'Done', 'right')}
+              {header('avgPercentage', 'Avg', 'right')}
+              {header('passRate', 'Pass', 'right', 'px-3.5')}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-            {lines.map((line) => (
+            {table.pageRows.map((line) => (
               <tr key={line.value || '__empty'} className="text-slate-700 dark:text-gray-200">
                 <td className="max-w-[9rem] truncate px-3.5 py-1.5 font-medium" title={line.label}>{line.label}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{line.candidates}</td>
@@ -137,6 +145,7 @@ function GroupBreakdown({ rows, passPercentage }) {
           </tbody>
         </table>
       </div>
+      <TablePager {...table.pager} noun="groups" className="shrink-0 dark:border-gray-800" />
     </Panel>
   );
 }

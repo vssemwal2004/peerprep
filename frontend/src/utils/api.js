@@ -464,11 +464,21 @@ export const api = {
   universityAccountCounts: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/account-counts`, { skipCache: true }),
   universityAccountLimits: () => request('/platform/university/account-limits', { skipCache: true }),
   platformOverview: () => request('/platform/admin/overview', { skipCache: true }),
-  platformInsights: ({ refresh = false } = {}) => request(`/platform/admin/insights${refresh ? '?refresh=1' : ''}`, { skipCache: true }),
-  overviewInsights: () => request('/overview', { skipCache: true }),
-  coinConsoleSummary: () => request('/platform/admin/coins/summary', { skipCache: true }),
-  coinLedger: ({ kind = '', scope = '', before = '', limit = 40 } = {}) => request(`/platform/admin/coins/ledger?${new URLSearchParams(Object.entries({ kind, scope, before, limit: String(limit) }).filter(([, value]) => value))}`, { skipCache: true }),
-  coinAccounts: ({ role = '', search = '', page = 1 } = {}) => request(`/platform/admin/coins/accounts?${new URLSearchParams(Object.entries({ role, search, page: String(page) }).filter(([, value]) => value))}`, { skipCache: true }),
+  // `range` is the { range, from?, to? } query from dateRangeModel.rangeToQuery (omitted = server default).
+  platformInsights: ({ refresh = false, range } = {}) => {
+    const qs = new URLSearchParams({ ...(range || {}), ...(refresh ? { refresh: '1' } : {}) }).toString();
+    return request(`/platform/admin/insights${qs ? `?${qs}` : ''}`, { skipCache: true });
+  },
+  overviewInsights: (range) => {
+    const qs = new URLSearchParams(range || {}).toString();
+    return request(`/overview${qs ? `?${qs}` : ''}`, { skipCache: true });
+  },
+  coinConsoleSummary: (range) => {
+    const qs = new URLSearchParams(range || {}).toString();
+    return request(`/platform/admin/coins/summary${qs ? `?${qs}` : ''}`, { skipCache: true });
+  },
+  coinLedger: ({ kind = '', scope = '', before = '', page = '', limit = 40 } = {}) => request(`/platform/admin/coins/ledger?${new URLSearchParams(Object.entries({ kind, scope, before, page: page ? String(page) : '', limit: String(limit) }).filter(([, value]) => value))}`, { skipCache: true }),
+  coinAccounts: ({ role = '', search = '', page = 1, limit = '', sortBy = '', sortOrder = '' } = {}) => request(`/platform/admin/coins/accounts?${new URLSearchParams(Object.entries({ role, search, page: String(page), limit: limit ? String(limit) : '', sortBy, sortOrder }).filter(([, value]) => value))}`, { skipCache: true }),
   prepScorePolicy: () => request('/platform/admin/prep-score', { skipCache: true }),
   savePrepScorePolicyDraft: (body) => request('/platform/admin/prep-score/draft', { method: 'PUT', body, skipCache: true }),
   simulatePrepScore: (body) => request('/platform/admin/prep-score/simulate', { method: 'POST', body, skipCache: true }),
@@ -480,7 +490,9 @@ export const api = {
   walletPricing: () => request('/wallet/pricing', { skipCache: true }),
   adminCoinPricing: () => request('/platform/admin/coin-pricing', { skipCache: true }),
   saveAdminCoinPricing: (body) => request('/platform/admin/coin-pricing', { method: 'PUT', body, skipCache: true }),
-  platformStudents: (id, page = 1, search = '') => request(`/platform/admin/universities/${encodeURIComponent(id)}/students?page=${page}&search=${encodeURIComponent(search)}`, { skipCache: true }),
+  platformStudents: (id, page = 1, search = '', { pageSize, sortBy, sortOrder } = {}) => request(`/platform/admin/universities/${encodeURIComponent(id)}/students?${new URLSearchParams({
+    page: String(page), search, ...(pageSize ? { pageSize: String(pageSize) } : {}), ...(sortBy ? { sortBy, sortOrder: sortOrder === 'desc' ? 'desc' : 'asc' } : {}),
+  }).toString()}`, { skipCache: true }),
   platformStudent: (id, studentId) => request(`/platform/admin/universities/${encodeURIComponent(id)}/students/${encodeURIComponent(studentId)}`, { skipCache: true }),
   listPracticeQuestions: (params = {}) => request(`/student/questions?${new URLSearchParams(params).toString()}`, { skipCache: true }),
   questionInterviewOptions: () => request('/student/questions/interview-options', { skipCache: true }),
@@ -650,7 +662,8 @@ export const api = {
   deleteQuest: (id) => request(`/quests/admin/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   searchQuestLibrary: (params = {}) => request(`/quests/admin/library?${new URLSearchParams(params).toString()}`, { skipCache: true }),
   getQuestTaxonomy: () => request('/quests/admin/taxonomy', { skipCache: true }),
-  getQuestOverview: () => request('/quests/admin/overview', { skipCache: true }),
+  getQuestOverview: (params = {}) => request(`/quests/admin/overview?${new URLSearchParams(params).toString()}`, { skipCache: true }),
+  getQuestStudents: (params = {}) => request(`/quests/admin/students?${new URLSearchParams(params).toString()}`, { skipCache: true }),  getStudentQuickPrepByAdmin: (studentId) => request(`/students/${encodeURIComponent(studentId)}/quickprep`, { skipCache: true }),
   getQuestInsights: (id) => request(`/quests/admin/${encodeURIComponent(id)}/insights`, { skipCache: true }),
   addQuestItems: (id, items) => request(`/quests/admin/${encodeURIComponent(id)}/items`, { method: 'POST', body: { items } }),
   addQuestLibraryItems: (id, libraryIds) => request(`/quests/admin/${encodeURIComponent(id)}/library-items`, { method: 'POST', body: { libraryIds } }),
@@ -772,6 +785,7 @@ export const api = {
     const params = new URLSearchParams();
     if (options.search) params.append("search", options.search);
     if (options.sortOrder) params.append("sortOrder", options.sortOrder);
+    if (options.sortBy) params.append("sortBy", options.sortBy);
     if (options.semester !== undefined && options.semester !== "")
       params.append("semester", options.semester);
     [
@@ -779,6 +793,7 @@ export const api = {
       "course",
       "college",
       "group",
+      "section",
       "coordinator",
       "credentialEmailStatus",
       "platformActivity",
@@ -910,11 +925,13 @@ export const api = {
     [
       "search",
       "sortOrder",
+      "sortBy",
       "semester",
       "branch",
       "course",
       "college",
       "group",
+      "section",
       "coordinator",
       "credentialEmailStatus",
       "platformActivity",
@@ -1237,6 +1254,24 @@ export const api = {
       `/admin/assessment/${encodeURIComponent(assessmentId)}/report/roster${since ? `?since=${encodeURIComponent(since)}` : ""}`,
       { skipCache: true, skipDedupe: true, signal, timeoutMs: 30000 },
     ),
+  // Performance report file (kind 'assessment' | 'quickprep', format 'pdf' | 'xlsx' | 'csv'), saved by the browser.
+  downloadPerformanceReport: async (kind, id, format) => {
+    const res = await fetch(`${API_BASE}/admin/performance-reports/${encodeURIComponent(kind)}/${encodeURIComponent(id)}?format=${encodeURIComponent(format)}`, { credentials: "include" });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      throw new Error(payload.error || "The performance report could not be downloaded.");
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const disposition = res.headers.get("Content-Disposition") || "";
+    a.download = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `performance-report.${format}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
   releaseAssessmentResults: (assessmentId, release = true) =>
     request(`/admin/assessment/${encodeURIComponent(assessmentId)}/release-results`, {
       method: "POST",
@@ -1664,9 +1699,9 @@ export const api = {
     request(`/email-templates/${id}`, { method: "DELETE" }),
   listMailQueue: (options = {}) => {
     const params = new URLSearchParams();
-    ["search", "type", "status", "dateFrom", "dateTo", "page", "limit"].forEach(
+    ["search", "type", "status", "dateFrom", "dateTo", "page", "limit", "sortBy", "sortOrder"].forEach(
       (key) => {
-        if (options[key] !== undefined && options[key] !== "")
+        if (options[key] !== undefined && options[key] !== null && options[key] !== "")
           params.append(key, options[key]);
       },
     );

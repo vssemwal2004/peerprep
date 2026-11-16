@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, ArrowUpDown, BellRing, CalendarClock, ClipboardCopy, Download, FileBarChart, Loader2, Plus, RefreshCw, RotateCcw, Search, Trash2, UserRound, Users, X, XCircle } from "lucide-react";
+import { BellRing, CalendarClock, ClipboardCopy, Download, FileBarChart, Loader2, Plus, RefreshCw, RotateCcw, Search, Trash2, UserRound, Users, X, XCircle } from "lucide-react";
 import { ROOT } from "../definition";
 import { useDebounced, useRemote } from "../useRemote";
-import { EmptyState, Notice, Pagination, Select, TextInput, ToneChip, ghostClass, inputClass, primaryClass, secondaryClass, surfaceClass, tableHeadClass } from "../ui";
+import { SortHeader, TablePager, nextSort } from "../../../components/table";
+import { EmptyState, Notice, Select, TextInput, ToneChip, ghostClass, inputClass, primaryClass, secondaryClass, surfaceClass, tableHeadClass } from "../ui";
 import { scheduleApi } from "./schedulesApi";
 import { AddStudentsDialog, MoveBookingDialog } from "./scheduleDialogs";
 import { CheckBox, ConfirmDialog, Initials, OutcomePill, RowMenu, ScheduleFrame, Segmented, StatusPill, dangerClass } from "./scheduleUi";
@@ -25,16 +26,6 @@ const plural = (count, word) => `${Number(count).toLocaleString("en-IN")} ${word
 const isRunning = (row) => row.attempt?.status === "in_progress" || row.outcome === "in_progress";
 const remindable = (row, schedule) => row.status === "assigned" && ["pending", "booked"].includes(row.outcome) && ACTIVE.includes(schedule?.status);
 
-function SortHeader({ column, label, sort, onSort, className = "" }) {
-  const active = sort.key === column;
-  const Icon = !active ? ArrowUpDown : sort.order === "asc" ? ArrowUp : ArrowDown;
-  return <th scope="col" aria-sort={active ? (sort.order === "asc" ? "ascending" : "descending") : "none"} className={`whitespace-nowrap px-3 py-2.5 font-semibold ${className}`}>
-    <button type="button" onClick={() => onSort(column)} className={`-mx-1 inline-flex items-center gap-1 rounded px-1 uppercase tracking-wider hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:hover:text-white ${active ? "text-slate-900 dark:text-white" : ""}`}>
-      {label}<Icon size={12} aria-hidden="true" className={active ? "" : "opacity-40"} />
-    </button>
-  </th>;
-}
-
 function BookingCell({ row }) {
   if (row.status === "removed") return <ToneChip tone="slate" className="text-[11px]">Removed</ToneChip>;
   const meta = row.booking ? BOOKING_META[row.booking.status] : null;
@@ -55,11 +46,12 @@ export default function AssignedStudents({ navigation = null }) {
   const perInterview = Boolean(interviewId);
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [query, setQuery] = useState(() => ({ search: "", status: params.get("status") || "", assignmentId: params.get("schedule") || "", sort: "name", order: "asc", page: 1, limit: 25 }));
+  const [query, setQuery] = useState(() => ({ search: "", status: params.get("status") || "", assignmentId: params.get("schedule") || "", sort: { key: "name", direction: "asc" }, page: 1, limit: 25 }));
   const search = useDebounced(query.search.trim(), 300);
-  const request = { search, status: query.status, sort: query.sort, order: query.order, page: query.page, limit: query.limit, ...(perInterview ? { assignmentId: query.assignmentId } : {}) };
+  // Sort "off" sends no sort, so the server falls back to its default (name, ascending).
+  const request = { search, status: query.status, ...(query.sort ? { sort: query.sort.key, order: query.sort.direction } : {}), page: query.page, limit: query.limit, ...(perInterview ? { assignmentId: query.assignmentId } : {}) };
   const remote = useRemote(() => (perInterview ? scheduleApi.interviewTargets(interviewId, request) : scheduleApi.targets(id, request)),
-    [id, interviewId, search, query.status, query.assignmentId, query.sort, query.order, query.page, query.limit]);
+    [id, interviewId, search, query.status, query.assignmentId, query.sort?.key, query.sort?.direction, query.page, query.limit]);
   const data = remote.result || {};
   const rows = useMemo(() => data.rows || [], [data.rows]);
   const schedules = useMemo(() => data.schedules || [], [data.schedules]);
@@ -74,7 +66,7 @@ export default function AssignedStudents({ navigation = null }) {
   const [exporting, setExporting] = useState(false);
 
   const set = (patch, keepPage = false) => setQuery((current) => ({ ...current, ...patch, page: keepPage ? patch.page ?? current.page : 1 }));
-  const sortBy = (key) => set({ sort: key, order: query.sort === key && query.order === "asc" ? "desc" : "asc" });
+  const sortBy = (key) => set({ sort: nextSort(query.sort, key) });
   const close = () => { setDialog(null); setReason(""); setDialogError(""); setBusy(false); };
   const done = (text) => { close(); setMessage(text); setError(""); setPicked(new Map()); remote.reload(); };
   const run = async (work, success, fallback) => {
@@ -215,7 +207,7 @@ export default function AssignedStudents({ navigation = null }) {
                   <thead className={tableHeadClass}>
                     <tr>
                       <th scope="col" className="w-11 py-2.5 pl-4 pr-2 sm:pl-5"><CheckBox label="Select every student on this page" checked={rows.length > 0 && pickedOnPage === rows.length} indeterminate={pickedOnPage > 0} onChange={togglePage} /></th>
-                      {COLUMNS.filter(([key]) => showSchedule || key !== "schedule").map(([key, label]) => <SortHeader key={key} column={key} label={label} sort={{ key: query.sort, order: query.order }} onSort={sortBy} className={key === "name" ? "pl-1" : ""} />)}
+                      {COLUMNS.filter(([key]) => showSchedule || key !== "schedule").map(([key, label]) => <SortHeader key={key} sortKey={key} sort={query.sort} onSort={sortBy} className={`whitespace-nowrap ${key === "name" ? "pl-1" : ""}`}>{label}</SortHeader>)}
                       <th scope="col" className="w-12 py-2.5 pl-2 pr-4"><span className="sr-only">Actions</span></th>
                     </tr>
                   </thead>
@@ -251,7 +243,8 @@ export default function AssignedStudents({ navigation = null }) {
                   </tbody>
                 </table>
               </div>}
-          {data.pagination && rows.length > 0 && <Pagination value={data.pagination} onPage={(page) => set({ page }, true)} onLimit={(limit) => set({ limit })} />}
+          {data.pagination && rows.length > 0 && <TablePager page={data.pagination.page || query.page} pageSize={query.limit} total={data.pagination.total || 0}
+            onPage={(page) => set({ page }, true)} onPageSize={(limit) => set({ limit })} busy={remote.loading} noun="students" />}
         </section>
         <p className="flex items-center gap-2 text-xs text-slate-500 dark:text-gray-400"><Users size={13} aria-hidden="true" />Removing a student keeps completed interview history. Resetting a completed interview clears its attempt and report so the student can take it again.</p>
       </div>

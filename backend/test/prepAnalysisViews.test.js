@@ -48,6 +48,16 @@ test('a view is saved with its filters and charts, and only its owner can change
   assert.equal((await listViews({ user: asha })).views.length, 0);
 });
 
+test('a view keeps a custom date range exactly as saved', async (t) => {
+  if (skipped) return t.skip('MongoDB memory server is not available here');
+  const custom = { ...state, range: { preset: 'custom', from: '2026-09-01', to: '2026-10-31' } };
+  const saved = await createView({ user: asha, body: { name: 'Mid-sem', area: 'coding', state: custom } });
+  assert.deepEqual(saved.state.range, custom.range);
+  const listed = (await listViews({ user: asha })).views.find((view) => view.id === saved.id);
+  assert.deepEqual(listed.state.range, custom.range);
+  await deleteView({ user: asha, id: saved.id });
+});
+
 test('views are checked: a name, a known area, filters, a size limit and a per-admin limit', async (t) => {
   if (skipped) return t.skip('MongoDB memory server is not available here');
   assert.throws(() => validateViewBody({ name: ' ', area: 'coding', state }), /name/);

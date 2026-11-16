@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { AlertCircle, Loader2, ReceiptText, RefreshCw, Send } from 'lucide-react';
+import { AlertCircle, ReceiptText, RefreshCw, Send } from 'lucide-react';
 import { api } from '../../utils/api';
+import { DEFAULT_PAGE_SIZE, TablePager } from '../../components/table';
 import { CardHeader, EmptyHint, Glass, SkeletonRows } from '../../overview/ui';
 import { CoinAmount, CoinPage, KindChip, LiveBadge } from './shared';
 import { KIND_GROUPS, buttonClass, inputClass } from './coinModel';
@@ -16,54 +17,49 @@ export default function CoinLedger() {
   const scope = params.get('scope') || '';
   const [universities, setUniversities] = useState([]);
   const [entries, setEntries] = useState(null);
-  const [cursor, setCursor] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [updatedAt, setUpdatedAt] = useState(null);
   const [freshIds, setFreshIds] = useState(() => new Set());
   const entriesRef = useRef(null);
+  const ticket = useRef(0);
   useEffect(() => { entriesRef.current = entries; }, [entries]);
 
   useEffect(() => { api.platformWallets().then((result) => setUniversities(result.universities || [])).catch(() => {}); }, []);
 
-  const loadFirst = useCallback(async ({ silent = false } = {}) => {
+  const loadPage = useCallback(async ({ silent = false } = {}) => {
+    const mine = ++ticket.current;
     if (!silent) setLoading(true);
     try {
-      const result = await api.coinLedger({ kind, scope });
+      const result = await api.coinLedger({ kind, scope, page, limit: pageSize });
+      if (mine !== ticket.current) return;
       const current = entriesRef.current;
+      // Live refresh of the newest page: highlight the movements that were not there before.
       if (silent && current) {
-        // Live refresh: add only new rows on top, keep any older pages already loaded, and highlight them.
         const known = new Set(current.map((row) => row.id));
-        const fresh = result.entries.filter((row) => !known.has(row.id));
-        setFreshIds(new Set(fresh.map((row) => row.id)));
-        if (fresh.length) setEntries([...fresh, ...current]);
-      } else {
-        setEntries(result.entries);
-        setCursor(result.nextCursor);
-      }
+        setFreshIds(new Set(result.entries.filter((row) => !known.has(row.id)).map((row) => row.id)));
+      } else setFreshIds(new Set());
+      setEntries(result.entries);
+      setTotal(Number(result.total ?? result.entries.length) || 0);
       setError('');
       setUpdatedAt(new Date());
     } catch (failure) {
-      setError(failure.message || 'Could not load the ledger.');
-    } finally { setLoading(false); }
-  }, [kind, scope]);
+      if (mine === ticket.current) setError(failure.message || 'Could not load the ledger.');
+    } finally { if (mine === ticket.current) setLoading(false); }
+  }, [kind, scope, page, pageSize]);
 
-  useEffect(() => { entriesRef.current = null; setEntries(null); setFreshIds(new Set()); loadFirst(); }, [loadFirst]);
+  // A new filter starts again from the newest page, with the skeleton.
+  useEffect(() => { entriesRef.current = null; setEntries(null); setPage(1); }, [kind, scope]);
+  useEffect(() => { loadPage(); }, [loadPage]);
   useEffect(() => {
-    const timer = setInterval(() => { if (document.visibilityState === 'visible') loadFirst({ silent: true }); }, LIVE_MS);
+    // Only the first page follows new movements; older pages would shift under the reader.
+    if (page !== 1) return undefined;
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') loadPage({ silent: true }); }, LIVE_MS);
     return () => clearInterval(timer);
-  }, [loadFirst]);
-
-  async function loadOlder() {
-    setLoading(true);
-    try {
-      const result = await api.coinLedger({ kind, scope, before: cursor });
-      setEntries((current) => [...(current || []), ...result.entries]);
-      setCursor(result.nextCursor);
-    } catch (failure) {
-      setError(failure.message || 'Could not load older movements.');
-    } finally { setLoading(false); }
-  }
+  }, [loadPage, page]);
 
   const setFilter = (key, value) => {
     const next = new URLSearchParams(params);
@@ -85,7 +81,7 @@ export default function CoinLedger() {
     <CoinPage title="Ledger" subtitle="Every Prep Coin movement, newest first. New movements appear on their own"
       live={<LiveBadge updatedAt={updatedAt} loading={loading} />}
       actions={<>
-        <button type="button" onClick={() => loadFirst()} className={buttonClass.secondary} aria-label="Refresh ledger"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh</button>
+        <button type="button" onClick={() => loadPage()} className={buttonClass.secondary} aria-label="Refresh ledger"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh</button>
         <Link to="/admin/prep-coins/issue" className={buttonClass.primary}><Send className="h-4 w-4" />Issue coins</Link>
       </>}>
       <Glass className="p-5">
@@ -125,7 +121,8 @@ export default function CoinLedger() {
                 </ul>
               </div>
             ))}
-            {cursor ? <div className="flex justify-center"><button type="button" onClick={loadOlder} disabled={loading} className={buttonClass.secondary}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Load older movements</button></div> : <p className="text-center text-[11px] text-slate-400">That is every movement{kind || scope ? ' for these filters' : ''}.</p>}
+            <TablePager page={page} pageSize={pageSize} total={total} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1); }}
+              busy={loading} noun="movements" className="-mx-1" />
           </div>
         ) : <EmptyHint>{kind || scope ? 'No movements match these filters.' : 'No coins have moved yet.'}</EmptyHint>}
       </Glass>

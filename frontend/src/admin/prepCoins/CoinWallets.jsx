@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { AlertCircle, Building2, ChevronLeft, ChevronRight, ReceiptText, Search, Send, Users } from 'lucide-react';
+import { AlertCircle, Building2, ReceiptText, Search, Send, Users } from 'lucide-react';
+import { SortHeader, TablePager, nextSort, useClientTable } from '../../components/table';
 import { api } from '../../utils/api';
 import { CardHeader, EmptyHint, Glass, Segmented, SkeletonRows } from '../../overview/ui';
 import { percent, relativeTime } from '../../overview/overviewModel';
@@ -9,15 +10,19 @@ import { CoinAmount, CoinPage, LiveBadge } from './shared';
 import { buttonClass, formatCoins, inputClass, useLive } from './coinModel';
 
 const loadSummary = () => api.coinConsoleSummary();
+// "Share of all" is balance over the total, so it ranks exactly like the balance.
+const walletValue = (row, key) => ({ university: row.name, balance: row.balance, share: row.balance, shared: row.distributed30d }[key]);
+const UNIVERSITY_HEADERS = [['university', 'University'], ['balance', 'Balance'], ['share', 'Share of all'], ['shared', 'Passed on · 30 days']];
+const ACCOUNT_HEADERS = [['account', 'Account'], ['type', 'Type'], ['balance', 'Balance'], ['lastChange', 'Last change']];
 
 function UniversityWallets() {
   const { data, error, loading, updatedAt } = useLive(loadSummary, 60_000);
   const [filter, setFilter] = useState('');
-  const [sortBy, setSortBy] = useState('balance');
-  const rows = useMemo(() => {
-    const list = (data?.universities || []).filter((row) => `${row.name} ${row.universityId}`.toLowerCase().includes(filter.trim().toLowerCase()));
-    return list.sort((a, b) => (sortBy === 'name' ? a.name.localeCompare(b.name) : sortBy === 'shared' ? b.distributed30d - a.distributed30d : b.balance - a.balance));
-  }, [data, filter, sortBy]);
+  const rows = useMemo(
+    () => (data?.universities || []).filter((row) => `${row.name} ${row.universityId}`.toLowerCase().includes(filter.trim().toLowerCase())),
+    [data, filter],
+  );
+  const table = useClientTable(rows, { getValue: walletValue, initialSort: { key: 'balance', direction: 'desc' }, resetKey: filter });
   const total = (data?.universities || []).reduce((sum, row) => sum + row.balance, 0);
 
   return (
@@ -29,15 +34,18 @@ function UniversityWallets() {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
           <input className={`${inputClass} pl-9`} value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Search universities" aria-label="Search universities" />
         </label>
-        <Segmented label="Sort wallets" value={sortBy} onChange={setSortBy} options={[{ value: 'balance', label: 'Balance' }, { value: 'shared', label: 'Passed on' }, { value: 'name', label: 'Name' }]} />
       </div>
       {error ? <p className="mb-3 flex items-center gap-2 text-sm text-rose-700"><AlertCircle className="h-4 w-4" />{error}</p> : null}
       {!data ? <SkeletonRows rows={4} /> : rows.length ? (
+        <>
         <div className="-mx-2 overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-xs">
-            <thead><tr className="text-[11px] text-slate-500 dark:text-slate-400">{['University', 'Balance', 'Share of all', 'Passed on · 30 days', ''].map((heading) => <th key={heading} className="px-2 pb-2 font-medium">{heading}</th>)}</tr></thead>
+            <thead><tr className="text-[11px] text-slate-500 dark:text-slate-400">
+              {UNIVERSITY_HEADERS.map(([key, label]) => <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort}>{label}</SortHeader>)}
+              <th scope="col" className="px-2 pb-2"><span className="sr-only">Actions</span></th>
+            </tr></thead>
             <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-              {rows.map((row) => (
+              {table.pageRows.map((row) => (
                 <tr key={row.universityId} className="transition hover:bg-slate-900/[0.02] dark:hover:bg-white/[0.03]">
                   <td className="px-2 py-3">
                     <span className="flex items-center gap-2.5">
@@ -64,6 +72,8 @@ function UniversityWallets() {
             </tbody>
           </table>
         </div>
+        <TablePager {...table.pager} noun="universities" className="-mx-2 mt-2" />
+        </>
       ) : <EmptyHint action={data.universities.length ? null : <Link to="/admin/universities/new" className="text-xs font-semibold text-sky-700">Add a university</Link>}>{data.universities.length ? 'No university matches.' : 'No universities yet.'}</EmptyHint>}
     </Glass>
   );
@@ -74,16 +84,19 @@ function AccountWallets() {
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [sort, setSort] = useState(null);
   const [state, setState] = useState({ loading: true, data: null, error: '' });
 
   const load = useCallback(async () => {
     setState((current) => ({ ...current, loading: true }));
     try {
-      setState({ loading: false, data: await api.coinAccounts({ role, search: query, page }), error: '' });
+      // No header sort: the server's default, largest balance first.
+      setState({ loading: false, data: await api.coinAccounts({ role, search: query, page, limit: pageSize, ...(sort ? { sortBy: sort.key, sortOrder: sort.direction } : {}) }), error: '' });
     } catch (failure) {
       setState({ loading: false, data: null, error: failure.message || 'Could not load account wallets.' });
     }
-  }, [role, query, page]);
+  }, [role, query, page, pageSize, sort]);
   useEffect(() => { load(); }, [load]);
   // Search a moment after typing stops.
   useEffect(() => {
@@ -92,7 +105,7 @@ function AccountWallets() {
   }, [search]);
 
   const data = state.data;
-  const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
+  const changeSort = (key) => { setSort((current) => nextSort(current, key)); setPage(1); };
   return (
     <Glass className="p-5">
       <CardHeader title="PeerPrep accounts" subtitle="Coordinators and students in the main database" Icon={Users}
@@ -106,7 +119,10 @@ function AccountWallets() {
         <>
           <div className="-mx-2 overflow-x-auto">
             <table className={`w-full min-w-[640px] text-left text-xs transition-opacity ${state.loading ? 'opacity-60' : ''}`}>
-              <thead><tr className="text-[11px] text-slate-500 dark:text-slate-400">{['Account', 'Type', 'Balance', 'Last change', ''].map((heading) => <th key={heading} className="px-2 pb-2 font-medium">{heading}</th>)}</tr></thead>
+              <thead><tr className="text-[11px] text-slate-500 dark:text-slate-400">
+                {ACCOUNT_HEADERS.map(([key, label]) => <SortHeader key={key} sortKey={key} sort={sort} onSort={changeSort}>{label}</SortHeader>)}
+                <th scope="col" className="px-2 pb-2"><span className="sr-only">Actions</span></th>
+              </tr></thead>
               <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                 {data.accounts.map((account) => (
                   <tr key={account.id} className="transition hover:bg-slate-900/[0.02] dark:hover:bg-white/[0.03]">
@@ -122,14 +138,8 @@ function AccountWallets() {
               </tbody>
             </table>
           </div>
-          <div className="mt-4 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-            <span>{formatCoins(data.total)} wallet{data.total === 1 ? '' : 's'}</span>
-            <span className="flex items-center gap-2">
-              <button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className={`${buttonClass.secondary} h-8 px-2`} aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button>
-              Page {page} of {pages}
-              <button type="button" disabled={page >= pages} onClick={() => setPage((value) => value + 1)} className={`${buttonClass.secondary} h-8 px-2`} aria-label="Next page"><ChevronRight className="h-4 w-4" /></button>
-            </span>
-          </div>
+          <TablePager page={data.page || page} pageSize={pageSize} total={data.total || 0} onPage={setPage}
+            onPageSize={(size) => { setPageSize(size); setPage(1); }} busy={state.loading} noun="wallets" className="-mx-2 mt-2" />
         </>
       ) : <EmptyHint action={<Link to="/admin/prep-coins/issue?role=student" className="text-xs font-semibold text-sky-700">Issue coins to an account</Link>}>{query ? 'No wallet matches this search.' : 'No PeerPrep account has a wallet yet.'}</EmptyHint>}
     </Glass>

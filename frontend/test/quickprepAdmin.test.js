@@ -86,7 +86,10 @@ test('the list is a table with reach, progress and a 3-dot menu of actions', asy
   await settle();
   const rows = [...document.querySelectorAll('tbody tr')];
   assert.equal(rows.length, 2);
-  assert.match(rows[0].textContent, /Amazon Top 3.*Company.*Amazon.*More.*2.*40 students.*5.*2.*64%.*Published/);
+  // Outside /u/<slug> the page runs on the central platform: reach is every university, and student
+  // progress (which lives in each university) is not shown; the window column says when students can open it.
+  assert.match(rows[0].textContent, /Amazon Top 3.*Company.*Amazon.*More.*2.*All universities.*Published.*Always open/);
+  assert.doesNotMatch(rows[0].textContent, /40 students|64%/, 'The central list has no per-university progress');
   assert.match(document.body.textContent, /Published1.*Drafts1/s);
   await click(button(/Actions for Amazon Top 3/));
   const menu = document.querySelector('[role="menu"]');
@@ -162,6 +165,8 @@ test('Add questions opens the existing Question Library, where selected coding r
   api.previewQuestLibraryItems = async (id, libraryIds) => { calls.push(['library-preview', id, libraryIds]); return { preview: true, added: 1, currentTotal: 1, max: 300,
     items: [{ id: 'lib-2', title: 'Valid Anagram', ok: true }, { id: 'sh-1', title: 'Shared Graphs', ok: false, reason: 'question_draft', message: 'Still a draft in the library' }],
     skipped: [{ id: 'sh-1', title: 'Shared Graphs', reason: 'question_draft', message: 'Still a draft in the library' }] }; };
+  // Outside /u/<slug> this is the central platform, where a QuickPrep holds central library rows keyed by their own id.
+  api.getAdminQuest = async (id) => ({ quest: quest({ id, items: [item('lib-1', 'Two Sum', 'Easy', { source: 'shared', key: 'coding:shared:lib-1' })], questionCount: 1 }) });
   api.addQuestLibraryItems = async (id, libraryIds) => { calls.push(['library-add', id, libraryIds]); return { added: 1, skipped: [], quest: quest({ items: [item('p1', 'Two Sum', 'Easy'), item('p3', 'Valid Anagram', 'Easy')] }) }; };
   const libraryUrl = (await server.ssrLoadModule('/src/admin/quickprep/libraryLink.js')).quickPrepLibraryUrl({ id: 'q1', title: 'Amazon Top 3' });
   assert.equal(libraryUrl, '/admin/library?type=coding&lockType=coding&mode=quickprep&quickprep=q1&quickprepTitle=Amazon+Top+3&return=%2Fadmin%2Fquickprep%2Fq1%2Fedit%3Fstep%3Dquestions');
@@ -221,4 +226,69 @@ test('students see the QuickPrep questions as a sectioned table with progress an
   assert.deepEqual(rows.map((row) => row.textContent.match(/(Review|Retry|Solve)$/)?.[1]), ['Review', 'Retry', 'Solve']);
   await click(rows[2]);
   assert.equal(`${location.pathname}${location.search}`, '/problems/p3?quest=amazon-top-3', 'A row opens the question inside the QuickPrep');
+});
+
+test('the publish step sets an optional start and end time, sent as ISO instants, and refuses an end before the start', async () => {
+  await render('/admin/quickprep/q1/edit?step=publish', pages.wizard, '/admin/quickprep/:id/edit');
+  await settle();
+  const [starts, ends] = [...document.querySelectorAll('input[type="datetime-local"]')];
+  assert.ok(starts && ends, 'Start and end inputs are on the publish step');
+  await type(starts, '2026-12-01T10:00');
+  await type(ends, '2026-11-30T10:00');
+  assert.match(document.body.textContent, /The end must be after the start/);
+  assert.ok(button(/^Publish$|Save changes/).disabled, 'An end before the start blocks publishing');
+  await type(ends, '2026-12-05T18:30');
+  await click(button(/Save changes|^Publish$/));
+  const [, , body] = calls.find(([name]) => name === 'update');
+  assert.equal(body.startsAt, new Date(2026, 11, 1, 10, 0).toISOString(), 'Local wall time becomes the same instant in ISO');
+  assert.equal(body.endsAt, new Date(2026, 11, 5, 18, 30).toISOString());
+});
+
+test('the view shows the window and its student table searches name, email and student ID', async () => {
+  const ended = { startsAt: '2026-01-01T00:00:00Z', endsAt: '2026-01-31T00:00:00Z' };
+  const base = await api.getQuestInsights();
+  api.getQuestInsights = async () => ({ ...base, quest: { ...base.quest, ...ended, status: 'published' },
+    students: base.students.map((student, index) => ({ ...student, email: index ? 'ravi@example.edu' : 'aditi@example.edu' })) });
+  await render('/admin/quickprep/q1', pages.view, '/admin/quickprep/:id');
+  await settle();
+  assert.match(document.body.textContent, /Ended/);
+  await click(button(/^Students/));
+  await type(document.querySelector('input[type="search"]'), 'ravi@');
+  await settle();
+  const rows = [...document.querySelectorAll('tbody tr')];
+  assert.deepEqual(rows.map((row) => /Ravi Kumar/.test(row.textContent)), [true], 'Email search leaves only Ravi');
+  assert.match(document.querySelector('[data-table-pager]').textContent, /Showing 1–1 of 1/);
+});
+
+test('the student profile Quick Prep tab shows KPIs and a sortable, paged table of the student’s sheets', async () => {
+  api.getStudentQuickPrepByAdmin = async (id) => { calls.push(['profile', id]); return { enabled: true,
+    summary: { available: 2, started: 2, completed: 1, inProgress: 1, averageProgress: 75, solved: 3 },
+    sheets: [
+      { id: 'q1', title: 'Amazon Top 3', visible: true, startsAt: null, endsAt: null, windowStatus: 'open', total: 2, solved: 2, progress: 100, started: true, state: 'completed', startedAt: '2026-10-02T00:00:00Z', completedAt: '2026-10-05T00:00:00Z', lastActivity: '2026-10-05T00:00:00Z' },
+      { id: 'q2', title: 'Graphs Sprint', visible: true, startsAt: '2026-01-01T00:00:00Z', endsAt: '2026-01-31T00:00:00Z', windowStatus: 'ended', total: 2, solved: 1, progress: 50, started: true, state: 'in-progress', startedAt: '2026-01-02T00:00:00Z', completedAt: null, lastActivity: '2026-01-03T00:00:00Z' },
+    ] }; };
+  const tab = (await server.ssrLoadModule('/src/admin/studentProfile/QuickPrepTab.jsx')).default;
+  await act(async () => root.render(h(MemoryRouter, null, h(tab, { studentId: 's1' }))));
+  await settle();
+  assert.deepEqual(calls.find(([name]) => name === 'profile'), ['profile', 's1']);
+  assert.match(document.body.textContent, /Sheets started2.*Completed1.*Avg\. progress75%/s);
+  const rows = [...document.querySelectorAll('tbody tr')];
+  assert.match(rows[0].textContent, /Amazon Top 3.*Always open.*Completed.*2\/2.*100%/);
+  assert.match(rows[1].textContent, /Graphs Sprint.*Ended.*In progress.*1\/2.*50%/);
+  await click(button(/^Solved, /));
+  await click(button(/^Solved, /));
+  assert.match(document.querySelector('tbody tr').textContent, /Amazon Top 3/, 'Descending solved puts the finished sheet first');
+  assert.match(document.querySelector('[data-table-pager]').textContent, /Showing 1–2 of 2/);
+});
+
+test('QuickPrep analysis is Prep Analysis opened on its Quick Prep tab', async () => {
+  const { QUICKPREP_ANALYSIS_PATH } = await server.ssrLoadModule('/src/platform/universityPermissions.js');
+  const { prepAnalysisStateFromSearch } = await server.ssrLoadModule('/src/admin/prepAnalysis/analysisPreset.js');
+  assert.equal(QUICKPREP_ANALYSIS_PATH, '/admin/analysis?area=quickprep');
+  assert.equal(prepAnalysisStateFromSearch(new URL(QUICKPREP_ANALYSIS_PATH, 'http://x').search).area, 'quickprep', 'the link opens the Quick Prep tab');
+  await render('/admin/quickprep', pages.list, '/admin/quickprep');
+  await settle();
+  const link = [...document.querySelectorAll('a')].find((node) => node.textContent.trim() === 'Analysis');
+  assert.ok(link, 'the list links to the analysis');
+  assert.equal(link.getAttribute('href'), QUICKPREP_ANALYSIS_PATH);
 });

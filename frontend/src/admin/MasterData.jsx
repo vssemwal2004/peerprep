@@ -6,16 +6,19 @@ import {
   ChevronRight,
   GitBranch,
   GraduationCap,
+  LayoutList,
   Loader2,
   Pencil,
   Plus,
   RefreshCw,
   Search,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import { api } from "../utils/api";
 import { useToast } from "../components/CustomToast";
+import { SortHeader, TablePager, useClientTable } from "../components/table";
 
 const CATEGORIES = [
   {
@@ -46,9 +49,29 @@ const CATEGORIES = [
     description: "Degree and programme names",
     icon: CheckCircle2,
   },
+  {
+    key: "section",
+    label: "Section",
+    singular: "section",
+    description: "Class sections chosen when adding students",
+    icon: LayoutList,
+  },
+  {
+    key: "group",
+    label: "Group",
+    singular: "group",
+    description: "Student groups chosen when adding students",
+    icon: Users,
+  },
 ];
 
 const emptyForm = { name: "", code: "", order: 0, isActive: true };
+
+const entrySortValue = (entry, key) => {
+  if (key === "studentCount") return Number(entry.studentCount) || 0;
+  if (key === "status") return entry.isActive ? "Active" : "Inactive";
+  return entry[key];
+};
 
 export default function MasterData() {
   const { category: routeCategory } = useParams();
@@ -100,14 +123,18 @@ export default function MasterData() {
       ),
     [entries],
   );
-  const visibleEntries = entries
+  const visibleEntries = useMemo(() => entries
     .filter((entry) => entry.category === category)
     .filter((entry) =>
       [entry.name, entry.code]
         .join(" ")
         .toLowerCase()
         .includes(search.trim().toLowerCase()),
-    );
+    ), [entries, category, search]);
+  const table = useClientTable(visibleEntries, {
+    getValue: entrySortValue,
+    resetKey: `${category}|${search.trim().toLowerCase()}`,
+  });
 
   const openCreate = () => {
     setEditor({ category });
@@ -279,19 +306,20 @@ export default function MasterData() {
                 <Loader2 className="h-7 w-7 animate-spin text-sky-600" />
               </div>
             ) : visibleEntries.length ? (
+              <div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-left text-sm">
-                  <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:bg-gray-950/40">
+                <table className="w-full min-w-[720px] text-left text-sm" style={{ "--serial-start": (table.page - 1) * table.pageSize }}>
+                  <thead className="bg-slate-50 dark:bg-gray-950/40">
                     <tr>
-                      <th className="px-5 py-3">Name</th>
-                      <th className="px-5 py-3">Code</th>
-                      <th className="px-5 py-3">Students</th>
-                      <th className="px-5 py-3">Status</th>
-                      <th className="px-5 py-3 text-right">Actions</th>
+                      <SortHeader sortKey="name" sort={table.sort} onSort={table.toggleSort} className="px-5 py-3">Name</SortHeader>
+                      <SortHeader sortKey="code" sort={table.sort} onSort={table.toggleSort} className="px-5 py-3">Code</SortHeader>
+                      <SortHeader sortKey="studentCount" sort={table.sort} onSort={table.toggleSort} className="px-5 py-3">Students</SortHeader>
+                      <SortHeader sortKey="status" sort={table.sort} onSort={table.toggleSort} className="px-5 py-3">Status</SortHeader>
+                      <SortHeader sortable={false} align="right" className="px-5 py-3">Actions</SortHeader>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
-                    {visibleEntries.map((entry) => (
+                    {table.pageRows.map((entry) => (
                       <tr key={entry._id} className="hover:bg-sky-50/40 dark:hover:bg-sky-950/10">
                         <td className="px-5 py-4 font-bold text-slate-900 dark:text-white">
                           {category === "semester"
@@ -319,6 +347,8 @@ export default function MasterData() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <TablePager {...table.pager} noun="values" />
               </div>
             ) : (
               <div className="flex min-h-96 flex-col items-center justify-center px-6 text-center">
