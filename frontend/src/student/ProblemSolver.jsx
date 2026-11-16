@@ -20,6 +20,15 @@ import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import ProblemAssetImages from '../components/ProblemAssetImages';
 import CodeEditor from './CodeEditor';
+import {
+  addCustomTestCase,
+  loadStoredCustomTestCases,
+  MAX_CUSTOM_TESTCASES,
+  removeCustomTestCase,
+  saveStoredCustomTestCases,
+  toRunTestCases,
+  updateCustomTestCase,
+} from './customTestcases';
 import DailyCodingChallenge from './DailyCodingChallenge';
 import WorkspaceTimer from './WorkspaceTimer';
 import AcceptedCelebration from './celebration/AcceptedCelebration';
@@ -1226,12 +1235,16 @@ export default function ProblemSolver() {
         // Open in the language the student last ran or submitted with, when this problem offers it.
         setLanguage((previous) => pickPracticeLanguage(authUserRef.current, response.supportedLanguages || [], previous));
         const samples = Array.isArray(response.sampleTestCases) ? response.sampleTestCases : [];
-        const nextCases = samples.map((testCase, index) => ({
-          id: `sample-${index + 1}`,
-          kind: 'sample',
-          input: testCase?.input || '',
-          expectedOutput: testCase?.output || '',
-        }));
+        const nextCases = [
+          ...samples.map((testCase, index) => ({
+            id: `sample-${index + 1}`,
+            kind: 'sample',
+            input: testCase?.input || '',
+            expectedOutput: testCase?.output || '',
+          })),
+          // Custom testcases the student wrote earlier for this problem (kept in this browser).
+          ...loadStoredCustomTestCases(`${response.platformShared || isSharedRoute ? 'shared' : 'problem'}:${response._id || id}`),
+        ];
         setTestCases(nextCases);
         setActiveTestCaseId(nextCases[0]?.id || null);
         setLastRunInput('');
@@ -1382,6 +1395,30 @@ export default function ProblemSolver() {
     return found.expectedOutput !== undefined ? found.expectedOutput : null;
   }, [activeTestCaseId, lastRunCaseId, testCases]);
 
+  // Custom testcases live next to the samples and are remembered per problem in this browser.
+  const customCasesKey = problemId ? `${reportSource}:${problemId}` : '';
+  const applyTestCases = (next) => {
+    setTestCases(next);
+    saveStoredCustomTestCases(customCasesKey, next);
+  };
+  const handleAddCustomTestCase = (fromId) => {
+    const { testCases: next, addedId } = addCustomTestCase(testCases, fromId);
+    if (!addedId) {
+      toast.info(`You can add up to ${MAX_CUSTOM_TESTCASES} custom testcases.`);
+      return;
+    }
+    applyTestCases(next);
+    setActiveTestCaseId(addedId);
+    setActiveConsoleTab('testcase');
+  };
+  const handleRemoveCustomTestCase = (caseId) => {
+    const { testCases: next, nextActiveId } = removeCustomTestCase(testCases, caseId);
+    applyTestCases(next);
+    if (!activeTestCaseId || String(activeTestCaseId) === String(caseId)) setActiveTestCaseId(nextActiveId);
+  };
+  const handleCustomInputChange = (caseId, input) => applyTestCases(updateCustomTestCase(testCases, caseId, { input }));
+  const handleCustomExpectedChange = (caseId, expectedOutput) => applyTestCases(updateCustomTestCase(testCases, caseId, { expectedOutput }));
+
   const verdictForTab = useMemo(() => {
     if (!submissions || submissions.length === 0) return null;
     const selected = selectedSubmissionId
@@ -1458,17 +1495,9 @@ export default function ProblemSolver() {
 
     const selectedCase = activeTestCase;
     const runInput = selectedCase?.input ?? '';
-    const runCases = (Array.isArray(testCases) && testCases.length > 0 ? testCases : [selectedCase])
-      .filter(Boolean)
-      .map((entry, index) => ({
-        id: entry.id || `case-${index + 1}`,
-        label: `Case ${index + 1}`,
-        kind: 'sample',
-        input: String(entry.input ?? ''),
-        ...(entry.expectedOutput !== null && entry.expectedOutput !== undefined
-          ? { expectedOutput: String(entry.expectedOutput ?? '') }
-          : {}),
-      }));
+    // Samples and the student's custom cases run together; the server fills expected output
+    // for custom cases left blank from the reference solution.
+    const runCases = toRunTestCases(Array.isArray(testCases) && testCases.length > 0 ? testCases : [selectedCase].filter(Boolean));
 
     setLastRunInput(runInput);
     setLastRunCaseId(selectedCase?.id || null);
@@ -1479,6 +1508,7 @@ export default function ProblemSolver() {
     try {
       const queuedJob = await (isSharedProblem ? api.runSharedStudentProblem(problem._id, {
         language, sourceCode, customInput: runInput,
+        testCases: runCases.filter((entry) => entry.kind === 'custom'),
       }) : api.runStudentProblem(problem._id, {
         language,
         sourceCode,
@@ -1963,6 +1993,11 @@ export default function ProblemSolver() {
               testCases={testCases}
               activeTestCaseId={activeTestCaseId}
               onActiveTestCaseChange={setActiveTestCaseId}
+              maxCustomTestCases={MAX_CUSTOM_TESTCASES}
+              onAddCustomTestCase={handleAddCustomTestCase}
+              onRemoveCustomTestCase={handleRemoveCustomTestCase}
+              onTestCaseInputChange={handleCustomInputChange}
+              onTestCaseExpectedChange={handleCustomExpectedChange}
               runInputUsed={lastRunCaseId ? lastRunInput : null}
               expectedOutputForRun={expectedOutputForRun}
               activeConsoleTab={activeConsoleTab}
@@ -2026,6 +2061,11 @@ export default function ProblemSolver() {
               testCases={testCases}
               activeTestCaseId={activeTestCaseId}
               onActiveTestCaseChange={setActiveTestCaseId}
+              maxCustomTestCases={MAX_CUSTOM_TESTCASES}
+              onAddCustomTestCase={handleAddCustomTestCase}
+              onRemoveCustomTestCase={handleRemoveCustomTestCase}
+              onTestCaseInputChange={handleCustomInputChange}
+              onTestCaseExpectedChange={handleCustomExpectedChange}
               runInputUsed={lastRunCaseId ? lastRunInput : null}
               expectedOutputForRun={expectedOutputForRun}
               activeConsoleTab={activeConsoleTab}

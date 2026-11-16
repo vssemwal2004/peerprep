@@ -12,8 +12,15 @@ import {
   buildJudge0Options,
   KEY_TO_LANGUAGE_ID,
   MAX_STDIN_SIZE_BYTES,
+  MAX_TESTCASE_TEXT_BYTES,
   sanitizeExecutionText,
 } from '../services/executionService.js';
+import {
+  isCustomRunCase,
+  limitRunTestCases,
+  MAX_RUN_TESTCASES,
+  resolveRunCaseExpectations,
+} from '../services/customTestcaseService.js';
 import { evaluateProblemSubmissionResult } from '../services/problemSubmissionEvaluationService.js';
 import { prepareFunctionSourceForExecution } from '../services/functionProblemAdapterService.js';
 import { compilerExecutionLimiter } from '../middleware/rateLimiter.js';
@@ -444,35 +451,67 @@ router.post('/shared/:id/run', compilerExecutionLimiter, asyncRoute(async (req, 
   const sourceCode = String(req.body?.sourceCode || '');
   if (!sourceCode.trim() || sourceCode.length > 50000 || !KEY_TO_LANGUAGE_ID[language]
     || (problem.supportedLanguages?.length && !problem.supportedLanguages.includes(language))) throw new HttpError(400, 'Valid source code and language are required');
+  // Samples always come from the shared snapshot; only student-written (custom) cases are read from the body.
+  const customCases = limitRunTestCases((Array.isArray(req.body?.testCases) ? req.body.testCases : []).filter(isCustomRunCase))
+    .map((entry, index) => ({
+      id: String(entry?.id || `custom-${index + 1}`).slice(0, 80),
+      label: String(entry?.label || `Custom ${index + 1}`).slice(0, 40),
+      kind: 'custom',
+      input: sanitizeExecutionText(entry?.input ?? '', MAX_STDIN_SIZE_BYTES, `Custom testcase input #${index + 1}`),
+      expectedOutput: entry?.expectedOutput !== undefined && entry?.expectedOutput !== null
+        ? sanitizeExecutionText(entry.expectedOutput, MAX_TESTCASE_TEXT_BYTES, `Custom testcase expected output #${index + 1}`)
+        : undefined,
+    }));
   const samples = (question.questionData?.problemDataSnapshot?.sampleTestCases
-    || question.questionData?.coding?.problemData?.sampleTestCases || problem.sampleTestCases || []).slice(0, 12);
-  const cases = samples.length ? samples : [{
-    input: sanitizeExecutionText(req.body?.customInput || '', MAX_STDIN_SIZE_BYTES, 'Input'),
-  }];
+    || question.questionData?.coding?.problemData?.sampleTestCases || problem.sampleTestCases || [])
+    .slice(0, MAX_RUN_TESTCASES - customCases.length);
+  const sampleCases = samples.map((sample, index) => ({
+    id: `sample-${index + 1}`, label: `Case ${index + 1}`, kind: 'sample',
+    input: String(sample.input || ''), expectedOutput: String(sample.output || ''),
+  }));
+  let cases = [...sampleCases, ...customCases];
+  if (!cases.length) {
+    cases = [{ id: 'sample-1', label: 'Case 1', kind: 'sample',
+      input: sanitizeExecutionText(req.body?.customInput || '', MAX_STDIN_SIZE_BYTES, 'Input') }];
+  }
+  if (customCases.length) cases = await resolveRunCaseExpectations(problem, cases, { languageKey: language });
   const options = buildJudge0Options(problem);
   const caseResults = [];
   let totalTime = 0;
   let peakMemory = 0;
-  for (const [index, sample] of cases.entries()) {
-    const input = String(sample.input || '');
-    const output = await runJudge0(prepareFunctionSourceForExecution(problem, language, sourceCode, input),
-      KEY_TO_LANGUAGE_ID[language], input, options);
-    const evaluation = samples.length
-      ? evaluateProblemSubmissionResult(problem, output, { input, output: sample.output || '' })
+  for (const testCase of cases) {
+    const input = String(testCase.input || '');
+    const hasExpected = testCase.expectedOutput !== undefined && testCase.expectedOutput !== null;
+    const meta = { id: testCase.id, label: testCase.label, kind: testCase.kind, input,
+      ...(hasExpected ? { expectedOutput: String(testCase.expectedOutput) } : {}),
+      expectedSource: hasExpected ? (testCase.expectedSource || 'sample') : null,
+      expectedNote: hasExpected ? '' : (testCase.expectedNote || '') };
+    let source;
+    try {
+      source = prepareFunctionSourceForExecution(problem, language, sourceCode, input);
+    } catch (error) {
+      if (testCase.kind !== 'custom') throw error;
+      const message = `Your input could not be read: ${String(error?.message || 'it does not match the input format.').slice(0, 500)}`;
+      caseResults.push({ ...meta, status: 'Invalid Input', output: '', time: 0, memory: 0, stderr: message, compileOutput: '' });
+      continue;
+    }
+    const output = await runJudge0(source, KEY_TO_LANGUAGE_ID[language], input, options);
+    const evaluation = hasExpected
+      ? evaluateProblemSubmissionResult(problem, output, { input, output: String(testCase.expectedOutput) })
       : null;
-    const status = evaluation?.internalStatus || (output.compile_output ? 'CE' : output.stderr ? 'RE'
+    const rawStatus = evaluation?.internalStatus || (output.compile_output ? 'CE' : output.stderr ? 'RE'
       : output.status?.id === 5 ? 'TLE' : output.status?.id === 3 ? 'AC' : 'RE');
+    const status = !hasExpected && rawStatus === 'AC' ? 'Run Completed' : rawStatus;
     const time = Number(output.time || 0);
     const memory = Number(output.memory || 0);
     totalTime += Number.isFinite(time) ? time : 0;
     peakMemory = Math.max(peakMemory, Number.isFinite(memory) ? memory : 0);
-    caseResults.push({ id: `sample-${index + 1}`, label: `Case ${index + 1}`, status,
-      input, ...(samples.length ? { expectedOutput: String(sample.output || '') } : {}),
+    caseResults.push({ ...meta, status,
       output: output.stdout || '', time, memory,
       stderr: output.stderr || evaluation?.error || '', compileOutput: output.compile_output || '' });
     if (status === 'CE') break;
   }
-  const passed = caseResults.filter((item) => item.status === 'AC').length;
+  const passed = caseResults.filter((item) => item.status === 'AC' || item.status === 'Run Completed').length;
   res.json({ mode: 'run', status: passed === caseResults.length ? 'Passed' : 'Failed',
     passed, total: caseResults.length, time: totalTime, memory: peakMemory, caseResults });
 }));

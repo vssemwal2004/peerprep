@@ -49,7 +49,7 @@ export default function AssessmentLifecycleSidebar({
         aria-label="Assessment filters"
         {...railProps}
         style={desktop ? { width: open ? RAIL_PANEL_WIDTH : RAIL_WIDTH } : undefined}
-        className={`border-b border-sky-100 bg-[#f3f8fd] dark:border-sky-950 dark:bg-slate-950 lg:absolute lg:inset-y-0 lg:left-0 lg:z-[55]lg:overflow-hidden lg:border-b-0 lg:border-r lg:transition-[width,box-shadow] lg:duration-[800ms] lg:ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        className={`border-b border-sky-100 bg-[#f3f8fd] dark:border-sky-950 dark:bg-slate-950 lg:absolute lg:inset-y-0 lg:left-0 lg:z-[55] lg:overflow-hidden lg:border-b-0 lg:border-r lg:transition-[width,box-shadow] lg:duration-[800ms] lg:ease-[cubic-bezier(0.22,1,0.36,1)] ${
           desktop && open ? 'shadow-[10px_0_32px_rgba(14,165,233,0.12)] dark:shadow-black/40' : 'lg:shadow-[4px_0_20px_rgba(14,165,233,0.06)]'
         }`}
       >

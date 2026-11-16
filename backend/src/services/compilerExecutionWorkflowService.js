@@ -22,6 +22,7 @@ import {
 } from '../controllers/compilerHelpers.js';
 import { executionClassForJob, queuePriorityForJob, runWithExecutionClass } from './judge0Gateway.js';
 import { createCaseExecutor } from './batchExecutionService.js';
+import { isCustomRunCase, limitRunTestCases, resolveRunCaseExpectations } from './customTestcaseService.js';
 import {
   assessmentQueue,
   compilerQueue,
@@ -676,9 +677,41 @@ function cleanRunText(value) {
   return String(value ?? '').replace(/\r\n/g, '\n').trim();
 }
 
+function buildInvalidInputCaseResult({
+  id,
+  label,
+  kind,
+  input,
+  expectedOutput,
+  expectedSource = null,
+  message,
+}) {
+  return {
+    id,
+    label,
+    kind,
+    status: 'Invalid Input',
+    internalStatus: 'RE',
+    input,
+    output: '',
+    stdout: '',
+    expectedOutput: expectedOutput === undefined ? null : cleanRunText(expectedOutput),
+    expectedSource,
+    expectedNote: '',
+    error: `Your input could not be read: ${message}`,
+    compileOutput: '',
+    stderr: `Your input could not be read: ${message}`,
+    time: 0,
+    memory: 0,
+  };
+}
+
 function buildRunCaseResult({
   id,
   label,
+  kind = 'sample',
+  expectedSource = null,
+  expectedNote = '',
   input,
   expectedOutput,
   judgeResult,
@@ -699,6 +732,7 @@ function buildRunCaseResult({
   return {
     id,
     label,
+    kind,
     status: normalizedExpectedOutput === null && internalStatus === 'AC'
       ? 'Run Completed'
       : normalizeRunStatus(internalStatus),
@@ -707,6 +741,8 @@ function buildRunCaseResult({
     output,
     stdout: output,
     expectedOutput: normalizedExpectedOutput,
+    expectedSource: normalizedExpectedOutput === null ? null : expectedSource,
+    expectedNote: normalizedExpectedOutput === null ? expectedNote : '',
     error: compileOutput || errorOutput || '',
     compileOutput,
     stderr: errorOutput,
@@ -734,30 +770,60 @@ async function executeRunCasesPayload({
   sourceCode,
   sourceCodeFactory,
   languageId,
+  languageKey = '',
   problem,
   runTestCases,
 }) {
   const judge0Options = buildJudge0Options(problem);
   const caseResults = [];
-  const prepared = runTestCases.map((testCase, index) => {
+  // Custom cases without a typed expected output get one from the reference solution first,
+  // so the batch executor can accept their results against it like any sample case.
+  const expectedCases = runTestCases.some(isCustomRunCase)
+    ? await resolveRunCaseExpectations(problem, runTestCases, { languageKey })
+    : runTestCases;
+  const prepared = expectedCases.map((testCase, index) => {
     const input = sanitizeExecutionText(testCase.input ?? '', MAX_STDIN_SIZE_BYTES, `Run testcase input #${index + 1}`);
     const expectedOutput = testCase.expectedOutput !== undefined && testCase.expectedOutput !== null
       ? sanitizeExecutionText(testCase.expectedOutput, MAX_TESTCASE_TEXT_BYTES, `Run testcase expected output #${index + 1}`)
       : undefined;
-    return { input, expectedOutput, source: sourceCodeFactory ? sourceCodeFactory(input) : sourceCode, stdin: input };
+    let source = sourceCode;
+    let invalidInput = '';
+    try {
+      source = sourceCodeFactory ? sourceCodeFactory(input) : sourceCode;
+    } catch (error) {
+      // A student-written input that the function harness cannot parse fails only its own case.
+      if (!isCustomRunCase(testCase)) throw error;
+      invalidInput = String(error?.message || 'This input does not match the problem input format.').slice(0, 500);
+    }
+    return { input, expectedOutput, source, stdin: input, invalidInput };
   });
+  const runnable = prepared.map((entry, index) => index).filter((index) => !prepared[index].invalidInput);
   const executor = createCaseExecutor({
     languageId,
-    cases: prepared,
+    cases: runnable.map((index) => prepared[index]),
     judge0Options,
-    accept: (index, judgeResult) => prepared[index].expectedOutput === undefined
-      || evaluateProblemSubmissionResult(problem, judgeResult, { input: prepared[index].input, output: prepared[index].expectedOutput }).internalStatus === 'AC',
+    accept: (position, judgeResult) => {
+      const entry = prepared[runnable[position]];
+      return entry.expectedOutput === undefined
+        || evaluateProblemSubmissionResult(problem, judgeResult, { input: entry.input, output: entry.expectedOutput }).internalStatus === 'AC';
+    },
   });
 
-  for (let index = 0; index < runTestCases.length; index += 1) {
-    const testCase = runTestCases[index];
-    const { input, expectedOutput: providedExpectedOutput } = prepared[index];
-    const judgeResult = await executor.run(index);
+  for (let index = 0; index < expectedCases.length; index += 1) {
+    const testCase = expectedCases[index];
+    const { input, expectedOutput: providedExpectedOutput, invalidInput } = prepared[index];
+    const caseMeta = {
+      id: String(testCase.id || `case-${index + 1}`),
+      label: String(testCase.label || `Case ${index + 1}`),
+      kind: isCustomRunCase(testCase) ? 'custom' : 'sample',
+      expectedSource: testCase.expectedSource ?? (providedExpectedOutput !== undefined ? 'sample' : null),
+      expectedNote: testCase.expectedNote || '',
+    };
+    if (invalidInput) {
+      caseResults.push(buildInvalidInputCaseResult({ ...caseMeta, input, expectedOutput: providedExpectedOutput, message: invalidInput }));
+      continue;
+    }
+    const judgeResult = await executor.run(runnable.indexOf(index));
     const resolvedExpectedOutput = await resolveRunExpectedOutput({
       providedExpectedOutput,
     });
@@ -766,8 +832,7 @@ async function executeRunCasesPayload({
       : evaluateProblemSubmissionResult(problem, judgeResult, { input, output: resolvedExpectedOutput });
 
     caseResults.push(buildRunCaseResult({
-      id: String(testCase.id || `case-${index + 1}`),
-      label: String(testCase.label || `Case ${index + 1}`),
+      ...caseMeta,
       input,
       expectedOutput: resolvedExpectedOutput,
       judgeResult,
@@ -1102,9 +1167,10 @@ export async function enqueueCompilerRunJob({ user, body }) {
     ? sanitizeExecutionText(body.expectedOutput, MAX_TESTCASE_TEXT_BYTES, 'Expected output')
     : undefined;
   const runTestCases = Array.isArray(body.testCases)
-    ? body.testCases.slice(0, 12).map((entry, index) => ({
-      id: String(entry?.id || `case-${index + 1}`),
-      label: String(entry?.label || `Case ${index + 1}`),
+    ? limitRunTestCases(body.testCases).map((entry, index) => ({
+      id: String(entry?.id || `case-${index + 1}`).slice(0, 80),
+      label: String(entry?.label || `Case ${index + 1}`).slice(0, 40),
+      kind: isCustomRunCase(entry) ? 'custom' : 'sample',
       input: sanitizeExecutionText(entry?.input ?? '', MAX_STDIN_SIZE_BYTES, `Run testcase input #${index + 1}`),
       expectedOutput: entry?.expectedOutput !== undefined && entry?.expectedOutput !== null
         ? sanitizeExecutionText(entry.expectedOutput, MAX_TESTCASE_TEXT_BYTES, `Run testcase expected output #${index + 1}`)
@@ -1563,6 +1629,7 @@ async function runCompilerExecutionJob(job) {
         ? await executeRunCasesPayload({
           sourceCodeFactory: executionSourceFactory,
           languageId,
+          languageKey,
           problem,
           runTestCases,
         })

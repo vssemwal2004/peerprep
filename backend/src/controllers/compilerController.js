@@ -1,10 +1,7 @@
 import { HttpError } from '../utils/errors.js';
 import {
-  buildRunResponse,
   checkJudge0Health,
-  KEY_TO_LANGUAGE_ID,
   listJudge0Targets,
-  mapRunStatusCode,
   MAX_STDIN_SIZE_BYTES,
   resolveLanguageRequest,
   runJudge0,
@@ -13,10 +10,9 @@ import {
 import {
   enqueueCompilerRunJob,
   enqueueCompilerSubmitJob,
-  pickReferenceSolution,
   resolveActiveProblem,
 } from '../services/compilerExecutionWorkflowService.js';
-import { buildJudge0Options } from '../services/executionService.js';
+import { generateReferenceExpectedOutputs, pickExpectedOutputReference } from '../services/customTestcaseService.js';
 import { getJudge0GatewaySnapshot } from '../services/judge0Gateway.js';
 import { getQueueDepths } from '../queues/queueManager.js';
 
@@ -76,31 +72,19 @@ export async function getExpectedOutput(req, res) {
   );
 
   const preferredLanguageKey = String(req.body.language || '').trim().toLowerCase();
-  const reference = pickReferenceSolution(problem, preferredLanguageKey);
+  const reference = pickExpectedOutputReference(problem, preferredLanguageKey);
   if (!reference) {
     throw new HttpError(409, 'Expected output is not available for this problem.');
   }
 
-  const referenceLanguageId = KEY_TO_LANGUAGE_ID[reference.languageKey];
-  if (!referenceLanguageId) {
-    throw new HttpError(500, 'Reference solution is configured with an unsupported language.');
+  // Same path as custom testcases on Run: the reference goes through the function harness.
+  const [outcome] = await generateReferenceExpectedOutputs(problem, [standardInput], { languageKey: preferredLanguageKey });
+  if (!outcome || outcome.expectedOutput === null) {
+    throw new HttpError(422, outcome?.note || 'Expected output is currently unavailable.');
   }
 
-  const judgeResult = await runJudge0(
-    reference.sourceCode,
-    referenceLanguageId,
-    standardInput,
-    buildJudge0Options(problem),
-  );
-
-  const statusCode = mapRunStatusCode(judgeResult);
-  if (statusCode !== 'AC') {
-    throw new HttpError(502, 'Expected output is currently unavailable.');
-  }
-
-  const responsePayload = buildRunResponse(judgeResult);
   res.json({
-    expectedOutput: responsePayload.stdout || '',
+    expectedOutput: outcome.expectedOutput,
     language: reference.languageKey,
   });
 }

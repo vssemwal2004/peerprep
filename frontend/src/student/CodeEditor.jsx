@@ -1,10 +1,11 @@
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CloudUpload, LoaderCircle, Play, RotateCcw, Send, TerminalSquare } from 'lucide-react';
+import { CloudUpload, LoaderCircle, Play, Plus, RotateCcw, Send, TerminalSquare, X } from 'lucide-react';
 import { formatDuration, getLanguageLabel } from '../admin/compiler/compilerUtils';
 import {
   isRunExecutionResult,
   summarizeExecutionResult,
 } from './problemUtils';
+import { isCustomTestCase, testCaseLabels } from './customTestcases';
 
 // Monaco and its language workers are the largest frontend assets. Keep them
 // behind their own boundary so the problem description and preview controls can
@@ -141,6 +142,23 @@ function isPassedStatus(status) {
   return normalizeRunCaseStatus(status) === 'Passed';
 }
 
+// A case with nothing to compare against only shows output, so it should not read as "Passed".
+function caseStatusLabel(entry) {
+  if (entry?.status === 'Run Completed' && !hasValue(entry?.expectedOutput)) return 'Ran';
+  return normalizeRunCaseStatus(entry?.status);
+}
+
+function caseStatusTone(entry) {
+  if (caseStatusLabel(entry) === 'Ran') return 'bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300';
+  return runStatusTone(entry?.status);
+}
+
+function expectedOutputLabel(entry) {
+  if (entry?.expectedSource === 'reference') return 'Expected Output (reference solution)';
+  if (entry?.expectedSource === 'student') return 'Expected Output (yours)';
+  return 'Expected Output';
+}
+
 function runStatusTone(status) {
   const normalized = normalizeRunCaseStatus(status);
   if (normalized === 'Passed') {
@@ -163,6 +181,11 @@ function CodeEditor({
   activeTestCaseId = null,
   onActiveTestCaseChange,
   onTestCaseInputChange,
+  // Custom testcases: enabled when maxCustomTestCases > 0 and the add handler is given.
+  maxCustomTestCases = 0,
+  onAddCustomTestCase,
+  onRemoveCustomTestCase,
+  onTestCaseExpectedChange,
   expectedOutputForRun = null,
   runInputUsed = null,
   activeConsoleTab,
@@ -573,10 +596,19 @@ function CodeEditor({
     return found || testCases[0];
   })();
 
-  const latestRunCaseByIndex = useMemo(() => {
-    if (!Array.isArray(runCaseResults) || runCaseResults.length === 0) return new Map();
-    return new Map(runCaseResults.map((entry, index) => [index, entry]));
-  }, [runCaseResults]);
+  // Match run results to testcase tabs by id (custom cases can be added or removed after a run);
+  // older results without matching ids fall back to position.
+  const latestRunCaseFor = useMemo(() => {
+    if (!Array.isArray(runCaseResults) || runCaseResults.length === 0) return () => null;
+    const byId = new Map(runCaseResults.filter((entry) => hasValue(entry?.id)).map((entry) => [String(entry.id), entry]));
+    const idsMatch = (Array.isArray(testCases) ? testCases : []).some((entry) => byId.has(String(entry.id)));
+    return (entry, index) => (idsMatch ? byId.get(String(entry.id)) || null : runCaseResults[index] || null);
+  }, [runCaseResults, testCases]);
+
+  const caseLabels = useMemo(() => testCaseLabels(testCases), [testCases]);
+  const customTestCaseCount = (Array.isArray(testCases) ? testCases : []).filter(isCustomTestCase).length;
+  const customTestCasesEnabled = maxCustomTestCases > 0 && typeof onAddCustomTestCase === 'function';
+  const canAddCustomTestCase = customTestCasesEnabled && customTestCaseCount < maxCustomTestCases;
 
   const runDerivedVerdict = (() => {
     if (!result || !isRunResult) return null;
@@ -619,7 +651,8 @@ function CodeEditor({
         return 'Compilation Error';
       }
       if (runCaseResults.length > 0) {
-        return runCaseResults.every((entry) => isPassedStatus(entry.status)) ? 'Passed' : 'Failed';
+        if (!runCaseResults.every((entry) => isPassedStatus(entry.status))) return 'Failed';
+        return runCaseResults.some((entry) => hasValue(entry.expectedOutput)) ? 'Passed' : 'Run Completed';
       }
       return runDerivedVerdict || 'Run Result';
     }
@@ -657,17 +690,17 @@ function CodeEditor({
     // When the backend provides per-case verdicts, trust those over the
     // locally-selected expected output (which can change after a run).
     if (runCaseResults.length > 0) {
-      const allPassed = runCaseResults.every((entry) => isPassedStatus(entry.status));
-      if (allPassed) return 'Accepted on this example.';
-
-      const comparable = runCaseResults.find((entry) => hasValue(entry.expectedOutput)) || runCaseResults[0];
-      if (!hasValue(comparable?.expectedOutput)) return summary;
-
-      const actual = normalizeComparableText(comparable.output ?? comparable.stdout ?? '');
-      const expected = normalizeComparableText(comparable.expectedOutput ?? '');
-      return actual === expected
-        ? 'Accepted on this example.'
-        : 'Output does not match the expected output for this example.';
+      const failed = runCaseResults.find((entry) => !isPassedStatus(entry.status));
+      if (!failed) {
+        if (!runCaseResults.some((entry) => hasValue(entry.expectedOutput))) {
+          return 'Your code ran. There is no expected output to compare it with.';
+        }
+        return runCaseResults.length === 1 ? 'Accepted on this example.' : 'Accepted on every case you ran.';
+      }
+      const failedLabel = failed.label || `Case ${runCaseResults.indexOf(failed) + 1}`;
+      if (failed.status === 'Invalid Input') return `${failedLabel}: the input does not match the problem's input format.`;
+      if (normalizeRunCaseStatus(failed.status) === 'Failed') return `${failedLabel}: output does not match the expected output.`;
+      return summary;
     }
 
     if (hasValue(singleRunExpectedOutput)) {
@@ -833,49 +866,99 @@ function CodeEditor({
         <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth pt-2">
           {activeConsoleTab === 'testcase' ? (
             <div className="space-y-2 text-slate-700 dark:text-gray-200">
-              {Array.isArray(testCases) && testCases.length > 0 && (
-                <div className="flex items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden]">
+              {((Array.isArray(testCases) && testCases.length > 0) || canAddCustomTestCase) && (
+                <div className="flex items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   {testCases.map((entry, index) => {
                     const isActive = activeTestCase && String(entry.id) === String(activeTestCase.id);
-                    const latestCase = latestRunCaseByIndex.get(index);
-                    const latestStatus = latestCase ? normalizeRunCaseStatus(latestCase.status) : '';
+                    const isCustom = isCustomTestCase(entry);
+                    const label = caseLabels.get(String(entry.id)) || `Case ${index + 1}`;
+                    const latestCase = latestRunCaseFor(entry, index);
+                    const latestStatus = latestCase ? caseStatusLabel(latestCase) : '';
                     return (
-                      <button
+                      <div
                         key={entry.id}
-                        type="button"
-                        onClick={() => onActiveTestCaseChange?.(entry.id)}
-                        className={`inline-flex items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${isActive ? 'bg-slate-800 text-white dark:bg-sky-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+                        className={`inline-flex shrink-0 items-center rounded-md transition-colors ${isActive ? 'bg-slate-800 text-white dark:bg-sky-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
                       >
-                        <span>Case {index + 1}</span>
-                        {latestStatus && (
-                          <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${isActive ? 'bg-white/15 text-white' : runStatusTone(latestCase.status)}`}>
-                            {latestStatus}
-                          </span>
+                        <button
+                          type="button"
+                          onClick={() => onActiveTestCaseChange?.(entry.id)}
+                          aria-pressed={Boolean(isActive)}
+                          className={`inline-flex items-center gap-2 whitespace-nowrap py-1 pl-2.5 text-xs font-medium ${isCustom && onRemoveCustomTestCase ? 'pr-1' : 'pr-2.5'}`}
+                        >
+                          <span>{label}</span>
+                          {latestStatus && (
+                            <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${isActive ? 'bg-white/15 text-white' : caseStatusTone(latestCase)}`}>
+                              {latestStatus}
+                            </span>
+                          )}
+                        </button>
+                        {isCustom && onRemoveCustomTestCase && (
+                          <button
+                            type="button"
+                            onClick={() => onRemoveCustomTestCase(entry.id)}
+                            aria-label={`Remove ${label}`}
+                            title={`Remove ${label}`}
+                            className="mr-1 flex h-5 w-5 items-center justify-center rounded opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-current"
+                          >
+                            <X className="h-3 w-3" aria-hidden="true" />
+                          </button>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
+                  {canAddCustomTestCase && (
+                    <button
+                      type="button"
+                      onClick={() => onAddCustomTestCase(activeTestCase?.id ?? null)}
+                      title="Add your own testcase (starts from the selected case's input)"
+                      className="inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-dashed border-slate-300 px-2 text-xs font-medium text-slate-500 transition-colors hover:border-sky-400 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 dark:border-gray-600 dark:text-gray-400 dark:hover:border-sky-500 dark:hover:text-sky-300"
+                    >
+                      <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                      Custom
+                    </button>
+                  )}
+                  {customTestCasesEnabled && !canAddCustomTestCase && (
+                    <span className="shrink-0 whitespace-nowrap text-[11px] text-slate-400 dark:text-gray-500">Up to {maxCustomTestCases} custom cases</span>
+                  )}
                 </div>
               )}
 
-              {hasValue(activeTestCase?.input) && activeTestCase?.kind === 'custom' && onTestCaseInputChange ? (
-                <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 focus-within:ring-2 focus-within:ring-sky-200 dark:bg-gray-900 dark:ring-gray-700 dark:focus-within:ring-sky-900/50">
-                  <label htmlFor={`custom-input-${editorKey || 'editor'}`} className="mb-1 block text-[10px] font-semibold uppercase text-slate-400 dark:text-gray-500">{isSqlMode ? 'Additional dataset SQL' : 'Input'}</label>
-                  <textarea
-                    id={`custom-input-${editorKey || 'editor'}`}
-                    value={activeTestCase.input || ''}
-                    onChange={(event) => onTestCaseInputChange(activeTestCase.id, event.target.value)}
-                    spellCheck={false}
-                    className="min-h-16 w-full resize-y border-0 bg-transparent font-mono text-xs leading-relaxed text-slate-800 outline-none dark:text-gray-100"
-                  />
-                </div>
+              {isCustomTestCase(activeTestCase) && onTestCaseInputChange ? (
+                <>
+                  <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 focus-within:ring-2 focus-within:ring-sky-200 dark:bg-gray-900 dark:ring-gray-700 dark:focus-within:ring-sky-900/50">
+                    <label htmlFor={`custom-input-${editorKey || 'editor'}`} className="mb-1 block text-[10px] font-semibold uppercase text-slate-400 dark:text-gray-500">{isSqlMode ? 'Additional dataset SQL' : 'Input'}</label>
+                    <textarea
+                      id={`custom-input-${editorKey || 'editor'}`}
+                      value={activeTestCase.input || ''}
+                      onChange={(event) => onTestCaseInputChange(activeTestCase.id, event.target.value)}
+                      placeholder="Type an input in the same format as the examples"
+                      spellCheck={false}
+                      className="min-h-16 w-full resize-y border-0 bg-transparent font-mono text-xs leading-relaxed text-slate-800 outline-none placeholder:font-sans placeholder:text-slate-400 dark:text-gray-100 dark:placeholder:text-gray-500"
+                    />
+                  </div>
+                  {onTestCaseExpectedChange && (
+                    <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 focus-within:ring-2 focus-within:ring-sky-200 dark:bg-gray-900 dark:ring-gray-700 dark:focus-within:ring-sky-900/50">
+                      <label htmlFor={`custom-expected-${editorKey || 'editor'}`} className="mb-1 block text-[10px] font-semibold uppercase text-slate-400 dark:text-gray-500">
+                        {isSqlMode ? 'Expected result' : 'Expected Output'} <span className="font-normal normal-case">(optional)</span>
+                      </label>
+                      <textarea
+                        id={`custom-expected-${editorKey || 'editor'}`}
+                        value={activeTestCase.expectedOutput || ''}
+                        onChange={(event) => onTestCaseExpectedChange(activeTestCase.id, event.target.value)}
+                        placeholder="Leave blank to compare with the reference solution's output"
+                        spellCheck={false}
+                        className="min-h-10 w-full resize-y border-0 bg-transparent font-mono text-xs leading-relaxed text-slate-800 outline-none placeholder:font-sans placeholder:text-slate-400 dark:text-gray-100 dark:placeholder:text-gray-500"
+                      />
+                    </div>
+                  )}
+                </>
               ) : hasValue(activeTestCase?.input) ? (
                 <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 dark:bg-gray-900 dark:ring-gray-700">
                   <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">{isSqlMode ? 'Additional dataset SQL' : 'Input'}</div>
                   <ResultValue value={activeTestCase.input || ''} />
                 </div>
               ) : null}
-              {hasValue(activeTestCase?.expectedOutput) && (
+              {!isCustomTestCase(activeTestCase) && hasValue(activeTestCase?.expectedOutput) && (
                 <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 dark:bg-gray-900 dark:ring-gray-700">
                   <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">{isSqlMode ? 'Expected result' : 'Expected Output'}</div>
                   <ResultValue value={activeTestCase.expectedOutput || ''} />
@@ -918,8 +1001,8 @@ function CodeEditor({
                 <div className="space-y-3">
                   <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {runCaseResults.map((entry, index) => {
-                      const entryStatus = normalizeRunCaseStatus(entry.status);
-                      const toneClass = runStatusTone(entry.status);
+                      const entryStatus = caseStatusLabel(entry);
+                      const toneClass = caseStatusTone(entry);
                       const resultCaseKey = entry.id || index;
                       const isActiveResultCase = String(activeResultCase?.id || runCaseResults.indexOf(activeResultCase)) === String(resultCaseKey);
 
@@ -945,7 +1028,7 @@ function CodeEditor({
                         const compileOutput = getCompileOutput(entry);
                         const errorOutput = getErrorOutput(entry);
                         const hasExpected = hasValue(entry.expectedOutput);
-                        const entryStatus = normalizeRunCaseStatus(entry.status);
+                        const entryStatus = caseStatusLabel(entry);
 
                         return (
                           <div
@@ -957,7 +1040,7 @@ function CodeEditor({
                                 <span className="text-sm font-semibold text-slate-900 dark:text-gray-100">
                                   {entry.label || `Case ${index + 1}`}
                                 </span>
-                                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${runStatusTone(entry.status)}`}>
+                                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${caseStatusTone(entry)}`}>
                                   Status: {entryStatus}
                                 </span>
                               </div>
@@ -976,8 +1059,14 @@ function CodeEditor({
                                 <ResultValue value={(entry.output ?? entry.stdout) || ''} />
                               </LcBlock>
 
-                              <LcBlock label="Expected Output">
-                                <ResultValue value={hasExpected ? entry.expectedOutput || '' : 'Expected output unavailable.'} />
+                              <LcBlock label={expectedOutputLabel(entry)}>
+                                {hasExpected ? (
+                                  <ResultValue value={entry.expectedOutput || ''} />
+                                ) : (
+                                  <p className="text-xs leading-relaxed text-slate-500 dark:text-gray-400">
+                                    {entry.expectedNote || 'Expected output unavailable.'}
+                                  </p>
+                                )}
                               </LcBlock>
 
                               {(compileOutput || errorOutput) && (
@@ -1122,6 +1211,7 @@ function codeEditorPropsEqual(previous, next) {
     && previous.editorKey === next.editorKey
     && previous.valueVersion === next.valueVersion
     && previous.executionMode === next.executionMode
+    && previous.maxCustomTestCases === next.maxCustomTestCases
     && sameStringList(previous.supportedLanguages, next.supportedLanguages)
     && sameTestCases(previous.testCases, next.testCases);
 }

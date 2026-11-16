@@ -30,6 +30,13 @@ import {
   XCircle,
 } from 'lucide-react';
 import CodeEditor from './CodeEditor';
+import {
+  addCustomTestCase,
+  MAX_CUSTOM_TESTCASES,
+  removeCustomTestCase,
+  toRunTestCases,
+  updateCustomTestCase,
+} from './customTestcases';
 import { COMPILER_LANGUAGES, getProblemSupportedLanguages } from '../admin/compiler/compilerUtils';
 import AssessmentCodingProblemPanel from './assessment/AssessmentCodingProblemPanel';
 import AssessmentLanguagePicker from './assessment/AssessmentLanguagePicker';
@@ -3640,13 +3647,9 @@ export default function AssessmentAttempt() {
     const activeTestCaseId = activeTestCaseMap[key] || testCases[0]?.id || null;
     const activeTestCase = testCases.find((entry) => String(entry.id) === String(activeTestCaseId)) || testCases[0];
     const runInput = activeTestCase?.input ?? '';
-    const comparableTestCases = testCases
-      .filter((entry) => entry?.kind !== 'custom')
-      .slice(0, 12)
-      .map((entry) => ({
-        input: entry?.input ?? '',
-        expectedOutput: entry?.expectedOutput ?? entry?.output ?? '',
-      }));
+    // Samples and custom cases run together; the server fills expected output for custom
+    // cases left blank from the reference solution.
+    const runTestCases = toRunTestCases(testCases);
 
     setRunInputUsedMap((prev) => ({ ...prev, [key]: runInput }));
     setIsRunningMap((prev) => ({ ...prev, [key]: true }));
@@ -3655,12 +3658,7 @@ export default function AssessmentAttempt() {
       language,
       sourceCode,
       customInput: runInput,
-      ...(comparableTestCases.length > 0
-        ? { testCases: comparableTestCases }
-        : {}),
-      ...(comparableTestCases.length === 0 && activeTestCase?.expectedOutput !== null && activeTestCase?.expectedOutput !== undefined
-        ? { expectedOutput: activeTestCase.expectedOutput }
-        : {}),
+      ...(runTestCases.length > 0 ? { testCases: runTestCases } : {}),
       assessmentId: assessment?._id,
     }).then(async (queuedJob) => {
       let completedRun = queuedJob;
@@ -3676,28 +3674,6 @@ export default function AssessmentAttempt() {
       setRunResultMap((prev) => ({ ...prev, [key]: { ...response, mode: response?.mode || 'run' } }));
       setActiveConsoleTab('result');
       toast.success(`Run finished with status ${response.status || 'Completed'}`);
-
-      if (activeTestCase?.kind === 'custom') {
-        api.getStudentExpectedOutput(problemId, {
-          language,
-          customInput: runInput,
-          assessmentId: assessment?._id,
-        }).then((expected) => {
-          if (expected && typeof expected.expectedOutput === 'string') {
-            setTestCaseMap((prev) => {
-              const existing = prev[key] || baseTestCases;
-              const next = existing.map((entry) => (
-                String(entry.id) === String(activeTestCase.id)
-                  ? { ...entry, expectedOutput: expected.expectedOutput }
-                  : entry
-              ));
-              return { ...prev, [key]: next };
-            });
-          }
-        }).catch(() => {
-          // Expected output is optional; ignore failures.
-        });
-      }
     }).catch((error) => {
       setRunResultMap((prev) => ({
         ...prev,
@@ -4454,16 +4430,31 @@ export default function AssessmentAttempt() {
                       || null;
                     const expectedOutputForRun = activeTestCase?.expectedOutput ?? null;
 
+                    const changeTestCases = (update) => {
+                      setTestCaseMap((prev) => ({ ...prev, [key]: update(prev[key] || baseTestCases) }));
+                    };
                     const handleTestCaseInputChange = (testCaseId, nextInput) => {
-                      setTestCaseMap((prev) => {
-                        const existing = prev[key] || baseTestCases;
-                        const next = existing.map((entry) => {
-                          if (String(entry.id) !== String(testCaseId)) return entry;
-                          if (entry.kind === 'sample') return entry;
-                          return { ...entry, input: nextInput, expectedOutput: null };
-                        });
-                        return { ...prev, [key]: next };
-                      });
+                      changeTestCases((existing) => updateCustomTestCase(existing, testCaseId, { input: nextInput }));
+                    };
+                    const handleTestCaseExpectedChange = (testCaseId, nextExpected) => {
+                      changeTestCases((existing) => updateCustomTestCase(existing, testCaseId, { expectedOutput: nextExpected }));
+                    };
+                    const handleAddCustomTestCase = (fromId) => {
+                      const { testCases: next, addedId } = addCustomTestCase(testCases, fromId);
+                      if (!addedId) {
+                        toast.info(`You can add up to ${MAX_CUSTOM_TESTCASES} custom testcases.`);
+                        return;
+                      }
+                      setTestCaseMap((prev) => ({ ...prev, [key]: next }));
+                      setActiveTestCaseMap((prev) => ({ ...prev, [key]: addedId }));
+                      setActiveConsoleTab('testcase');
+                    };
+                    const handleRemoveCustomTestCase = (testCaseId) => {
+                      const { testCases: next, nextActiveId } = removeCustomTestCase(testCases, testCaseId);
+                      setTestCaseMap((prev) => ({ ...prev, [key]: next }));
+                      if (String(activeTestCaseId) === String(testCaseId)) {
+                        setActiveTestCaseMap((prev) => ({ ...prev, [key]: nextActiveId }));
+                      }
                     };
 
                     return (
@@ -4500,6 +4491,10 @@ export default function AssessmentAttempt() {
                         activeTestCaseId={activeTestCaseId}
                         onActiveTestCaseChange={(nextId) => setActiveTestCaseMap((prev) => ({ ...prev, [key]: nextId }))}
                         onTestCaseInputChange={handleTestCaseInputChange}
+                        maxCustomTestCases={MAX_CUSTOM_TESTCASES}
+                        onAddCustomTestCase={handleAddCustomTestCase}
+                        onRemoveCustomTestCase={handleRemoveCustomTestCase}
+                        onTestCaseExpectedChange={handleTestCaseExpectedChange}
                         expectedOutputForRun={expectedOutputForRun}
                         runInputUsed={runInputUsed}
                         activeConsoleTab={activeConsoleTab}
