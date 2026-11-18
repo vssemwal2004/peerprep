@@ -486,12 +486,21 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const accent = isCoordinator ? 'emerald' : 'sky';
   // The Prep Mates count sits under the student's name in the account block (desktop rail only)
   // and opens the Prep Mates popup.
-  const showPeerCounts = isStudent && !isMobileNav && canUsePeers(user);
-  const { summary: peerSummary } = usePeerSummary(showPeerCounts);
+  const peersEnabled = isStudent && canUsePeers(user);
+  const showPeerCounts = peersEnabled && !isMobileNav;
+  const { summary: peerSummary } = usePeerSummary(peersEnabled);
+  const pendingMateRequests = peerSummary?.incomingRequests || 0;
   const [matesOpen, setMatesOpen] = useState(false);
   const navItems = useMemo(() => {
     const items = buildNavItems(role, user?.accessScope);
-    if (role === 'student') return items.filter((item) => !item.featureKey || (item.featureKey === 'peers' ? canUsePeers(user) : hasStudentFeature(user, item.featureKey)));
+    if (role === 'student') {
+      return items
+        .filter((item) => !item.featureKey || (item.featureKey === 'peers' ? canUsePeers(user) : hasStudentFeature(user, item.featureKey)))
+        // Waiting Prep Mate requests show as a red count on the Prep Mates link (desktop and phone).
+        .map((item) => (item.featureKey === 'peers' && pendingMateRequests > 0
+          ? { ...item, badge: pendingMateRequests, badgeLabel: `${pendingMateRequests} Prep Mate ${pendingMateRequests === 1 ? 'request' : 'requests'} waiting` }
+          : item));
+    }
     if (role !== 'student' && (isUniversityDeployment || role !== 'admin')) items.unshift({ type: 'link', label: 'Prep Coin management', to: `/${role}/wallet`, icon: Wallet });
     if (role !== 'coordinator') return applyPlatformPermissions(items, allowsPath, role);
     return applyPlatformPermissions(items
@@ -509,7 +518,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
         return hasPermission(user, item.permissionKey) ? item : null;
       })
       .filter(Boolean), allowsPath, role);
-  }, [role, user, allowsPath]);
+  }, [role, user, allowsPath, pendingMateRequests]);
   const [openGroup, setOpenGroup] = useState(null);
   const [openNestedGroup, setOpenNestedGroup] = useState(null);
   const [groupPanelTop, setGroupPanelTop] = useState(88);
@@ -709,10 +718,20 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                     : isStudent ? 'bg-transparent text-slate-700 group-hover:text-sky-700 dark:text-slate-300' : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'
                 }`}>
                   <Icon className="h-[18px] w-[18px]" />
+                  {item.badge > 0 && !isExpanded && (
+                    <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-950" aria-hidden="true" />
+                  )}
                 </span>
-                <span className={`ml-12 min-w-0 whitespace-nowrap pr-2 text-left leading-tight transition-[opacity,transform] duration-200 ${isExpanded ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0'}`}>
+                <span className={`ml-12 min-w-0 flex-1 whitespace-nowrap pr-2 text-left leading-tight transition-[opacity,transform] duration-200 ${isExpanded ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0'}`}>
                   {item.label}
                 </span>
+                {item.badge > 0 && (
+                  <span className={`mr-2.5 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10.5px] font-bold tabular-nums text-white transition-opacity ${isExpanded ? 'opacity-100' : 'sr-only'}`}
+                    title={item.badgeLabel}>
+                    <span aria-hidden="true">{item.badge > 99 ? '99+' : item.badge}</span>
+                    <span className="sr-only">{item.badgeLabel}</span>
+                  </span>
+                )}
               </NavLink>
             );
           }
@@ -978,20 +997,27 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
               type="button"
               onClick={() => setMatesOpen(true)}
               className="mt-1.5 flex w-full items-center gap-2.5 rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-2 text-left transition hover:border-sky-300 hover:bg-sky-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-sky-950 dark:bg-sky-950/30 dark:hover:border-sky-800 dark:hover:bg-sky-950/60"
-              aria-label={`${peerSummary?.prepMates ?? 0} ${PEER_TERMS.prepMates}. Show list`}
+              aria-label={`${peerSummary?.prepMates ?? 0} ${PEER_TERMS.prepMates}${pendingMateRequests ? `, ${pendingMateRequests} ${pendingMateRequests === 1 ? 'request' : 'requests'} waiting` : ''}. Show list`}
             >
               <Handshake className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-300" aria-hidden="true" />
-              <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-700 dark:text-gray-200">
+              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-700 dark:text-gray-200">
                 <span className="tabular-nums text-slate-900 dark:text-white">{peerSummary ? compactCount(peerSummary.prepMates) : '–'}</span> {PEER_TERMS.prepMates}
               </span>
-              {peerSummary?.incomingRequests > 0 && (
-                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white" title="Prep Mate requests waiting">{peerSummary.incomingRequests}</span>
+              {pendingMateRequests > 0 && (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rose-500 py-0.5 pl-1.5 pr-2 text-[10.5px] font-bold text-white shadow-[0_2px_8px_-2px_rgba(244,63,94,0.7)]" title="Prep Mate requests waiting">
+                  <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/80 motion-reduce:hidden" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+                  </span>
+                  {pendingMateRequests} new
+                </span>
               )}
             </button>
           )}
           {showPeerCounts && (
             <Suspense fallback={null}>
-              <PrepMatesModal open={matesOpen} onClose={() => setMatesOpen(false)} owner={{ id: String(user?._id || ''), name: user?.name }} count={peerSummary?.prepMates} isSelf />
+              <PrepMatesModal open={matesOpen} onClose={() => setMatesOpen(false)} owner={{ id: String(user?._id || ''), name: user?.name }}
+                count={peerSummary?.prepMates} requests={pendingMateRequests} isSelf />
             </Suspense>
           )}
         </div>

@@ -1029,3 +1029,15 @@ test('a student profile shows only that student\'s own work, per licensed area',
   assert.equal(buildStudentProfile(extra.rows.find((row) => row.name === 'Bilal'), { range, modules: new Set(['student', 'coding']), sheets: extra.sheets }).quickprep, null, 'no Quick Prep module, no Quick Prep section');
   assert.deepEqual(bilalSheets.quickprep.notStarted, ['Graphs sprint'], 'sheets open to the student but not started');
 });
+
+test('every heat map says how many students did anything on the days it shows', () => {
+  const data = { from: '2026-01-01', to: '2026-12-31' };
+  const rows = [
+    { quickprep: { days: new Map([['2026-03-01', [1, 0]]]) }, learning: { days: new Map([['2025-06-01', 2]]) } },
+    { quickprep: { days: new Map([['2026-04-01', [0, 0]]]) }, learning: { days: new Map([['2026-05-01', 1]]) } },
+    { quickprep: null, learning: null },
+  ];
+  assert.deepEqual([chartSummary('quickprep-calendar', rows, data).students, chartSummary('quickprep-calendar', rows, data).cohort], [1, 3]);
+  assert.equal(chartSummary('learning-calendar', rows, data).students, 1, 'days outside the map do not count');
+  assert.equal(chartSummary('assessment-calendar', rows, data).students, 0);
+});

@@ -1,11 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { isProgressNotification } from './notificationKinds';
+import { PEER_NETWORK_EVENT, canUsePeers } from '../student/peers/peerNetwork';
 import { Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../utils/api';
 import socketService from '../utils/socket';
 import { useAuth } from '../context/AuthContext';
 import NotificationSidebar from './NotificationSidebar';
+
+const PrepMateRequestsPanel = lazy(() => import('../student/peers/PrepMateRequestsPanel'));
 
 const SEEN_ANNOUNCEMENTS_KEY = 'studentSeenAnnouncementIds';
 
@@ -128,6 +131,25 @@ function NotificationBell({ buttonClassName = '' }) {
       setServerUnreadCount(data.unreadCount || 0);
     }).catch(() => {});
   }, [canLoadNotifications, isOpen]);
+
+  // Answering a Prep Mate request anywhere marks its notification read on the server; resync so
+  // the unread count drops here too.
+  useEffect(() => {
+    if (!canLoadNotifications) return undefined;
+    let timer = null;
+    const resync = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        api.getNotifications().then((data) => {
+          setNotifications(data.notifications || []);
+          setServerUnreadCount(data.unreadCount || 0);
+        }).catch(() => {});
+      }, 400);
+    };
+    window.addEventListener(PEER_NETWORK_EVENT, resync);
+    return () => { clearTimeout(timer); window.removeEventListener(PEER_NETWORK_EVENT, resync); };
+  }, [canLoadNotifications]);
+  const showMateRequests = canUsePeers(user);
 
   useEffect(() => {
     if (!canLoadNotifications) {
@@ -275,6 +297,9 @@ function NotificationBell({ buttonClassName = '' }) {
         onClearAll={handleClearAll}
         onView={handleView}
         formatTime={formatRelativeTime}
+        topSlot={showMateRequests && isOpen ? (
+          <Suspense fallback={null}><PrepMateRequestsPanel onNavigate={() => setIsOpen(false)} /></Suspense>
+        ) : null}
       />
     </>
   );

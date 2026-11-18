@@ -9,8 +9,16 @@ import { alpha, chartTheme } from '../src/admin/prepAnalysis/charts/chartTheme.j
 import {
   compactOption, countActive, defaultFilterState, featureFields, groupName, groupText, isKpiActive, isMainField, kpiRule, listRule, newGroup,
   newRankRule, normalizeState, numberPresets, OPERATORS, rangeOf, rangeRule, rankMetrics, rankText, ruleText, setRule, studentFields, summaryLines,
-  switchArea, toggleKpi, toQueryRequest, toRequestRank, valueParts,
+  switchArea, toggleKpi, toQueryRequest, toRequestRank, valueParts, quickFilterFields,
 } from '../src/admin/prepAnalysis/filterModel.js';
+
+test('the filter line shows semester, branch, section and the feature status; missing fields are skipped', () => {
+  const fieldMap = new Map(['student.semester', 'student.branch', 'quickprep.status', 'quickprep.activity', 'coding.practiceStatus']
+    .map((key) => [key, { key, label: key }]));
+  assert.deepEqual(quickFilterFields('quickprep', fieldMap).map((entry) => entry.label), ['Semester', 'Branch', 'Sheet status', 'Activity']);
+  assert.deepEqual(quickFilterFields('coding', fieldMap).map((entry) => entry.field.key), ['student.semester', 'student.branch', 'coding.practiceStatus']);
+  assert.ok(quickFilterFields('quickprep', fieldMap).length <= 5);
+});
 import { studentHighlights } from '../src/admin/prepAnalysis/studentInsights.js';
 import { pathAllowed } from '../src/platform/universityPermissions.js';
 import { assessmentAnalysisPath, prepAnalysisStateFromSearch } from '../src/admin/prepAnalysis/analysisPreset.js';
@@ -408,7 +416,7 @@ test('each chart says what stands out in one sentence, with no averages', () => 
   assert.equal(insight('needs-attention', 'barList', attention), '2 of these 3 students have not practised in the last 14 days.');
   assert.equal(insight('quickprep-sheets', 'stackedBar', SAMPLES.stackedBar), 'Most finished: Placement essentials (2 students). Most not started: Placement essentials (4).');
   assert.equal(insight('quickprep-matrix', 'heatmap', SAMPLES.heatmap), '1 of these 2 students have finished at least one of these sheets.');
-  assert.match(insight('learning-calendar', 'calendar', SAMPLES.calendar), /^Active on 2 days in the last year\. Busiest: .+ \(4 topics completed\)\.$/);
+  assert.match(insight('learning-calendar', 'calendar', SAMPLES.calendar), /^Busiest day: .+, with 4 topics completed\. Darker squares mean more activity\.$/);
   assert.equal(insight('student-profile', 'radar', SAMPLES.radar), 'Asha is strongest in Arrays (5 solved) and weakest in DP (1).');
   assert.equal(insight('difficulty-split', 'donut', { items: [{ key: 'Easy', value: 6 }, { key: 'Medium', value: 3 }, { key: 'Hard', value: 1 }] }), '60% of solved problems are Easy, 30% Medium and 10% Hard.');
   assert.equal(insight('top-students', 'rankedStackedBar', { items: [] }), null, 'nothing to say about nothing');
@@ -485,7 +493,10 @@ test('heat map: Monday-first weeks, levels, streaks and figures for the period',
   assert.equal(model.weeks[1][1], null, 'days after the period end are blank');
   assert.deepEqual(model.weeks[0].slice(1, 4).map((day) => day.level), [1, 4, 1], 'max 8 → steps of 2');
   assert.equal(model.weeks[0][0].level, 0);
-  assert.deepEqual(model.stats, { total: 15, activeDays: 4, days: 8, busiest: { day: '2026-11-04', value: 8 }, currentStreak: 1, bestStreak: 3, perActiveDay: 3.8 });
+  assert.deepEqual(model.stats, {
+    total: 15, activeDays: 4, days: 8, busiest: { day: '2026-11-04', value: 8 }, currentStreak: 1, bestStreak: 3, perActiveDay: 3.8,
+    last7: 15, last30: 15, lastActive: '2026-11-09', daysSinceActive: 0,
+  });
   assert.deepEqual(model.legend.map((entry) => entry.label), ['0', '1–2', '3–4', '5–6', '7+']);
   // Today (the period end) without activity yet: the streak up to yesterday still counts.
   const resting = heatmapModel({ from: '2026-11-02', to: '2026-11-06', days: [['2026-11-04', 1], ['2026-11-05', 1]] });

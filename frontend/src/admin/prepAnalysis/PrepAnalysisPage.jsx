@@ -174,7 +174,7 @@ function PrepAnalysisView({ scope, embedded }) {
   const fullChart = fullChartId && entryById.has(fullChartId) ? fullChartId : null;
   // Quick Prep: which sheets everything on the page counts. A focus was a part of the old charts.
   const sheetScope = area === "quickprep" && !scope ? (
-    <SheetScope value={state.sheets || []} applied={meta ? meta.sheets ?? null : undefined} loading={loading}
+    <SheetScope compact value={state.sheets || []} applied={meta ? meta.sheets ?? null : undefined} loading={loading}
       onChange={(sheets) => { setFocus(null); update({ ...state, sheets }); }} />
   ) : null;
 
@@ -202,23 +202,20 @@ function PrepAnalysisView({ scope, embedded }) {
 
       {classCompare && !fullChart ? (
         <div className="mx-auto max-w-[1680px] space-y-4 px-4 py-4">
-          {sheetScope}
-          <FilterToolbar state={state} catalog={catalog} fieldMap={fieldMap} meta={meta} loading={loading} onOpen={() => setFiltersOpen(true)} onChange={update} extra={filterChips} />
+          <FilterToolbar state={state} catalog={catalog} fieldMap={fieldMap} meta={meta} loading={loading} onOpen={() => setFiltersOpen(true)} onChange={update} extra={filterChips} scope={sheetScope} />
           <CompareDashboard classCompare={classCompare} catalog={catalog} state={state} fieldMap={fieldMap} focus={focus} refreshTick={refreshTick} areaLabel={areaLabel}
             onChange={() => setCompareOpenTick((tick) => tick + 1)} onClose={() => setClassCompare(null)} onStudent={setStudentId} />
         </div>
       ) : fullChart ? (
         <div className="mx-auto max-w-[1680px] space-y-4 px-4 py-4">
-          {sheetScope}
-          <ChartFullPage key={fullChart} chartId={fullChart} cardChart={charts.find((chart) => chart.id === fullChart)} entry={entryById.get(fullChart)}
+          <ChartFullPage key={fullChart} filterScope={sheetScope} chartId={fullChart} cardChart={charts.find((chart) => chart.id === fullChart)} entry={entryById.get(fullChart)}
             analysis={analysis} meta={meta} refreshTick={refreshTick}
             onBack={closeChart} onStudent={showChartStudent} onPart={showPart} onOpenFilters={() => setFiltersOpen(true)} onFilterChange={update} filterExtra={filterChips}
             onSettings={() => setSettingsId(fullChart)} onView={(view) => updateChart(fullChart, { view })} />
         </div>
       ) : (
       <div className="mx-auto max-w-[1680px] space-y-3 px-4 py-3">
-        {sheetScope}
-        <FilterToolbar state={state} catalog={catalog} fieldMap={fieldMap} meta={meta} loading={loading} onOpen={() => setFiltersOpen(true)} onChange={update} extra={filterChips} lead={sectionLead} />
+        <FilterToolbar state={state} catalog={catalog} fieldMap={fieldMap} meta={meta} loading={loading} onOpen={() => setFiltersOpen(true)} onChange={update} extra={filterChips} lead={sectionLead} scope={sheetScope} />
 
         {error && (
           <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">

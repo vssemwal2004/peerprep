@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import User from '../models/User.js';
+import Notification from '../models/Notification.js';
 import { PrepMate } from '../models/PeerNetwork.js';
 import { Quest, QuestEnrollment } from '../models/AdaptiveEngagement.js';
 import Submission from '../models/Submission.js';
@@ -480,6 +481,15 @@ async function notifyMateAccepted(doc, accepter) {
   }).catch(() => false);
 }
 
+// Once a request is answered or withdrawn, its "Prep Mate request" notification is no longer
+// something to act on, so it stops counting as unread for the student who received it.
+async function closeRequestNotice(doc) {
+  await Notification.updateMany(
+    { userId: doc.toId, type: 'PREP_MATE_REQUEST', referenceId: doc._id, isRead: false },
+    { $set: { isRead: true } },
+  ).catch(() => null);
+}
+
 async function relationWith(viewerId, peerId) {
   return (await relationsFor(viewerId, [peerId])).get(idString(peerId));
 }
@@ -492,7 +502,7 @@ async function acceptPending(doc, accepter) {
     { new: true },
   ).lean();
   if (!updated) throw new HttpError(409, 'This request is no longer open.');
-  await notifyMateAccepted(updated, accepter);
+  await Promise.all([notifyMateAccepted(updated, accepter), closeRequestNotice(updated)]);
   pushNetworkUpdate([updated.fromId, updated.toId], { kind: 'mate-accepted', requestId: idString(updated), actor: peerCard(accepter), targetId: idString(updated.fromId) });
   return updated;
 }
@@ -547,7 +557,10 @@ export async function cancelPrepMateRequest(viewer, rawId) {
     { $set: { status: 'cancelled', respondedAt: new Date() } },
     { new: true },
   ).lean();
-  if (updated) pushNetworkUpdate([viewer._id, id], { kind: 'mate-cancelled', requestId: idString(updated) });
+  if (updated) {
+    await closeRequestNotice(updated);
+    pushNetworkUpdate([viewer._id, id], { kind: 'mate-cancelled', requestId: idString(updated) });
+  }
   return { relation: await relationWith(viewer._id, id) };
 }
 
@@ -572,6 +585,7 @@ export async function respondPrepMateRequest(viewer, rawRequestId, action) {
   ).lean();
   if (!updated) throw new HttpError(409, 'This request is no longer open.');
   // The requester is not notified of a decline; their button simply returns to a waiting state.
+  await closeRequestNotice(updated);
   pushNetworkUpdate([updated.fromId, updated.toId], { kind: 'mate-declined', requestId: idString(updated) });
   return { peerId: idString(doc.fromId), relation: await relationWith(viewer._id, doc.fromId) };
 }

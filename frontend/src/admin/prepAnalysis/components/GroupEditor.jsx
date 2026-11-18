@@ -280,6 +280,40 @@ function FilterDropdown({ field, rule, catalog, onChange }) {
 }
 
 /**
+ * A filter on the page's filter line: one compact pill, "Semester ▾" or "Semester: 5, 6 ×".
+ * Opens the same panel as in the Filters drawer and applies straight away.
+ */
+export function QuickFilter({ field, label = field.label, rule, catalog, onChange }) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef(null);
+  const lookup = useMemo(() => optionLookup(catalog), [catalog]);
+  const active = isRuleComplete(rule, field);
+  const { text, extra } = valueParts(rule, field, lookup);
+  const Panel = field.kind === "enum" || field.kind === "set" ? ListPanel : field.kind === "text" ? TextPanel : RangePanel;
+  return (
+    <span ref={anchorRef}
+      className={`inline-flex h-8 min-w-0 max-w-[240px] shrink-0 items-center rounded-lg border text-[12px] transition-colors ${active
+        ? "border-sky-300 bg-sky-50 text-sky-900 dark:border-sky-500/50 dark:bg-sky-500/10 dark:text-sky-100"
+        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-gray-700 dark:bg-white/[0.03] dark:text-slate-200 dark:hover:bg-white/[0.06]"} ${open ? "border-sky-500 shadow-[0_0_0_3px_rgba(14,165,233,0.15)]" : ""}`}>
+      <button type="button" onClick={() => setOpen((current) => !current)} aria-haspopup="dialog" aria-expanded={open} title={field.label}
+        className={`flex h-full min-w-0 items-center gap-1 rounded-lg ${active ? "pl-2.5 pr-1" : "px-2.5"} ${focusRing}`}>
+        <span className={`shrink-0 ${active ? "font-medium text-sky-700 dark:text-sky-300" : "font-semibold"}`}>{label}{active ? ":" : ""}</span>
+        {active && <span className="min-w-0 truncate font-semibold">{text}</span>}
+        {active && extra > 0 && <span className="shrink-0 rounded-full bg-sky-600 px-1.5 text-[10px] font-bold leading-4 text-white">+{extra}</span>}
+        {!active && <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />}
+      </button>
+      {active && (
+        <button type="button" onClick={() => onChange(null)} aria-label={`Clear ${field.label}`} title="Clear"
+          className={`mr-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sky-700 hover:bg-sky-100 dark:text-sky-300 dark:hover:bg-sky-500/20 ${focusRing}`}><X className="h-3 w-3" /></button>
+      )}
+      <Popover open={open} anchorRef={anchorRef} onClose={() => setOpen(false)} minWidth={280} maxHeight={440} label={field.label}>
+        <Panel field={field} rule={rule} catalog={catalog} onChange={onChange} onDone={() => setOpen(false)} />
+      </Popover>
+    </span>
+  );
+}
+
+/**
  * One feature's filters (e.g. Prep Coding, Student details): a closed section that
  * opens into a grid of closed dropdowns. A section with filters set starts open.
  */

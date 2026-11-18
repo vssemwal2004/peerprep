@@ -153,7 +153,7 @@ function SheetChooser({ value, onApply, onClose }) {
  * or all, searching by name (there can be thousands). Every KPI, chart, drill, the table and
  * downloads use the choice. `applied` is what the server used ({ id, title }[] or null).
  */
-export default function SheetScope({ value = [], applied, loading, onChange }) {
+export default function SheetScope({ value = [], applied, loading, onChange, compact = false }) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef(null);
   const appliedIds = useMemo(() => new Set((applied || []).map((sheet) => sheet.id)), [applied]);
@@ -161,6 +161,36 @@ export default function SheetScope({ value = [], applied, loading, onChange }) {
   const missing = !loading && applied !== undefined && value.length ? value.filter((sheet) => !appliedIds.has(sheet.id)) : [];
   const remove = (id) => onChange(value.filter((sheet) => sheet.id !== id));
   const label = value.length === 0 ? "All sheets" : value.length === 1 ? value[0].title : `${value.length} sheets`;
+
+  // On the filter line: one picker button ("Sheets: All ▾" / "Sheets: DSA Basics ×"); the chosen
+  // list is in the picker, and a warning icon says when a chosen sheet is gone.
+  if (compact) {
+    const missingText = missing.length === value.length
+      ? "The chosen sheets are no longer published, so every sheet is shown."
+      : `${missing.length} chosen sheet${missing.length === 1 ? " is" : "s are"} no longer published and left out.`;
+    return (
+      <span ref={anchorRef} className={`inline-flex h-8 min-w-0 max-w-[300px] shrink-0 items-center rounded-lg border text-[12px] transition-colors ${value.length
+        ? "border-sky-300 bg-sky-50 text-sky-900 dark:border-sky-500/50 dark:bg-sky-500/10 dark:text-sky-100"
+        : "border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:border-gray-700 dark:bg-white/[0.03] dark:text-slate-100 dark:hover:bg-white/[0.06]"}`}>
+        <button type="button" onClick={() => setOpen((current) => !current)} aria-haspopup="dialog" aria-expanded={open}
+          title={value.length ? `Only these sheets are analysed: ${value.map((sheet) => sheet.title).join(", ")}` : "Every sheet is analysed. Choose sheets"}
+          className={`flex h-full min-w-0 items-center gap-1.5 rounded-lg pl-2.5 ${value.length ? "pr-1" : "pr-2"} ${focusRing}`}>
+          <Layers className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-300" />
+          <span className={`shrink-0 ${value.length ? "font-medium text-sky-700 dark:text-sky-300" : "font-semibold"}`}>Sheets:</span>
+          <span className="min-w-0 truncate font-semibold">{value.length ? label : "All"}</span>
+          {!value.length && <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />}
+        </button>
+        {missing.length > 0 && <span title={missingText} aria-label={missingText} className="inline-flex h-6 w-5 shrink-0 items-center justify-center text-amber-600 dark:text-amber-300"><AlertTriangle className="h-3.5 w-3.5" /></span>}
+        {value.length > 0 && (
+          <button type="button" onClick={() => onChange([])} aria-label="Analyse every sheet" title="Back to all sheets"
+            className={`mr-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sky-700 hover:bg-sky-100 dark:text-sky-300 dark:hover:bg-sky-500/20 ${focusRing}`}><X className="h-3 w-3" /></button>
+        )}
+        <Popover open={open} anchorRef={anchorRef} onClose={() => setOpen(false)} minWidth={420} maxHeight={520} label="Choose sheets">
+          <SheetChooser value={value} onApply={onChange} onClose={() => setOpen(false)} />
+        </Popover>
+      </span>
+    );
+  }
 
   return (
     <section aria-label="Quick Prep sheets" className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm dark:border-gray-800 dark:bg-gray-900">

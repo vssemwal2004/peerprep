@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Check, Clock3, Loader2, UserPlus, X } from 'lucide-react';
 import { useToast } from '../../components/CustomToast';
-import { ACTION_TOASTS, PEER_TERMS, errorMessage, mateButtonState, runPeerAction } from './peerNetwork';
+import { ACTION_TOASTS, DECISION_TONES, PEER_TERMS, errorMessage, mateButtonState, runPeerAction } from './peerNetwork';
 
 const base = 'inline-flex items-center justify-center gap-1.5 rounded-xl font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-[#1a1a1a]';
 const sizes = { sm: 'h-8 px-3 text-xs', md: 'h-10 px-4 text-sm' };
 const tones = {
   primary: 'bg-sky-600 text-white shadow-sm hover:bg-sky-700',
-  outline: 'border border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:border-sky-700 dark:hover:bg-sky-950/40',
   success: 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:border-rose-900 dark:hover:bg-rose-950/40 dark:hover:text-rose-300',
   muted: 'border border-slate-200 bg-slate-50 text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:border-rose-900 dark:hover:text-rose-300',
   danger: 'border border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300',
@@ -57,10 +56,10 @@ export default function PeerActions({ peer, relation, onRelationChange, size = '
   if (mate.action === 'accept') {
     return (
       <div className={`flex items-center gap-2 ${block ? 'w-full' : ''}`}>
-        <button type="button" disabled={busy !== null} onClick={() => act('accept')} className={`${base} ${sizes[size]} ${tones.primary} ${width}`}>
+        <button type="button" disabled={busy !== null} onClick={() => act('accept')} className={`${base} ${sizes[size]} ${DECISION_TONES.accept} ${width}`} aria-label={`Accept Prep Mate request from ${name}`}>
           {busy === 'accept' ? spinner : <Check className="h-4 w-4" aria-hidden="true" />} Accept
         </button>
-        <button type="button" disabled={busy !== null} onClick={() => act('decline')} className={`${base} ${sizes[size]} ${tones.outline} ${width}`} aria-label={`Decline Prep Mate request from ${name}`}>
+        <button type="button" disabled={busy !== null} onClick={() => act('decline')} className={`${base} ${sizes[size]} ${DECISION_TONES.decline} ${width}`} aria-label={`Decline Prep Mate request from ${name}`}>
           {busy === 'decline' ? spinner : <X className="h-4 w-4" aria-hidden="true" />} {PEER_TERMS.decline}
         </button>
       </div>

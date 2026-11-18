@@ -3,10 +3,10 @@ import { LayoutGrid, Loader2, Plus, RotateCcw, SlidersHorizontal, Users, X } fro
 import { useAnalysisApi, useAnalysisScope } from "../analysisScope";
 import {
   MAX_GROUPS, RANGE_PRESET_VALUES, countActive, countRules, defaultFilterState, featureFields, groupName, groupText, isRuleComplete, newGroup, nodeId,
-  optionLookup, rankMetrics, rankText, setRule, studentFields, switchArea, toQueryRequest, valueParts,
+  optionLookup, quickFilterFields, rankMetrics, rankText, ruleFor, setRule, studentFields, switchArea, toQueryRequest, valueParts,
 } from "../filterModel";
 import DateRangeFilter from "../../../components/dateRange/DateRangeFilter";
-import { GroupCard, GroupFilters, RankEditor } from "./GroupEditor";
+import { GroupCard, GroupFilters, QuickFilter, RankEditor } from "./GroupEditor";
 import { AREA_ICONS } from "./sectionStyles";
 import { Button, Drawer, focusRing } from "./ui";
 
@@ -201,22 +201,33 @@ function Chip({ label, text, onOpen, onClear }) {
  * The page's filter line: the "Filters" button, the filters in use as chips, any extra chips
  * (`extra`, such as "only these students"), and the count. Feature and period live in the header.
  */
-export function FilterToolbar({ state, catalog, fieldMap, meta, loading, onOpen, onChange, extra = null, lead = null }) {
+export function FilterToolbar({ state, catalog, fieldMap, meta, loading, onOpen, onChange, extra = null, lead = null, scope = null }) {
   const lookup = useMemo(() => optionLookup(catalog), [catalog]);
   const metricLabel = (key) => fieldMap.get(key)?.label || key;
   const ranking = rankText(state.rank, metricLabel);
   const total = countActive(state, fieldMap);
   const several = state.groups.length > 1;
   const single = state.groups[0];
+  // Semester, branch, section and the feature's status sit on the line itself. With several
+  // groups of students they live in the drawer, where each group has its own.
+  const quick = several ? [] : quickFilterFields(state.area, fieldMap);
+  const quickKeys = new Set(quick.map((entry) => entry.field.key));
+  const divider = <span className="mx-0.5 hidden h-6 w-px shrink-0 bg-slate-200 sm:block dark:bg-gray-700" aria-hidden="true" />;
   return (
-    <section aria-label="Filters" className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-      {/* `lead`: the page's section name, so heading and filters share one line. */}
-      {lead && <>{lead}<span className="mx-0.5 hidden h-6 w-px bg-slate-200 sm:block dark:bg-gray-700" aria-hidden="true" /></>}
-      <button type="button" onClick={onOpen}
-        className={`inline-flex h-8 items-center gap-1.5 rounded-lg bg-sky-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-sky-700 ${focusRing}`}>
+    <section aria-label="Filters" className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      {/* `lead`: the page's section name, so heading and filters share one line; `scope`: the
+          Quick Prep sheet picker, which narrows everything on the page. */}
+      {lead && <>{lead}{divider}</>}
+      {scope && <>{scope}{divider}</>}
+      <button type="button" onClick={onOpen} title="All filters, groups of students and top / bottom"
+        className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-sky-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-sky-700 ${focusRing}`}>
         <SlidersHorizontal className="h-3.5 w-3.5" />Filters
         {total > 0 && <span className="rounded-full bg-white/25 px-1.5 text-[11px] leading-5">{total}</span>}
       </button>
+      {quick.map(({ field, label }) => (
+        <QuickFilter key={field.key} field={field} label={label} rule={ruleFor(single, field.key)} catalog={catalog}
+          onChange={(rule) => onChange({ ...state, groups: [setRule(single, field.key, rule)] })} />
+      ))}
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
         {extra}
         {several
@@ -229,13 +240,13 @@ export function FilterToolbar({ state, catalog, fieldMap, meta, loading, onOpen,
               </span>
             );
           })
-          : single.rules.filter((rule) => isRuleComplete(rule, fieldMap.get(rule.field))).map((rule) => {
+          : single.rules.filter((rule) => !quickKeys.has(rule.field) && isRuleComplete(rule, fieldMap.get(rule.field))).map((rule) => {
             const field = fieldMap.get(rule.field);
             const { text, extra } = valueParts(rule, field, lookup);
             return <Chip key={rule.field} label={field.label} text={`${text}${extra ? ` +${extra}` : ""}`} onOpen={onOpen} onClear={() => onChange({ ...state, groups: [setRule(single, rule.field, null)] })} />;
           })}
         {ranking && <Chip label="Showing" text={ranking} onOpen={onOpen} onClear={() => onChange({ ...state, rank: { join: "and", rules: [] } })} />}
-        {!total && !extra && <span className="text-[12px] text-slate-500 dark:text-gray-400">Everyone</span>}
+        {!total && !extra && !quick.length && <span className="text-[12px] text-slate-500 dark:text-gray-400">Everyone</span>}
       </div>
       <p className="ml-auto inline-flex items-center gap-2 whitespace-nowrap text-[12.5px] text-slate-500 dark:text-gray-400" aria-live="polite">
         {loading ? <Loader2 className="h-4 w-4 animate-spin text-sky-600" /> : <Users className="h-4 w-4 text-sky-600" />}

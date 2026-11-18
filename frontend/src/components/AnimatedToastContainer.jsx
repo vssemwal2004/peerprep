@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { AlertTriangle, CheckCircle2, Info, Users, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, Info, Users, X, XCircle } from 'lucide-react';
+
+// Toast buttons. Accept / Decline always use green / red.
+const ACTION_VARIANTS = {
+  primary: 'bg-sky-600 text-white shadow-sm hover:bg-sky-700 focus-visible:ring-sky-500',
+  accept: 'bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 focus-visible:ring-emerald-500',
+  decline: 'bg-rose-600 text-white shadow-sm hover:bg-rose-700 focus-visible:ring-rose-500',
+  secondary: 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 focus-visible:ring-sky-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10',
+};
 
 const TONES = {
   success: { Icon: CheckCircle2, label: 'Success', bar: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300' },
@@ -103,13 +111,17 @@ function Toast({ toast, onRemove }) {
                   type="button"
                   disabled={busy !== null}
                   onClick={(event) => { event.stopPropagation(); runAction(action, index); }}
-                  className={`inline-flex h-8 items-center justify-center rounded-lg px-3 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:opacity-60 dark:focus-visible:ring-offset-[#242424] ${
-                    action.variant === 'primary'
-                      ? 'bg-sky-600 text-white shadow-sm hover:bg-sky-700'
-                      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10'
+                  className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg px-3 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-60 dark:focus-visible:ring-offset-[#242424] ${
+                    ACTION_VARIANTS[action.variant] || ACTION_VARIANTS.secondary
                   }`}
                 >
-                  {busy === index ? 'Working…' : action.label}
+                  {busy === index ? 'Working…' : (
+                    <>
+                      {action.variant === 'accept' && <Check className="h-3.5 w-3.5" aria-hidden="true" />}
+                      {action.variant === 'decline' && <X className="h-3.5 w-3.5" aria-hidden="true" />}
+                      {action.label}
+                    </>
+                  )}
                 </button>
               ))}
             </div>

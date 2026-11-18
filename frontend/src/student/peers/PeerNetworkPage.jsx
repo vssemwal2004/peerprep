@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { EyeOff, Inbox, Loader2, Search, Send, Users } from 'lucide-react';
 import { api } from '../../utils/api';
 import PeerAvatar from './PeerAvatar';
 import PeerActions from './PeerActions';
+import { PrepMateRequestRow } from './PrepMateRequests';
 import { PEER_NETWORK_EVENT, PEER_TERMS, compactCount, errorMessage, peerSubtitle, usePeerSummary } from './peerNetwork';
 import { usePeerSearch } from './usePeerSearch';
 
@@ -40,6 +41,14 @@ export default function PeerNetworkPage() {
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
   const search = usePeerSearch(query);
+
+  // Opening the page with requests waiting (and no tab chosen) lands on Requests, once.
+  const landed = useRef(false);
+  useEffect(() => {
+    if (landed.current || !summary) return;
+    landed.current = true;
+    if (!params.get('tab') && summary.incomingRequests > 0) setParams({ tab: 'incoming' }, { replace: true });
+  }, [summary, params, setParams]);
 
   const load = useCallback((quiet = false) => {
     if (!quiet) setLoading(true);
@@ -164,7 +173,9 @@ export default function PeerNetworkPage() {
             ) : (
               <>
                 <ul className="divide-y divide-slate-100 dark:divide-zinc-800">
-                  {list.items.map((peer) => <PeerRow key={peer.id} peer={peer} onRelationChange={updateRelation} />)}
+                  {list.items.map((peer) => (tab === 'incoming' && peer.relation?.mate === 'incoming'
+                    ? <PrepMateRequestRow key={peer.relation.requestId || peer.id} peer={peer} />
+                    : <PeerRow key={peer.id} peer={peer} onRelationChange={updateRelation} />))}
                 </ul>
                 {list.nextBefore && (
                   <div className="border-t border-slate-100 p-3 text-center dark:border-zinc-800">

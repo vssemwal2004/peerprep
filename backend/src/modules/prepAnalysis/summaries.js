@@ -15,7 +15,22 @@ function summary(cohort, students, studentsLabel, extra = {}) {
 
 const sheetStarters = (rows) => rows.filter((row) => row.quickprep?.started > 0).length;
 
+// Heat maps: students with any activity on a day the map shows. Day values are counts, or
+// [started, finished] for Quick Prep.
+const dayValue = (value) => (Array.isArray(value) ? value.reduce((sum, part) => sum + (Number(part) || 0), 0) : Number(value) || 0);
+function activeOnMap(rows, data, daysOf) {
+  return rows.filter((row) => {
+    for (const [day, value] of daysOf(row) || []) if (day >= data.from && day <= data.to && dayValue(value) > 0) return true;
+    return false;
+  }).length;
+}
+const calendarSummary = (daysOf, label) => (rows, data) => summary(rows.length, activeOnMap(rows, data, daysOf), label);
+
 const SUMMARIES = {
+  'learning-calendar': calendarSummary((row) => row.learning?.days, 'completed a topic'),
+  'quickprep-calendar': calendarSummary((row) => row.quickprep?.days, 'worked on a sheet'),
+  'interview-calendar': calendarSummary((row) => row.interview?.days, 'had an interview'),
+  'assessment-calendar': calendarSummary((row) => row.assessment?.days, 'took a test'),
   'quickprep-sheet-health': (rows) => summary(rows.length, sheetStarters(rows), 'started a sheet', {
     average: perStudent(rows.reduce((sum, row) => sum + (row.quickprep?.finished || 0), 0), rows.length), averageLabel: 'sheets finished per student',
   }),

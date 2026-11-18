@@ -59,6 +59,17 @@ export function heatmapModel(data) {
   let time = counts.get(dayOf(to)) ? to : to - DAY_MS;
   while (time >= from && counts.get(dayOf(time))) { current += 1; time -= DAY_MS; }
 
+  // Recent counts (last 7 and last 30 days, today included) and the last day with activity.
+  const sumBetween = (start, end) => {
+    let sum = 0;
+    for (let day = Math.max(start, from); day <= Math.min(end, to); day += DAY_MS) sum += counts.get(dayOf(day)) || 0;
+    return sum;
+  };
+  const last7 = sumBetween(to - 6 * DAY_MS, to);
+  const last30 = sumBetween(to - 29 * DAY_MS, to);
+  let lastActive = null;
+  for (let day = to; day >= from; day -= DAY_MS) if (counts.get(dayOf(day))) { lastActive = dayOf(day); break; }
+
   return {
     weeks, months, step, max,
     legend: [0, 1, 2, 3, 4].map((level) => {
@@ -70,6 +81,8 @@ export function heatmapModel(data) {
       total, activeDays, days: Math.round((to - from) / DAY_MS) + 1, busiest,
       currentStreak: current, bestStreak: best,
       perActiveDay: activeDays ? Math.round((total / activeDays) * 10) / 10 : 0,
+      last7, last30,
+      lastActive, daysSinceActive: lastActive ? Math.round((to - timeOf(lastActive)) / DAY_MS) : null,
     },
   };
 }

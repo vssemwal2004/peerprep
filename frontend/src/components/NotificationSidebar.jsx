@@ -13,6 +13,7 @@ function NotificationSidebar({
   onClearAll,
   onView,
   formatTime,
+  topSlot = null,
 }) {
   const announcementItems = useMemo(
     () => (notifications || []).filter((n) => n?.source === 'announcement'),
@@ -134,6 +135,8 @@ function NotificationSidebar({
                   <span className={`rounded-full px-1.5 py-px text-[10.5px] tabular-nums ${activeFilter === value ? 'bg-white/20 dark:bg-slate-900/10' : value === 'progress' && count > 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800'}`}>{count}</span>
                 </button>)}
               </div>
+
+              {topSlot}
 
               {/* Announcement highlight (auto-fades every 5s) */}
               {announcementItems.length > 0 && (

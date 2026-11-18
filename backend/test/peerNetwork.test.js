@@ -135,6 +135,8 @@ test('peer network: same-university scope, private fields and Prep Mate states',
     assert.equal(relation.mate, 'mates');
     assert.equal(await inAlpha(() => Notification.countDocuments({ userId: asha._id, type: 'PREP_MATE_ACCEPTED' })), 1);
     assert.equal(await inAlpha(() => Notification.countDocuments({ userId: ravi._id, type: 'PREP_MATE_REQUEST' })), 2);
+    assert.equal(await inAlpha(() => Notification.countDocuments({ userId: ravi._id, type: 'PREP_MATE_REQUEST', isRead: false })), 0,
+      'answered requests (declined, then accepted) no longer count as unread');
     assert.deepEqual(await inAlpha(() => service.networkCounts(asha._id)), { prepMates: 1, incomingRequests: 0 });
     assert.deepEqual((await inAlpha(() => service.listNetwork(asha, 'mates'))).items.map((item) => item.name), ['Ravi Kumar']);
     // A classmate's Prep Mates list is viewable (the viewer is marked as "you"); requests are not.

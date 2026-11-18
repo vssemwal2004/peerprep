@@ -44,7 +44,7 @@ function Figure({ label, value, format, suffix }) {
  * figures, and a breakdown table. Any part, in the chart or the table, opens the part popup.
  */
 export default function ChartFullPage({
-  chartId, cardChart, entry, analysis, meta, refreshTick, onBack, onStudent, onPart, onOpenFilters, onFilterChange, onSettings, onView, filterExtra,
+  chartId, cardChart, entry, analysis, meta, refreshTick, onBack, onStudent, onPart, onOpenFilters, onFilterChange, onSettings, onView, filterExtra, filterScope = null,
 }) {
   const reduced = useReducedMotion();
   const [page, setPage] = useState(1);
@@ -104,7 +104,7 @@ export default function ChartFullPage({
         </Button>
       </div>
 
-      <FilterToolbar state={analysis.state} catalog={analysis.catalog} fieldMap={analysis.fieldMap} meta={full.meta || meta} loading={full.loading} onOpen={onOpenFilters} onChange={onFilterChange} extra={filterExtra} />
+      <FilterToolbar state={analysis.state} catalog={analysis.catalog} fieldMap={analysis.fieldMap} meta={full.meta || meta} loading={full.loading} onOpen={onOpenFilters} onChange={onFilterChange} extra={filterExtra} scope={filterScope} />
 
       {full.error && (
         <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">

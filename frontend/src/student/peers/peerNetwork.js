@@ -101,6 +101,51 @@ export async function runPeerAction(action, { peerId, requestId }) {
   return result?.relation || null;
 }
 
+// Accept is always green and Decline always red, on every surface (toasts, popups, lists, profile).
+export const DECISION_TONES = Object.freeze({
+  accept: 'bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 focus-visible:ring-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500',
+  decline: 'bg-rose-600 text-white shadow-sm hover:bg-rose-700 focus-visible:ring-rose-500 dark:bg-rose-600 dark:hover:bg-rose-500',
+});
+
+/** "Just now", "5 min ago", "3 hr ago", "2 days ago", then a date. */
+export function timeAgo(value, now = Date.now()) {
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return '';
+  const minutes = Math.floor(Math.max(0, now - time) / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`;
+  return new Date(time).toLocaleDateString();
+}
+
+// Requests already announced in this browser, so a request that arrived while the student was away
+// pops up once when they come back, not on every page load.
+const SEEN_REQUESTS_KEY = (userId) => `pp:prep-mate-requests-seen:${userId}`;
+const SEEN_REQUESTS_LIMIT = 200;
+
+export function readSeenRequests(storage, userId) {
+  try {
+    const parsed = JSON.parse(storage?.getItem(SEEN_REQUESTS_KEY(userId)) || '[]');
+    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function writeSeenRequests(storage, userId, ids) {
+  try {
+    storage?.setItem(SEEN_REQUESTS_KEY(userId), JSON.stringify([...ids].slice(-SEEN_REQUESTS_LIMIT)));
+  } catch { /* storage can be blocked; the request then simply shows again next time */ }
+}
+
+/** Incoming requests (from the 'incoming' list) this browser has not announced yet. */
+export function unseenRequests(items = [], seen = new Set()) {
+  return items.filter((item) => item?.relation?.mate === 'incoming' && item.relation.requestId && !seen.has(String(item.relation.requestId)));
+}
+
 export const ACTION_TOASTS = {
   request: (name, relation) => (relation?.mate === 'mates'
     ? { type: 'success', message: `You and ${name} are now Prep Mates.` }

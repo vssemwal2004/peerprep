@@ -273,10 +273,12 @@ function boxLine(groups, label, unit) {
   return `${best.label} has the highest middle ${label} (${text(best.median)}); ${widest.label} is the most spread out (${text(widest.q3 - widest.q1)} between the quarters).`;
 }
 
+// The heat map's boxes show the counts; this line adds only the busiest date, so nothing is said twice.
 function calendarLine({ days, unit }) {
-  if (!days?.length) return null;
-  const busiest = maxBy(days, ([, value]) => value);
-  return `Active on ${plural(days.length, "day")} in the last year. Busiest: ${dayText(busiest[0])} (${number(busiest[1])} ${unit || ""}).`.replace(" )", ")");
+  const active = (days || []).filter(([, value]) => Number(value) > 0);
+  if (!active.length) return null;
+  const busiest = maxBy(active, ([, value]) => value);
+  return `Busiest day: ${dayText(busiest[0])}, with ${number(busiest[1])} ${unit || "activities"}. Darker squares mean more activity.`;
 }
 
 /** "Needs attention" lists: how many are listed and how many never started, in the chips' words. */

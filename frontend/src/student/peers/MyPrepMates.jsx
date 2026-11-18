@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import PrepMatesModal from './PrepMatesModal';
 import { PrepMatesButton } from './PeerProfileCards';
@@ -10,19 +9,24 @@ export default function MyPrepMates() {
   const { user } = useAuth();
   const enabled = canUsePeers(user);
   const { summary } = usePeerSummary(enabled);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(null);
   if (!enabled) return null;
   const requests = summary?.incomingRequests || 0;
   return (
     <div className="w-full">
-      <PrepMatesButton count={summary?.prepMates} onOpen={() => setOpen(true)} label="your Prep Mates" />
+      <PrepMatesButton count={summary?.prepMates} onOpen={() => setOpen('mates')} label="your Prep Mates" />
       {requests > 0 && (
-        <Link to="/student/peers?tab=incoming" className="mt-1.5 flex items-center justify-center gap-1.5 rounded-lg py-1 text-[12px] font-semibold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10">
-          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">{requests}</span>
-          Prep Mate {requests === 1 ? 'request' : 'requests'} waiting
-        </Link>
+        <button type="button" onClick={() => setOpen('requests')}
+          className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg py-1 text-[12px] font-semibold text-rose-700 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:text-rose-300 dark:hover:bg-rose-500/10">
+          <span className="relative flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+            <span className="absolute inset-0 animate-ping rounded-full bg-rose-400/60 motion-reduce:hidden" aria-hidden="true" />
+            <span className="relative">{requests}</span>
+          </span>
+          Prep Mate {requests === 1 ? 'request' : 'requests'} waiting · Review
+        </button>
       )}
-      <PrepMatesModal open={open} onClose={() => setOpen(false)} owner={{ id: String(user?._id || ''), name: user?.name }} count={summary?.prepMates} isSelf />
+      <PrepMatesModal open={Boolean(open)} initialTab={open || undefined} onClose={() => setOpen(null)} owner={{ id: String(user?._id || ''), name: user?.name }}
+        count={summary?.prepMates} requests={requests} isSelf />
     </div>
   );
 }

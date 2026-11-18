@@ -202,4 +202,49 @@ test('realtime Prep Mate request shows a toast whose Accept calls the API with t
   // An accepted request tells the requester.
   await push({ kind: 'mate-accepted', requestId: 'req-7', actor: { id: 'neha-1', name: 'Neha' }, targetId: 'me-1' });
   await waitFor(() => /Neha accepted your Prep Mate request/.test(document.body.textContent));
+
+  // A request toast is green / red, stays up, and closes itself when the sender withdraws it.
+  await push({ kind: 'mate-request', requestId: 'req-9', actor: { id: 'amit-1', name: 'Amit Rao' }, targetId: 'me-1' });
+  await waitFor(() => /Amit Rao wants to be your Prep Mate/.test(document.body.textContent));
+  const buttons = [...document.querySelectorAll('[role="status"] button')];
+  assert.match(buttons.find((button) => button.textContent === 'Accept').className, /bg-emerald-600/);
+  assert.match(buttons.find((button) => button.textContent === 'Decline').className, /bg-rose-600/);
+  await push({ kind: 'mate-cancelled', requestId: 'req-9' });
+  await waitFor(() => !/Amit Rao wants to be your Prep Mate/.test(document.body.textContent));
+});
+
+test('requests that arrived while away pop up once per browser; several become one summary toast', async () => {
+  const { ToastProvider } = toastModule;
+  const { readSeenRequests, unseenRequests, timeAgo } = peerModule;
+  localStorage.clear();
+  const incoming = (id, name) => ({ id, name, relation: { mate: 'incoming', requestId: `req-${id}` } });
+  assert.deepEqual(unseenRequests([incoming('a', 'A'), { id: 'b', relation: { mate: 'mates', requestId: 'x' } }], new Set(['req-z'])).map((item) => item.id), ['a']);
+  assert.equal(timeAgo(Date.now() - 5 * 60000), '5 min ago');
+  assert.equal(timeAgo('bad'), '');
+
+  let items = [incoming('ravi-1', 'Ravi Kumar')];
+  api.getPeerSummary = async () => ({ prepMates: 0, incomingRequests: items.length });
+  api.getPeerNetwork = async (tab) => (tab === 'incoming' ? { tab, items, nextBefore: null } : { tab, items: [], nextBefore: null });
+  const mount = () => act(async () => root.render(h(MemoryRouter, { initialEntries: ['/student/dashboard'] },
+    h(AuthContext.Provider, { value: { user: student, authChecked: true, isAuthenticated: true } },
+      h(ToastProvider, null, h(PeerRealtimeBridge))))));
+
+  await mount();
+  await waitFor(() => /Ravi Kumar wants to be your Prep Mate/.test(document.body.textContent));
+  assert.ok(readSeenRequests(localStorage, 'me-1').has('req-ravi-1'));
+
+  // Reload: already announced, so no toast again.
+  await act(async () => root.unmount());
+  root = createRoot(document.getElementById('app'));
+  await mount();
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1500)); });
+  assert.ok(!/wants to be your Prep Mate/.test(document.body.textContent));
+
+  // Two new requests on top: one summary toast.
+  items = [incoming('neha-1', 'Neha Joshi'), incoming('amit-1', 'Amit Rao'), ...items];
+  await act(async () => root.unmount());
+  root = createRoot(document.getElementById('app'));
+  await mount();
+  await waitFor(() => /3 Prep Mate requests waiting/.test(document.body.textContent));
+  assert.match(document.body.textContent, /Neha, Amit and 1 more/);
 });

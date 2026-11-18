@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Activity, CalendarCheck2, Flame, MousePointerClick, Sigma, Trophy, Zap } from "lucide-react";
+import { Activity, CalendarCheck2, CalendarDays, Flame, History, MousePointerClick, Sigma, Users } from "lucide-react";
 import { heatmapModel } from "./heatmapModel";
 import useWidth from "./useWidth";
 
@@ -26,11 +26,11 @@ const plain = (value) => Number(value || 0).toLocaleString();
 function Stat({ icon: Icon, label, value, note, tone }) {
   return (
     <div className="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
-      <p className="flex items-center gap-1.5 text-[9.5px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-        <Icon className={`h-3 w-3 ${tone}`} aria-hidden="true" />{label}
+      <p className="flex items-center gap-1.5 truncate text-[11.5px] font-semibold text-slate-600 dark:text-slate-300">
+        <Icon className={`h-3.5 w-3.5 shrink-0 ${tone}`} aria-hidden="true" />{label}
       </p>
-      <p className="mt-0.5 truncate text-[15px] font-extrabold tabular-nums text-slate-900 dark:text-white">{value}</p>
-      {note && <p className="truncate text-[10.5px] text-slate-500 dark:text-slate-400">{note}</p>}
+      <p className="mt-0.5 truncate text-[18px] font-extrabold tabular-nums leading-6 text-slate-900 dark:text-white">{value}</p>
+      {note && <p className="truncate text-[11px] text-slate-500 dark:text-slate-400" title={note}>{note}</p>}
     </div>
   );
 }
@@ -82,14 +82,24 @@ export default function ActivityHeatmap({ chart, onPart }) {
   };
   const columns = `${DAY_LABEL_WIDTH}px repeat(${weeks}, ${cell}px)`;
 
+  // Plain counts an admin reads at a glance. The line above the card names the busiest date, so
+  // it is not repeated here. "Students" comes from the chart summary (who did anything on the map).
+  const unitName = unit.charAt(0).toUpperCase() + unit.slice(1);
+  const students = chart.summary?.students;
+  const cohort = chart.summary?.cohort ?? chart.studentCount;
+  const lastNote = stats.daysSinceActive === null ? "nothing yet" : stats.daysSinceActive === 0 ? "today" : stats.daysSinceActive === 1 ? "yesterday" : `${plain(stats.daysSinceActive)} days ago`;
   const figures = (
     <div className={`grid gap-2 ${(wide ? railWidth : width) >= 500 ? "grid-cols-3" : "grid-cols-2"} ${wide ? "flex-1" : ""}`}>
-      <Stat icon={Sigma} tone="text-sky-500" label={`Total ${unit}`} value={plain(stats.total)} note="in the last year" />
-      <Stat icon={Activity} tone="text-cyan-500" label="Per active day" value={plain(stats.perActiveDay)} note="average on active days" />
-      <Stat icon={CalendarCheck2} tone="text-emerald-500" label="Active days" value={`${plain(stats.activeDays)} / ${plain(stats.days)}`} note={`${Math.round((stats.activeDays / Math.max(1, stats.days)) * 100)}% of days`} />
-      <Stat icon={Trophy} tone="text-amber-500" label="Busiest day" value={stats.busiest ? plain(stats.busiest.value) : "–"} note={stats.busiest ? shortDate(stats.busiest.day) : "No activity"} />
-      <Stat icon={Flame} tone="text-rose-500" label="Current streak" value={`${plain(stats.currentStreak)} ${stats.currentStreak === 1 ? "day" : "days"}`} note="days in a row, up to today" />
-      <Stat icon={Zap} tone="text-violet-500" label="Best streak" value={`${plain(stats.bestStreak)} ${stats.bestStreak === 1 ? "day" : "days"}`} note="longest run in the year" />
+      <Stat icon={Sigma} tone="text-sky-500" label={unitName} value={plain(stats.total)} note="in the last 12 months" />
+      {Number.isFinite(students)
+        ? <Stat icon={Users} tone="text-violet-500" label="Students active" value={plain(students)} note={`out of ${plain(cohort)} students`} />
+        : <Stat icon={CalendarCheck2} tone="text-violet-500" label="Days with activity" value={plain(stats.activeDays)} note={`out of ${plain(stats.days)} days`} />}
+      <Stat icon={History} tone="text-slate-500" label="Last activity" value={stats.lastActive ? shortDate(stats.lastActive) : "–"} note={lastNote} />
+      <Stat icon={CalendarDays} tone="text-emerald-500" label="This week" value={plain(stats.last7)} note="in the last 7 days" />
+      <Stat icon={Activity} tone="text-cyan-500" label="This month" value={plain(stats.last30)} note="in the last 30 days" />
+      {Number.isFinite(students)
+        ? <Stat icon={CalendarCheck2} tone="text-amber-500" label="Days with activity" value={plain(stats.activeDays)} note={`out of ${plain(stats.days)} days`} />
+        : <Stat icon={Flame} tone="text-rose-500" label="Longest run" value={`${plain(stats.bestStreak)} ${stats.bestStreak === 1 ? "day" : "days"}`} note="active days in a row" />}
     </div>
   );
 

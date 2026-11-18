@@ -53,9 +53,16 @@ export default function MobileNavigation({
         className={`${rowBase} ${rowTone(active)} ${depth ? 'min-h-10 text-[13.5px]' : ''}`}>
         {Icon ? <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400'}`} aria-hidden="true" /> : null}
         <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        {item.badge > 0 && (
+          <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10.5px] font-bold tabular-nums text-white" title={item.badgeLabel}>
+            <span aria-hidden="true">{item.badge > 99 ? '99+' : item.badge}</span>
+            <span className="sr-only">{item.badgeLabel}</span>
+          </span>
+        )}
       </NavLink>
     );
   };
+  const hasBadge = navItems.some((item) => item.badge > 0);
 
   // A child with its own children (a folder, or a link with sub-pages) expands in place.
   const renderChild = (child, parentKey) => {
@@ -79,9 +86,10 @@ export default function MobileNavigation({
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-[70] flex h-14 items-center gap-2 border-b border-sky-100 bg-white/95 px-2 backdrop-blur-xl dark:border-sky-950 dark:bg-slate-950/95">
-        <button type="button" onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open} aria-controls="mobile-navigation"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-slate-200 dark:hover:bg-white/10">
+        <button type="button" onClick={() => setOpen(true)} aria-label={hasBadge ? 'Open menu (new requests waiting)' : 'Open menu'} aria-expanded={open} aria-controls="mobile-navigation"
+          className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-slate-200 dark:hover:bg-white/10">
           <Menu className="h-5 w-5" aria-hidden="true" />
+          {hasBadge && <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-950" aria-hidden="true" />}
         </button>
         <Link to={homePath} className="flex min-w-0 flex-1 items-center" aria-label="PeerPrep home">
           <img src={logo} alt="PeerPrep" className="h-8 w-auto max-w-[150px] object-contain" />

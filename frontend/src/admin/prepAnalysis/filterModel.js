@@ -101,6 +101,22 @@ const MAIN_FIELDS = new Set([
 ]);
 export const isMainField = (field) => MAIN_FIELDS.has(field.key);
 
+// The few filters shown straight on the filter line (no drawer): the class first, then the
+// feature's own status. Everything else stays in "Filters".
+const QUICK_STUDENT = [["student.semester", "Semester"], ["student.branch", "Branch"], ["student.section", "Section"]];
+const QUICK_FILTERS = {
+  coding: [...QUICK_STUDENT, ["coding.practiceStatus", "Practice"], ["coding.languages", "Language"]],
+  quickprep: [...QUICK_STUDENT, ["quickprep.status", "Sheet status"], ["quickprep.activity", "Activity"]],
+  learning: [...QUICK_STUDENT, ["learning.status", "Status"], ["learning.subjects", "Subject"]],
+  interview: [...QUICK_STUDENT, ["interview.status", "Status"]],
+  assessment: [...QUICK_STUDENT, ["assessment.status", "Test status"]],
+  all: [...QUICK_STUDENT, ["student.course", "Course"]],
+};
+/** The filters on the filter line for an area ({ field, label }), only those this catalog has. */
+export const quickFilterFields = (area, fieldMap) => (QUICK_FILTERS[area] || QUICK_STUDENT)
+  .map(([key, label]) => (fieldMap.get(key) ? { field: fieldMap.get(key), label } : null))
+  .filter(Boolean);
+
 // ---------------------------------------------------------------- one group
 
 export const ruleFor = (group, key) => group.rules.find((rule) => rule.field === key) || null;
