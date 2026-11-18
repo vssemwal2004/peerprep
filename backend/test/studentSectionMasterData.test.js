@@ -5,7 +5,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import MasterData, { MASTER_DATA_CATEGORIES } from '../src/models/MasterData.js';
 import User from '../src/models/User.js';
 import { canonicalizeOptionalStudentFields } from '../src/services/masterDataService.js';
-import { checkStudentsCsv, createStudent, updateStudent, uploadStudentsCsv } from '../src/controllers/studentController.js';
+import { checkStudentsCsv, createStudent, listTeacherOptions, updateStudent, uploadStudentsCsv } from '../src/controllers/studentController.js';
 
 let mongo;
 let skipped = false;
@@ -96,13 +96,17 @@ test('CSV check and upload accept a listed section, store its Master Data spelli
   assert.equal(await User.countDocuments({ studentId: { $in: ['S2', 'S3'] } }), 0);
 });
 
-test('adding one student needs a section once Master Data has sections; editing checks only a changed section', async (t) => {
+test('adding one student: section and group are optional, a given section must be listed; editing checks only a changed section', async (t) => {
   if (skipped) return t.skip('MongoDB memory server is not available here');
   const body = { name: 'Esha', email: 'esha@x.edu', studentid: 'S5', branch: 'CSE', course: 'B.Tech', college: 'GEU', teacherid: '48327', semester: '5' };
-  const missing = fakeRes();
-  await createStudent({ body, user: admin }, missing);
-  assert.equal(missing.statusCode, 400);
-  assert.match(missing.body.error, /section/i);
+  const noSection = fakeRes();
+  await createStudent({ body: { ...body, email: 'farah@x.edu', studentid: 'S6', name: 'Farah' }, user: admin }, noSection);
+  assert.equal(noSection.statusCode, 201, 'no section, no group: still added');
+  assert.ok(!(await User.findOne({ studentId: 'S6' }).lean()).section);
+
+  const unlisted = fakeRes();
+  await createStudent({ body: { ...body, section: 'Q' }, user: admin }, unlisted);
+  assert.equal(unlisted.statusCode, 400, 'a section Master Data does not list is refused');
 
   const created = fakeRes();
   await createStudent({ body: { ...body, section: 'b' }, user: admin }, created);
@@ -123,4 +127,56 @@ test('adding one student needs a section once Master Data has sections; editing 
   const good = fakeRes();
   await updateStudent({ params: { studentId: String(esha._id) }, body: { section: 'a' }, user: admin }, good);
   assert.equal(good.body.student.section, 'A');
+});
+
+test('Teacher ID picker: only existing coordinators, searchable; an own-data coordinator sees only their own', async (t) => {
+  if (skipped) return t.skip('MongoDB memory server is not available here');
+  await User.create([
+    { role: 'coordinator', name: 'Meera Joshi', email: 'meera@x.edu', passwordHash: 'x', coordinatorId: 'COO1', department: 'CSE' },
+    { role: 'coordinator', name: 'Ravi Kumar', email: 'ravi@x.edu', passwordHash: 'x', coordinatorId: 'COO2', department: 'ECE', isActive: false },
+  ]);
+  const all = fakeRes();
+  await listTeacherOptions({ query: {}, user: admin }, all);
+  assert.deepEqual(all.body.teachers.map((teacher) => teacher.id).sort(), ['48327', 'COO1', 'COO2']);
+  assert.equal(all.body.total, 3);
+  assert.equal(all.body.teachers.find((teacher) => teacher.id === 'COO2').active, false, 'inactive coordinators are marked');
+  assert.ok(!('email' in all.body.teachers[0]), 'no contact details in the picker');
+
+  const search = fakeRes();
+  await listTeacherOptions({ query: { search: 'meera' }, user: admin }, search);
+  assert.deepEqual(search.body.teachers.map((teacher) => teacher.id), ['COO1']);
+  const byDepartment = fakeRes();
+  await listTeacherOptions({ query: { search: 'ece' }, user: admin }, byDepartment);
+  assert.deepEqual(byDepartment.body.teachers.map((teacher) => teacher.id), ['COO2']);
+
+  const own = fakeRes();
+  await listTeacherOptions({ query: {}, user: { role: 'coordinator', coordinatorId: 'COO1', coordinatorDataScope: 'own' } }, own);
+  assert.equal(own.body.ownOnly, true);
+  assert.deepEqual(own.body.teachers.map((teacher) => teacher.id), ['COO1']);
+});
+
+test('bulk access: turn Prep Mates on for ticked students, then off for every matching student', async (t) => {
+  if (skipped) return t.skip('MongoDB memory server is not available here');
+  const { bulkUpdateStudentAccess } = await import('../src/controllers/studentController.js');
+  const ids = (await User.find({ role: 'student', studentId: { $in: ['S1', 'S4'] } }).select('_id').lean()).map((student) => String(student._id));
+  const on = fakeRes();
+  await bulkUpdateStudentAccess({ body: { studentIds: ids, change: { type: 'grant', features: ['peers'] } }, user: admin }, on);
+  assert.equal(on.statusCode, 200);
+  assert.deepEqual([on.body.matched, on.body.updated, on.body.unchanged], [2, 2, 0]);
+  const asha = await User.findOne({ studentId: 'S1' }).lean();
+  assert.equal(asha.featureAccess.mode, 'custom');
+  assert.ok(asha.featureAccess.features.includes('peers') && asha.featureAccess.features.includes('learning'), 'Prep Mates added, every standard module kept');
+
+  const again = fakeRes();
+  await bulkUpdateStudentAccess({ body: { studentIds: ids, change: { type: 'grant', features: ['peers'] } }, user: admin }, again);
+  assert.deepEqual([again.body.updated, again.body.unchanged], [0, 2], 'already had it');
+
+  const off = fakeRes();
+  await bulkUpdateStudentAccess({ body: { allMatching: true, filters: {}, change: { type: 'revoke', features: ['peers'] } }, user: admin }, off);
+  assert.equal(off.body.updated, 2, 'only the two who had it change');
+  assert.equal((await User.findOne({ studentId: 'S1' }).lean()).featureAccess.mode, 'all', 'back to All access');
+
+  const bad = fakeRes();
+  await bulkUpdateStudentAccess({ body: { studentIds: ids, change: { type: 'grant', features: [] } }, user: admin }, bad);
+  assert.equal(bad.statusCode, 400);
 });

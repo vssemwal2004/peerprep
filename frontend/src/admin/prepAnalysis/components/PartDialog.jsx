@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { FileSpreadsheet, Filter, Loader2, Maximize2, Search, Sheet, UserRound, X } from "lucide-react";
+import { FileSpreadsheet, Filter, Loader2, Mail, Maximize2, Search, Sheet, UserRound, X } from "lucide-react";
 import { SortHeader, TablePager } from "../../../components/table";
 import { formatScore } from "../../../student/prepScore/formatScore";
 import { chartRequest, drillChart, drillStudentIds, useChartDownload } from "../chartActions";
@@ -118,8 +118,23 @@ function PartDialogBody({ analysis, chart, part, layered, onClose, onStudent, on
   const result = drill.result;
   // Tick students to email them; ticks stay while searching and paging, so several searches can add up.
   const selection = useStudentSelection(chart.id);
-  const [emailing, setEmailing] = useState(false);
-  const closeEmail = useCallback(() => setEmailing(false), []);
+  // Who the email dialog is for: the ticked students, or (nothing ticked) everyone in this list.
+  const [emailIds, setEmailIds] = useState(null);
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [emailNote, setEmailNote] = useState("");
+  const closeEmail = useCallback(() => setEmailIds(null), []);
+  const emailStudents = async () => {
+    setEmailNote("");
+    if (selection.count) { setEmailIds(selection.ids); return; }
+    setEmailLoading(true);
+    try {
+      const all = await drillStudentIds(analysis, chart.id, { group, key: part.key, search: drill.query });
+      if (!all.ids?.length) { setEmailNote("No students to email here."); return; }
+      if (all.total > all.ids.length) setEmailNote(`Only the first ${Number(all.limit).toLocaleString()} can be emailed at once.`);
+      setEmailIds(new Set(all.ids));
+    } catch (error) { setEmailNote(error.message || "Could not load the students."); }
+    finally { setEmailLoading(false); }
+  };
   const selectable = tab === "students";
   const style = sectionStyle(chart.section);
   const students = result?.students ?? part.students;
@@ -186,7 +201,7 @@ function PartDialogBody({ analysis, chart, part, layered, onClose, onStudent, on
         {selectable && (
           <SelectionBar className="mx-5 mb-2" selection={selection} total={result?.total ?? 0}
             loadAll={() => drillStudentIds(analysis, chart.id, { group, key: part.key, search: drill.query })}
-            onEmail={() => setEmailing(true)} />
+            onEmail={() => setEmailIds(selection.ids)} />
         )}
         <div className="mx-5 flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-gray-800">
           <div className="min-h-0 flex-1 overflow-auto">
@@ -199,21 +214,28 @@ function PartDialogBody({ analysis, chart, part, layered, onClose, onStudent, on
         </div>
 
         <footer className="flex flex-wrap items-center gap-2 px-5 py-3.5">
-          {selectable && !selection.count && result?.rows?.length > 0 && (
-            <p className="text-[12px] text-slate-500 dark:text-slate-400">Tick students to send them an email.</p>
+          {selectable && result?.rows?.length > 0 && (
+            <>
+              <Button tone="primary" disabled={emailLoading} onClick={emailStudents}
+                title={selection.count ? "Email the ticked students" : "Email every student in this list (tick some to email only them)"}>
+                {emailLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                {selection.count ? `Email ${selection.count.toLocaleString()} selected` : `Email these ${Number(result.total ?? students ?? 0).toLocaleString()} students`}
+              </Button>
+              {emailNote && <p className="text-[12px] text-amber-700 dark:text-amber-300">{emailNote}</p>}
+            </>
           )}
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {part.studentId && <Button onClick={() => onStudent(part.studentId)}><UserRound className="h-3.5 w-3.5" />Full profile</Button>}
             {onFocus && group === null && <Button onClick={() => onFocus(part)} title="Show the whole page for just these students"><Filter className="h-3.5 w-3.5" />Filter page to these</Button>}
             {onOpenFull && <Button onClick={onOpenFull}><Maximize2 className="h-3.5 w-3.5" />Full chart</Button>}
             <Button disabled={download.busy} onClick={() => download.run("csv", part.key, label, group)}><Sheet className="h-3.5 w-3.5" />CSV</Button>
-            <Button tone="primary" disabled={download.busy} onClick={() => download.run("xlsx", part.key, label, group)}>
+            <Button disabled={download.busy} onClick={() => download.run("xlsx", part.key, label, group)}>
               {download.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />}Download Excel
             </Button>
           </div>
         </footer>
       </motion.section>
-      <SendEmailDialog open={emailing} onClose={closeEmail} studentIds={selection.ids} body={chartRequest(analysis, chart.id, {}, group)} />
+      <SendEmailDialog open={Boolean(emailIds)} onClose={closeEmail} studentIds={emailIds || []} body={chartRequest(analysis, chart.id, {}, group)} />
     </div>
   );
 }

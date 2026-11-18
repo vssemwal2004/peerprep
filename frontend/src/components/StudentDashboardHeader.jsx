@@ -18,6 +18,7 @@ import {
   Sun,
   User,
   UserCog,
+  Users,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +28,9 @@ import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import DailyChallengeDrawer from '../student/engagement/DailyChallengeDrawer';
 import HeaderPrepCoin from '../student/prepCoin/HeaderPrepCoin';
 import { featureForStudentPath, hasStudentFeature } from '../student/studentFeatureAccess';
+import { PEER_SEARCH_MIN_CHARS, usePeerSearch } from '../student/peers/usePeerSearch';
+import PeerAvatar from '../student/peers/PeerAvatar';
+import { canUsePeers, peerSubtitle } from '../student/peers/peerNetwork';
 
 const modules = [
   // Same order and names as the student sidebar.
@@ -40,6 +44,7 @@ const modules = [
   { label: 'Interviews', hint: 'Peer interview sessions', to: '/student/interview', icon: User },
   { label: 'AI Interviews', hint: 'Practice with AI', to: '/student/ai-interviews', icon: Bot },
   { label: 'Learning', hint: 'Subjects and learning paths', to: '/student/learning', icon: BookOpen },
+  { label: 'Prep Mates', hint: 'Classmates you prepare with', to: '/student/peers', icon: Users },
 ];
 
 /** PeerPrep's daily-challenge mark: a ticket for the day (as on the dashboard's Today card) with a gold star. */
@@ -87,11 +92,17 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   const challengesOpen = canShowChallenges && challengeRoute === location.key;
   const canShowPrepCoin = user?.role === 'student' && user?.accessScope !== 'assessment_only' && hasStudentFeature(user, 'prep_coins');
   const closeChallenges = useCallback(() => setChallengeRoute(null), []);
+  // Classmates (same university only) appear under the modules once 2+ letters are typed.
+  const canSearchPeers = canUsePeers(user);
+  const peerSearch = usePeerSearch(query, { enabled: canSearchPeers && searchOpen });
+  const peerQuery = canSearchPeers && query.trim().length >= PEER_SEARCH_MIN_CHARS;
+  const searchPlaceholder = canSearchPeers ? 'Search modules or classmates' : 'Search modules';
 
   const displayName = user?.name || 'Student';
   const displayEmail = user?.email || '';
   const avatarUrl = user?.avatarUrl || '';
-  const visibleModules = useMemo(() => modules.filter((item) => allowsPath(item.to, 'student') && hasStudentFeature(user, featureForStudentPath(item.to))), [allowsPath, user]);
+  const visibleModules = useMemo(() => modules.filter((item) => allowsPath(item.to, 'student') && hasStudentFeature(user, featureForStudentPath(item.to))
+    && (item.to !== '/student/peers' || canUsePeers(user))), [allowsPath, user]);
   const results = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return visibleModules.slice(0, 5);
@@ -167,7 +178,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
               value={query}
               onFocus={() => setSearchOpen(true)}
               onChange={(event) => { setQuery(event.target.value); setSearchOpen(true); }}
-              placeholder="Search modules"
+              placeholder={searchPlaceholder}
               className="h-10 w-full rounded-2xl border border-slate-200 bg-slate-50/70 pl-10 pr-9 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 hover:bg-white focus:border-sky-300 focus:bg-white focus:ring-4 focus:ring-sky-100/70 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:border-sky-700 dark:focus:ring-sky-950"
             />
             {query && <button type="button" onClick={() => setQuery('')} className="absolute right-2.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800" aria-label="Clear search"><X className="h-3.5 w-3.5" /></button>}
@@ -175,15 +186,39 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
 
           {searchOpen && (
             <div className="absolute left-3 right-3 top-[calc(100%+0.65rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900 sm:left-1/2 sm:right-auto sm:w-full sm:max-w-xl sm:-translate-x-1/2">
-              <label className="block p-3 pb-0 sm:hidden"><span className="sr-only">Search student modules</span><input ref={mobileSearchRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search modules" className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:ring-sky-950" /></label>
-              <div className="border-b border-slate-100 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:border-slate-800">Student modules</div>
-              <div className="max-h-80 overflow-y-auto p-1.5">
-                {results.length ? results.map(({ label, hint, to, icon: Icon }) => (
-                  <button key={to} type="button" onClick={() => goTo(to)} className="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-sky-50 dark:hover:bg-sky-950/40">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700 ring-1 ring-sky-100 group-hover:bg-sky-600 group-hover:text-white dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-900"><Icon className="h-4 w-4" /></span>
-                    <span className="min-w-0"><span className="block text-sm font-semibold text-slate-800 dark:text-white">{label}</span><span className="block truncate text-xs text-slate-500 dark:text-slate-400">{hint}</span></span>
-                  </button>
-                )) : <div className="px-4 py-8 text-center text-sm text-slate-500">No module matches “{query}”.</div>}
+              <label className="block p-3 pb-0 sm:hidden"><span className="sr-only">Search student modules</span><input ref={mobileSearchRef} value={query} onChange={event => setQuery(event.target.value)} placeholder={searchPlaceholder} className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:ring-sky-950" /></label>
+              <div className="max-h-[26rem] overflow-y-auto">
+                {(results.length > 0 || !peerQuery) && <>
+                  <div className="border-b border-slate-100 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:border-slate-800">Student modules</div>
+                  <div className="p-1.5">
+                    {results.length ? results.map(({ label, hint, to, icon: Icon }) => (
+                      <button key={to} type="button" onClick={() => goTo(to)} className="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-sky-50 dark:hover:bg-sky-950/40">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700 ring-1 ring-sky-100 group-hover:bg-sky-600 group-hover:text-white dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-900"><Icon className="h-4 w-4" /></span>
+                        <span className="min-w-0"><span className="block text-sm font-semibold text-slate-800 dark:text-white">{label}</span><span className="block truncate text-xs text-slate-500 dark:text-slate-400">{hint}</span></span>
+                      </button>
+                    )) : <div className="px-4 py-8 text-center text-sm text-slate-500">No module matches “{query}”.</div>}
+                  </div>
+                </>}
+                {peerQuery && <>
+                  <div className="flex items-center justify-between border-y border-slate-100 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:border-slate-800">
+                    <span>Classmates</span>
+                    {peerSearch.loading && <span className="normal-case tracking-normal">Searching…</span>}
+                  </div>
+                  <div className="p-1.5" aria-live="polite">
+                    {peerSearch.results.map((peer) => (
+                      <button key={peer.id} type="button" onClick={() => goTo(`/student/peers/${peer.id}`)} className="group flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-sky-50 dark:hover:bg-sky-950/40">
+                        <PeerAvatar name={peer.name} url={peer.avatarUrl} size="md" />
+                        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-800 dark:text-white">{peer.name}</span><span className="block truncate text-xs text-slate-500 dark:text-slate-400">{peerSubtitle(peer) || 'Student'}</span></span>
+                        {peer.relation?.mate === 'mates' && <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">Prep Mate</span>}
+                        {peer.relation?.mate === 'outgoing' && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-300">Requested</span>}
+                        {peer.relation?.mate === 'incoming' && <span className="shrink-0 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">Wants to connect</span>}
+                      </button>
+                    ))}
+                    {!peerSearch.loading && !peerSearch.results.length && (
+                      <div className="px-4 py-5 text-center text-sm text-slate-500">{peerSearch.error || `No classmate matches “${query.trim()}”.`}</div>
+                    )}
+                  </div>
+                </>}
               </div>
             </div>
           )}

@@ -13,7 +13,9 @@ export function AnimatedNumber({ value, format = (number) => Math.round(number).
     const start = performance.now();
     let frame;
     const step = (now) => {
-      const progress = Math.min(1, (now - start) / duration);
+      // A frame's timestamp can be slightly before `start`: never let progress go below 0
+      // (that briefly showed "-0" / "-1" before the count-up).
+      const progress = Math.min(1, Math.max(0, (now - start) / duration));
       const eased = 1 - (1 - progress) ** 3;
       setShown(from + (target - from) * eased);
       if (progress < 1) frame = requestAnimationFrame(step);

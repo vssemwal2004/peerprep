@@ -20,7 +20,7 @@ export const CATEGORICAL = Object.freeze(["#0284c7", "#6366f1", "#14b8a6", "#8b5
 export const SERIES_COLORS = Object.freeze(["#0284c7", "#10b981", "#8b5cf6", "#f59e0b"]);
 
 export const OUTCOME_COLORS = Object.freeze({
-  Solved: "#10b981", "Not solved": "#f43f5e",
+  Solved: "#10b981", "Not solved": "#f43f5e", Accepted: "#10b981", "Not accepted": "#f43f5e",
   Finished: "#10b981", "In progress": "#0284c7", "Not started": "#cbd5e1",
   Passed: "#10b981", Failed: "#f43f5e", Missed: "#cbd5e1",
   "Below 40%": "#f43f5e", "40–60%": "#7dd3fc", "60–80%": "#0ea5e9", "80–100%": "#0369a1",

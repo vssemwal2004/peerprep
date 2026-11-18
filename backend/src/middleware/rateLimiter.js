@@ -365,6 +365,46 @@ export const feedbackLimiter = rateLimit({
   }
 });
 
+// Peer network: search-as-you-type is cheap but must not become a roster scraper; Prep Mate
+// requests notify another student, so they get a tighter budget.
+export const peerSearchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.PEER_SEARCH_MAX_PER_MIN || 60),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  store: buildRateLimitStore('rl:peers:search:'),
+  handler: (req, res) => res.status(429).json({ error: 'Searching too quickly. Please wait a moment.' }),
+});
+
+export const peerActionLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: Number(process.env.PEER_ACTION_MAX_PER_10_MIN || 40),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  store: buildRateLimitStore('rl:peers:action:'),
+  handler: (req, res) => {
+    console.warn(`[SECURITY] Peer action limit exceeded for ${req.user?._id || req.ip}`);
+    res.status(429).json({ error: 'Too many peer requests. Please try again in a few minutes.' });
+  },
+});
+
+// Prep Analysis "Send email" (and its test send): each send can reach thousands of students, so a
+// slip of the button (or a script) cannot fire batch after batch.
+export const studentMailLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: Number(process.env.STUDENT_MAIL_MAX_PER_10_MIN || 20),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  store: buildRateLimitStore('rl:prep-analysis:mail:'),
+  handler: (req, res) => {
+    console.warn(`[SECURITY] Student mail limit exceeded for ${req.user?._id || req.ip}`);
+    res.status(429).json({ error: 'Too many emails sent in a short time. Please wait a few minutes and try again.' });
+  },
+});
+
 const ANALYTICS_WINDOW_MS = Number(process.env.ANALYTICS_REFRESH_WINDOW_MS || 15 * 60 * 1000);
 const ANALYTICS_MAX = Number(process.env.ANALYTICS_REFRESH_MAX || 30);
 

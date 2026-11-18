@@ -4,8 +4,9 @@ import {
   comparePrepAnalysisClasses, comparePrepAnalysisClassStudents, exportPrepAnalysisClassComparison,
   countPrepAnalysisMatches, createPrepAnalysisView, deletePrepAnalysisView, drillPrepAnalysisChart, exportPrepAnalysisFile, exportPrepAnalysisStudent,
   getPrepAnalysisCatalog, getPrepAnalysisStudent, listPrepAnalysisOptions, listPrepAnalysisViews, updatePrepAnalysisView,
-  queryPrepAnalysis, listMatchingStudentIds, listEmailTemplatesForStudents, previewEmailToStudent, sendEmailToStudents,
+  queryPrepAnalysis, listMatchingStudentIds, listEmailTemplatesForStudents, previewEmailToStudent, sendEmailToStudents, sendTestEmailToMe,
 } from './prepAnalysis.controller.js';
+import { studentMailLimiter } from '../../middleware/rateLimiter.js';
 
 const router = Router();
 
@@ -23,7 +24,8 @@ router.post('/drill', drillPrepAnalysisChart);
 router.post('/student-ids', listMatchingStudentIds);
 router.get('/email/templates', listEmailTemplatesForStudents);
 router.post('/email/preview', previewEmailToStudent);
-router.post('/email/send', sendEmailToStudents);
+router.post('/email/test', studentMailLimiter, sendTestEmailToMe);
+router.post('/email/send', studentMailLimiter, sendEmailToStudents);
 router.post('/export', exportPrepAnalysisFile);
 router.get('/students/:studentId', getPrepAnalysisStudent);
 router.get('/students/:studentId/export', exportPrepAnalysisStudent);

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { SortHeader, TablePager, useClientTable } from "../../../components/table";
-import { AlertCircle, AlertTriangle, CheckCircle2, FileSpreadsheet, FileText, Flag, Lightbulb, Loader2, UserRound } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, FileSpreadsheet, FileText, Flag, Lightbulb, Loader2 } from "lucide-react";
 import { useAnalysisApi } from "../analysisScope";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
 import { DIFFICULTY_COLORS, OUTCOME_COLORS } from "../charts/chartTheme";
@@ -13,21 +12,8 @@ import { ScoreValue } from "../../../student/prepScore/PrepScore";
 import ModuleScores from "./ModuleScores";
 import { StatusPill } from "./Insights";
 import { initials, sectionStyle } from "./sectionStyles";
-import { Button, Drawer, focusRing } from "./ui";
-
-/** Opens the student's full profile page (same role prefix as the page we are on). */
-function ProfileLink({ studentId }) {
-  const prefix = window.location.pathname.startsWith("/coordinator") ? "/coordinator" : "/admin";
-  return (
-    <Link
-      to={`${prefix}/students/${encodeURIComponent(studentId)}`}
-      title="Open this student's full profile"
-      className={`inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-2.5 text-[11.5px] font-semibold text-white transition-colors hover:bg-sky-700 ${focusRing}`}
-    >
-      <UserRound className="h-3.5 w-3.5" aria-hidden="true" />View profile
-    </Link>
-  );
-}
+import { StudentIdentity, StudentProfileLink } from "./StudentIdentity";
+import { Button, Drawer } from "./ui";
 
 const TONES = {
   warn: { Icon: AlertTriangle, className: "bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-100", icon: "text-amber-500" },
@@ -249,7 +235,7 @@ function SubmissionHistorySection({ submissions }) {
       aside={flagged > 0 ? (
         <button type="button" onClick={() => setOnlyReview((value) => !value)} aria-pressed={onlyReview}
           className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${onlyReview ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300"}`}>
-          <Flag className="h-3 w-3" aria-hidden="true" />{flagged} to review
+          <Flag className="h-3 w-3" aria-hidden="true" />{flagged} flagged
         </button>
       ) : <span className="text-[11px] text-slate-500">Latest {submissions.length}</span>}
     >
@@ -404,9 +390,9 @@ function ReportDownload({ studentId, range }) {
     }
   };
   return (
-    <div className="ml-auto flex flex-col items-end gap-1">
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
-        <ProfileLink studentId={studentId} />
+    <div className="flex flex-col items-start gap-1 sm:items-end">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <StudentProfileLink studentId={studentId} />
         <Button size="sm" disabled={Boolean(status.busy)} onClick={() => run("xlsx")} title="Every topic, every problem with first try and first solve, each day of practice, and every feature's details">
           {status.busy === "xlsx" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />}Full report (Excel)
         </Button>
@@ -439,22 +425,27 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
   const student = profile?.student;
   const period = rangeLabel(range);
   const highlights = studentHighlights(profile);
-  const classLine = student ? [student.semester ? `Semester ${student.semester}` : "", student.branch, student.course, student.section ? `Section ${student.section}` : "", student.group, student.college].filter(Boolean).join(" · ") : "";
   return (
-    <Drawer open onClose={onClose} width="max-w-[780px]" title={student?.name || "Student"} subtitle={student ? `${student.studentId || student.email} · ${period}` : period}>
+    <Drawer open onClose={onClose} width="max-w-[780px]" title="Student details" subtitle={period}>
       {loading && <div className="flex h-60 items-center justify-center text-[12px] text-slate-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading this student…</div>}
       {error && <div className="m-5 flex items-start gap-2 rounded-xl bg-rose-50 px-3 py-2.5 text-[12px] text-rose-800 dark:bg-rose-500/10 dark:text-rose-200"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{error.status === 404 ? "This student is not in your list any more." : error.message}</div>}
       {profile && (
         <div className="space-y-4 bg-slate-50/60 p-5 dark:bg-transparent">
-          <div className="flex items-center gap-3.5">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-sky-600 text-[15px] font-bold text-white shadow-sm">{initials(student.name)}</span>
-            <div className="min-w-0">
-              <p className="truncate text-[15px] font-extrabold text-slate-900 dark:text-white">{student.name}</p>
-              <p className="truncate text-[12px] text-slate-500 dark:text-slate-400">{classLine || "No class details"}{student.email ? ` · ${student.email}` : ""}</p>
-              {student.status === "inactive" && <p className="mt-0.5 text-[11px] font-semibold text-rose-600">Account disabled</p>}
+          <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+            <header className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-sm font-bold text-white" aria-hidden="true">{initials(student.name)}</span>
+                <div className="min-w-0">
+                  <h3 className="break-words text-base font-extrabold text-slate-900 dark:text-white">{student.name}</h3>
+                  {student.status === "inactive" && <p className="mt-0.5 text-xs font-semibold text-rose-600 dark:text-rose-400">Account disabled</p>}
+                </div>
+              </div>
+              <ReportDownload studentId={studentId} range={range} />
+            </header>
+            <div className="mt-4 border-t border-slate-200 pt-4 dark:border-gray-800">
+              <StudentIdentity student={student} />
             </div>
-            <ReportDownload studentId={studentId} range={range} />
-          </div>
+          </section>
 
           {profile.prepScore && (
             <section aria-label="Prep Score" className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">

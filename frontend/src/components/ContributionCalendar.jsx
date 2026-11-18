@@ -1,4 +1,5 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { dayKey } from './dateRange/dateRangeModel.js';
 import { rollingYearMonths } from './contributionCalendarModel.js';
 
@@ -36,6 +37,26 @@ export default function ContributionCalendar({
   // Without an ending day the window ends on today's UTC day, the day the activity APIs bucket by.
   const months = useMemo(() => rollingYearMonths(endingDayKey), [endingDayKey]);
   const scrollContainerRef = useRef(null);
+  // Day tooltip. A native `title` never shows on iPhone / iPad (no hover) and only after a delay
+  // in desktop Safari, so the day's text is shown in our own tooltip: on mouse hover, and on tap.
+  const [tip, setTip] = useState(null);
+  const showTip = useCallback((cell) => {
+    if (!cell?.dataset?.tip) return;
+    const rect = cell.getBoundingClientRect();
+    setTip({ text: cell.dataset.tip, key: cell.dataset.day, x: rect.left + rect.width / 2, y: rect.top });
+  }, []);
+  const hideTip = useCallback(() => setTip(null), []);
+  const cellAt = (event) => event.target?.closest?.('[data-tip]');
+  useEffect(() => {
+    if (!tip) return undefined;
+    // Scrolling or resizing moves the day away from its tooltip.
+    window.addEventListener('scroll', hideTip, true);
+    window.addEventListener('resize', hideTip);
+    return () => {
+      window.removeEventListener('scroll', hideTip, true);
+      window.removeEventListener('resize', hideTip);
+    };
+  }, [tip, hideTip]);
 
   // Scroll to the right (current month) on mount
   useEffect(() => {
@@ -94,7 +115,18 @@ export default function ContributionCalendar({
       )}
       
       {/* Horizontal scrollable grid */}
-      <div ref={scrollContainerRef} className="overflow-x-auto pb-2">
+      <div
+        ref={scrollContainerRef}
+        className="overflow-x-auto pb-2"
+        onPointerOver={(event) => { if (event.pointerType !== 'touch') showTip(cellAt(event)); }}
+        onPointerLeave={(event) => { if (event.pointerType !== 'touch') hideTip(); }}
+        onClick={(event) => {
+          // Touch (and click): tap a day to show it, tap it again to hide.
+          const cell = cellAt(event);
+          if (!cell) { hideTip(); return; }
+          if (tip?.key === cell.dataset.day) hideTip(); else showTip(cell);
+        }}
+      >
         {Object.keys(activity).length === 0 && (
           <div className="mb-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
             <p className="text-xs text-yellow-800 dark:text-yellow-200">
@@ -132,8 +164,11 @@ export default function ContributionCalendar({
                     return (
                       <div
                         key={key}
-                        title={tooltip}
-                        className={`w-2.5 h-2.5 rounded-sm ${cls} hover:ring-2 hover:ring-blue-500 dark:hover:ring-blue-400 transition-all cursor-pointer`}
+                        data-tip={tooltip}
+                        data-day={key}
+                        role="img"
+                        aria-label={tooltip}
+                        className={`w-2.5 h-2.5 rounded-sm ${cls} ${tip?.key === key ? 'ring-2 ring-blue-500 dark:ring-blue-400' : ''} hover:ring-2 hover:ring-blue-500 dark:hover:ring-blue-400 transition-shadow cursor-pointer`}
                       />
                     );
                   })}
@@ -144,6 +179,20 @@ export default function ContributionCalendar({
         </div>
       </div>
       
+      {tip && typeof document !== 'undefined' && createPortal(
+        <div
+          role="tooltip"
+          className="pointer-events-none fixed z-[10000] max-w-[16rem] -translate-x-1/2 -translate-y-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium leading-snug text-slate-700 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+          style={{
+            left: Math.min(Math.max(tip.x, 96), (typeof window !== 'undefined' ? window.innerWidth : 1024) - 96),
+            top: tip.y - 6,
+          }}
+        >
+          {tip.text}
+        </div>,
+        document.body,
+      )}
+
       {/* Legend */}
       <div className="flex items-center justify-end gap-4 mt-4">
         <div className="flex items-center gap-2">

@@ -1,4 +1,4 @@
-import { CHARTS, DEFAULT_LAYOUT, GROUP_BY, SECTIONS } from './charts.js';
+import { CHARTS, DEFAULT_LAYOUT, DEFAULT_LAYOUT_VERSION, DEFAULT_SIZES, GROUP_BY, SECTIONS } from './charts.js';
 import { drillFor } from './drill.js';
 import { publicFieldCatalog } from './fields.js';
 import { COMPARE_DIMENSIONS, COMPARE_LIMITS, validateCompareBy, validateCompareValue } from './compare.js';
@@ -7,7 +7,7 @@ import {
   countPrepAnalysis, drillPrepAnalysis, exportPrepAnalysis, exportPrepAnalysisChart, exportStudentReport, getStudentProfile, listFieldOptions, matchingStudentIds, runPrepAnalysis,
   scopeFromQueryString, validateDrill, validatePrepAnalysisQuery,
 } from './prepAnalysis.service.js';
-import { STUDENT_MAIL_LIMITS, listStudentMailTemplates, previewStudentMail, sendStudentMail } from './prepAnalysis.email.js';
+import { STUDENT_MAIL_LIMITS, listStudentMailTemplates, previewStudentMail, sendStudentMail, sendStudentTestMail } from './prepAnalysis.email.js';
 import {
   DEFAULT_EXPORT_COLUMNS, EXPORT_LIMITS, publicExportColumns, validateChartExportOptions, validateExportOptions,
 } from './prepAnalysis.export.js';
@@ -29,9 +29,15 @@ export async function getPrepAnalysisCatalog(req, res) {
     groupBy: Object.entries(GROUP_BY).map(([key, value]) => ({ key, label: value.label })),
     compareDimensions: Object.entries(COMPARE_DIMENSIONS).map(([key, value]) => ({ key, label: value.label, options: value.options, field: value.field })),
     compareLimits: { minValues: COMPARE_LIMITS.minValues, maxValues: COMPARE_LIMITS.maxValues },
-    charts: CHARTS.filter((chart) => modules.has(chart.module)).map(({ build, ...chart }) => ({ ...chart, drillable: Boolean(drillFor(chart.id)) })),
+    charts: CHARTS.filter((chart) => modules.has(chart.module) && !chart.retiredBy).map(({ build, ...chart }) => ({ ...chart, drillable: Boolean(drillFor(chart.id)) })),
+    // Old chart id → the chart that replaced it: every saved layout and view shows the new one.
+    replacedCharts: Object.fromEntries(CHARTS.filter((chart) => chart.retiredBy).map((chart) => [chart.id, chart.retiredBy])),
     sections: Object.entries(SECTIONS).filter(([, section]) => modules.has(section.module)).map(([key, section]) => ({ key, ...section })),
     defaultLayout: Object.fromEntries(catalog.areas.map((area) => [area.key, (DEFAULT_LAYOUT[area.key] || []).filter(licensedChart)])),
+    // A layout saved under an older version of an area's default is replaced by the new default once.
+    defaultLayoutVersion: DEFAULT_LAYOUT_VERSION,
+    // Card widths the default layouts set where they differ from a chart's own size.
+    defaultSizes: DEFAULT_SIZES,
     exportColumns: publicExportColumns(req.platformPermissions),
     exportDefaults: DEFAULT_EXPORT_COLUMNS,
     exportLimits: EXPORT_LIMITS,
@@ -84,15 +90,21 @@ export async function listEmailTemplatesForStudents(req, res) {
   res.json(await listStudentMailTemplates());
 }
 
+// `draft` ({ subject, html }): the template as edited in the dialog, for this send only.
 export async function previewEmailToStudent(req, res) {
   const query = validatePrepAnalysisQuery({ ...req.body, charts: [], table: undefined }, req.platformPermissions);
   res.set('Cache-Control', 'private, no-store');
-  res.json(await previewStudentMail({ user: req.user, query, templateId: req.body?.templateId, studentId: req.body?.studentId }));
+  res.json(await previewStudentMail({ user: req.user, query, templateId: req.body?.templateId, studentId: req.body?.studentId, draft: req.body?.draft }));
+}
+
+export async function sendTestEmailToMe(req, res) {
+  const query = validatePrepAnalysisQuery({ ...req.body, charts: [], table: undefined }, req.platformPermissions);
+  res.status(202).json(await sendStudentTestMail({ user: req.user, query, templateId: req.body?.templateId, studentId: req.body?.studentId, draft: req.body?.draft }));
 }
 
 export async function sendEmailToStudents(req, res) {
   const query = validatePrepAnalysisQuery({ ...req.body, charts: [], table: undefined }, req.platformPermissions);
-  res.status(202).json(await sendStudentMail({ user: req.user, query, templateId: req.body?.templateId, studentIds: req.body?.studentIds }));
+  res.status(202).json(await sendStudentMail({ user: req.user, query, templateId: req.body?.templateId, studentIds: req.body?.studentIds, draft: req.body?.draft }));
 }
 
 export async function drillPrepAnalysisChart(req, res) {

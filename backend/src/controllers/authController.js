@@ -240,7 +240,7 @@ export async function me(req, res) {
   // req.user comes from the auth cache, which does not select the editable profile fields.
   // Read them fresh so bio/username/links (and learner progress) survive a page reload.
   const profile = await User.findById(u._id)
-    .select('username bio linkedinUrl githubUrl portfolioUrl learnerProgress practiceLanguage featureAccess accessScope')
+    .select('username bio linkedinUrl githubUrl portfolioUrl learnerProgress practiceLanguage featureAccess accessScope visibleToPeers')
     .lean() || {};
   // Return fields based on role
   const response = {
@@ -267,6 +267,7 @@ export async function me(req, res) {
     response.college = u.college;
     response.semester = u.semester;
     response.learnerProgress = profile.learnerProgress || null;
+    response.visibleToPeers = profile.visibleToPeers !== false;
     response.practiceLanguage = profile.practiceLanguage || await latestPracticeLanguage(u._id);
     response.featureAccess = normalizeStudentFeatureAccess(profile.featureAccess || u.featureAccess, { legacyAccessScope: profile.accessScope || u.accessScope });
 
@@ -380,7 +381,9 @@ export async function updateMe(req, res) {
   const u = req.user;
   if (!u) return res.status(401).json({ error: 'Unauthorized' });
   
-  const { username, name, course, branch, college, bio, linkedinUrl, githubUrl, portfolioUrl } = req.body || {};
+  // college / course / branch are deliberately not read: they are institution-managed (the profile
+  // form shows them read-only) and college decides a student's ranking cohort and classmates.
+  const { username, name, bio, linkedinUrl, githubUrl, portfolioUrl, visibleToPeers } = req.body || {};
   const trim = (v) => (typeof v === 'string' ? v.trim() : undefined);
   const normalizeUsername = (value) => {
     if (value === undefined) return undefined;
@@ -406,13 +409,14 @@ export async function updateMe(req, res) {
       const normalizedUsername = normalizeUsername(username);
       updates.username = normalizedUsername || undefined;
     }
-    if (course !== undefined) updates.course = trim(course);
-    if (branch !== undefined) updates.branch = trim(branch);
-    if (college !== undefined) updates.college = trim(college);
     if (bio !== undefined) updates.bio = trim(bio);
     if (linkedinUrl !== undefined) updates.linkedinUrl = trim(linkedinUrl);
     if (githubUrl !== undefined) updates.githubUrl = trim(githubUrl);
     if (portfolioUrl !== undefined) updates.portfolioUrl = trim(portfolioUrl);
+    if (visibleToPeers !== undefined) {
+      if (typeof visibleToPeers !== 'boolean') throw new HttpError(400, 'visibleToPeers must be true or false');
+      updates.visibleToPeers = visibleToPeers;
+    }
   }
   
   // Fetch the actual Mongoose document (req.user is lean object)
@@ -455,6 +459,7 @@ export async function updateMe(req, res) {
     response.user.course = userDoc.course;
     response.user.branch = userDoc.branch;
     response.user.college = userDoc.college;
+    response.user.visibleToPeers = userDoc.visibleToPeers !== false;
   }
   
   res.json(response);

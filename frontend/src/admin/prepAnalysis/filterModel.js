@@ -408,6 +408,8 @@ const KPI_RULES = Object.freeze({
   "coding.review": { field: "coding.solvesToReview", operator: "gte", value: "1" },
   "learning.active": { field: "learning.status", operator: "anyOf", value: ["active"] },
   "learning.halfway": { field: "learning.progress", operator: "gte", value: "50" },
+  "learning.topicDone": { field: "learning.completedTopics", operator: "gte", value: "1" },
+  "interview.active": { field: "interview.status", operator: "anyOf", value: ["active"] },
   "assessment.passedStudents": { field: "assessment.passed", operator: "gte", value: "1" },
   "learning.stopped": { field: "learning.status", operator: "anyOf", value: ["inactive", "never"] },
   "interview.students": { field: "interview.done", operator: "gte", value: "1" },

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import ExcelJS from 'exceljs';
-import { boxStats, buildKpiGroups, buildKpis, CHARTS, pageItems, practising } from '../src/modules/prepAnalysis/charts.js';
+import { boxStats, buildKpiGroups, buildKpis, CHARTS, codingKpiSeries, pageItems, practising, seriesPoints, submissionSplit, topicTier } from '../src/modules/prepAnalysis/charts.js';
 import { drillDetail, drillStudents } from '../src/modules/prepAnalysis/drill.js';
 import { chartSummary } from '../src/modules/prepAnalysis/summaries.js';
 import { buildChartBook, renderChartCsv, renderChartXlsx } from '../src/modules/prepAnalysis/prepAnalysis.export.js';
@@ -320,8 +320,8 @@ test('Quick Prep: sheets started and finished, progress, and sheet-level narrowi
   assert.deepEqual(groups.map((group) => group.label), ['Prep Coding', 'Quick Prep', 'Prep Learning'], '"All" shows each feature side by side');
   assert.deepEqual(buildKpiGroups('coding', new Set(['student', 'coding', 'quickprep']), rows).map((group) => group.key), ['coding'], 'the Prep Coding page has only its own numbers');
   assert.deepEqual(buildKpiGroups('quickprep', new Set(['student', 'coding', 'quickprep']), rows).map((group) => group.key), ['quickprep']);
-  assert.equal(kpis.learning.subjectDone, 1, 'only Asha finished a subject');
-  assert.ok(groups.every((group) => group.kpis.length <= 5), 'a few useful numbers per feature, one row');
+  assert.equal(kpis.learning.halfway, 1, 'only Asha is halfway through the course');
+  assert.ok(groups.every((group) => group.kpis.length === 5), 'five numbers per feature, one row');
   assert.ok(!('sheetFinished' in kpis.coding), 'Quick Prep numbers are no longer among the Prep Coding numbers');
   assert.equal(kpis.quickprep.sheetFinished, 1);
   assert.equal(kpis.quickprep.sheetStarted, 2);
@@ -373,6 +373,10 @@ test('every chart builds from the cohort and from an empty selection', () => {
   const byId = Object.fromEntries(CHARTS.map((chart) => [chart.id, chart.build({ rows, options: chart.options || {}, range: { preset: 'all', to: new Date('2026-10-10') }, topics })]));
   assert.equal(byId['top-students'].items[0].name, 'Asha');
   assert.equal(byId['top-students'].items[0].position, 1);
+  assert.deepEqual(byId['top-students'].items[0].student, {
+    studentId: 'A1', email: 'asha@x.edu', course: 'B.Tech',
+    branch: 'CSE', college: 'GEHU', semester: 5, section: '', group: 'G1',
+  });
   assert.deepEqual(byId['practice-funnel'].stages.map((stage) => stage.value), [4, 3, 3, 1, 1]);
   assert.deepEqual(byId['difficulty-split'].items.map((item) => [item.name, item.value]), [['Easy', 4], ['Medium', 1], ['Hard', 1]]);
   assert.equal(byId['score-spread'].bins.reduce((sum, bin) => sum + bin.count, 0), 3);
@@ -398,9 +402,219 @@ test('every chart builds from the cohort and from an empty selection', () => {
   assert.equal(kpis.active, 2);
   assert.equal(kpis.hard, 1, 'students who solved a Hard problem, not a total of solves');
   assert.equal(kpis.stopped, 2);
+  assert.equal(kpis.submissions, rows.reduce((sum, row) => sum + row.coding.submissions, 0), 'submission card uses the actual cohort total');
+  const submissions = buildKpis(rows).find((kpi) => kpi.id === 'submissions');
+  assert.equal(submissions.accepted, rows.reduce((sum, row) => sum + row.coding.accepted, 0));
+  assert.equal(submissions.format, 'ratio');
+  assert.deepEqual(buildKpis(rows).map((kpi) => kpi.label), ['Active Users', 'Hard Problem Solvers', 'Inactive Students', 'Flagged Students', 'Accepted / Total Submissions']);
   assert.equal(buildKpis(rows).find((kpi) => kpi.id === 'stopped').hint, '50% of 4 students');
   assert.ok(!('prepScore' in kpis), 'no cohort-average Prep Score');
   assert.equal(attention.items[0].daysSinceActive, 39, 'attention lists carry recency for the chart summary');
+});
+
+test('Prep Coding headline trend lines follow each card\'s own rule and end on the card\'s number', () => {
+  const day = (iso, attempts, accepted) => [iso, { attempts, accepted }];
+  const rows = [
+    { days: new Map([day('2026-11-01', 2, 1), day('2026-11-10', 1, 1)]), coding: { firstHardAt: '2026-11-10T05:00:00.000Z', firstFlaggedAt: null } },
+    { days: new Map([day('2026-10-05', 4, 0)]), coding: { firstHardAt: null, firstFlaggedAt: '2026-10-05T09:00:00.000Z' } },
+    { days: new Map(), coding: { firstHardAt: null, firstFlaggedAt: null } },
+  ];
+  const range = { preset: 'custom', from: new Date('2026-10-01T00:00:00Z'), to: new Date('2026-11-14T23:59:59Z') };
+  const points = seriesPoints(rows, range);
+  assert.equal(points.length, 7, 'a 44-day period is drawn weekly');
+  assert.equal(points.at(-1), range.to.getTime(), 'the last point is the period end');
+  const series = codingKpiSeries(rows, range, range.to);
+  const last = (id) => series.get(id).at(-1).value;
+  const first = (id) => series.get(id)[0].value;
+  assert.equal(last('active'), 1, 'practised in the 14 days up to the end');
+  assert.equal(last('stopped'), 2, 'everyone else in view');
+  assert.equal(last('hard'), 1);
+  assert.equal(last('review'), 1, 'first flagged on 5 Oct');
+  assert.equal(last('submissions'), 28.6, '2 accepted of 7 submissions');
+  assert.deepEqual([first('active'), first('stopped'), first('hard'), first('review'), first('submissions')], [0, 3, 0, 0, 0], 'nothing had happened by the first point');
+  assert.ok(series.get('hard').every((point, index, list) => !index || point.value >= list[index - 1].value), 'cumulative lines never fall');
+  // Without a range (the previous-period comparison) the cards carry no line.
+  const noLine = buildKpis([{ ...rows[0], coding: { practiceStatus: 'active', solved: { Hard: 1 }, review: { tracked: 0, flagged: 0 }, submissions: 3, accepted: 2 } }]);
+  assert.ok(noLine.every((kpi) => !('series' in kpi)));
+  const withLine = buildKpis([{ ...rows[0], coding: { ...rows[0].coding, practiceStatus: 'active', solved: { Hard: 1 }, review: { tracked: 0, flagged: 0 }, submissions: 3, accepted: 2 } }], range, range.to);
+  for (const kpi of withLine) {
+    assert.equal(kpi.series.at(-1).value, kpi.format === 'ratio' ? kpi.rate : kpi.value, `${kpi.id} line ends on the card's number`);
+  }
+});
+
+test('"Trend of submissions till today": a donut of accepted vs not, each part opens its students', () => {
+  const day = (iso, attempts, accepted) => [iso, { attempts, accepted }];
+  const person = (id) => ({ id, name: id, email: '', studentId: id, student: {}, scores: { total: 0, features: {} } });
+  const rows = [
+    { ...person('a'), days: new Map([day('2026-11-02', 3, 1), day('2026-11-05', 2, 2)]), coding: { submissions: 5, accepted: 3, accuracy: 60, daysSinceActive: 1 } },
+    { ...person('b'), days: new Map([day('2026-11-05', 4, 0)]), coding: { submissions: 4, accepted: 0, accuracy: 0, daysSinceActive: 1 } },
+    { ...person('c'), days: new Map(), coding: { submissions: 0, accepted: 0, accuracy: 0, daysSinceActive: null } },
+  ];
+  const chart = CHARTS.find((entry) => entry.id === 'submission-trend');
+  assert.equal(chart.type, 'donut');
+  const data = submissionSplit(rows);
+  assert.equal(data.centerLabel, 'submissions');
+  assert.deepEqual(data.items.map((item) => [item.key, item.value, item.students]), [['Accepted', 3, 1], ['Not accepted', 6, 2]]);
+  const accepted = drillStudents(chart, rows, 'Accepted', {});
+  assert.deepEqual(accepted.items.map((item) => [item.row.id, item.values.submissionsHere]), [['a', 3]]);
+  const notAccepted = drillStudents(chart, rows, 'Not accepted', {});
+  assert.deepEqual(notAccepted.items.map((item) => [item.row.id, item.values.submissionsHere]).sort(), [['a', 2], ['b', 4]]);
+  // Links saved while this chart was a day/week line still answer.
+  const onDay = drillStudents(chart, rows, '2026-11-05', {});
+  assert.deepEqual(onDay.items.map((item) => [item.row.id, item.values.submissionsHere, item.values.acceptedHere, item.values.notAcceptedHere]).sort(), [['a', 2, 2, 0], ['b', 4, 0, 4]]);
+  const week = drillStudents(chart, rows, 'week:2026-11-02', {});
+  assert.deepEqual(week.items.map((item) => [item.row.id, item.values.submissionsHere]).sort(), [['a', 5], ['b', 4]]);
+  assert.deepEqual(submissionSplit([rows[2]]).items, [], 'no submissions: an honest empty chart');
+});
+
+test('every feature: five headline cards, each with a line measured like the card at every point', () => {
+  const range = { preset: 'custom', from: new Date('2026-11-01T00:00:00Z'), to: new Date('2026-11-10T23:00:00Z') };
+  const now = range.to;
+  const modules = new Set(['student', 'coding', 'quickprep', 'learning', 'interview', 'assessment']);
+  const cards = (area, rows) => Object.fromEntries(buildKpiGroups(area, modules, rows, range, now)[0].kpis.map((kpi) => [kpi.id, kpi]));
+  const at = (kpi, day) => kpi.series.find((point) => point.at.startsWith(day)).value;
+  const lineEndsOnCard = (kpis) => Object.values(kpis).forEach((kpi) => {
+    assert.ok(kpi.series?.length > 1, `${kpi.id} has a line`);
+    assert.equal(kpi.series.at(-1).value, kpi.format === 'ratio' ? kpi.rate : kpi.value, `${kpi.id} ends on its card's number`);
+  });
+
+  // Learning: Asha completed 1 topic on Nov 2 and 3 more on Nov 9 (4 of 8); Ben never started.
+  const learning = cards('learning', [
+    { learning: { completedTopics: 4, availableTopics: 8, progress: 50, status: 'active', days: new Map([['2026-11-02', 1], ['2026-11-09', 3]]) } },
+    { learning: { completedTopics: 0, availableTopics: 8, progress: 0, status: 'never', days: new Map() } },
+  ]);
+  assert.deepEqual(Object.keys(learning), ['active', 'topicDone', 'halfway', 'stopped', 'topics']);
+  assert.deepEqual([learning.active.value, learning.topicDone.value, learning.halfway.value, learning.stopped.value, learning.topics.rate], [1, 1, 1, 1, 25]);
+  lineEndsOnCard(learning);
+  assert.deepEqual([at(learning.topicDone, '2026-11-01'), at(learning.topicDone, '2026-11-05')], [0, 1], 'a topic counts from the day it was completed');
+  assert.equal(at(learning.halfway, '2026-11-05'), 0, '1 of 8 topics by Nov 5 is not halfway');
+  assert.equal(at(learning.topics, '2026-11-05'), 6.3, '1 of 16 topics completed by Nov 5');
+  assert.deepEqual([at(learning.active, '2026-11-01'), at(learning.stopped, '2026-11-01')], [0, 2]);
+
+  // Interview: Asha had mocks on Nov 3 (50%) and Nov 8 (90%).
+  const interview = cards('interview', [
+    { interview: { done: 2, mockDone: 2, mockScore: 70, status: 'active', aiDates: [], days: new Map([['2026-11-03', 1], ['2026-11-08', 1]]), mocks: [{ at: '2026-11-03T10:00:00Z', score: 50 }, { at: '2026-11-08T10:00:00Z', score: 90 }] } },
+    { interview: { done: 0, mockDone: 0, mockScore: 0, status: 'never', aiDates: [], days: new Map(), mocks: [] } },
+  ]);
+  assert.deepEqual(Object.keys(interview), ['students', 'active', 'strong', 'never', 'avgMock']);
+  assert.deepEqual([interview.students.value, interview.strong.value, interview.never.value, interview.avgMock.value], [1, 1, 1, 70]);
+  lineEndsOnCard(interview);
+  assert.deepEqual([at(interview.students, '2026-11-01'), at(interview.never, '2026-11-01')], [0, 2]);
+  assert.deepEqual([at(interview.strong, '2026-11-05'), at(interview.avgMock, '2026-11-05')], [0, 50], 'only the 50% mock had happened by Nov 5');
+
+  // Assessment: Asha failed a test on Nov 2, missed one that closed Nov 4, passed one on Nov 7.
+  const assessment = cards('assessment', [
+    { assessment: { taken: 2, passed: 1, missed: 1, status: 'active', missedDates: ['2026-11-04T00:00:00Z'], days: new Map([['2026-11-02', 1], ['2026-11-07', 1]]),
+      byTest: new Map([['t1', { at: '2026-11-02T10:00:00Z', percent: 5 }], ['t2', { at: '2026-11-07T10:00:00Z', percent: 95 }]]) } },
+    { assessment: { taken: 0, passed: 0, missed: 0, status: 'never', missedDates: [], days: new Map(), byTest: new Map() } },
+  ]);
+  assert.deepEqual(Object.keys(assessment), ['students', 'passedStudents', 'missed', 'never', 'passRate']);
+  assert.deepEqual([assessment.students.value, assessment.passedStudents.value, assessment.missed.value, assessment.never.value, assessment.passRate.rate], [1, 1, 1, 1, 50]);
+  lineEndsOnCard(assessment);
+  assert.deepEqual([at(assessment.missed, '2026-11-03'), at(assessment.missed, '2026-11-05')], [0, 1], 'missed from when the test closed');
+  assert.deepEqual([at(assessment.passedStudents, '2026-11-05'), at(assessment.passRate, '2026-11-05')], [0, 0]);
+
+  // Quick Prep: Asha started a sheet Nov 2, a solve was flagged Nov 5, she finished Nov 6.
+  const quickprep = cards('quickprep', [
+    { quickprep: { started: 1, finished: 1, activity: 'active', status: 'finished', days: new Map([['2026-11-02', [1, 0]], ['2026-11-06', [0, 1]]]),
+      bySheet: new Map([['s1', { startedAt: '2026-11-02T10:00:00Z', completedAt: '2026-11-06T10:00:00Z', lastViewedAt: '2026-11-09T10:00:00Z', finished: true }]]),
+      review: { tracked: 1, flagged: 1, items: [{ at: '2026-11-05T10:00:00Z', review: { reasons: ['fast'] } }] } } },
+    { quickprep: { started: 0, finished: 0, activity: 'never', status: 'none', days: new Map(), bySheet: new Map(), review: { tracked: 0, flagged: 0, items: [] } } },
+  ]);
+  assert.deepEqual(Object.keys(quickprep), ['sheetStarted', 'sheetActive', 'sheetFinished', 'never', 'review']);
+  lineEndsOnCard(quickprep);
+  assert.deepEqual([at(quickprep.sheetStarted, '2026-11-01'), at(quickprep.never, '2026-11-01')], [0, 2]);
+  assert.deepEqual([at(quickprep.review, '2026-11-04'), at(quickprep.review, '2026-11-05'), at(quickprep.sheetFinished, '2026-11-05')], [0, 1, 0]);
+});
+
+test('a retired chart is not offered and every layout gets its replacement', async () => {
+  const { getPrepAnalysisCatalog } = await import('../src/modules/prepAnalysis/prepAnalysis.controller.js');
+  let body;
+  const res = { set: () => res, json: (value) => { body = value; return res; } };
+  await getPrepAnalysisCatalog({ platformPermissions: undefined }, res);
+  assert.ok(!body.charts.some((chart) => chart.id === 'difficulty-split'), 'not in the add-chart list');
+  assert.ok(body.charts.some((chart) => chart.id === 'submission-trend'));
+  assert.deepEqual(body.replacedCharts, { 'difficulty-split': 'submission-trend' });
+  assert.ok(!body.defaultLayout.coding.includes('difficulty-split'));
+  assert.equal(body.defaultLayout.coding[2], 'submission-trend', 'the new chart takes the old one’s place');
+});
+
+test('Prep Coding default layout: heat map first, then rows that each fill the 12 columns', async () => {
+  const { getPrepAnalysisCatalog } = await import('../src/modules/prepAnalysis/prepAnalysis.controller.js');
+  let body;
+  const res = { set: () => res, json: (value) => { body = value; return res; } };
+  await getPrepAnalysisCatalog({ platformPermissions: undefined }, res);
+  const coding = body.defaultLayout.coding;
+  assert.deepEqual(coding.slice(0, 11), ['activity-calendar', 'top-students', 'submission-trend', 'practice-trend', 'practice-funnel', 'topic-strength',
+    'needs-attention', 'tough-problems', 'student-profile', 'failure-reasons', 'language-usage']);
+  assert.ok(body.defaultLayoutVersion.coding >= 2, 'saved layouts move to the new default once');
+});
+
+test('every feature page: heat map first, and every row of every block fills the 12 columns', async () => {
+  const { getPrepAnalysisCatalog } = await import('../src/modules/prepAnalysis/prepAnalysis.controller.js');
+  let body;
+  const res = { set: () => res, json: (value) => { body = value; return res; } };
+  await getPrepAnalysisCatalog({ platformPermissions: undefined }, res);
+  const span = { sm: 4, md: 6, lg: 8, full: 12 };
+  const chartOf = (id) => body.charts.find((chart) => chart.id === id);
+  for (const [area, ids] of Object.entries(body.defaultLayout)) {
+    assert.ok(ids.length, `${area} has charts`);
+    if (area !== 'all') assert.equal(chartOf(ids[0]).type, 'calendar', `${area}: the heat map leads (above the headline cards)`);
+    // The page draws one block per section; leading heat maps sit above the cards, apart.
+    const blocks = new Map();
+    for (const id of ids) {
+      const chart = chartOf(id);
+      assert.ok(chart, `${area}: ${id} is offered`);
+      if (!blocks.has(chart.section)) blocks.set(chart.section, []);
+      blocks.get(chart.section).push(chart);
+    }
+    for (const [section, charts] of blocks) {
+      let filled = 0;
+      for (const chart of charts.slice(charts.findIndex((entry) => entry.type !== 'calendar'))) {
+        filled += span[body.defaultSizes[area]?.[chart.id] || chart.size];
+        assert.ok(filled <= 12, `${area}/${section}: ${chart.id} overflows its row`);
+        if (filled === 12) filled = 0;
+      }
+      assert.equal(filled, 0, `${area}/${section}: the last row is full too`);
+    }
+    assert.ok(body.defaultLayoutVersion[area] >= 2, `${area}: saved layouts move to the new default once`);
+  }
+});
+
+test('topic bubbles: priority by students compared with the most-solved topic', () => {
+  assert.equal(topicTier(9, 9), 'strong');
+  assert.equal(topicTier(6, 9), 'strong', 'two-thirds of the top topic');
+  assert.equal(topicTier(5, 9), 'growing');
+  assert.equal(topicTier(3, 9), 'growing', 'one-third of the top topic');
+  assert.equal(topicTier(2, 9), 'focus');
+  assert.equal(topicTier(1, 0), 'focus');
+  const chart = CHARTS.find((entry) => entry.id === 'topic-strength');
+  assert.equal(chart.type, 'bubble');
+  assert.equal(chart.options, undefined, 'no top-N limit: every topic someone solves is a bubble');
+});
+
+test('"How far students get": exact drops between steps, and each drop lists exactly those students', () => {
+  const coding = (submissions, solved) => ({ submissions, solved: { total: solved.E + solved.M + solved.H, Easy: solved.E, Medium: solved.M, Hard: solved.H }, accepted: 0, daysSinceActive: 2 });
+  const person = (id) => ({ id, name: id, email: '', studentId: id, student: {}, days: new Map(), scores: { total: 0, features: {} } });
+  const rows = [
+    { ...person('never'), coding: coding(0, { E: 0, M: 0, H: 0 }) },
+    { ...person('tried'), coding: coding(3, { E: 0, M: 0, H: 0 }) },
+    { ...person('easy'), coding: coding(4, { E: 2, M: 0, H: 0 }) },
+    { ...person('hardOnly'), coding: coding(5, { E: 0, M: 0, H: 1 }) },
+    { ...person('all'), coding: coding(9, { E: 1, M: 2, H: 1 }) },
+  ];
+  const chart = CHARTS.find((entry) => entry.id === 'practice-funnel');
+  const data = chart.build({ rows, options: {}, range: {} });
+  assert.deepEqual(data.stages.map((stage) => stage.value), [5, 4, 3, 1, 2]);
+  assert.deepEqual(data.drops.map((drop) => [drop.key, drop.students]), [['lost:1', 1], ['lost:2', 1], ['lost:3', 2], ['lost:4', 0]],
+    'Medium → Hard counts who solved a Medium but not a Hard, not 1 − 2');
+  for (const drop of data.drops) {
+    const listed = drillStudents(chart, rows, drop.key, {});
+    assert.equal(listed.items.length, drop.students, `${drop.key}: the list matches the count`);
+  }
+  assert.deepEqual(drillStudents(chart, rows, 'lost:1', {}).items.map((item) => item.row.id), ['never']);
+  assert.deepEqual(drillStudents(chart, rows, 'lost:3', {}).items.map((item) => item.row.id).sort(), ['easy', 'hardOnly']);
+  assert.equal(drillStudents(chart, rows, 'lost:9', {}).items.length, 5, 'an unknown drop falls back to everyone, never an error');
 });
 
 test('scatter and box-plot charts: one dot per student, honest quartiles, and a box opens exactly its students', () => {

@@ -201,7 +201,7 @@ function Chip({ label, text, onOpen, onClear }) {
  * The page's filter line: the "Filters" button, the filters in use as chips, any extra chips
  * (`extra`, such as "only these students"), and the count. Feature and period live in the header.
  */
-export function FilterToolbar({ state, catalog, fieldMap, meta, loading, onOpen, onChange, extra = null }) {
+export function FilterToolbar({ state, catalog, fieldMap, meta, loading, onOpen, onChange, extra = null, lead = null }) {
   const lookup = useMemo(() => optionLookup(catalog), [catalog]);
   const metricLabel = (key) => fieldMap.get(key)?.label || key;
   const ranking = rankText(state.rank, metricLabel);
@@ -209,10 +209,12 @@ export function FilterToolbar({ state, catalog, fieldMap, meta, loading, onOpen,
   const several = state.groups.length > 1;
   const single = state.groups[0];
   return (
-    <section aria-label="Filters" className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+    <section aria-label="Filters" className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      {/* `lead`: the page's section name, so heading and filters share one line. */}
+      {lead && <>{lead}<span className="mx-0.5 hidden h-6 w-px bg-slate-200 sm:block dark:bg-gray-700" aria-hidden="true" /></>}
       <button type="button" onClick={onOpen}
-        className={`inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-[12.5px] font-semibold text-white shadow-sm hover:bg-sky-700 ${focusRing}`}>
-        <SlidersHorizontal className="h-4 w-4" />Filters
+        className={`inline-flex h-8 items-center gap-1.5 rounded-lg bg-sky-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-sky-700 ${focusRing}`}>
+        <SlidersHorizontal className="h-3.5 w-3.5" />Filters
         {total > 0 && <span className="rounded-full bg-white/25 px-1.5 text-[11px] leading-5">{total}</span>}
       </button>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
@@ -237,7 +239,7 @@ export function FilterToolbar({ state, catalog, fieldMap, meta, loading, onOpen,
       </div>
       <p className="ml-auto inline-flex items-center gap-2 whitespace-nowrap text-[12.5px] text-slate-500 dark:text-gray-400" aria-live="polite">
         {loading ? <Loader2 className="h-4 w-4 animate-spin text-sky-600" /> : <Users className="h-4 w-4 text-sky-600" />}
-        {meta ? <span><b className="text-[15px] tabular-nums text-slate-900 dark:text-white">{meta.matched.toLocaleString()}</b> of {meta.cohortSize.toLocaleString()} students</span> : "Counting…"}
+        {meta ? <span><b className="text-[14px] tabular-nums text-slate-900 dark:text-white">{meta.matched.toLocaleString()}</b> of {meta.cohortSize.toLocaleString()} students</span> : "Counting…"}
       </p>
     </section>
   );

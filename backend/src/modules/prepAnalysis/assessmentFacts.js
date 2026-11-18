@@ -35,6 +35,8 @@ export async function loadAssessmentDefinitions(user, now = new Date()) {
       visible: test.isVisible !== false,
       ended: isEnded(test, now),
       startTime: test.startTime || null,
+      // When the test closed (the moment a student who did not take it has missed it).
+      endedAt: test.manuallyCompletedAt || test.endTime || null,
       forEveryone: test.targetType !== 'selected',
       assigned: new Set((test.assignedStudents || []).map(String)),
     }]));

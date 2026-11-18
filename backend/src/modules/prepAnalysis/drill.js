@@ -6,7 +6,7 @@
 // on the same filtered rows the chart was drawn from, so the counts always agree with the chart.
 
 import {
-  ATTENTION_GROUPS, byScore, entryTopics, GROUP_BY, percentOne, practising, SCORE_BANDS, scoreBandOf, topicSolved, VERDICT_LABELS, weekStart,
+  ATTENTION_GROUPS, byScore, CODING_FUNNEL_STAGES, entryTopics, GROUP_BY, percentOne, practising, SCORE_BANDS, scoreBandOf, SUBMISSION_PARTS, topicSolved, VERDICT_LABELS, weekStart,
 } from './charts.js';
 import { FEATURE_DETAIL_LABELS, FEATURE_DRILLS } from './featureDrills.js';
 import { DIFFICULTIES } from './ranking.js';
@@ -85,13 +85,13 @@ function weeksOf(row) {
   return weeks;
 }
 
-const FUNNEL_STAGES = [
-  { name: 'Students', test: () => true },
-  { name: 'Started practising', test: (row) => row.coding.submissions > 0 },
-  { name: 'Solved a problem', test: (row) => row.coding.solved.total > 0 },
-  { name: 'Solved a Medium', test: (row) => row.coding.solved.Medium > 0 },
-  { name: 'Solved a Hard', test: (row) => row.coding.solved.Hard > 0 },
-];
+const FUNNEL_STAGES = CODING_FUNNEL_STAGES;
+/** "lost:2" → the step index 2 (a drop between step 1 and step 2), else null. */
+const lostStep = (key) => {
+  const match = /^lost:(\d+)$/.exec(String(key || ''));
+  const index = match ? Number(match[1]) : null;
+  return index !== null && index >= 1 && index < FUNNEL_STAGES.length ? index : null;
+};
 const furthestStage = (row) => FUNNEL_STAGES[FUNNEL_STAGES.findLastIndex((stage) => stage.test(row))].name;
 const lastPracticeText = (row) => (row.coding.daysSinceActive === null ? 'Never' : row.coding.daysSinceActive === 0 ? 'Today' : `${row.coding.daysSinceActive} days ago`);
 
@@ -337,6 +337,38 @@ const DRILLS = {
       return { title: 'Student × week', columns: [text('week', 'Week of', 12), count('days', 'Days practised'), count('submissions', 'Submissions'), count('accepted', 'Accepted')], items };
     },
   },
+  // Key: a part of the donut ("Accepted", "Not accepted"). A day ("2026-11-17") or a week
+  // ("week:2026-11-10", the Monday) still answers, for links saved when this chart was a line.
+  'submission-trend': {
+    label: (key) => (!key ? 'Every submission' : SUBMISSION_PARTS[key] ? `${key} submissions` : key.startsWith('week:') ? `Week of ${key.slice(5)}` : `Day: ${key}`),
+    students(rows, key) {
+      if (SUBMISSION_PARTS[key]) {
+        return {
+          sort: 'submissionsHere',
+          columns: [count('submissionsHere', `${key} submissions`), count('submissions', 'All submissions'), percent('accuracy', 'Accuracy %'), text('lastPractice', 'Last practice', 12)],
+          items: rows.filter((row) => SUBMISSION_PARTS[key](row) > 0).map((row) => ({ row, values: { submissionsHere: SUBMISSION_PARTS[key](row), submissions: row.coding.submissions, accuracy: row.coding.accuracy, lastPractice: lastPracticeText(row) } })),
+        };
+      }
+      if (key) {
+        const week = key.startsWith('week:') ? key.slice(5) : null;
+        return {
+          sort: 'submissionsHere',
+          columns: [count('submissionsHere', week ? 'Submissions that week' : 'Submissions that day'), count('acceptedHere', 'Accepted'), count('notAcceptedHere', 'Not accepted')],
+          items: rows.map((row) => {
+            const figures = week ? weeksOf(row).get(week) : row.days.get(key);
+            if (!figures) return null;
+            const submissions = week ? figures.submissions : figures.attempts;
+            return { row, values: { submissionsHere: submissions, acceptedHere: figures.accepted, notAcceptedHere: submissions - figures.accepted } };
+          }).filter(Boolean),
+        };
+      }
+      return {
+        sort: 'submissions',
+        columns: [count('submissions', 'Submissions'), count('accepted', 'Accepted'), text('lastPractice', 'Last practice', 12)],
+        items: practising(rows).map((row) => ({ row, values: { submissions: row.coding.submissions, accepted: row.coding.accepted, lastPractice: lastPracticeText(row) } })),
+      };
+    },
+  },
   'activity-calendar': {
     label: (key) => (key ? `Day: ${key}` : 'Every day'),
     students(rows, key) {
@@ -357,14 +389,24 @@ const DRILLS = {
       };
     },
   },
+  // Key: a step's index ("2": everyone who reached it), or "lost:<index>": students who reached
+  // the step before but not that step (the drop between two steps, from the compare buttons).
   'practice-funnel': {
-    label: (key) => FUNNEL_STAGES[Number(key)]?.name || 'Every step',
+    label: (key) => {
+      const lost = lostStep(key);
+      if (lost !== null) return `Reached “${FUNNEL_STAGES[lost - 1].name}”, not “${FUNNEL_STAGES[lost].name}”`;
+      return FUNNEL_STAGES[Number(key)]?.name || 'Every step';
+    },
     students(rows, key) {
-      const stage = FUNNEL_STAGES[Number(key)];
+      const lost = lostStep(key);
+      const stage = lost === null ? FUNNEL_STAGES[Number(key)] : null;
+      const keep = lost !== null
+        ? (row) => FUNNEL_STAGES[lost - 1].test(row) && !FUNNEL_STAGES[lost].test(row)
+        : (row) => !stage || stage.test(row);
       return {
-        sort: 'solvedTotal',
-        columns: [text('furthest', 'Furthest step', 18), count('submissions', 'Submissions'), ...solvedColumns],
-        items: rows.filter((row) => !stage || stage.test(row)).map((row) => ({ row, values: { furthest: furthestStage(row), submissions: row.coding.submissions, ...solvedValues(row) } })),
+        sort: lost !== null ? 'submissions' : 'solvedTotal',
+        columns: [text('furthest', 'Furthest step', 18), count('submissions', 'Submissions'), ...solvedColumns, text('lastPractice', 'Last practice', 12)],
+        items: rows.filter(keep).map((row) => ({ row, values: { furthest: furthestStage(row), submissions: row.coding.submissions, ...solvedValues(row), lastPractice: lastPracticeText(row) } })),
       };
     },
   },

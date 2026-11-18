@@ -594,7 +594,8 @@ export async function runPrepAnalysis({ user, query }) {
   const context = await queryContext(user, query, query.range, { refresh: query.refresh });
   const { selected, ids } = selectStudents(context, query);
   const previous = await previousKpis({ user, query, ids });
-  const kpiGroups = buildKpiGroups(query.module, query.modules, selected);
+  // The current period's Prep Coding cards also carry their trend line over the period.
+  const kpiGroups = buildKpiGroups(query.module, query.modules, selected, query.range, query.range.to ? new Date(query.range.to) : new Date());
   const charts = query.charts.map(({ id, filter, filterError, options }) => {
     const chart = CHART_BY_ID.get(id);
     const rows = chartRows(selected, filter);

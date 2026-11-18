@@ -10,9 +10,20 @@ export const STUDENT_FEATURES = Object.freeze([
   'prep_coding',
   'resume',
   'prep_coins',
+  'peers',
 ]);
 
 export const STUDENT_FEATURE_SET = new Set(STUDENT_FEATURES);
+
+/**
+ * Features a student has only when an admin turns them on for that student (or in the default for
+ * new students). "All access" never includes them. Prep Mates: universities decide who may find
+ * and contact classmates, so it is never on for everyone by default.
+ */
+export const OPT_IN_STUDENT_FEATURES = Object.freeze(['peers']);
+const OPT_IN_SET = new Set(OPT_IN_STUDENT_FEATURES);
+/** What "All access" means: every feature except the opt-in ones. */
+export const STANDARD_STUDENT_FEATURES = Object.freeze(STUDENT_FEATURES.filter((feature) => !OPT_IN_SET.has(feature)));
 
 export function normalizeStudentFeatures(features) {
   if (!Array.isArray(features)) return [];
@@ -24,9 +35,27 @@ export function normalizeStudentFeatureAccess(value, { legacyAccessScope = 'full
     return { mode: 'custom', features: ['assessments'] };
   }
   if (!value || value.mode !== 'custom') {
-    return { mode: 'all', features: [...STUDENT_FEATURES] };
+    return { mode: 'all', features: [...STANDARD_STUDENT_FEATURES] };
   }
   return { mode: 'custom', features: normalizeStudentFeatures(value.features) };
+}
+
+/**
+ * One bulk change applied to a student's current access (normalized):
+ *   { type: 'set', access }        replace it
+ *   { type: 'grant', features }    turn these on, keep everything else
+ *   { type: 'revoke', features }   turn these off, keep everything else
+ * Returns the new access; exactly the standard features is stored as "All access" again.
+ */
+export function applyStudentFeatureChange(current, change) {
+  if (change.type === 'set') return normalizeStudentFeatureAccess(change.access);
+  const next = new Set(current.features);
+  for (const feature of normalizeStudentFeatures(change.features)) {
+    if (change.type === 'grant') next.add(feature); else next.delete(feature);
+  }
+  const features = STUDENT_FEATURES.filter((feature) => next.has(feature));
+  const isStandard = features.length === STANDARD_STUDENT_FEATURES.length && STANDARD_STUDENT_FEATURES.every((feature) => next.has(feature));
+  return isStandard ? { mode: 'all', features: [...STANDARD_STUDENT_FEATURES] } : { mode: 'custom', features };
 }
 
 export function studentHasFeature(user, feature) {
@@ -37,6 +66,8 @@ export function studentHasFeature(user, feature) {
 
 export function studentFeatureQuery(feature) {
   if (!STUDENT_FEATURE_SET.has(feature)) return { _id: null };
+  // An opt-in feature needs an explicit grant; "All access" does not include it.
+  if (OPT_IN_SET.has(feature)) return { 'featureAccess.mode': 'custom', 'featureAccess.features': feature };
   return { $or: [{ 'featureAccess.mode': { $ne: 'custom' } }, { 'featureAccess.features': feature }] };
 }
 

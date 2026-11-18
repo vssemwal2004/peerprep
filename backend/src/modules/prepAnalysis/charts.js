@@ -7,6 +7,7 @@
 import { PASS_PERCENT } from './assessmentFacts.js';
 import { RATINGS } from './interviewFacts.js';
 import { DIFFICULTIES } from './ranking.js';
+import { INACTIVE_AFTER_DAYS } from './studentRows.js';
 
 export const GROUP_BY = Object.freeze({
   semester: { label: 'Semester', get: (row) => (row.student.semester ? `Sem ${row.student.semester}` : '') },
@@ -137,6 +138,43 @@ export function weekStart(day) {
   return week;
 }
 
+// Topic bubbles: priority by how many students solve a topic compared with the most-solved one.
+export const TOPIC_BUBBLE_LIMIT = 300;
+export const TOPIC_TIERS = Object.freeze([
+  { key: 'strong', label: 'Most practised', hint: 'At least two-thirds as many students as the top topic' },
+  { key: 'growing', label: 'Growing', hint: 'One-third to two-thirds as many students as the top topic' },
+  { key: 'focus', label: 'Needs focus', hint: 'Fewer than one-third as many students as the top topic' },
+]);
+export const topicTier = (students, most) => (!most ? 'focus' : students / most >= 2 / 3 ? 'strong' : students / most >= 1 / 3 ? 'growing' : 'focus');
+
+/** The steps of "How far students get", shared by the chart and its student lists (drill.js). */
+export const CODING_FUNNEL_STAGES = Object.freeze([
+  { name: 'Students', test: () => true },
+  { name: 'Started practising', test: (row) => row.coding.submissions > 0 },
+  { name: 'Solved a problem', test: (row) => row.coding.solved.total > 0 },
+  { name: 'Solved a Medium', test: (row) => row.coding.solved.Medium > 0 },
+  { name: 'Solved a Hard', test: (row) => row.coding.solved.Hard > 0 },
+]);
+
+/** The submission outcomes the "Trend of submissions till today" donut is split into. */
+export const SUBMISSION_PARTS = Object.freeze({
+  Accepted: (row) => row.coding.accepted,
+  'Not accepted': (row) => row.coding.submissions - row.coding.accepted,
+});
+
+/**
+ * Every submission in the selected period (up to today), accepted vs not: { centerLabel, items }.
+ * `students`: how many students made at least one submission of that kind.
+ */
+export function submissionSplit(rows) {
+  const items = Object.entries(SUBMISSION_PARTS).map(([key, of]) => ({
+    key, name: key,
+    value: rows.reduce((sum, row) => sum + Math.max(0, of(row) || 0), 0),
+    students: rows.filter((row) => of(row) > 0).length,
+  })).filter((item) => item.value > 0);
+  return { centerLabel: 'submissions', items };
+}
+
 /** One year of daily totals ending at the period end: { from, to, unit, days: [[day, value]], max }. */
 export function calendarPayload(totals, range, unit) {
   const end = (range?.to || new Date()).toISOString().slice(0, 10);
@@ -196,7 +234,7 @@ const CODING_CHARTS = [
   {
     id: 'top-students', type: 'rankedStackedBar', size: 'lg',
     title: 'Top students',
-    question: 'Who leads on Prep Score, and how much comes from Easy, Medium and Hard problems?',
+    question: 'Who leads on the Prep Coding score, and how much does each difficulty contribute?',
     options: { limit: 10 },
     build: ({ rows, options }) => {
       const { items, pagination } = pageItems(practising(rows).sort(byScore), options, { fallback: 10, max: 100 });
@@ -208,14 +246,20 @@ const CODING_CHARTS = [
           // `counts` are the all-time solves behind the stored score; `solved` is the selected period.
           counts: row.coding.scoredCounts,
           solved: row.coding.solved,
-          // First solves that were very fast or mostly pasted: worth a look before trusting the rank.
-          toReview: row.coding.review?.flagged || 0,
+          student: {
+            studentId: row.studentId, email: row.email, course: row.student.course,
+            branch: row.student.branch, college: row.student.college, semester: row.student.semester,
+            section: row.student.section, group: row.student.group,
+          },
         })),
       };
     },
   },
   {
-    id: 'difficulty-split', type: 'donut', size: 'sm',
+    // Retired from the Prep Coding page (2026-11-18): replaced by "Trend of submissions till
+    // today". Kept so old links, saved filters and drills still answer; not offered any more, and
+    // any saved layout shows the new chart in its place (catalog `replacedCharts`).
+    id: 'difficulty-split', type: 'donut', size: 'sm', retiredBy: 'submission-trend',
     title: 'Solved problems by difficulty',
     question: 'Are students solving only Easy problems, or Medium and Hard too?',
     build: ({ rows }) => ({
@@ -229,7 +273,16 @@ const CODING_CHARTS = [
     }),
   },
   {
-    id: 'practice-trend', type: 'trend', size: 'lg',
+    // A donut (user choice 2026-11-18: "the circle one is much better" than the day-by-day line):
+    // every submission in the period up to today, accepted vs not. The week-by-week picture is in
+    // "Practice week by week". Old day/week drill keys from the line still answer (drill.js).
+    id: 'submission-trend', type: 'donut', size: 'sm',
+    title: 'Trend of submissions till today',
+    question: 'How many submissions have students made up to today, and how many were accepted?',
+    build: ({ rows }) => submissionSplit(rows),
+  },
+  {
+    id: 'practice-trend', type: 'trend', size: 'full',
     title: 'Practice week by week',
     question: 'Is practice growing, and how many students practise each week?',
     build: ({ rows }) => {
@@ -256,36 +309,42 @@ const CODING_CHARTS = [
     },
   },
   {
-    id: 'practice-funnel', type: 'funnel', size: 'sm',
+    id: 'practice-funnel', type: 'funnel', size: 'md',
     title: 'How far students get',
     question: 'From signing up to solving Hard problems, where do students stop?',
     build: ({ rows }) => ({
-      stages: [
-        { name: 'Students', value: rows.length },
-        { name: 'Started practising', value: rows.filter((row) => row.coding.submissions > 0).length },
-        { name: 'Solved a problem', value: rows.filter((row) => row.coding.solved.total > 0).length },
-        { name: 'Solved a Medium', value: rows.filter((row) => row.coding.solved.Medium > 0).length },
-        { name: 'Solved a Hard', value: rows.filter((row) => row.coding.solved.Hard > 0).length },
-      ],
+      stages: CODING_FUNNEL_STAGES.map((stage) => ({ name: stage.name, value: rows.filter(stage.test).length })),
+      // Between each two steps: the students who reached the first but not the second, counted
+      // exactly (the steps are not strictly nested: a Hard can be solved without a Medium).
+      // A click on a drop lists them (drill key "lost:<index of the second step>").
+      drops: CODING_FUNNEL_STAGES.slice(1).map((stage, offset) => {
+        const before = CODING_FUNNEL_STAGES[offset];
+        return { key: `lost:${offset + 1}`, from: before.name, to: stage.name, students: rows.filter((row) => before.test(row) && !stage.test(row)).length };
+      }),
     }),
   },
   {
-    id: 'topic-strength', type: 'barList', size: 'md',
+    // Bubbles: every topic at least one student solves (not a top-N), sized by how many students
+    // solve in it and coloured by priority, so the thin topics that need a push stand out.
+    id: 'topic-strength', type: 'bubble', size: 'md',
     title: 'Topics students are solving',
-    question: 'Which topics have the most students solving problems, and how accurately?',
-    options: { limit: 12 },
-    build: ({ rows, options }) => {
+    question: 'Which topics are students solving, and which need a push?',
+    build: ({ rows }) => {
       const sorted = [...topicStats(rows).entries()].filter(([, topic]) => topic.students > 0)
         .sort((left, right) => right[1].students - left[1].students || left[0].localeCompare(right[0]));
-      // Every topic fits on the full page at once.
-      const { items, pagination } = pageItems(sorted, options, { fallback: 12, max: 100, pageSize: 2000 });
+      const items = sorted.slice(0, TOPIC_BUBBLE_LIMIT);
+      const most = items[0]?.[1].students || 0;
       return {
         valueLabel: 'students solving',
+        itemLabel: 'Topic',
         cohort: rows.length,
-        pagination,
+        // More topics than can be drawn as bubbles (very rare): the table and download still list all.
+        hidden: Math.max(0, sorted.length - items.length),
+        tiers: TOPIC_TIERS,
         items: items.map(([name, topic]) => ({
           key: name, name, value: topic.students, pct: percentOne(topic.students, rows.length),
           attempted: topic.attempted, solved: topic.solved, accuracy: percentOne(topic.accepted, topic.attempts),
+          tier: topicTier(topic.students, most),
           note: `${percentOne(topic.students, rows.length)}% of students · ${percentOne(topic.accepted, topic.attempts)}% accurate`,
         })),
       };
@@ -478,7 +537,7 @@ const CODING_CHARTS = [
     },
   },
   {
-    id: 'student-map', type: 'scatter', size: 'lg',
+    id: 'student-map', type: 'scatter', size: 'full',
     title: 'Effort versus result',
     question: 'Do students who submit more also score higher, and who practises a lot without results?',
     // One dot per student who practised: how much they submitted against their Prep Score.
@@ -741,7 +800,7 @@ const QUICKPREP_CHARTS = [
         .slice(0, clampLimit(options.limit, 10, 50))
         .map((row) => ({
           id: row.id, name: row.name, value: row.quickprep.finished,
-          note: `${row.quickprep.solved} questions solved · ${row.quickprep.progress}% of started sheets${row.quickprep.review?.flagged ? ` · ${row.quickprep.review.flagged} to review` : ''}`,
+          note: `${row.quickprep.solved} questions solved · ${row.quickprep.progress}% of started sheets${row.quickprep.review?.flagged ? ` · ${row.quickprep.review.flagged} flagged` : ''}`,
           toReview: row.quickprep.review?.flagged || 0,
         })),
     }),
@@ -1282,89 +1341,333 @@ export const CHARTS = [
 
 export const CHART_BY_ID = new Map(CHARTS.map((chart) => [chart.id, chart]));
 
-// What a fresh page shows per area; admins add or remove charts from that area's catalogue.
-export const DEFAULT_LAYOUT = Object.freeze({
-  coding: ['top-students', 'difficulty-split', 'practice-trend', 'practice-funnel', 'topic-strength', 'needs-attention',
-    'activity-calendar', 'student-profile', 'failure-reasons', 'language-usage', 'score-spread', 'class-spread', 'student-map', 'tough-problems'],
-  quickprep: ['quickprep-sheet-health', 'quickprep-difficulty-mix', 'quickprep-funnel', 'quickprep-hardest-questions', 'quickprep-trend', 'quickprep-own-work',
-    'quickprep-pace', 'quickprep-leaders', 'quickprep-needs-attention', 'quickprep-by-class', 'quickprep-class-spread', 'quickprep-spread',
-    'quickprep-coverage', 'quickprep-sheets', 'quickprep-matrix', 'quickprep-calendar'],
-  learning: ['learning-subjects', 'learning-funnel', 'learning-trend', 'learning-leaders', 'learning-needs-attention', 'learning-spread', 'learning-calendar'],
-  interview: ['interview-trend', 'interview-funnel', 'interview-ratings', 'interview-mix', 'interview-leaders', 'interview-needs-attention', 'interview-spread', 'interview-calendar'],
-  assessment: ['assessment-tests', 'assessment-funnel', 'assessment-scores', 'assessment-by-class', 'assessment-class-spread', 'assessment-score-time', 'assessment-leaders', 'assessment-needs-attention', 'assessment-trend', 'assessment-spread', 'assessment-calendar'],
-  // "All": a short view of each feature, side by side.
-  all: ['top-students', 'practice-funnel', 'quickprep-sheet-health', 'learning-subjects', 'learning-funnel', 'interview-funnel', 'interview-trend', 'assessment-tests', 'assessment-funnel'],
-});
+// What a fresh page shows per area; admins add, move, resize or hide charts from there.
+// Every page follows the Prep Coding pattern (agreed 2026-11-18), on 12-column rows with no gaps:
+// the daily heat map first (shown above the headline cards), the leaders list wide beside a small
+// chart, the week-by-week trend full width, then pairs of halves and a row of three smalls, and
+// the big tables last. "id:size" sets the card's width on that page (sm 4, md 6, lg 8, full 12);
+// a bare id keeps the chart's own `size`. The "all" page is one block per feature, each row full.
+const LAYOUTS = {
+  coding: ['activity-calendar', 'top-students', 'submission-trend', 'practice-trend', 'practice-funnel', 'topic-strength', 'needs-attention', 'tough-problems',
+    'student-profile', 'failure-reasons', 'language-usage', 'score-spread', 'class-spread', 'student-map'],
+  quickprep: ['quickprep-calendar', 'quickprep-sheet-health', 'quickprep-leaders:lg', 'quickprep-own-work', 'quickprep-trend:full',
+    'quickprep-funnel:md', 'quickprep-difficulty-mix', 'quickprep-needs-attention', 'quickprep-hardest-questions',
+    'quickprep-pace:sm', 'quickprep-spread:sm', 'quickprep-coverage:sm', 'quickprep-by-class', 'quickprep-class-spread', 'quickprep-sheets:full', 'quickprep-matrix'],
+  learning: ['learning-calendar', 'learning-leaders:lg', 'learning-funnel', 'learning-trend:full', 'learning-subjects:full', 'learning-needs-attention', 'learning-spread'],
+  interview: ['interview-calendar', 'interview-leaders:lg', 'interview-mix', 'interview-trend:full', 'interview-ratings', 'interview-funnel',
+    'interview-needs-attention', 'interview-spread'],
+  assessment: ['assessment-calendar', 'assessment-tests', 'assessment-funnel', 'assessment-trend:full', 'assessment-leaders', 'assessment-needs-attention',
+    'assessment-by-class', 'assessment-class-spread', 'assessment-score-time', 'assessment-spread:sm', 'assessment-scores'],
+  all: ['top-students', 'practice-funnel:sm', 'quickprep-sheet-health', 'learning-subjects', 'learning-funnel', 'interview-trend', 'interview-funnel', 'assessment-tests', 'assessment-funnel'],
+};
+const layoutEntry = (entry) => { const [id, size] = entry.split(':'); return { id, size }; };
+const perArea = (pick) => Object.freeze(Object.fromEntries(Object.entries(LAYOUTS).map(([area, list]) => [area, pick(list.map(layoutEntry))])));
+/** Chart ids per area, in page order. */
+export const DEFAULT_LAYOUT = perArea((entries) => Object.freeze(entries.map((entry) => entry.id)));
+/** Card widths per area where the page differs from the chart's own size: { area: { id: size } }. */
+export const DEFAULT_SIZES = perArea((entries) => Object.freeze(Object.fromEntries(entries.filter((entry) => entry.size).map((entry) => [entry.id, entry.size]))));
 
-// Headline numbers: only a few per feature, each a count of students the admin can
-// act on (click one to list those students). No totals of submissions or averages.
+// Raise an area's number when its default layout is redesigned: a layout this browser saved
+// under an older number is replaced by the new default once; changes made after that stay.
+export const DEFAULT_LAYOUT_VERSION = Object.freeze({ coding: 2, quickprep: 2, learning: 2, interview: 2, assessment: 2, all: 2 });
+
+// Headline numbers: a few actionable student counts per feature. Prep Coding also
+// includes accepted / total submissions because it is the clearest cohort-level
+// health check and does not pretend that a submission is a student.
 const share = (count, total) => (total ? `${Math.round((count / total) * 100)}% of ${total.toLocaleString()} students` : '');
 const studentKpi = (id, label, rows, test, extra = {}) => {
   const value = rows.filter(test).length;
   return { id, label, value, format: 'count', hint: share(value, rows.length), ...extra };
 };
 
-const learningKpis = (rows) => {
+/**
+ * A "part / whole" card (e.g. accepted / total submissions); its trend line is the rate. `value`
+ * (what the previous-period badge compares, named by `valueLabel`) is the whole unless `compare`
+ * is 'part' (e.g. topics completed, not topics available).
+ */
+const ratioKpi = (id, label, part, whole, { hint, rateLabel, valueLabel, compare = 'whole' }) => {
+  const rate = whole ? Math.round((part / whole) * 1000) / 10 : 0;
+  return { id, label, value: compare === 'part' ? part : whole, accepted: part, total: whole, rate, format: 'ratio', hint: `${rate}% ${hint}`, rateLabel, valueLabel };
+};
+
+const submissionKpi = (rows) => ratioKpi('submissions', 'Accepted / Total Submissions',
+  rows.reduce((sum, row) => sum + row.coding.accepted, 0), rows.reduce((sum, row) => sum + row.coding.submissions, 0),
+  { hint: 'acceptance rate', rateLabel: 'Acceptance rate', valueLabel: 'submissions' });
+
+// ---- Trend-line helpers shared by every feature's headline cards.
+const SERIES_DAY_MS = 24 * 60 * 60 * 1000;
+const SERIES_MAX_POINTS = 26;
+const dayKeyOf = (time) => new Date(time).toISOString().slice(0, 10);
+const timeOf = (date) => { const time = date ? new Date(date).getTime() : NaN; return Number.isFinite(time) ? time : null; };
+const firstTimeOf = (dates) => dates.reduce((first, date) => { const time = timeOf(date); return time !== null && (first === null || time < first) ? time : first; }, null);
+const percentOf1 = (part, whole) => (whole ? Math.round((part / whole) * 1000) / 10 : 0);
+const average1 = (values) => (values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : 0);
+/** True when one of these sorted day keys falls in the 14 days up to `time` ("active" everywhere). */
+const activeAt = (dayKeys, time) => {
+  const last = dayKeyOf(time);
+  const first = dayKeyOf(time - INACTIVE_AFTER_DAYS * SERIES_DAY_MS);
+  return dayKeys.some((day) => day >= first && day <= last);
+};
+/** Builds { kpiId: [{ at, value }] } by measuring each card at every point. */
+const measureSeries = (points, measures) => new Map(Object.entries(measures).map(([id, measure]) => [id, points.map((time) => ({ at: new Date(time).toISOString(), value: measure(time) }))]));
+const countAt = (list, test) => (time) => list.filter((item) => test(item, time)).length;
+
+/**
+ * Prep Learning: who is learning, who has completed a topic, who is halfway, who has stopped, and
+ * how much of the course the students in view have completed. Topic completions are dated, so the
+ * lines replay them: at each point a student's completed topics are those completed by then.
+ */
+function learningKpis(rows, range, now) {
   const withData = rows.filter((row) => row.learning);
-  return [
-    studentKpi('active', 'Learning now', withData, (row) => row.learning.status === 'active'),
-    studentKpi('halfway', 'Halfway through the course', withData, (row) => row.learning.progress >= 50),
-    studentKpi('subjectDone', 'Finished a subject', withData, (row) => row.learning.subjectsFinished.length > 0),
-    studentKpi('stopped', 'Not learning', withData, (row) => row.learning.status !== 'active', { tone: 'warning' }),
+  const learning = (row) => row.learning;
+  const kpis = [
+    studentKpi('active', 'Active Learners', withData, (row) => learning(row).status === 'active'),
+    studentKpi('topicDone', 'Completed a Topic', withData, (row) => learning(row).completedTopics > 0),
+    studentKpi('halfway', 'Halfway Through the Course', withData, (row) => learning(row).progress >= 50),
+    studentKpi('stopped', 'Not Learning', withData, (row) => learning(row).status !== 'active', { tone: 'warning' }),
+    ratioKpi('topics', 'Completed / Available Topics', withData.reduce((sum, row) => sum + learning(row).completedTopics, 0),
+      withData.reduce((sum, row) => sum + learning(row).availableTopics, 0), { hint: 'of the course completed', rateLabel: 'Course completed', valueLabel: 'topics completed', compare: 'part' }),
   ];
-};
+  if (!range) return kpis;
+  const students = withData.map((row) => ({ ...learning(row), dayKeys: [...(learning(row).days?.keys?.() || [])].sort() }));
+  // Topics completed by `time`: everything completed, less what was completed after that day.
+  const doneBy = (student, time) => {
+    const day = dayKeyOf(time);
+    let later = 0;
+    for (const [key, count] of student.days || []) if (key > day) later += count;
+    return Math.max(0, student.completedTopics - later);
+  };
+  const available = students.reduce((sum, student) => sum + student.availableTopics, 0);
+  const active = countAt(students, (student, time) => activeAt(student.dayKeys, time));
+  return withSeries(kpis, measureSeries(seriesPoints(withData, range, now, (row) => learning(row).days), {
+    active,
+    topicDone: countAt(students, (student, time) => doneBy(student, time) > 0),
+    halfway: countAt(students, (student, time) => student.availableTopics > 0 && (doneBy(student, time) / student.availableTopics) * 100 >= 50),
+    stopped: (time) => students.length - active(time),
+    topics: (time) => percentOf1(students.reduce((sum, student) => sum + doneBy(student, time), 0), available),
+  }));
+}
 
-const interviewKpis = (rows) => {
+/**
+ * Prep Interview: who has been interviewed, who is interviewing now, who scores 60%+, who never
+ * has, and the average mock score. Every mock and AI interview is dated.
+ */
+function interviewKpis(rows, range, now) {
   const withData = rows.filter((row) => row.interview);
-  return [
+  const mockScores = withData.flatMap((row) => row.interview.mocks.map((mock) => mock.score));
+  const kpis = [
     studentKpi('students', 'Interviewed', withData, (row) => row.interview.done > 0),
-    studentKpi('strong', 'Mock score 60%+', withData, (row) => row.interview.mockDone > 0 && row.interview.mockScore >= 60),
-    studentKpi('scheduled', 'Mock interview coming up', withData, (row) => row.interview.scheduled > 0),
-    studentKpi('never', 'Never interviewed', withData, (row) => row.interview.status === 'never', { tone: 'warning' }),
+    studentKpi('active', 'Active Interviewees', withData, (row) => row.interview.status === 'active'),
+    studentKpi('strong', 'Mock Score 60%+', withData, (row) => row.interview.mockDone > 0 && row.interview.mockScore >= 60),
+    studentKpi('never', 'Never Interviewed', withData, (row) => row.interview.status === 'never', { tone: 'warning' }),
+    { id: 'avgMock', label: 'Average Mock Score', value: average1(mockScores), format: 'percent', hint: `across ${mockScores.length.toLocaleString()} mock interview${mockScores.length === 1 ? '' : 's'}` },
   ];
-};
+  if (!range) return kpis;
+  const students = withData.map((row) => ({
+    first: firstTimeOf([...row.interview.mocks.map((mock) => mock.at), ...row.interview.aiDates]),
+    dayKeys: [...(row.interview.days?.keys?.() || [])].sort(),
+    mocks: row.interview.mocks.map((mock) => ({ time: timeOf(mock.at), score: mock.score })).filter((mock) => mock.time !== null),
+  }));
+  const interviewed = countAt(students, (student, time) => student.first !== null && student.first <= time);
+  const scoresBy = (student, time) => student.mocks.filter((mock) => mock.time <= time).map((mock) => mock.score);
+  return withSeries(kpis, measureSeries(seriesPoints(withData, range, now, (row) => row.interview.days), {
+    students: interviewed,
+    active: countAt(students, (student, time) => activeAt(student.dayKeys, time)),
+    strong: countAt(students, (student, time) => { const scores = scoresBy(student, time); return scores.length > 0 && average1(scores) >= 60; }),
+    never: (time) => students.length - interviewed(time),
+    avgMock: (time) => average1(students.flatMap((student) => scoresBy(student, time))),
+  }));
+}
 
-const assessmentKpis = (rows) => {
+/**
+ * Prep Assessment: who took a test, who passed one, who missed one, who never took one, and
+ * passed / taken tests. Attempts are dated, and a missed test dates from when it closed.
+ */
+function assessmentKpis(rows, range, now) {
   const withData = rows.filter((row) => row.assessment);
-  return [
-    studentKpi('students', 'Took a test', withData, (row) => row.assessment.taken > 0),
-    studentKpi('passedStudents', `Passed a test (${PASS_PERCENT}%+)`, withData, (row) => row.assessment.passed > 0),
-    studentKpi('missed', 'Missed a test', withData, (row) => row.assessment.missed > 0, { tone: 'warning' }),
-    studentKpi('never', 'Never took a test', withData, (row) => row.assessment.status === 'never', { tone: 'warning' }),
+  const kpis = [
+    studentKpi('students', 'Took a Test', withData, (row) => row.assessment.taken > 0),
+    studentKpi('passedStudents', `Passed a Test (${PASS_PERCENT}%+)`, withData, (row) => row.assessment.passed > 0),
+    studentKpi('missed', 'Missed a Test', withData, (row) => row.assessment.missed > 0, { tone: 'warning' }),
+    studentKpi('never', 'Never Took a Test', withData, (row) => row.assessment.status === 'never', { tone: 'warning' }),
+    ratioKpi('passRate', 'Passed / Taken Tests', withData.reduce((sum, row) => sum + row.assessment.passed, 0),
+      withData.reduce((sum, row) => sum + row.assessment.taken, 0), { hint: 'pass rate', rateLabel: 'Pass rate', valueLabel: 'tests taken' }),
   ];
-};
+  if (!range) return kpis;
+  const students = withData.map((row) => {
+    const attempts = [...(row.assessment.byTest?.values?.() || [])].map((attempt) => ({ time: timeOf(attempt.at), passed: attempt.percent >= PASS_PERCENT })).filter((attempt) => attempt.time !== null);
+    return {
+      attempts,
+      firstTaken: attempts.length ? Math.min(...attempts.map((attempt) => attempt.time)) : null,
+      firstPassed: firstTimeOf(attempts.filter((attempt) => attempt.passed).map((attempt) => attempt.time)),
+      firstMissed: firstTimeOf(row.assessment.missedDates || []),
+    };
+  });
+  const took = countAt(students, (student, time) => student.firstTaken !== null && student.firstTaken <= time);
+  return withSeries(kpis, measureSeries(seriesPoints(withData, range, now, (row) => row.assessment.days), {
+    students: took,
+    passedStudents: countAt(students, (student, time) => student.firstPassed !== null && student.firstPassed <= time),
+    missed: countAt(students, (student, time) => student.firstMissed !== null && student.firstMissed <= time),
+    never: (time) => students.length - took(time),
+    passRate: (time) => {
+      const taken = students.flatMap((student) => student.attempts.filter((attempt) => attempt.time <= time));
+      return percentOf1(taken.filter((attempt) => attempt.passed).length, taken.length);
+    },
+  }));
+}
 
-const quickPrepKpis = (rows) => {
+/**
+ * Quick Prep sheets: who started, who used sheets recently, who finished, who never opened one,
+ * and flagged own work. Sheet starts, finishes, last visits and timed solves are dated.
+ */
+function quickPrepKpis(rows, range, now) {
   const withData = rows.filter((row) => row.quickprep);
-  return [
-    studentKpi('sheetStarted', 'Started a sheet', withData, (row) => row.quickprep.started > 0),
-    studentKpi('sheetActive', 'Used sheets recently', withData, (row) => row.quickprep.activity === 'active'),
-    studentKpi('sheetFinished', 'Finished a sheet', withData, (row) => row.quickprep.finished > 0),
-    studentKpi('never', 'Never opened a sheet', withData, (row) => row.quickprep.status === 'none', { tone: 'warning' }),
-    // Shown once solve times exist, so "0" never means "not tracked yet".
-    ...(withData.some((row) => row.quickprep.review?.tracked) ? [
-      studentKpi('review', 'Sheet solves to review', withData, (row) => row.quickprep.review?.flagged > 0, { tone: 'warning' }),
-    ] : []),
+  const tracked = withData.some((row) => row.quickprep.review?.tracked);
+  const kpis = [
+    studentKpi('sheetStarted', 'Started a Sheet', withData, (row) => row.quickprep.started > 0),
+    studentKpi('sheetActive', 'Active Sheet Users', withData, (row) => row.quickprep.activity === 'active'),
+    studentKpi('sheetFinished', 'Finished a Sheet', withData, (row) => row.quickprep.finished > 0),
+    studentKpi('never', 'Never Opened a Sheet', withData, (row) => row.quickprep.status === 'none', { tone: 'warning' }),
+    // Always the fifth card (same five every time); says so when no solve has been timed yet.
+    studentKpi('review', 'Flagged Students', withData, (row) => row.quickprep.review?.flagged > 0, { tone: 'warning', ...(tracked ? {} : { hint: 'No timed solves tracked yet' }) }),
   ];
-};
+  if (!range) return kpis;
+  const students = withData.map((row) => {
+    const sheets = [...(row.quickprep.bySheet?.values?.() || [])];
+    const visits = sheets.flatMap((sheet) => [sheet.startedAt, sheet.completedAt, sheet.lastViewedAt]).map(timeOf).filter((time) => time !== null);
+    return {
+      firstStarted: firstTimeOf(sheets.map((sheet) => sheet.startedAt)),
+      firstFinished: firstTimeOf(sheets.filter((sheet) => sheet.finished).map((sheet) => sheet.completedAt)),
+      firstFlagged: firstTimeOf((row.quickprep.review?.items || []).filter((item) => item.review?.reasons?.length).map((item) => item.at)),
+      visitDays: [...new Set(visits.map(dayKeyOf))].sort(),
+    };
+  });
+  const started = countAt(students, (student, time) => student.firstStarted !== null && student.firstStarted <= time);
+  return withSeries(kpis, measureSeries(seriesPoints(withData, range, now, (row) => row.quickprep.days), {
+    sheetStarted: started,
+    sheetActive: countAt(students, (student, time) => activeAt(student.visitDays, time)),
+    sheetFinished: countAt(students, (student, time) => student.firstFinished !== null && student.firstFinished <= time),
+    never: (time) => students.length - started(time),
+    review: countAt(students, (student, time) => student.firstFlagged !== null && student.firstFlagged <= time),
+  }));
+}
 
-/** Headline counts per feature for the students in view (never cohort averages). */
-export function buildKpiGroups(area, modules, rows) {
-  const builders = { coding: buildKpis, quickprep: quickPrepKpis, learning: learningKpis, interview: interviewKpis, assessment: assessmentKpis };
+/**
+ * Headline counts per feature for the students in view (never cohort averages): five cards per
+ * feature. With `range`, every card carries a trend line over the period.
+ */
+export function buildKpiGroups(area, modules, rows, range = null, now = new Date()) {
+  const builders = {
+    coding: (list) => buildKpis(list, range, now),
+    quickprep: (list) => quickPrepKpis(list, range, now),
+    learning: (list) => learningKpis(list, range, now),
+    interview: (list) => interviewKpis(list, range, now),
+    assessment: (list) => assessmentKpis(list, range, now),
+  };
   return Object.entries(SECTIONS)
     .filter(([, section]) => modules.has(section.module) && (area === 'all' || section.module === area))
     .map(([key, section]) => ({ key, module: section.module, label: section.label, kpis: builders[key](rows) }));
 }
 
-/** Headline counts for Prep Coding (Quick Prep has its own). */
-export function buildKpis(rows) {
+/**
+ * Points (oldest first) for the headline trend lines: daily for up to a month, weekly up to four
+ * months, else evenly spread (at most 26). "All time" uses the span the data covers (each
+ * feature's own activity days, `daysOf(row)`), capped at six months so the line stays readable.
+ * The last point is the period end.
+ */
+export function seriesPoints(rows, range, now = new Date(), daysOf = (row) => row.days) {
+  const end = (range?.to ? new Date(range.to) : now).getTime();
+  let start = range?.from ? new Date(range.from).getTime() : null;
+  if (start === null) {
+    const firstDay = rows.flatMap((row) => [...(daysOf(row)?.keys?.() || [])]).sort()[0];
+    start = firstDay ? Math.max(Date.parse(`${firstDay}T00:00:00Z`), end - 180 * SERIES_DAY_MS) : end - 30 * SERIES_DAY_MS;
+  }
+  const span = Math.max(SERIES_DAY_MS, end - start);
+  const step = span <= 31 * SERIES_DAY_MS ? SERIES_DAY_MS : span <= 120 * SERIES_DAY_MS ? 7 * SERIES_DAY_MS : Math.ceil(span / SERIES_MAX_POINTS);
+  const points = [];
+  for (let time = end; time > start && points.length < SERIES_MAX_POINTS; time -= step) points.unshift(time);
+  return points.length > 1 ? points : [end - SERIES_DAY_MS, end];
+}
+
+/**
+ * Trend lines for the Prep Coding headline cards, each measured exactly like its card at every
+ * point, so the last point equals the card's number:
+ *   active   students who practised in the 14 days up to that point (Active Users)
+ *   stopped  students in view minus active (Inactive Students)
+ *   hard     students whose first Hard solve in the period was on or before that point
+ *   review   students whose first flagged solve in the period was on or before that point
+ *   submissions  acceptance rate of all submissions in the period up to that point
+ * Returns Map(kpiId -> [{ at, value }]).
+ */
+export function codingKpiSeries(rows, range, now = new Date()) {
+  const points = seriesPoints(rows, range, now);
+  const inactiveWindow = INACTIVE_AFTER_DAYS * SERIES_DAY_MS;
+  // Per student: sorted active day keys; per day: submission totals (for the acceptance line).
+  const studentDays = rows.map((row) => [...(row.days?.keys?.() || [])].sort());
+  const dayTotals = new Map();
+  for (const row of rows) {
+    for (const [day, figures] of row.days || []) {
+      const total = dayTotals.get(day) || { attempts: 0, accepted: 0 };
+      total.attempts += figures.attempts || 0;
+      total.accepted += figures.accepted || 0;
+      dayTotals.set(day, total);
+    }
+  }
+  const sortedDays = [...dayTotals.keys()].sort();
+  const firstHard = rows.map((row) => (row.coding.firstHardAt ? Date.parse(row.coding.firstHardAt) : null));
+  const firstFlagged = rows.map((row) => (row.coding.firstFlaggedAt ? Date.parse(row.coding.firstFlaggedAt) : null));
+  const series = { active: [], stopped: [], hard: [], review: [], submissions: [] };
+  let dayIndex = 0;
+  let attempts = 0;
+  let accepted = 0;
+  for (const time of points) {
+    const at = new Date(time).toISOString();
+    const lastKey = dayKeyOf(time);
+    const firstKey = dayKeyOf(time - inactiveWindow);
+    const active = studentDays.filter((days) => days.some((day) => day >= firstKey && day <= lastKey)).length;
+    while (dayIndex < sortedDays.length && sortedDays[dayIndex] <= lastKey) {
+      const figures = dayTotals.get(sortedDays[dayIndex]);
+      attempts += figures.attempts;
+      accepted += figures.accepted;
+      dayIndex += 1;
+    }
+    series.active.push({ at, value: active });
+    series.stopped.push({ at, value: rows.length - active });
+    series.hard.push({ at, value: firstHard.filter((first) => first !== null && first <= time).length });
+    series.review.push({ at, value: firstFlagged.filter((first) => first !== null && first <= time).length });
+    series.submissions.push({ at, value: attempts ? Math.round((accepted / attempts) * 1000) / 10 : 0 });
+  }
+  return new Map(Object.entries(series));
+}
+
+/** Pins each series' last point to the card's own number (the card is the source of truth). */
+function withSeries(kpis, series) {
+  return kpis.map((kpi) => {
+    const points = series.get(kpi.id);
+    if (!points?.length) return kpi;
+    const last = kpi.format === 'ratio' ? kpi.rate : kpi.value;
+    return { ...kpi, series: [...points.slice(0, -1), { ...points.at(-1), value: last }] };
+  });
+}
+
+/** Headline counts for Prep Coding (Quick Prep has its own). With `range`, each card carries a trend line. */
+export function buildKpis(rows, range = null, now = new Date()) {
+  const kpis = codingKpiCards(rows);
+  return range ? withSeries(kpis, codingKpiSeries(rows, range, now)) : kpis;
+}
+
+function codingKpiCards(rows) {
+  const reviewTracked = rows.some((row) => row.coding.review?.tracked);
   return [
-    studentKpi('active', 'Practising now', rows, (row) => row.coding.practiceStatus === 'active'),
-    studentKpi('hard', 'Solved a Hard problem', rows, (row) => row.coding.solved.Hard > 0),
-    studentKpi('stopped', 'Not practising', rows, (row) => row.coding.practiceStatus !== 'active', { tone: 'warning' }),
-    // Very fast or mostly pasted first solves. Shown once solve times exist.
-    ...(rows.some((row) => row.coding.review?.tracked) ? [
-      studentKpi('review', 'Solves to review', rows, (row) => row.coding.review.flagged > 0, { tone: 'warning' }),
-    ] : []),
+    studentKpi('active', 'Active Users', rows, (row) => row.coding.practiceStatus === 'active'),
+    studentKpi('hard', 'Hard Problem Solvers', rows, (row) => row.coding.solved.Hard > 0),
+    studentKpi('stopped', 'Inactive Students', rows, (row) => row.coding.practiceStatus !== 'active', { tone: 'warning' }),
+    // Very fast or mostly pasted first solves. Keep the card visible so this row
+    // always has the same five metrics; be explicit when tracking has no evidence.
+    studentKpi('review', 'Flagged Students', rows, (row) => row.coding.review?.flagged > 0, {
+      tone: 'warning',
+      ...(reviewTracked ? {} : { hint: 'No timed solves tracked yet' }),
+    }),
+    submissionKpi(rows),
   ];
 }

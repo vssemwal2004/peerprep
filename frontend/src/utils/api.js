@@ -646,6 +646,17 @@ export const api = {
       cacheTtlMs: 30 * 1000,
     }),
   getStudentGlobalRanking: () => request('/auth/global-ranking', { skipCache: true }),
+  // Peer network (same university only): search, peer profiles, Prep Mates.
+  searchPeers: (q, signal) => request(`/student/peers/search?q=${encodeURIComponent(q)}`, { skipCache: true, skipDedupe: true, skipQueue: true, signal }),
+  getPeerSummary: () => request('/student/peers/me/summary', { skipCache: true }),
+  getPeerNetwork: (tab, before) => request(`/student/peers/me/network?tab=${encodeURIComponent(tab)}${before ? `&before=${encodeURIComponent(before)}` : ''}`, { skipCache: true }),
+  getPeerNetworkOf: (id, tab, before) => request(`/student/peers/${encodeURIComponent(id)}/network?tab=${encodeURIComponent(tab)}${before ? `&before=${encodeURIComponent(before)}` : ''}`, { skipCache: true }),
+  getPeerProfile: (id) => request(`/student/peers/${encodeURIComponent(id)}`, { skipCache: true }),
+  requestPrepMate: (id) => request(`/student/peers/${encodeURIComponent(id)}/mate`, { method: 'POST' }),
+  cancelPrepMateRequest: (id) => request(`/student/peers/${encodeURIComponent(id)}/mate-request`, { method: 'DELETE' }),
+  removePrepMate: (id) => request(`/student/peers/${encodeURIComponent(id)}/mate`, { method: 'DELETE' }),
+  acceptPrepMate: (requestId) => request(`/student/peers/requests/${encodeURIComponent(requestId)}/accept`, { method: 'POST' }),
+  declinePrepMate: (requestId) => request(`/student/peers/requests/${encodeURIComponent(requestId)}/decline`, { method: 'POST' }),
   refreshStudentEngagement: () => request('/engagement/refresh', { method: 'POST' }),
   acceptStudentChallenge: (kind, periodKey) => request(`/engagement/challenges/${encodeURIComponent(kind)}/accept`, { method: 'POST', body: { periodKey } }),
   claimAchievements: () => request('/engagement/achievements/claim', { method: 'POST' }),
@@ -881,6 +892,9 @@ export const api = {
     request(`/students/upload-batches/${batchId}`, { method: "DELETE" }),
   createStudent: (body) =>
     request("/students/create", { method: "POST", body }),
+  // Existing coordinators for the Teacher ID picker: { teachers: [{ id, name, department, active }], total, ownOnly }.
+  listTeacherOptions: (search = "") =>
+    request(`/students/teacher-options${search ? `?search=${encodeURIComponent(search)}` : ""}`, { skipCache: true }),
   getStudentAccessPolicy: () =>
     request("/students/access-policy", { skipCache: true }),
   updateStudentAccessPolicy: (body) =>
@@ -901,6 +915,15 @@ export const api = {
     request(`/students/${studentId}`, { method: "PUT", body }),
   deleteStudent: (studentId) =>
     request(`/students/${studentId}`, { method: "DELETE" }),
+  // Access & features for many students: target = { studentIds } or { allMatching: true, filters };
+  // change = { type: 'grant' | 'revoke', features } or { type: 'set', access }.
+  bulkUpdateStudentAccess: (target, change) =>
+    request("/students/access/bulk", {
+      method: "POST",
+      body: { ...target, change },
+      timeoutMs: 120 * 1000,
+      skipDedupe: true,
+    }),
   bulkDeleteStudents: (studentIds) =>
     request("/students/bulk-delete", {
       method: "POST",

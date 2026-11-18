@@ -15,6 +15,7 @@ export const LANGUAGE_LABELS = Object.freeze({
 // Combo charts: outcome-like bar names keep a fixed meaning; lines are violet, then amber.
 const COMBO_BAR_COLORS = { Finished: "#10b981", "In progress": "#38bdf8", Solved: "#10b981", "Not solved yet": "#cbd5e1" };
 const COMBO_LINE_COLORS = ["#7c3aed", "#f59e0b"];
+const TREND_NAME_COLORS = { Accepted: "#10b981", "Not accepted": "#f43f5e" };
 const truncate = (text, size = 18) => (String(text).length > size ? `${String(text).slice(0, size - 1)}…` : String(text));
 export const escapeHtml = (text) => String(text).replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char]));
 const weekLabel = (day) => new Date(`${day}T00:00:00Z`).toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
@@ -25,6 +26,7 @@ const dot = (color) => `<span style="display:inline-block;width:8px;height:8px;b
 export const CHART_VIEWS = Object.freeze({
   rankedStackedBar: [{ value: "chart", label: "Bars" }, { value: "mix", label: "Difficulty mix" }, { value: "table", label: "Table" }],
   barList: [{ value: "chart", label: "Bars" }, { value: "lollipop", label: "Lollipop" }, { value: "treemap", label: "Treemap" }, { value: "table", label: "Table" }],
+  bubble: [{ value: "chart", label: "Bubbles" }, { value: "bars", label: "Bars" }, { value: "table", label: "Table" }],
   donut: [{ value: "chart", label: "Donut" }, { value: "rose", label: "Rose" }, { value: "treemap", label: "Treemap" }, { value: "bars", label: "Bars" }, { value: "table", label: "Table" }],
   trend: [{ value: "chart", label: "Line" }, { value: "bars", label: "Bars" }, { value: "combo", label: "Bars and line" }, { value: "table", label: "Table" }],
   funnel: [{ value: "chart", label: "Steps" }, { value: "funnel", label: "Funnel" }, { value: "drop", label: "Drop-off" }, { value: "table", label: "Table" }],
@@ -45,7 +47,12 @@ function base(theme, extra = {}) {
     animationEasing: "cubicOut",
     textStyle: { fontFamily: FONT, color: theme.text, fontSize: 11 },
     tooltip: {
-      confine: true,
+      // Drawn on <body>, not inside the card: Safari clips anything inside a rounded,
+      // overflow-hidden or transformed card, which hid tooltips there. Touch: tap shows it.
+      appendToBody: true,
+      confine: false,
+      triggerOn: "mousemove|click",
+      transitionDuration: 0.15,
       backgroundColor: theme.surface,
       borderColor: theme.border,
       borderWidth: 1,
@@ -92,9 +99,29 @@ const itemName = (item) => LANGUAGE_LABELS[item.name] || item.name;
  * Row labels that report their row when clicked: the category values are row indexes (so two
  * students with the same name stay apart) and the label shows the name.
  */
-const rowAxis = (theme, names, size = 24) => categoryAxis(theme, names.map((_, index) => String(index)), {
+const rowAxis = (theme, names, size = 24, labelWidth = null) => categoryAxis(theme, names.map((_, index) => String(index)), {
   inverse: true, axisLine: { show: false }, triggerEvent: true,
-  axisLabel: { color: theme.text, fontSize: 10.5, interval: 0, formatter: (value) => truncate(names[Number(value)] ?? "", size) },
+  axisLabel: {
+    color: theme.text, fontSize: 10.5, interval: 0, formatter: (value) => truncate(names[Number(value)] ?? "", size),
+    // In an aligned chart the label column has one fixed width; longer names end in "…".
+    ...(labelWidth ? { width: labelWidth, overflow: "truncate", ellipsis: "…" } : {}),
+  },
+});
+
+// Every ranked-bar chart shares one layout: a fixed label column on the left and a fixed figures
+// column on the right, so bars start and figures end at the same place on every card.
+const LABEL_COLUMN = 124;
+const VALUE_COLUMN = 88;
+// Count and share are two columns ("9" and "1.5%"), never one "9 · 1.5%" string.
+const COUNT_COLUMN = 64;
+const SHARE_COLUMN = 90;
+const alignedGrid = (extra = {}) => grid({ left: LABEL_COLUMN, right: VALUE_COLUMN, containLabel: false, ...extra });
+const capitalize = (text) => (text ? String(text)[0].toUpperCase() + String(text).slice(1) : "");
+
+/** A small column heading above a chart's label or figures column ("TOPIC", "STUDENTS", "% OF STUDENTS"). */
+const columnHeading = (theme, text, position) => ({
+  text: String(text || "").toUpperCase(), top: 2, ...position,
+  textStyle: { color: theme.muted, fontSize: 9.5, fontWeight: 700, fontFamily: FONT },
 });
 const plain = (value) => (typeof value === "number" ? value.toLocaleString() : value);
 
@@ -102,20 +129,41 @@ const plain = (value) => (typeof value === "number" ? value.toLocaleString() : v
  * A second row axis on the right that shows each row's value ("77 · 10.8%"), right-aligned in one
  * column at the chart edge, instead of a label floating at the end of each bar.
  */
-const valueColumn = (theme, texts) => {
-  const width = Math.max(24, ...texts.map((text) => String(text).length * 6.3)) + 6;
+const valueColumn = (theme, texts, column = null) => {
+  // Aligned charts: the figures' right edge is the card's right edge, in a column of fixed width.
+  const width = column ? column - 4 : Math.max(24, ...texts.map((text) => String(text).length * 6.3)) + 6;
   return categoryAxis(theme, texts.map((_, index) => String(index)), {
     inverse: true, position: "right", axisLine: { show: false }, axisTick: { show: false },
-    axisLabel: { color: theme.strong, fontSize: 10.5, fontWeight: 700, align: "right", margin: width, interval: 0, formatter: (value) => texts[Number(value)] ?? "" },
+    axisLabel: {
+      color: theme.strong, fontSize: 10.5, fontWeight: 700, align: "right", margin: width, interval: 0, formatter: (value) => texts[Number(value)] ?? "",
+      ...(column ? { width: column - 8, overflow: "truncate", ellipsis: "…" } : {}),
+    },
   });
 };
 
-/** Horizontal ranked bars: [{ name, value, color?, note?, pct? }]. Shared by several views. */
-function horizontalBars(theme, items, { color, unit = "", max, valueLabel = "", tooltip, valueText } = {}) {
-  // "1,175 · 39%" when the value is a count of students out of everyone in view; `valueText` overrides it.
-  const label = valueText || ((item) => `${plain(item.value)}${unit}${item.pct !== undefined && !unit ? ` · ${item.pct}%` : ""}`);
+/**
+ * Horizontal ranked bars: [{ name, value, color?, note?, pct? }]. Shared by several views.
+ * Figures sit in their own columns under headings: the count, and (when there is one) its share
+ * as a second column. `share(item)` overrides the share text; `headings` names the columns.
+ */
+function horizontalBars(theme, items, { color, unit = "", max, valueLabel = "", tooltip, share, headings = {} } = {}) {
+  const count = (item) => `${plain(item.value)}${unit}`;
+  const shareOf = share || ((item) => (item.pct !== undefined && item.pct !== null && !unit ? `${item.pct}%` : ""));
+  const shares = items.map(shareOf);
+  const twoColumns = shares.some(Boolean);
+  // Kept for the tooltip: "1,175 · 39%".
+  const label = (item) => [count(item), shareOf(item)].filter(Boolean).join(" · ");
+  const right = twoColumns ? COUNT_COLUMN + SHARE_COLUMN : VALUE_COLUMN;
+  const titles = [
+    ...(headings.label ? [columnHeading(theme, headings.label, { left: LABEL_COLUMN - 10, textAlign: "right" })] : []),
+    // Each heading's right edge is its column's right edge (figures are right-aligned 4px in).
+    // `right` already places the heading's right edge; a textAlign as well would shift it twice.
+    columnHeading(theme, headings.count || capitalize(valueLabel) || "Value", { right: twoColumns ? SHARE_COLUMN + 4 : 4 }),
+    ...(twoColumns ? [columnHeading(theme, headings.share || "Share", { right: 4 })] : []),
+  ];
   return base(theme, {
-    grid: grid({ top: 4, right: 8 }),
+    title: titles,
+    grid: alignedGrid({ top: 24, bottom: 4, right }),
     tooltip: {
       ...base(theme).tooltip, trigger: "axis", axisPointer: { type: "shadow", shadowStyle: { color: alpha(color, 0.06) } },
       formatter: tooltip || ((params) => {
@@ -125,7 +173,12 @@ function horizontalBars(theme, items, { color, unit = "", max, valueLabel = "", 
     },
     xAxis: valueAxis(theme, { splitLine: { show: false }, axisLabel: { show: false }, ...(max ? { max } : {}) }),
     // Values sit in one right-aligned column; the grey track runs the full width up to it.
-    yAxis: [rowAxis(theme, items.map((item) => item.name)), valueColumn(theme, items.map(label))],
+    yAxis: [
+      rowAxis(theme, items.map((item) => item.name), 40, LABEL_COLUMN - 10),
+      valueColumn(theme, items.map(count), twoColumns ? COUNT_COLUMN : VALUE_COLUMN),
+      // The share column sits just right of the counts, lighter, under its own heading.
+      ...(twoColumns ? [{ ...valueColumn(theme, shares, SHARE_COLUMN), offset: COUNT_COLUMN, axisLabel: { ...valueColumn(theme, shares, SHARE_COLUMN).axisLabel, color: theme.muted, fontWeight: 600 } }] : []),
+    ],
     series: [{
       type: "bar", barWidth: 12, cursor: "pointer",
       showBackground: true, backgroundStyle: { color: theme.empty, borderRadius: 6 },
@@ -135,36 +188,119 @@ function horizontalBars(theme, items, { color, unit = "", max, valueLabel = "", 
   });
 }
 
+// Topic bubbles: priority colours (see TOPIC_TIERS on the server).
+export const TIER_COLORS = Object.freeze({ strong: "#10b981", growing: "#0ea5e9", focus: "#f59e0b" });
+
 const builders = {
+  /**
+   * Packed bubbles, one per item: area grows with the value, colour is the item's priority tier.
+   * data: { items: [{ key, name, value, pct?, accuracy?, tier }], tiers: [{ key, label, hint }], valueLabel }.
+   */
+  bubble(data, theme) {
+    const items = data.items || [];
+    if (!items.length) return null;
+    const most = Math.max(1, ...items.map((item) => item.value));
+    const count = items.length;
+    // Fewer topics, bigger bubbles; many topics still fit the card.
+    const maxSize = count > 80 ? 56 : count > 40 ? 68 : count > 15 ? 84 : 104;
+    const minSize = count > 80 ? 15 : count > 40 ? 18 : 24;
+    const sizeOf = (value) => Math.round(minSize + (maxSize - minSize) * Math.sqrt(value / most));
+    const tiers = data.tiers?.length ? data.tiers : [{ key: "strong", label: "Most practised" }, { key: "growing", label: "Growing" }, { key: "focus", label: "Needs focus" }];
+    const tierIndex = new Map(tiers.map((tier, index) => [tier.key, index]));
+    const tierLabel = new Map(tiers.map((tier) => [tier.key, tier.label]));
+    const valueName = data.valueLabel || "students";
+    return base(theme, {
+      legend: { ...legend(theme), data: tiers.map((tier) => tier.label), selectedMode: false },
+      tooltip: {
+        ...base(theme).tooltip, trigger: "item",
+        formatter: (params) => {
+          const item = items[params.dataIndex];
+          if (!item) return "";
+          const color = TIER_COLORS[item.tier] || CATEGORICAL[0];
+          return `<b>${escapeHtml(item.name)}</b><br/>${dot(color)}<b>${plain(item.value)}</b> ${escapeHtml(valueName)}`
+            + `${item.pct !== undefined ? ` · ${item.pct}% of ${data.cohort ? plain(data.cohort) : "students"}` : ""}`
+            + `${item.accuracy !== undefined ? `<br/><span style="opacity:.75">${item.accuracy}% of submissions accepted</span>` : ""}`
+            + `<br/><span style="opacity:.75">Priority: ${escapeHtml(tierLabel.get(item.tier) || "—")}</span>`;
+        },
+      },
+      series: [{
+        type: "graph", layout: "force", roam: false, draggable: false, cursor: "pointer",
+        top: 30, bottom: 6, left: 6, right: 6,
+        categories: tiers.map((tier) => ({ name: tier.label, itemStyle: { color: TIER_COLORS[tier.key] || CATEGORICAL[0] } })),
+        force: { repulsion: maxSize * 2.4, gravity: 0.14, edgeLength: 1, friction: 0.3, layoutAnimation: true },
+        emphasis: { scale: 1.06, label: { show: true } },
+        labelLayout: { hideOverlap: true },
+        links: [],
+        data: items.map((item) => {
+          const size = sizeOf(item.value);
+          const color = TIER_COLORS[item.tier] || CATEGORICAL[0];
+          const big = size >= 52;
+          // Rich-text markers in a name would break the label: keep its text only.
+          const safeName = String(item.name).replace(/[{}|]/g, "");
+          return {
+            id: String(item.key), name: item.name, value: item.value, symbolSize: size, category: tierIndex.get(item.tier) ?? 0,
+            itemStyle: {
+              color: { type: "radial", x: 0.35, y: 0.3, r: 0.85, colorStops: [{ offset: 0, color: alpha(color, 0.72) }, { offset: 1, color }] },
+              borderColor: theme.surface, borderWidth: 2, shadowBlur: 8, shadowColor: alpha(color, 0.35),
+            },
+            label: {
+              show: size >= 34, position: "inside", width: size - 10, overflow: "truncate", ellipsis: "…", lineHeight: 13,
+              formatter: () => (big ? `{name|${safeName}}\n{count|${plain(item.value)}}` : `{name|${safeName}}`),
+              rich: {
+                name: { color: "#fff", fontSize: big ? 11 : 9.5, fontWeight: 700, fontFamily: FONT },
+                count: { color: "rgba(255,255,255,.88)", fontSize: 10, fontWeight: 600, fontFamily: FONT },
+              },
+            },
+          };
+        }),
+      }],
+    });
+  },
+
   rankedStackedBar(data, theme) {
     const items = data.items || [];
     if (!items.length) return null;
-    // The bar is the Prep Score; each part is that difficulty's share of it, so bars compare like scores.
-    const keys = ["Easy", "Medium", "Hard"];
-    // Solved counts are problems by difficulty in the period, the same numbers as the drawer.
-    const share = (item, key) => percentOf(item.segments?.[key] || 0, item.score);
+    const inset = 8;
+    const scoreColumn = 82;
+    const desktopLeft = 156;
+    const mobileLeft = 112;
+    const studentAxis = rowAxis(theme, items.map((item) => `${item.position}. ${item.name}`), Infinity);
+    const scoreAxis = rowAxis(theme, items.map((item) => formatScore(item.score)));
+    const studentLabel = (left) => ({
+      ...studentAxis.axisLabel,
+      align: "left", margin: left - inset, width: left - inset - 12, overflow: "truncate",
+    });
+    const columnLayout = (left) => ({ grid: { left }, yAxis: [{ axisLabel: studentLabel(left) }, {}] });
+    const headings = [
+      { text: "Student", left: inset },
+      { text: "Prep Score", right: inset },
+    ].map((heading) => ({
+      ...heading, top: 3, padding: 0, textStyle: { color: theme.text, fontSize: 11, fontWeight: 700 },
+    }));
     return base(theme, {
-      grid: grid({ top: 6, right: 8 }),
+      title: headings,
+      grid: grid({ top: 26, left: desktopLeft, right: scoreColumn, bottom: 24, containLabel: false }),
+      media: [{ query: { maxWidth: 430 }, option: columnLayout(mobileLeft) }, { option: columnLayout(desktopLeft) }],
       tooltip: {
         ...base(theme).tooltip, trigger: "item",
-        formatter: ({ dataIndex, seriesName }) => {
+        formatter: ({ dataIndex }) => {
           const item = items[dataIndex];
-          const solved = item.solved || {};
-          return `<b>${escapeHtml(item.name)}</b> · Prep Score <b>${formatScore(item.score)}</b><br/>`
-            + `${dot(DIFFICULTY_COLORS[seriesName])}${solved[seriesName] || 0} ${seriesName} solved · ${share(item, seriesName)}% of score`
-            + (item.toReview ? `<br/><span style="color:#d97706">⚑ ${item.toReview} solve${item.toReview === 1 ? "" : "s"} to review (very fast or mostly pasted)</span>` : "");
+          return item ? `<b>${escapeHtml(item.name)}</b><br/>Prep Score <b>${formatScore(item.score)}</b><br/>Click to see student details` : "";
         },
       },
-      xAxis: valueAxis(theme),
-      // "⚑ n": first solves that were very fast or mostly pasted (open the student to see which).
+      xAxis: valueAxis(theme, { splitNumber: 4, axisLabel: { color: theme.muted, fontSize: 10, hideOverlap: true } }),
       yAxis: [
-        rowAxis(theme, items.map((item) => `${item.position}. ${item.name}${item.toReview ? `  ⚑${item.toReview}` : ""}`), 24),
-        valueColumn(theme, items.map((item) => formatScore(item.score))),
+        { ...studentAxis, axisLabel: studentLabel(desktopLeft) },
+        {
+          ...scoreAxis,
+          position: "right",
+          axisLabel: { ...scoreAxis.axisLabel, color: theme.strong, fontSize: 11, fontWeight: 700, align: "right", margin: scoreColumn - inset },
+        },
       ],
-      series: keys.map((key, index) => ({
-        name: key, type: "bar", stack: "score", barWidth: 13, cursor: "pointer",
-        itemStyle: { color: DIFFICULTY_COLORS[key], borderRadius: index === keys.length - 1 ? [0, 6, 6, 0] : index === 0 ? [6, 0, 0, 6] : 0, borderColor: theme.surface, borderWidth: 1 },
-        emphasis: { focus: "series" },
+      series: DIFFICULTIES.map((key, index) => ({
+        name: key, type: "bar", stack: "score", barWidth: 14, cursor: "pointer",
+        showBackground: index === 0, backgroundStyle: { color: theme.empty, borderRadius: 5 },
+        itemStyle: { color: DIFFICULTY_COLORS[key], borderColor: theme.surface, borderWidth: 1 },
         data: items.map((item) => item.segments[key]),
       })),
     });
@@ -204,20 +340,39 @@ const builders = {
     if (!data.labels?.length) return null;
     const left = data.series.filter((series) => series.axis !== "right");
     // Left-axis series take sky, emerald, violet in turn; the right-axis line is slate.
-    const colors = data.series.map((series) => (series.axis === "right" ? "#64748b" : SERIES_COLORS[left.indexOf(series) % SERIES_COLORS.length] || accent));
+    // Outcome names keep their meaning (accepted green, not accepted red) whatever their order.
+    const colors = data.series.map((series) => (series.axis === "right" ? "#64748b" : TREND_NAME_COLORS[series.name] || SERIES_COLORS[left.indexOf(series) % SERIES_COLORS.length] || accent));
     const hasRight = data.series.some((series) => series.axis === "right");
     return base(theme, {
       legend: legend(theme),
       grid: grid({ right: hasRight ? 38 : 22 }),
-      tooltip: { ...base(theme).tooltip, trigger: "axis", axisPointer: { type: "line", lineStyle: { color: theme.axis } } },
+      // Smooth hover: the guide line snaps to the nearest week (or day) and glides there, and one
+      // tooltip lists every line for that point; no series dimming while the pointer moves.
+      tooltip: {
+        ...base(theme).tooltip, trigger: "axis",
+        axisPointer: { type: "line", snap: true, animation: true, animationDurationUpdate: 140, lineStyle: { color: alpha(colors[0] || accent, 0.55), width: 1.5, type: "dashed" } },
+        formatter: (params) => {
+          const index = params[0]?.dataIndex ?? 0;
+          const day = data.labels[index];
+          const heading = data.interval === "day"
+            ? new Date(`${day}T00:00:00Z`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" })
+            : `Week of ${weekLabel(day)}`;
+          const rows = params.map((point) => `<div style="display:flex;justify-content:space-between;gap:16px;margin-top:3px">`
+            + `<span>${dot(colors[point.seriesIndex])}${escapeHtml(point.seriesName)}</span><b>${plain(point.value)}</b></div>`).join("");
+          return `<div style="font-weight:700;margin-bottom:2px">${escapeHtml(heading)}</div>${rows}`;
+        },
+      },
       xAxis: categoryAxis(theme, data.labels.map(weekLabel), { boundaryGap: false }),
       yAxis: [valueAxis(theme, { minInterval: 1 }), ...(hasRight ? [valueAxis(theme, { splitLine: { show: false }, minInterval: 1 })] : [])],
       series: data.series.map((series, index) => ({
         name: series.name, type: "line", smooth: 0.35, yAxisIndex: series.axis === "right" ? 1 : 0,
+        // Parts of one whole (accepted + not accepted = submissions) stack.
+        ...(series.stack ? { stack: series.stack } : {}),
         symbol: "circle", symbolSize: 6, showSymbol: data.labels.length <= 12,
         lineStyle: { width: series.axis === "right" ? 1.5 : 2.5, color: colors[index], ...(series.axis === "right" ? { type: "dashed" } : {}) },
         itemStyle: { color: colors[index], borderColor: theme.surface, borderWidth: 1.5 },
-        emphasis: { focus: "series" },
+        // Hovered points grow a little; nothing else fades (that fading made the hover flicker).
+        emphasis: { focus: "none", scale: 1.6, lineStyle: { width: series.axis === "right" ? 1.5 : 2.5 } },
         ...(series.axis !== "right" ? { areaStyle: { color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: alpha(colors[index], 0.28) }, { offset: 1, color: alpha(colors[index], 0) }] } } } : {}),
         ...(index === 0 ? {
           endLabel: { show: true, color: theme.strong, fontWeight: 700, fontSize: 10.5 },
@@ -301,7 +456,10 @@ const builders = {
       name: stage.name, value: stage.value,
       note: index ? `${percentOf(stage.value, top)}% of ${stages[0].name.toLowerCase()} · ${percentOf(stage.value, stages[index - 1].value)}% of the step before` : "",
     }));
-    const option = horizontalBars(theme, items, { color: accent, max: top, valueLabel: "students", valueText: (item) => `${plain(item.value)} · ${percentOf(item.value, top)}%` });
+    const option = horizontalBars(theme, items, {
+      color: accent, max: top, valueLabel: "students", share: (item) => `${percentOf(item.value, top)}%`,
+      headings: { label: "Step", count: "Students", share: "% of first" },
+    });
     option.series[0].barWidth = 16;
     return option;
   },
@@ -313,6 +471,8 @@ const builders = {
     const unit = data.unit === "%" ? "%" : "";
     return horizontalBars(theme, items.map((item) => ({ ...item, color: item.difficulty ? DIFFICULTY_COLORS[item.difficulty] || tone : tone })), {
       color: tone, unit, max: unit ? 100 : undefined, valueLabel: data.valueLabel || "",
+      // Short headings that fit their columns: "Students" next to "% of students".
+      headings: { label: data.itemLabel || "", count: data.countLabel || (items.some((item) => item.pct !== undefined) && !unit ? "Students" : capitalize(data.valueLabel || "")), share: "% of students" },
       tooltip: (params) => {
         const item = items[params[0].dataIndex];
         const share = item.pct !== undefined ? ` (${item.pct}% of ${data.cohort ? data.cohort.toLocaleString() : "students in view"})` : "";
@@ -325,12 +485,19 @@ const builders = {
   calendar(data, theme) {
     if (!data.days?.length) return null;
     const step = Math.max(1, Math.ceil((data.max || 1) / 4));
+    // Every day of the range, 0 where nothing happened: hovering (or tapping) any day says so.
+    const counts = new Map(data.days.map(([day, value]) => [day, value]));
+    const allDays = [];
+    for (let time = Date.parse(`${data.from}T00:00:00Z`), end = Date.parse(`${data.to}T00:00:00Z`); time <= end; time += 86400000) {
+      const day = new Date(time).toISOString().slice(0, 10);
+      allDays.push([day, counts.get(day) || 0]);
+    }
     return base(theme, {
       tooltip: { ...base(theme).tooltip, trigger: "item", formatter: ({ value }) => `${new Date(`${value[0]}T00:00:00Z`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" })}<br/><b>${value[1]}</b> ${escapeHtml(data.unit || "submissions")}` },
       visualMap: {
         type: "piecewise", orient: "horizontal", right: 0, bottom: 0, itemWidth: 10, itemHeight: 10, itemGap: 4,
         textStyle: { color: theme.muted, fontSize: 10 },
-        pieces: [1, 2, 3, 4].map((index) => ({ min: (index - 1) * step + 1, max: index === 4 ? undefined : index * step, color: theme.sequential[index] })),
+        pieces: [{ value: 0, color: theme.empty, label: "0" }, ...[1, 2, 3, 4].map((index) => ({ min: (index - 1) * step + 1, max: index === 4 ? undefined : index * step, color: theme.sequential[index] }))],
       },
       calendar: {
         range: [data.from, data.to], top: 22, left: 34, right: 8, bottom: 26, cellSize: ["auto", 13],
@@ -340,7 +507,7 @@ const builders = {
         monthLabel: { color: theme.text, fontSize: 10 },
         yearLabel: { show: false },
       },
-      series: [{ type: "heatmap", coordinateSystem: "calendar", data: data.days }],
+      series: [{ type: "heatmap", coordinateSystem: "calendar", data: allDays.length ? allDays : data.days }],
     });
   },
 
@@ -624,12 +791,14 @@ const shade = (color, value, max) => alpha(color, 0.5 + 0.5 * (max ? value / max
 
 // Other ways to show a chart type ("type:view").
 const viewBuilders = {
+  // The topic bubbles as ranked bars (Topic · Students · % of students).
+  "bubble:bars": (data, theme, context) => builders.barList(data, theme, context),
   "rankedStackedBar:mix": (data, theme) => {
     const option = builders.rankedStackedBar(data, theme);
     if (!option) return null;
     const items = data.items || [];
     // Each bar is 100%: how much of that student's Prep Score comes from Easy, Medium and Hard.
-    option.xAxis = valueAxis(theme, { max: 100, axisLabel: { color: theme.muted, fontSize: 10, formatter: "{value}%" } });
+    option.xAxis = { ...option.xAxis, max: 100, axisLabel: { ...option.xAxis.axisLabel, formatter: "{value}%" } };
     option.series = option.series.map((series) => ({ ...series, data: items.map((item) => percentOf(item.segments?.[series.name] || 0, item.score)) }));
     return option;
   },
@@ -697,10 +866,18 @@ const viewBuilders = {
     const stages = data.stages || [];
     if (!stages[0]?.value) return null;
     const top = stages[0].value;
-    const lost = (index) => (index ? Math.max(0, stages[index - 1].value - stages[index].value) : 0);
+    // Exact counts from the server when it sends them (steps need not be nested), else the difference.
+    const lost = (index) => (index ? (data.drops?.[index - 1]?.students ?? Math.max(0, stages[index - 1].value - stages[index].value)) : 0);
     return base(theme, {
       legend: legend(theme),
-      grid: grid({ top: 30, right: 108 }),
+      // Separate columns under headings; the drop itself is the red bar (and its tooltip).
+      title: [
+        // Under the legend (top row).
+        columnHeading(theme, "Step", { left: LABEL_COLUMN - 10, textAlign: "right", top: 26 }),
+        columnHeading(theme, "Students", { right: SHARE_COLUMN + 4, top: 26 }),
+        columnHeading(theme, "% of first", { right: 4, top: 26 }),
+      ],
+      grid: alignedGrid({ top: 46, right: COUNT_COLUMN + SHARE_COLUMN }),
       tooltip: {
         ...base(theme).tooltip, trigger: "axis", axisPointer: { type: "shadow", shadowStyle: { color: alpha(accent, 0.06) } },
         formatter: (params) => {
@@ -712,8 +889,9 @@ const viewBuilders = {
       },
       xAxis: valueAxis(theme, { splitLine: { show: false }, axisLabel: { show: false }, max: top }),
       yAxis: [
-        rowAxis(theme, stages.map((stage) => stage.name)),
-        valueColumn(theme, stages.map((stage, index) => `${plain(stage.value)} · ${percentOf(stage.value, top)}%${lost(index) ? ` (−${plain(lost(index))})` : ""}`)),
+        rowAxis(theme, stages.map((stage) => stage.name), 40, LABEL_COLUMN - 10),
+        valueColumn(theme, stages.map((stage) => plain(stage.value)), COUNT_COLUMN),
+        { ...valueColumn(theme, stages.map((stage) => `${percentOf(stage.value, top)}%`), SHARE_COLUMN), offset: COUNT_COLUMN },
       ],
       series: [
         {
@@ -825,7 +1003,8 @@ const viewBuilders = {
     if (!items.length) return null;
     const total = items.reduce((sum, item) => sum + item.value, 0);
     return horizontalBars(theme, items.map((item, index) => ({ name: itemName(item), value: item.value, color: keyColor(item.key, index) })), {
-      color: CATEGORICAL[0], valueLabel: data.centerLabel || "", valueText: (item) => `${plain(item.value)} · ${percentOf(item.value, total)}%`,
+      color: CATEGORICAL[0], valueLabel: data.centerLabel || "", share: (item) => `${percentOf(item.value, total)}%`,
+      headings: { count: capitalize(data.centerLabel || "Count"), share: "% of total" },
     });
   },
   "trend:bars": (data, theme, context) => {
@@ -873,7 +1052,9 @@ const viewBuilders = {
     return horizontalBars(theme, indicators.map((indicator, index) => ({
       name: indicator.name, value: data.values[index],
       note: cohort ? `${(data.topics?.[index]?.students || 0).toLocaleString()} of ${(data.cohort || 0).toLocaleString()} students` : `average ${data.average?.[index] ?? 0}`,
-    })), cohort ? { color: accent, unit: "%", max: 100, valueLabel: "of students solved" } : { color: accent, valueLabel: "solved" });
+    })), cohort
+      ? { color: accent, unit: "%", max: 100, valueLabel: "of students solved", headings: { label: "Topic", count: "% of students solved" } }
+      : { color: accent, valueLabel: "solved", headings: { label: "Topic", count: "Solved" } });
   },
 };
 
@@ -892,9 +1073,16 @@ export function buildChartOption(chart, theme, view = "chart") {
 }
 
 /** Height in px for a chart card body, by chart type and data size. */
+export const rankedChartHeight = (rows) => 52 + rows * 28;
+
 export function chartHeight(chart) {
   if (chart.type === "heatmap") return Math.max(240, Math.min(720, 80 + (chart.data?.students?.length || 0) * 22));
-  if (chart.type === "rankedStackedBar" || chart.type === "barList") return Math.max(220, Math.min(420, 40 + (chart.data?.items?.length || 0) * 26));
+  if (chart.type === "rankedStackedBar") return Math.min(420, rankedChartHeight(chart.data?.items?.length || 0));
+  if (chart.type === "barList") return Math.max(220, Math.min(420, 40 + (chart.data?.items?.length || 0) * 26));
+  // The funnel with gaps: a 40px band per step and a 40px neck between two, plus its headings.
+  if (chart.type === "funnel" && chart.data?.drops?.length) return 32 + (chart.data.stages?.length || 0) * 40 + chart.data.drops.length * 40;
+  // Bubbles need room to spread: taller with more topics.
+  if (chart.type === "bubble") return Math.max(320, Math.min(460, 280 + (chart.data?.items?.length || 0) * 3));
   if (chart.type === "stackedBar" && chart.data?.horizontal) return Math.max(220, Math.min(460, 60 + (chart.data?.groups?.length || 0) * 28));
   if (chart.type === "calendar") return 170;
   if (chart.type === "scatter") return { sm: 280, md: 320, lg: 340, full: 380 }[chart.size] || 340;
@@ -916,7 +1104,19 @@ export function chartTable(chart) {
   switch (chart?.type) {
     case "rankedStackedBar":
       // Easy/Medium/Hard: problems solved in the period, the same numbers as the student drawer.
-      return { columns: [number("#"), text("Student"), number("Prep Score"), number("Easy solved"), number("Medium solved"), number("Hard solved"), number("To review")], rows: (data.items || []).map((item) => { const solved = item.solved || {}; return [item.position, item.name, item.score, solved.Easy || 0, solved.Medium || 0, solved.Hard || 0, item.toReview || 0]; }), ids: (data.items || []).map((item) => item.id) };
+      return {
+        columns: [number("#"), text("Student"), number("Prep Score"), ...DIFFICULTIES.map((level) => number(`${level} solved`))],
+        rows: (data.items || []).map((item) => [item.position, item.name, item.score, ...DIFFICULTIES.map((level) => item.solved?.[level] ?? 0)]),
+        ids: (data.items || []).map((item) => item.id),
+      };
+    case "bubble": {
+      const items = data.items || [];
+      const tierLabel = new Map((data.tiers || []).map((tier) => [tier.key, tier.label]));
+      return {
+        columns: [text(data.itemLabel || "Name"), number(capitalize(data.valueLabel || "Value")), number("% of students"), number("Accepted %"), text("Priority")],
+        rows: items.map((item) => [item.name, item.value, item.pct ?? 0, item.accuracy ?? 0, tierLabel.get(item.tier) || ""]),
+      };
+    }
     case "barList": {
       const items = data.items || [];
       const unit = data.unit === "%" ? " (%)" : "";
@@ -935,7 +1135,7 @@ export function chartTable(chart) {
       return { columns: [text("Name"), number("Count"), number("Share (%)")], rows: items.map((item) => [itemName(item), item.value, percentOf(item.value, total)]) };
     }
     case "trend":
-      return { columns: [text("Week of"), ...(data.series || []).map((series) => number(series.name))], rows: (data.labels || []).map((label, index) => [dayText(label), ...(data.series || []).map((series) => series.values[index] ?? 0)]) };
+      return { columns: [text(data.interval === "day" ? "Day" : "Week of"), ...(data.series || []).map((series) => number(series.name))], rows: (data.labels || []).map((label, index) => [dayText(label), ...(data.series || []).map((series) => series.values[index] ?? 0)]) };
     case "funnel": {
       const stages = data.stages || [];
       const top = stages[0]?.value || 0;

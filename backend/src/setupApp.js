@@ -6,7 +6,7 @@ import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import routes from './routes/index.js';
 import { HttpError, notFound, errorHandler } from './utils/errors.js';
-import { mongoSanitizeMiddleware, xssProtectionMiddleware } from './middleware/sanitization.js';
+import { mongoSanitizeMiddleware, studentMailDraftOf, xssProtectionMiddleware } from './middleware/sanitization.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
 import { apiRequestTimeout } from './middleware/requestTimeout.js';
 import { requestPerformance } from './middleware/requestPerformance.js';
@@ -134,9 +134,12 @@ app.use((req, res, next) => {
     && ['POST', 'PUT'].includes(req.method)
     && typeof req.body?.htmlContent === 'string';
   const invitationHtml = preserveInvitationHtml ? req.body.htmlContent : null;
+  // Prep Analysis "Send email": the admin's edited email draft survives (see studentMailDraftOf).
+  const studentMailDraft = studentMailDraftOf(req);
   return xssProtectionMiddleware(req, res, () => {
     restoreExecutableCodeFields(req.body, preservedCode);
     if (preserveInvitationHtml) req.body.htmlContent = invitationHtml;
+    if (studentMailDraft) req.body.draft = studentMailDraft;
     next();
   });
 });

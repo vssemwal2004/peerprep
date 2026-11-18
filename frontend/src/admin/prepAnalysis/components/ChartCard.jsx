@@ -7,6 +7,9 @@ import {
 } from "lucide-react";
 import { SortHeader, TablePager, useClientTable } from "../../../components/table";
 import EChart from "../charts/EChart";
+import ActivityHeatmap from "../charts/ActivityHeatmap";
+import FunnelSteps from "../charts/FunnelSteps";
+import TopicBubbles from "../charts/TopicBubbles";
 import { chartInsight } from "../charts/chartInsights";
 import { buildChartOption, chartHeight, chartTable, viewsFor } from "../charts/chartOptions";
 import { ALL_STUDENTS, chartPartAt, chartTableKeys, legendParts, naturalHeight, rowAt, trendPart } from "../charts/chartParts";
@@ -25,7 +28,7 @@ const SIZE_SPANS = {
 const SIZES = [{ value: "sm", label: "Small" }, { value: "md", label: "Half" }, { value: "lg", label: "Wide" }, { value: "full", label: "Full" }];
 // Each way of showing a chart as an icon; the label is its tooltip.
 const CHART_ICONS = {
-  rankedStackedBar: BarChartHorizontal, barList: BarChartHorizontal, donut: PieChart, trend: LineChart, funnel: ListOrdered, histogram: BarChart3, stackedBar: BarChart3,
+  rankedStackedBar: BarChartHorizontal, barList: BarChartHorizontal, bubble: CircleDot, donut: PieChart, trend: LineChart, funnel: ListOrdered, histogram: BarChart3, stackedBar: BarChart3,
   heatmap: Grid3x3, calendar: CalendarDays, radar: Radar, scatter: ChartScatter, boxplot: ChartCandlestick, combo: ChartColumnBig,
 };
 const VIEW_ICONS = {
@@ -74,7 +77,7 @@ export function ChartTable({ chart, height, onStudent, onPart, search = "" }) {
           {table.pageRows.map(({ row, index }) => {
             const id = ids[index];
             const key = keys[index];
-            const open = id && onStudent ? () => onStudent(id) : key && onPart ? () => onPart({ key, label: String(row[0]) }) : undefined;
+            const open = id && onStudent ? () => onStudent(id, chart) : key && onPart ? () => onPart({ key, label: String(row[0]) }) : undefined;
             return (
               <tr key={index} onClick={open} tabIndex={open ? 0 : undefined} onKeyDown={open ? (event) => { if (event.key === "Enter") open(); } : undefined}
                 className={open ? "cursor-pointer transition-colors hover:bg-sky-50/70 focus:bg-sky-50 focus:outline-none dark:hover:bg-sky-500/10" : ""}>
@@ -109,9 +112,11 @@ function EmptyChart({ height, students = 0, onList }) {
 }
 
 // Horizontal charts whose whole row (bar, label or empty track) is one student or part.
-const ROW_CHARTS = new Set(["rankedStackedBar", "barList", "stackedBar"]);
+const ROW_CHARTS = new Set(["rankedStackedBar", "barList", "stackedBar", "bubble"]);
 const rowView = (chart, view) => ROW_CHARTS.has(chart.type) && (chart.type !== "stackedBar" || chart.data?.horizontal) && view !== "table"
-  && !(chart.type === "stackedBar" && view === "grouped");
+  && !(chart.type === "stackedBar" && view === "grouped")
+  // Bubbles are rows only in their Bars view.
+  && (chart.type !== "bubble" || view === "bars");
 
 /**
  * A chart in a view, with its colour legend. A student row opens the student (onStudent); a
@@ -125,19 +130,20 @@ export function ChartBody({ chart, height, view = "chart", onStudent, onPart, on
   const legend = useMemo(() => (["chart", "percent", "grouped", "rose", "mix"].includes(view) ? legendParts(chart) : []), [chart, view]);
   const partClick = chart.drillable ? onPart : undefined;
   const openRow = useCallback((row) => {
-    if (row?.studentId && onStudent) { onStudent(row.studentId); return true; }
+    if (row?.studentId && onStudent) { onStudent(row.studentId, chart); return true; }
     if (row?.part && partClick) { partClick(row.part); return true; }
     return false;
-  }, [onStudent, partClick]);
+  }, [chart, onStudent, partClick]);
   const onClick = useCallback((clicked) => {
     // A treemap box reports its own row (its dataIndex is shifted by the chart's hidden root).
     const params = view === "treemap" ? { ...clicked, dataIndex: clicked.data?.rowIndex } : clicked;
     if (params.componentType === "yAxis" && openRow(rowAt(chart, view, Number(params.value)))) return;
+    if (chart.type === "rankedStackedBar" && openRow(rowAt(chart, view, params.dataIndex))) return;
     // A dot of a scatter chart is one student.
     const dotId = chart.type === "scatter" && view !== "table" ? params.data?.item?.id : null;
-    if (dotId && onStudent) { onStudent(dotId); return; }
+    if (dotId && onStudent) { onStudent(dotId, chart); return; }
     const id = studentIdAt(chart, params.dataIndex);
-    if (id && onStudent) { onStudent(id); return; }
+    if (id && onStudent) { onStudent(id, chart); return; }
     const part = partClick ? chartPartAt(chart, view, params) : null;
     if (part) partClick(part);
     else onBlank?.();
@@ -158,6 +164,12 @@ export function ChartBody({ chart, height, view = "chart", onStudent, onPart, on
   }, [chart, onBlank, openRow, partClick, view]);
   if (view === "table") return <ChartTable chart={chart} height={height} onStudent={onStudent} onPart={partClick} search={search} />;
   if (!hasData) return <EmptyChart height={height} students={chart.studentCount} onList={onPart ? () => onPart({ key: ALL_STUDENTS, label: "Students in view" }) : undefined} />;
+  // A funnel that knows its drops: steps with a Compare button between each two (who stopped there).
+  if (chart.type === "funnel" && view === "chart" && chart.data?.drops?.length) return <FunnelSteps chart={chart} onPart={partClick} height={height} />;
+  // Topic bubbles: packed in SVG so every bubble fits the card (no force layout running off the edge).
+  if (chart.type === "bubble" && view === "chart") return <TopicBubbles chart={chart} onPart={partClick} height={height} />;
+  // Daily heat map: small fixed-size dots with the period's figures beside or below them.
+  if (chart.type === "calendar" && view === "chart") return <ActivityHeatmap chart={chart} onPart={partClick} />;
   // Every row keeps its room; beyond the card's height the rows scroll.
   const natural = naturalHeight(chart, view);
   const scrolls = natural && natural > height;
@@ -174,7 +186,7 @@ export function ChartBody({ chart, height, view = "chart", onStudent, onPart, on
       </div>
     );
   }
-  return <div><PartLegend parts={legend} onPart={partClick} />{canvas}</div>;
+  return <div><PartLegend parts={legend} onPart={chart.type === "rankedStackedBar" ? undefined : partClick} />{canvas}</div>;
 }
 
 function MenuItem({ icon: Icon, children, onClick, tone, disabled }) {
@@ -298,7 +310,7 @@ export default function ChartCard({ chart, entry, analysis, index = 0, compareSi
     <motion.article layout={!reduced} initial={reduced ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.32, delay: reduced ? 0 : Math.min(index, 12) * 0.035, ease: "easeOut" }}
       onClick={onCardClick} data-chart-id={chart.id}
-      className={`${SIZE_SPANS[size] || SIZE_SPANS.md} group flex min-w-0 cursor-pointer flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[box-shadow,border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_10px_30px_rgba(15,23,42,0.08)] dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700`}>
+      className={`${SIZE_SPANS[size] || SIZE_SPANS.md} group flex min-w-0 cursor-pointer flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[box-shadow,border-color] duration-200 hover:border-slate-300 hover:shadow-[0_10px_30px_rgba(15,23,42,0.08)] dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700`}>
       <header className="flex items-center gap-2.5">
         <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${style.chip}`}><SectionIcon className="h-3.5 w-3.5" /></span>
         <h3 className="min-w-0 truncate text-[13.5px] font-bold text-slate-900 group-hover:text-sky-700 dark:text-white dark:group-hover:text-sky-300">{chart.title}</h3>
@@ -332,7 +344,7 @@ export default function ChartCard({ chart, entry, analysis, index = 0, compareSi
       </div>
       <footer className="mt-2 flex items-center justify-between gap-2">
         {compareSides ? <span /> : <CoverageChip summary={chart.summary} studentCount={chart.studentCount} />}
-        <span className="text-[10.5px] font-semibold text-sky-600 opacity-0 transition-opacity group-hover:opacity-100 dark:text-sky-400">Open full page →</span>
+        <span className="text-[10.5px] font-semibold text-sky-600 opacity-0 transition-opacity group-hover:opacity-100 [@media(hover:none)]:opacity-100 dark:text-sky-400">Open full page →</span>
       </footer>
     </motion.article>
   );

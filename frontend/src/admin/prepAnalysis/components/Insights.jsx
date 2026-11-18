@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useAnalysisApi } from "../analysisScope";
 import { PageCheckbox, RowCheckbox, SelectionBar, SendEmailDialog } from "./StudentMail";
 import useStudentSelection from "./useStudentSelection";
 import { AnimatedNumber } from "./Motion";
 import {
   Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Bot, BookOpenCheck, CalendarClock, CheckCircle2, CircleDashed, ClipboardList,
-  Flag, Flame, ListChecks, MessagesSquare, PauseCircle, PlayCircle, Search, Target, Trophy, Users, X, XCircle,
+  Flag, Flame, ListChecks, MessagesSquare, PauseCircle, PlayCircle, Search, Target, Trophy, UserCheck, UserX, Users, X, XCircle,
 } from "lucide-react";
 import { DIFFICULTY_COLORS } from "../charts/chartTheme";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
@@ -16,10 +16,11 @@ import { initials, sectionStyle } from "./sectionStyles";
 import { Dialog, focusRing } from "./ui";
 
 const KPI_ICONS = {
-  students: Users, active: Activity, solved: CheckCircle2, hard: Flame, accuracy: Target, stopped: PauseCircle,
+  students: Users, active: UserCheck, solved: CheckCircle2, hard: Flame, accuracy: Target, stopped: UserX, submissions: ClipboardList,
   sheetStarted: ListChecks, sheetActive: Activity, sheetFinished: BadgeCheck, review: Flag, topics: BookOpenCheck, halfway: Flag, video: PlayCircle,
   mocks: MessagesSquare, ai: Bot, strong: Trophy, scheduled: CalendarClock, never: CircleDashed,
   taken: ClipboardList, passed: CheckCircle2, passedStudents: CheckCircle2, passRate: Target, missed: XCircle, subjectDone: BadgeCheck,
+  topicDone: BadgeCheck, avgMock: Target,
 };
 const BLANK = String.fromCharCode(160);
 
@@ -32,23 +33,119 @@ function ReviewCell({ review }) {
   const why = [review.fast ? `${review.fast} very fast` : "", review.pasted ? `${review.pasted} mostly pasted` : ""].filter(Boolean).join(", ");
   return (
     <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-800 dark:bg-amber-500/10 dark:text-amber-300" title={`${why}. Open the student to see which questions.`}>
-      <Flag className="h-3 w-3" aria-hidden="true" />{review.flagged} to review
+      <Flag className="h-3 w-3" aria-hidden="true" />{review.flagged} flagged
     </span>
   );
 }
 const lastSeenLabel = (days) => (days === null || days === undefined ? "Never" : days === 0 ? "Today" : `${days}d ago`);
 
-const formatKpi = (kpi) => (kpi.format === "percent" ? `${kpi.value}%` : Number(kpi.value).toLocaleString());
+const formatKpi = (kpi) => {
+  if (kpi.format === "percent") return `${kpi.value}%`;
+  if (kpi.format === "ratio") return `${Number(kpi.accepted || 0).toLocaleString()} / ${Number(kpi.total || 0).toLocaleString()}`;
+  return Number(kpi.value).toLocaleString();
+};
+
+const TREND_TONES = {
+  up: { stroke: "#10b981", text: "text-emerald-700 dark:text-emerald-300", chip: "bg-emerald-50 dark:bg-emerald-500/10", Icon: ArrowUpRight },
+  down: { stroke: "#f43f5e", text: "text-rose-700 dark:text-rose-300", chip: "bg-rose-50 dark:bg-rose-500/10", Icon: ArrowDownRight },
+  flat: { stroke: "#94a3b8", text: "text-slate-500 dark:text-slate-400", chip: "bg-slate-100 dark:bg-white/[0.06]", Icon: null },
+};
+
+/** Direction of a card's line over the period: last point against the first (stock-style). */
+function seriesTrend(series) {
+  if (!Array.isArray(series) || series.length < 2) return null;
+  const first = Number(series[0].value) || 0;
+  const last = Number(series.at(-1).value) || 0;
+  const change = Math.round((last - first) * 10) / 10;
+  return { first, last, change, direction: change > 0 ? "up" : change < 0 ? "down" : "flat" };
+}
+
+const pointDate = (at) => new Date(at).toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
+
+/**
+ * Stock-style line of a card over the selected period: green when the number rose, red when it
+ * fell. Every point is measured like the card itself, and the last point is the card's number.
+ */
+function KpiTrendLine({ series, label, unit = "" }) {
+  const gradientId = useId();
+  const trend = seriesTrend(series);
+  if (!trend) return null;
+  const values = series.map((point) => Number(point.value) || 0);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const spread = max - min || 1;
+  const width = 200;
+  const height = 44;
+  const x = (index) => 3 + (index / (series.length - 1)) * (width - 6);
+  const y = (value) => (max === min ? height / 2 : 5 + (1 - (value - min) / spread) * (height - 10));
+  const line = values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(" ");
+  const tone = TREND_TONES[trend.direction];
+  const describe = `${label}: ${trend.first.toLocaleString()}${unit} on ${pointDate(series[0].at)}, ${trend.last.toLocaleString()}${unit} on ${pointDate(series.at(-1).at)}`;
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={describe} className="h-11 w-full overflow-visible">
+      <title>{describe}</title>
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={tone.stroke} stopOpacity="0.28" />
+          <stop offset="100%" stopColor={tone.stroke} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${line} L${x(values.length - 1).toFixed(1)},${height} L${x(0).toFixed(1)},${height} Z`} fill={`url(#${gradientId})`} />
+      <path d={line} fill="none" stroke={tone.stroke} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={x(values.length - 1)} cy={y(values.at(-1))} r="3" fill={tone.stroke} stroke="white" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+/** "▲ +12 this period" chip from the card's own line. */
+function TrendChip({ series, unit = "" }) {
+  const trend = seriesTrend(series);
+  if (!trend) return null;
+  const tone = TREND_TONES[trend.direction];
+  const amount = `${trend.change > 0 ? "+" : trend.change < 0 ? "−" : ""}${Math.abs(trend.change).toLocaleString()}${unit}`;
+  return (
+    <span title={`Change from the first to the last point of the line (${trend.first.toLocaleString()}${unit} → ${trend.last.toLocaleString()}${unit})`}
+      className={`inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10.5px] font-bold ${tone.chip} ${tone.text}`}>
+      {tone.Icon && <tone.Icon className="h-3 w-3" aria-hidden="true" />}{trend.direction === "flat" ? "No change" : amount}
+      <span className="font-medium opacity-80">this period</span>
+    </span>
+  );
+}
+
+/** A truthful two-period sparkline: previous at left, current at right. */
+function KpiSparkline({ delta, value, label }) {
+  const hasPrevious = delta?.previous !== null && delta?.previous !== undefined;
+  const previous = hasPrevious ? Number(delta.previous) : Number(value);
+  const current = Number(value);
+  const change = hasPrevious ? current - previous : 0;
+  const rising = change > 0;
+  const falling = change < 0;
+  const stroke = rising ? "#10b981" : falling ? "#f43f5e" : "#94a3b8";
+  const fill = rising ? "rgba(16,185,129,0.12)" : falling ? "rgba(244,63,94,0.12)" : "rgba(148,163,184,0.1)";
+  const y1 = !hasPrevious || !change ? 15 : rising ? 24 : 5;
+  const y2 = !hasPrevious || !change ? 15 : rising ? 5 : 24;
+  const description = hasPrevious
+    ? `${label}: ${previous.toLocaleString()} previously, ${current.toLocaleString()} now`
+    : `${label}: ${current.toLocaleString()} in the current period; no previous-period comparison`;
+  return (
+    <svg viewBox="0 0 88 30" role="img" aria-label={description} className="h-8 w-[88px] shrink-0 overflow-visible">
+      <path d={`M2,28 L2,${y1} L86,${y2} L86,28 Z`} fill={fill} />
+      <path d={`M2,${y1} L86,${y2}`} fill="none" stroke={stroke} strokeWidth="2.25" strokeLinecap="round" />
+      <circle cx="2" cy={y1} r="2" fill={stroke} />
+      <circle cx="86" cy={y2} r="2.75" fill={stroke} />
+    </svg>
+  );
+}
 
 /**
  * Change against the previous period of the same length: { previous, change, label }.
- * Up is green and down is red, except for "warning" numbers, where up is the bad news.
+ * Stock-style direction colours: up is green and down is red on every card.
  */
-export function DeltaBadge({ delta, format, warning = false }) {
+export function DeltaBadge({ delta, format }) {
   if (!delta || delta.previous === null || delta.previous === undefined) return null;
   const change = delta.change;
   const flat = !change;
-  const good = warning ? change < 0 : change > 0;
+  const good = change > 0;
   const Icon = flat ? null : change > 0 ? ArrowUpRight : ArrowDownRight;
   const text = flat ? "no change" : format === "percent" ? `${Math.abs(change)} pts` : delta.pct === null ? `${change > 0 ? "+" : "−"}${Math.abs(change).toLocaleString()}` : `${Math.abs(delta.pct)}%`;
   return (
@@ -71,25 +168,36 @@ export function KpiStrip({ section = "coding", kpis, loading, state, fieldMap, o
     return <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">{Array.from({ length: 6 }, (_, index) => <div key={index} className="h-[84px] animate-pulse rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900" />)}</div>;
   }
   return (
-    <div className={`grid grid-cols-2 gap-2.5 sm:grid-cols-3 ${kpis.length > 5 ? "xl:grid-cols-6" : "xl:grid-cols-5"} ${loading ? "opacity-70" : ""}`}>
+    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 ${kpis.length > 5 ? "xl:grid-cols-6" : "xl:grid-cols-5"} ${loading ? "opacity-70" : ""}`}>
       {kpis.map((kpi) => {
         const Icon = KPI_ICONS[kpi.id] || Activity;
         const pick = state && onToggle ? kpiRule(section, kpi.id, fieldMap) : null;
         const on = Boolean(pick && isKpiActive(pick, state));
         const warn = kpi.tone === "warning" && kpi.value > 0;
-        // How much of the cohort this is: "42% of 589 students" in the hint, or the value itself for a percentage.
-        const hinted = /^(\d+(?:\.\d+)?)%/.exec(kpi.hint || "");
-        const share = kpi.format === "percent" ? Number(kpi.value) : hinted ? Number(hinted[1]) : null;
+        // Ratio and percent cards draw a % line (acceptance, pass rate, course completed, average score).
+        const percentLine = kpi.format === "ratio" || kpi.format === "percent";
         const body = (
           <>
             <div className="flex items-start justify-between gap-2">
-              <p className="truncate text-[11.5px] font-semibold text-slate-500 dark:text-slate-400">{kpi.label}</p>
-              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${warn ? "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300" : style.chip}`}><Icon className="h-3.5 w-3.5" /></span>
+              <p className="truncate text-xs font-semibold text-slate-600 dark:text-slate-300">{kpi.label}</p>
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${warn ? "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300" : style.chip}`}><Icon className="h-4 w-4" /></span>
             </div>
-            <p className={`flex items-baseline gap-2 text-[22px] font-extrabold leading-7 tracking-tight tabular-nums ${warn ? "text-amber-600 dark:text-amber-400" : "text-slate-900 dark:text-white"}`}>
-              <AnimatedNumber value={kpi.value} format={(number) => formatKpi({ ...kpi, value: kpi.format === "percent" ? Math.round(number * 10) / 10 : Math.round(number) })} />
-              <DeltaBadge delta={kpi.delta} format={kpi.format} warning={kpi.tone === "warning"} />
-            </p>
+            <div className="flex min-w-0 items-end justify-between gap-3">
+              <p className={`min-w-0 text-[26px] font-extrabold leading-8 tracking-tight tabular-nums ${warn ? "text-rose-600 dark:text-rose-400" : "text-slate-950 dark:text-white"}`}>
+                {kpi.format === "ratio"
+                  ? <>{Number(kpi.accepted || 0).toLocaleString()}<span className="text-[17px] font-bold text-slate-400 dark:text-slate-500"> / {Number(kpi.total || 0).toLocaleString()}</span></>
+                  : <AnimatedNumber value={kpi.value} format={(number) => formatKpi({ ...kpi, value: kpi.format === "percent" ? Math.round(number * 10) / 10 : Math.round(number) })} />}
+              </p>
+              {kpi.series ? <TrendChip series={kpi.series} unit={percentLine ? "%" : ""} /> : <KpiSparkline delta={kpi.delta} value={kpi.value} label={kpi.label} />}
+            </div>
+            {kpi.series && <KpiTrendLine series={kpi.series} label={kpi.format === "ratio" ? (kpi.rateLabel || "Rate") : kpi.label} unit={percentLine ? "%" : ""} />}
+            {kpi.delta && (
+              <div className="flex min-h-5 items-center gap-2">
+                <DeltaBadge delta={kpi.delta} format={kpi.format} />
+                {/* A ratio card's line is its rate; its badge compares the whole (e.g. submissions). */}
+                <span className="truncate text-[10px] font-medium text-slate-400">{kpi.format === "ratio" ? `${kpi.valueLabel || "total"} ${kpi.delta.label}` : kpi.delta.label}</span>
+              </div>
+            )}
             {compare && (
               <p className="flex items-center gap-2 text-[11px] font-semibold tabular-nums text-slate-600 dark:text-slate-300">
                 {compare.map((side, index) => {
@@ -106,16 +214,11 @@ export function KpiStrip({ section = "coding", kpis, loading, state, fieldMap, o
             <p className="truncate text-[10.5px] text-slate-400">
               {on
                 ? <span className="font-semibold text-sky-600 dark:text-sky-300">Showing only these · click to undo</span>
-                : <>{kpi.hint || BLANK}{pick && <span className="ml-1 hidden font-semibold text-sky-600 group-hover:inline dark:text-sky-300">· Show them</span>}</>}
+                : <>{kpi.hint || BLANK}{pick && <span className="ml-1 hidden font-semibold text-sky-600 group-hover:inline [@media(hover:none)]:inline dark:text-sky-300">· Show them</span>}</>}
             </p>
-            {share !== null && (
-              <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.07]" aria-hidden="true">
-                <span className={`block h-full rounded-full transition-[width] duration-500 ${warn ? "bg-gradient-to-r from-amber-300 to-amber-500" : "bg-gradient-to-r from-sky-400 to-sky-600"}`} style={{ width: `${share > 0 ? Math.max(3, Math.min(100, share)) : 0}%` }} />
-              </span>
-            )}
           </>
         );
-        const card = "group relative flex min-w-0 flex-col gap-0.5 overflow-hidden rounded-xl border bg-white px-3.5 py-3 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:bg-gray-900";
+        const card = "group relative flex min-h-[148px] min-w-0 flex-col gap-1 overflow-hidden rounded-2xl border bg-white px-4 py-3.5 text-left shadow-[0_2px_8px_rgba(15,23,42,0.05)] dark:bg-gray-900";
         return pick ? (
           <button key={kpi.id} type="button" aria-pressed={on} onClick={() => onToggle(pick)} title={on ? "Click to show every student again" : `Click to show only these ${kpi.value} students`}
             className={`${card} transition-all hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(15,23,42,0.08)] ${on ? `border-transparent ring-2 ${style.ring}` : "border-slate-200 dark:border-gray-800"} ${focusRing}`}>

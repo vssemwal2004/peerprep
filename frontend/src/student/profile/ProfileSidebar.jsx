@@ -129,6 +129,7 @@ export default function ProfileSidebar({
   socialLinks,
   onChangePhoto,
   onEditProfile,
+  prepMates = null,
 }) {
   const initial = user?.name ? user.name.charAt(0).toUpperCase() : 'U';
 
@@ -200,6 +201,7 @@ export default function ProfileSidebar({
             <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
             Edit Profile
           </button>
+          {prepMates ? <div className="mt-3 w-full">{prepMates}</div> : null}
         </div>
 
         {user?.role === 'student' && user?.accessScope !== 'assessment_only' ? <ProfilePrepCoin focusRing={focusRing} /> : null}

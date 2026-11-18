@@ -36,6 +36,12 @@ const SUMMARIES = {
     const total = (data.items || []).reduce((sum, item) => sum + item.value, 0);
     return summary(rows.length, rows.filter((row) => row.coding.solved.total > 0).length, 'solved a problem', { total, totalLabel: 'problems solved', average: perStudent(total, rows.length), averageLabel: 'solved per student' });
   },
+  'submission-trend': (rows, data) => {
+    const valueOf = (key) => (data.items || []).find((item) => item.key === key)?.value || 0;
+    const accepted = valueOf('Accepted');
+    const total = accepted + valueOf('Not accepted');
+    return summary(rows.length, practising(rows).length, 'practised', { total, totalLabel: 'submissions', average: total ? round((accepted / total) * 100) : 0, averageLabel: '% accepted' });
+  },
   'practice-trend': (rows) => {
     const total = rows.reduce((sum, row) => sum + row.coding.submissions, 0);
     return summary(rows.length, practising(rows).length, 'practised', { total, totalLabel: 'submissions', average: perStudent(total, rows.length), averageLabel: 'submissions per student' });

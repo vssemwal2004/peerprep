@@ -44,7 +44,8 @@ import prepScoreSettingsRoutes from './prepScoreSettings.js';
 import coinPricingSettingsRoutes from './coinPricingSettings.js';
 import overviewRoutes from './overview.js';
 import coinAdminRoutes from './coinAdmin.js';
-import { requireAuth, requireFullStudent, requireStudentFeature } from '../middleware/auth.js';
+import peerRoutes from './peers.js';
+import { requireAuth, requireFullStudent, requireStudent, requireStudentFeature } from '../middleware/auth.js';
 
 const router = Router();
 router.use('/platform', platformRoutes);
@@ -90,6 +91,7 @@ router.use('/email-templates', emailTemplateRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/admin/announcements', announcementAdminRoutes);
 router.use('/student/announcements', requireAuth, requireFullStudent, announcementStudentRoutes);
+router.use('/student/peers', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('peers'), peerRoutes);
 router.use('/admin/company-insights', companyInsightsRoutes);
 router.use('/student/analysis', requireAuth, requireFullStudent, requireStudentFeature('analysis'), studentAnalysisRoutes);
 router.use('/results', resultsRoutes);

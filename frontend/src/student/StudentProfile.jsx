@@ -23,6 +23,8 @@ import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { scopeEngagement } from './engagement/scopeEngagement';
 import { useAuth } from '../context/AuthContext';
 import { hasStudentFeature } from './studentFeatureAccess';
+import { announcePeerNetworkChange, canUsePeers } from './peers/peerNetwork';
+import MyPrepMates from './peers/MyPrepMates';
 
 const MotionDiv = motion.div;
 
@@ -44,6 +46,7 @@ export default function StudentProfile() {
   const canAnalysis = hasStudentFeature(sessionUser, 'analysis');
   const canRanking = hasStudentFeature(sessionUser, 'rankings') || hasStudentFeature(sessionUser, 'prep_coins');
   const canEngage = canQuickPrep;
+  const showPeerVisibility = canUsePeers(sessionUser);
   const [user, setUser] = useState(null);
   const [ranking, setRanking] = useState(null);
   const [avatarFile, setAvatarFile] = useState(null);
@@ -58,6 +61,7 @@ export default function StudentProfile() {
     linkedinUrl: '',
     githubUrl: '',
     portfolioUrl: '',
+    visibleToPeers: true,
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -485,6 +489,7 @@ export default function StudentProfile() {
           linkedinUrl: me?.linkedinUrl || '',
           githubUrl: me?.githubUrl || '',
           portfolioUrl: me?.portfolioUrl || '',
+          visibleToPeers: me?.visibleToPeers !== false,
         });
         setLearnerProgress(me?.learnerProgress || null);
         await refreshMetrics({ withActivitySpinner: true, forceAnalysis: true });
@@ -608,6 +613,7 @@ export default function StudentProfile() {
       linkedinUrl: user?.linkedinUrl || '',
       githubUrl: user?.githubUrl || '',
       portfolioUrl: user?.portfolioUrl || '',
+      visibleToPeers: user?.visibleToPeers !== false,
     });
     setShowEditModal(true);
   };
@@ -660,7 +666,9 @@ export default function StudentProfile() {
         linkedinUrl: normalizeUrlForSave(profileForm.linkedinUrl),
         githubUrl: normalizeUrlForSave(profileForm.githubUrl),
         portfolioUrl: normalizeUrlForSave(profileForm.portfolioUrl),
+        ...(showPeerVisibility ? { visibleToPeers: profileForm.visibleToPeers !== false } : {}),
       });
+      if (showPeerVisibility) announcePeerNetworkChange({ action: 'visibility' });
       const updatedUser = response?.user || response;
       if (!isMountedRef.current) return;
       setUser((prev) => ({
@@ -677,6 +685,7 @@ export default function StudentProfile() {
         linkedinUrl: updatedUser?.linkedinUrl || '',
         githubUrl: updatedUser?.githubUrl || '',
         portfolioUrl: updatedUser?.portfolioUrl || '',
+        visibleToPeers: updatedUser?.visibleToPeers !== false,
       });
       setSuccess('Profile details updated successfully.');
       setTimeout(() => {
@@ -983,6 +992,7 @@ export default function StudentProfile() {
               socialLinks={socialLinks}
               onChangePhoto={openPhotoModal}
               onEditProfile={openEditModal}
+              prepMates={showPeerVisibility ? <MyPrepMates /> : null}
             />
           </aside>
 
@@ -1060,6 +1070,7 @@ export default function StudentProfile() {
         saving={savingProfile}
         error={error}
         success={success}
+        showPeerVisibility={showPeerVisibility}
       />
 
       <PhotoModal

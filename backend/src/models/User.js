@@ -11,7 +11,7 @@ const userSchema = new mongoose.Schema({
     mode: { type: String, enum: ['all', 'custom'], default: 'all' },
     features: [{
       type: String,
-      enum: ['dashboard', 'quickprep', 'analysis', 'rankings', 'interviews', 'ai_interviews', 'assessments', 'learning', 'prep_coding', 'resume', 'prep_coins'],
+      enum: ['dashboard', 'quickprep', 'analysis', 'rankings', 'interviews', 'ai_interviews', 'assessments', 'learning', 'prep_coding', 'resume', 'prep_coins', 'peers'],
     }],
     source: { type: String, enum: ['default', 'manual', 'legacy'], default: 'default' },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -90,6 +90,9 @@ const userSchema = new mongoose.Schema({
   linkedinUrl: { type: String, trim: true },
   githubUrl: { type: String, trim: true },
   portfolioUrl: { type: String, trim: true },
+  // Peer network: when false the student is hidden from same-university search, peer profiles,
+  // and Prep Mate lists. Missing means visible (the default).
+  visibleToPeers: { type: Boolean, default: true },
   // The language a student last ran or submitted practice code in; the practice editor opens in it next time.
   practiceLanguage: { type: String, trim: true, maxlength: 20 },
   // Learner level / awards already celebrated in the student UI. Levels and awards themselves are

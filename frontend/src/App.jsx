@@ -62,6 +62,9 @@ const AssessmentAttempt = lazy(() => import("./student/AssessmentAttempt"));
 const AssessmentFeedbackPage = lazy(() => import("./student/AssessmentFeedbackPage"));
 const StudentAnalytics = lazy(() => import("./student/StudentAnalytics"));
 const StudentResume = lazy(() => import("./student/StudentResume"));
+const PeerNetworkPage = lazy(() => import("./student/peers/PeerNetworkPage"));
+const PeerProfilePage = lazy(() => import("./student/peers/PeerProfilePage"));
+const PeerRealtimeBridge = lazy(() => import("./student/peers/PeerRealtimeBridge"));
 
 // Admin Pages
 const AdminOverview = lazy(() => import("./admin/AdminOverview"));
@@ -362,7 +365,7 @@ function AppContent() {
     && !isFeedbackForm
     && !isAssessmentAttempt
     && !isProblemSolver;
-  const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges|analysis(\/[^/]+)?)\/?$/.test(location.pathname);
+  const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges|analysis(\/[^/]+)?|peers(\/[^/]+)?)\/?$/.test(location.pathname);
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
   // Admin and coordinator shells key their own page area (see ShellPage); keying this
   // boundary per navigation remounted the whole shell and hid the sidebar on every click.
@@ -385,6 +388,10 @@ function AppContent() {
       {isStudentShell && (
         // Announcements marked "show as popup", once after each login (never during tests or interviews).
         <Suspense fallback={null}><AnnouncementPopup /></Suspense>
+      )}
+      {isStudentShell && (
+        // Peer network realtime: Pacer / Prep Mate toasts and live count refreshes.
+        <Suspense fallback={null}><PeerRealtimeBridge /></Suspense>
       )}
       {isStudentShell && (
         <Suspense fallback={null}>
@@ -430,6 +437,8 @@ function AppContent() {
         {/* Student Routes - Protected */}
         <Route path="/student/change-password" element={<StudentProtectedRoute><ChangePassword /></StudentProtectedRoute>} />
         <Route path="/student/profile" element={<StudentProtectedRoute><StudentProfile /></StudentProtectedRoute>} />
+        <Route path="/student/peers" element={<StudentProtectedRoute><PeerNetworkPage /></StudentProtectedRoute>} />
+        <Route path="/student/peers/:id" element={<StudentProtectedRoute><PeerProfilePage /></StudentProtectedRoute>} />
         <Route path="/student/wallet" element={<StudentProtectedRoute><StudentCoinHistory /></StudentProtectedRoute>} />
         <Route path="/student/rankings" element={<StudentProtectedRoute><StudentRankings /></StudentProtectedRoute>} />
         <Route path="/student/quickprep" element={<StudentProtectedRoute><StudentQuests /></StudentProtectedRoute>} />

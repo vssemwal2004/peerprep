@@ -1,9 +1,9 @@
-// Which part of a chart a click points at (a difficulty, a topic, a week, one student's Hard
-// problems…), the legend chips that stand for parts, and how tall a chart is on its full page.
+// Which part of a chart a click points at (a difficulty, a topic, a week), the legend
+// chips that stand for parts, and how tall a chart is on its full page.
 // A part is { key, label, color?, value?, unit?, students?, studentId? }; its key is what the
 // server's drill for that chart understands (backend/src/modules/prepAnalysis/drill.js).
 
-import { LANGUAGE_LABELS, keyColor } from "./chartOptions.js";
+import { LANGUAGE_LABELS, keyColor, rankedChartHeight } from "./chartOptions.js";
 
 const DIFFICULTIES = ["Easy", "Medium", "Hard"];
 /** The part key for "every student the chart covers", whatever their activity (backend drill.js). */
@@ -17,7 +17,10 @@ export function trendPart(chart, index) {
   if (!week) return null;
   const students = data.series?.find((series) => series.axis === "right")?.values?.[index];
   const first = data.series?.[0];
-  return { key: week, label: `Week of ${week}`, value: first?.values?.[index], unit: first?.name?.toLowerCase(), students };
+  // Charts with their own drill keys (a day, or "week:<Monday>") say so in `keys`.
+  const key = data.keys?.[index] || week;
+  const label = data.interval === "day" ? new Date(`${week}T00:00:00Z`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : `Week of ${week}`;
+  return { key, label, value: first?.values?.[index], unit: first?.name?.toLowerCase(), students };
 }
 
 /**
@@ -30,18 +33,13 @@ export function chartPartAt(chart, view, params) {
   if (params?.componentType === "yAxis") return rowAt(chart, view, Number(params.value))?.part || null;
   const index = params?.dataIndex;
   switch (chart?.type) {
-    case "rankedStackedBar": {
-      // One bar segment: that student's work at that difficulty.
-      const item = data.items?.[index];
-      const level = params?.seriesName;
-      if (!item?.id || !DIFFICULTIES.includes(level)) return null;
-      return { key: `${item.id}|${level}`, label: `${item.name} · ${level}`, color: keyColor(level), value: item.solved?.[level] ?? 0, unit: `${level} solved`, students: 1, studentId: item.id };
-    }
     case "donut": {
       const items = (data.items || []).filter((entry) => entry.value > 0);
       const item = items[index];
       return item ? { key: item.key, label: partName(item.name), color: keyColor(item.key, index), value: item.value, unit: data.centerLabel, students: item.students } : null;
     }
+    // A bubble (or, in its Bars view, a bar) is that topic.
+    case "bubble":
     case "barList": {
       const item = data.items?.[index];
       if (!item?.key) return null;
@@ -53,6 +51,9 @@ export function chartPartAt(chart, view, params) {
     }
     case "funnel": {
       const stage = data.stages?.[index];
+      // Drop-off view: the red "lost" part is the students who stopped before this step.
+      const drop = params?.seriesName === "Lost since the step before" && index > 0 ? data.drops?.[index - 1] : null;
+      if (drop) return { key: drop.key, label: `Reached “${drop.from}”, not “${drop.to}”`, value: drop.students, unit: "students", students: drop.students, color: "#f43f5e" };
       return stage ? { key: String(index), label: stage.name, value: stage.value, unit: "students", students: stage.value } : null;
     }
     case "trend":
@@ -68,7 +69,8 @@ export function chartPartAt(chart, view, params) {
     }
     case "calendar": {
       const day = view === "chart" ? params?.value?.[0] : null;
-      return day ? { key: day, label: day, value: params.value[1], unit: data.unit } : null;
+      // Empty days are drawn (so they show "0" on hover/tap) but have nobody to list.
+      return day && Number(params.value[1]) > 0 ? { key: day, label: day, value: params.value[1], unit: data.unit } : null;
     }
     case "boxplot": {
       // A box (or its average diamond) is that group's students.
@@ -109,7 +111,7 @@ export function rowAt(chart, view, index) {
   const data = chart?.data || {};
   if (!Number.isInteger(index) || index < 0) return null;
   if (chart.type === "rankedStackedBar") return data.items?.[index]?.id ? { studentId: data.items[index].id } : null;
-  if (chart.type === "barList") {
+  if (chart.type === "barList" || (chart.type === "bubble" && view === "bars")) {
     const item = data.items?.[index];
     if (!item) return null;
     return item.key ? { part: chartPartAt(chart, view, { dataIndex: index }) } : item.id ? { studentId: item.id } : null;
@@ -125,7 +127,7 @@ export function rowCount(chart, view) {
   const data = chart?.data || {};
   // A treemap fills its card; every other view of these charts is one row per item.
   if (view === "table" || view === "treemap") return 0;
-  if (chart?.type === "rankedStackedBar" || chart?.type === "barList") return data.items?.length || 0;
+  if (chart?.type === "rankedStackedBar" || chart?.type === "barList" || (chart?.type === "bubble" && view === "bars")) return data.items?.length || 0;
   if (chart?.type === "stackedBar" && data.horizontal && view !== "grouped") return data.groups?.length || 0;
   if (chart?.type === "heatmap") return data.students?.length || 0;
   return 0;
@@ -135,6 +137,7 @@ export function rowCount(chart, view) {
 export function naturalHeight(chart, view) {
   const rows = rowCount(chart, view);
   if (!rows) return null;
+  if (chart.type === "rankedStackedBar") return rankedChartHeight(rows);
   const perRow = chart.type === "heatmap" ? 26 : chart.type === "stackedBar" ? 30 : 28;
   return (chart.type === "heatmap" ? 100 : 48) + rows * perRow;
 }
@@ -172,10 +175,11 @@ export function chartTableKeys(chart) {
   const data = chart?.data || {};
   switch (chart?.type) {
     case "donut": return (data.items || []).filter((item) => item.value > 0).map((item) => item.key);
+    case "bubble":
     case "barList": return (data.items || []).map((item) => item.key || null);
     case "histogram": return (data.bins || []).map((bin, index) => bin.key ?? String(index));
     case "funnel": return (data.stages || []).map((_, index) => String(index));
-    case "trend": return [...(data.labels || [])];
+    case "trend": return [...(data.keys || data.labels || [])];
     case "radar": return (data.indicators || []).map((indicator) => indicator.name);
     case "stackedBar": return (data.groups || []).map((group) => group.label);
     case "calendar": return [...(data.days || [])].sort(([left], [right]) => right.localeCompare(left)).map(([day]) => day);
@@ -188,7 +192,9 @@ export function chartTableKeys(chart) {
 /** Height for a chart on its full page: tall enough that every bar or row is readable. */
 export function fullPageHeight(chart) {
   const items = chart?.data?.items?.length || 0;
-  if (chart?.type === "rankedStackedBar" || chart?.type === "barList") return Math.max(420, 48 + items * 28);
+  if (chart?.type === "rankedStackedBar") return rankedChartHeight(items);
+  if (chart?.type === "barList") return Math.max(420, 48 + items * 28);
+  if (chart?.type === "bubble") return Math.max(520, Math.min(760, 420 + items * 4));
   if (chart?.type === "heatmap") return Math.max(420, 100 + (chart.data?.students?.length || 0) * 26);
   if (chart?.type === "stackedBar" && chart.data?.horizontal) return Math.max(420, 70 + (chart.data?.groups?.length || 0) * 32);
   if (chart?.type === "calendar") return 220;

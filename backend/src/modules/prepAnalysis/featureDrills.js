@@ -42,7 +42,7 @@ const LEARNING = {
 const subjectStatus = (subject) => (subject.completed >= subject.total ? 'Finished' : subject.started > 0 || subject.completed > 0 ? 'In progress' : 'Not started');
 
 const QUICKPREP = {
-  columns: [count('started', 'Sheets started'), count('finished', 'Sheets finished'), count('solved', 'Questions solved'), percent('progress', 'Progress in started sheets %'), text('lastOpened', 'Last opened', 12), count('toReview', 'Solves to review', 10)],
+  columns: [count('started', 'Sheets started'), count('finished', 'Sheets finished'), count('solved', 'Questions solved'), percent('progress', 'Progress in started sheets %'), text('lastOpened', 'Last opened', 12), count('toReview', 'Flagged solves', 10)],
   values: (row) => ({ started: row.quickprep.started, finished: row.quickprep.finished, solved: row.quickprep.solved, progress: row.quickprep.progress, lastOpened: daysAgo(row.quickprep.daysSinceActive), toReview: row.quickprep.review?.flagged ?? 0 }),
   detail(rows, context, test = () => true) {
     const items = [];

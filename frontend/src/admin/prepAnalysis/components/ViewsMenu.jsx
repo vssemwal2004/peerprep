@@ -67,7 +67,7 @@ export default function ViewsMenu({ area, state, layout, onApply }) {
         {view.mine && view.shared && <Users className="h-3 w-3 shrink-0 text-sky-500" aria-label="Shared" />}
       </button>
       {view.mine && (
-        <span className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <span className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
           <IconButton label="Save the current page into this view" onClick={() => overwrite(view)} disabled={Boolean(busy)}>{busy === `update:${view.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}</IconButton>
           <IconButton label={view.shared ? "Stop sharing" : "Share with other admins"} onClick={() => share(view)} disabled={Boolean(busy)}><Share2 className={`h-3.5 w-3.5 ${view.shared ? "text-sky-600" : ""}`} /></IconButton>
           <IconButton label="Delete" onClick={() => remove(view)} disabled={Boolean(busy)} className="hover:!text-rose-600"><Trash2 className="h-3.5 w-3.5" /></IconButton>

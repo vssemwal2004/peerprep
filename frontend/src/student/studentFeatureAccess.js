@@ -1,6 +1,6 @@
 import {
   BarChart3, BookOpen, Bot, CalendarDays, ClipboardList, Coins,
-  LayoutDashboard, ListChecks, Trophy, UserCog, Zap,
+  LayoutDashboard, ListChecks, Trophy, UserCog, Users, Zap,
 } from 'lucide-react';
 
 export const STUDENT_FEATURE_CATALOG = Object.freeze([
@@ -16,13 +16,19 @@ export const STUDENT_FEATURE_CATALOG = Object.freeze([
   { key: 'interviews', label: 'Peer Interviews', description: 'One-to-one interview schedules, sessions and feedback.', icon: CalendarDays, path: '/student/interview' },
   { key: 'ai_interviews', label: 'AI Interviews', description: 'AI interview assignments, practice rooms and reports.', icon: Bot, path: '/student/ai-interviews' },
   { key: 'learning', label: 'Learning Modules', description: 'Semester learning content, lessons and topic progress.', icon: BookOpen, path: '/student/learning' },
+  // Opt-in: never part of "All access"; only students an admin turns it on for (same rule on the server).
+  { key: 'peers', label: 'Prep Mates', description: 'Find classmates, view their profiles and become Prep Mates (same university only).', icon: Users, path: '/student/peers', optIn: true },
 ]);
 
 export const ALL_STUDENT_FEATURES = STUDENT_FEATURE_CATALOG.map((feature) => feature.key);
+/** Features only on when an admin turns them on ("All access" leaves them off). */
+export const OPT_IN_STUDENT_FEATURES = STUDENT_FEATURE_CATALOG.filter((feature) => feature.optIn).map((feature) => feature.key);
+/** What "All access" gives: every feature except the opt-in ones. */
+export const STANDARD_STUDENT_FEATURES = ALL_STUDENT_FEATURES.filter((key) => !OPT_IN_STUDENT_FEATURES.includes(key));
 
 export function normalizeStudentAccess(access, accessScope = 'full') {
   if (accessScope === 'assessment_only') return { mode: 'custom', features: ['assessments'] };
-  if (!access || access.mode !== 'custom') return { mode: 'all', features: [...ALL_STUDENT_FEATURES] };
+  if (!access || access.mode !== 'custom') return { mode: 'all', features: [...STANDARD_STUDENT_FEATURES] };
   const allowed = new Set(ALL_STUDENT_FEATURES);
   return { mode: 'custom', features: [...new Set((access.features || []).filter((key) => allowed.has(key)))] };
 }
@@ -48,6 +54,7 @@ export function featureForStudentPath(pathname = '') {
   if (pathname.startsWith('/student/learning')) return 'learning';
   if (pathname.startsWith('/student/resume')) return 'resume';
   if (pathname.startsWith('/student/wallet')) return 'prep_coins';
+  if (pathname.startsWith('/student/peers')) return 'peers';
   if (pathname.startsWith('/student/dashboard') || pathname.startsWith('/student/challenges')) return 'dashboard';
   return null;
 }

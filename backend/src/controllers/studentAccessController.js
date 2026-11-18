@@ -3,6 +3,8 @@ import StudentAccessPolicy from '../models/StudentAccessPolicy.js';
 import { invalidateUserCache } from '../middleware/auth.js';
 import { logActivity } from './adminActivityController.js';
 import {
+  OPT_IN_STUDENT_FEATURES,
+  STANDARD_STUDENT_FEATURES,
   STUDENT_FEATURES,
   normalizeStudentFeatures,
   normalizeStudentFeatureAccess,
@@ -15,7 +17,7 @@ const serializePolicy = (policy) => ({
   defaultMode: policy?.defaultMode === 'custom' ? 'custom' : 'all',
   defaultFeatures: policy?.defaultMode === 'custom'
     ? normalizeStudentFeatures(policy.defaultFeatures)
-    : [...STUDENT_FEATURES],
+    : [...STANDARD_STUDENT_FEATURES],
   updatedAt: policy?.updatedAt || null,
   updatedByEmail: policy?.updatedByEmail || '',
 });
@@ -25,6 +27,7 @@ export async function getStudentAccessPolicy(req, res) {
   res.set('Cache-Control', 'private, no-store').json({
     policy: serializePolicy(policy),
     features: STUDENT_FEATURES,
+    optIn: OPT_IN_STUDENT_FEATURES,
   });
 }
 
@@ -32,7 +35,7 @@ export async function updateStudentAccessPolicy(req, res) {
   const defaultMode = req.body?.defaultMode === 'custom' ? 'custom' : 'all';
   const defaultFeatures = defaultMode === 'custom'
     ? normalizeStudentFeatures(req.body?.defaultFeatures)
-    : [...STUDENT_FEATURES];
+    : [...STANDARD_STUDENT_FEATURES];
   if (defaultMode === 'custom' && defaultFeatures.length === 0) {
     return res.status(400).json({ error: 'Enable at least one feature for the default student access.' });
   }
@@ -68,7 +71,7 @@ export async function resolveNewStudentFeatureAccess(requestedAccess, actor) {
   const mode = policy?.defaultMode === 'custom' ? 'custom' : 'all';
   return {
     mode,
-    features: mode === 'custom' ? normalizeStudentFeatures(policy?.defaultFeatures) : [...STUDENT_FEATURES],
+    features: mode === 'custom' ? normalizeStudentFeatures(policy?.defaultFeatures) : [...STANDARD_STUDENT_FEATURES],
     source: 'default',
     updatedBy: actor?._id,
     updatedAt: new Date(),

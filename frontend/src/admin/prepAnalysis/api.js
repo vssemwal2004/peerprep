@@ -77,6 +77,8 @@ export function createPrepAnalysisApi(scope = null) {
   email: {
     templates: (signal) => request("/email/templates", { signal }),
     preview: (body, signal) => request("/email/preview", { method: "POST", body: withScope(body, scope), signal }),
+    /** "Send test to me": the first student's version, to the signed-in admin's own address only. */
+    test: (body) => request("/email/test", { method: "POST", body: withScope(body, scope) }),
     send: (body) => request("/email/send", { method: "POST", body: withScope(body, scope) }),
   },
   /** One student's own prep for a period ({ preset } / { preset: "custom", from, to }, or a preset name). */

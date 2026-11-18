@@ -14,6 +14,7 @@ import {
   mergeSemesterOptions,
 } from "../utils/semesterOptions";
 import StudentAccessSelector from './components/StudentAccessSelector';
+import BulkStudentAccessDialog from './components/BulkStudentAccessDialog';
 import { normalizeStudentAccess } from '../student/studentFeatureAccess';
 import { useAuth } from '../context/AuthContext';
 
@@ -230,6 +231,8 @@ export default function StudentDirectory() {
   const [isSelectingAllFiltered, setIsSelectingAllFiltered] = useState(false);
   const [sendingCredentialIds, setSendingCredentialIds] = useState(new Set());
   const [accessStudent, setAccessStudent] = useState(null);
+  // Bulk "Access & features": { ids, allMatching, matchingFilters } while its dialog is open.
+  const [bulkAccessTarget, setBulkAccessTarget] = useState(null);
   const [accessDraft, setAccessDraft] = useState(null);
   const [accessLoading, setAccessLoading] = useState(false);
   const [accessSaving, setAccessSaving] = useState(false);
@@ -989,6 +992,30 @@ export default function StudentDirectory() {
     setShowBulkMenu(false);
   };
 
+  const openBulkAccess = (event) => {
+    event?.stopPropagation();
+    const ids = Array.from(selectedStudentIds);
+    if (!ids.length) {
+      toast.error('Select at least one student first.');
+      return;
+    }
+    // Same rule as bulk delete: every matching student goes by the filters, not a huge id list.
+    const allMatching = activeTab === 'students' && ids.length === pagination.total;
+    setBulkAccessTarget({ ids, allMatching, matchingFilters: { search: debouncedSearch, ...filters, uploadBatchId } });
+    setShowBulkMenu(false);
+  };
+
+  const applyBulkAccess = async (change) => {
+    const { ids, allMatching, matchingFilters } = bulkAccessTarget;
+    const result = await api.bulkUpdateStudentAccess(allMatching ? { allMatching: true, filters: matchingFilters } : { studentIds: ids }, change);
+    const parts = [`Access updated for ${Number(result.updated || 0).toLocaleString()} student${result.updated === 1 ? '' : 's'}`];
+    if (result.unchanged) parts.push(`${result.unchanged.toLocaleString()} already had it`);
+    if (result.skipped) parts.push(`${result.skipped.toLocaleString()} skipped (would have had no module left)`);
+    toast.success(`${parts.join(' · ')}.`);
+    setBulkAccessTarget(null);
+    await loadData({ forceRefresh: true });
+  };
+
   const handleBulkDeleteStudents = async () => {
     if (!bulkDeleteTarget?.ids?.length || isBulkDeleting) return;
     const { ids, deletingAllMatching, matchingFilters } = bulkDeleteTarget;
@@ -1327,6 +1354,22 @@ export default function StudentDirectory() {
                         <FileDown className="h-4 w-4 text-emerald-600" />
                         Export selected CSV
                       </button>
+                      {user?.role === 'admin' && (
+                        <button
+                          type="button"
+                          onClick={openBulkAccess}
+                          disabled={!selectedCount}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-45 dark:text-gray-200 dark:hover:bg-sky-950/30"
+                        >
+                          <ShieldCheck className="h-4 w-4 text-sky-600" />
+                          <span className="min-w-0">
+                            <span className="block">Access & features</span>
+                            <span className="block text-[10px] font-normal opacity-75">
+                              {selectedCount === pagination.total ? `All ${selectedCount.toLocaleString()} matching` : `${selectedCount.toLocaleString()} selected`}
+                            </span>
+                          </span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={(event) => handleSendCredentials(selectedCredentialIds, event)}
@@ -1842,6 +1885,13 @@ export default function StudentDirectory() {
             </motion.div>
           </div>
         </>}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {bulkAccessTarget && (
+          <BulkStudentAccessDialog count={bulkAccessTarget.allMatching ? pagination.total : bulkAccessTarget.ids.length} allMatching={bulkAccessTarget.allMatching}
+            onApply={applyBulkAccess} onClose={() => setBulkAccessTarget(null)} />
+        )}
       </AnimatePresence>
 
       {/* Edit Student Modal */}

@@ -49,6 +49,24 @@ export const mongoSanitizeMiddleware = mongoSanitize({
  */
 export const xssProtectionMiddleware = xss();
 
+const STUDENT_MAIL_DRAFT_PATH = /^(?:\/api)?(?:\/u\/[a-z0-9][a-z0-9-]{1,62})?\/admin\/prep-analysis\/email\/(?:preview|test|send)$/i;
+
+/**
+ * Prep Analysis "Send email": the admin's edited draft ({ subject, html }) is email HTML, like the
+ * Email Templates page (also left unsanitized). Escaping it turned the preview and the sent mail
+ * into raw "<div …>" text. Returns the draft to restore after the XSS pass (strings only), or null.
+ * Only these admin-only POST routes, only the `draft` field; the preview is a sandboxed iframe and
+ * student values put into the HTML are escaped (prepAnalysis.email.js).
+ */
+export function studentMailDraftOf(req) {
+  const draft = req.body?.draft;
+  if (req.method !== 'POST' || !STUDENT_MAIL_DRAFT_PATH.test(req.path || '') || !draft || typeof draft !== 'object' || Array.isArray(draft)) return null;
+  return {
+    subject: typeof draft.subject === 'string' ? draft.subject : undefined,
+    html: typeof draft.html === 'string' ? draft.html : undefined,
+  };
+}
+
 /**
  * Validates MongoDB ObjectId format
  * Prevents invalid ID attacks that could cause crashes

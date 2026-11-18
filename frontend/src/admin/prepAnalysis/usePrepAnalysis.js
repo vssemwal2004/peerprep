@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnalysisApi } from "./analysisScope";
 import { defaultFilterState, normalizeState, switchArea, toQueryRequest, toRequestGroup } from "./filterModel";
 import { prepAnalysisStateFromSearch } from "./analysisPreset";
+import { upgradeToDefaults } from "./layoutDefaults";
 
 const STORAGE_KEY = "peerprep.prepAnalysis.v5";
 const OLD_STORAGE_KEYS = ["peerprep.prepAnalysis.v4", "peerprep.prepAnalysis.v3"];
@@ -26,10 +27,30 @@ const layoutOnly = (layouts) => Object.fromEntries(Object.entries(layouts || {})
     return { ...entry, options: kept ? { ...options, limit: kept } : options };
   }) : []]));
 
+/**
+ * A chart list with retired charts swapped for the chart that replaced them (the server's
+ * `replacedCharts`, e.g. "Solved problems by difficulty" → "Trend of submissions till today").
+ * Applied to every layout, from this browser, a saved view or the defaults, every time, so a
+ * layout saved while an older server was running can never bring a retired chart back.
+ */
+export function replaceRetiredCharts(list, replaced = {}) {
+  if (!Array.isArray(list)) return list;
+  const seen = new Set();
+  return list.flatMap((entry) => {
+    const next = replaced[entry.id];
+    // The old view (e.g. "Rose") means nothing for the new chart: only the card size carries over.
+    const swapped = next ? { id: next, options: {}, ...(entry.size ? { size: entry.size } : {}) } : entry;
+    if (seen.has(swapped.id)) return [];
+    seen.add(swapped.id);
+    return [swapped];
+  });
+}
+const replaceInLayouts = (layouts, replaced) => Object.fromEntries(Object.entries(layouts || {}).map(([area, list]) => [area, replaceRetiredCharts(list, replaced)]));
+
 function readStored() {
   try {
     const current = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "null");
-    if (current) return { layouts: layoutOnly(current.layouts) };
+    if (current) return { layouts: layoutOnly(current.layouts), versions: current.versions || {} };
     for (const key of OLD_STORAGE_KEYS) {
       const old = JSON.parse(window.localStorage.getItem(key) || "null");
       if (old) return { layouts: layoutOnly(old.layouts) };
@@ -45,7 +66,11 @@ const EMPTY_FILTER = { type: "group", join: "and", children: [] };
 /** The request form of a comparison: [{ label, filter }, { label, filter }]. */
 export const compareRequest = (compare, fieldMap) => compare.map((side) => ({ label: side.label, filter: toRequestGroup(side.group, fieldMap) || EMPTY_FILTER }));
 
-const defaultLayout = (catalog, area) => (catalog?.defaultLayout?.[area] || []).map((id) => ({ id, options: {} }));
+// The area's default charts, with the card widths that page sets (catalog `defaultSizes`).
+const defaultLayout = (catalog, area) => (catalog?.defaultLayout?.[area] || []).map((id) => {
+  const size = catalog?.defaultSizes?.[area]?.[id];
+  return { id, options: {}, ...(size ? { size } : {}) };
+});
 
 /**
  * `scope` ({ assessmentIds }) pins the analysis to those assessments, as on the report page: the
@@ -59,6 +84,8 @@ export function usePrepAnalysis({ scope = null } = {}) {
   const [catalogError, setCatalogError] = useState(null);
   const [state, setState] = useState(() => (scoped ? defaultFilterState("assessment") : prepAnalysisStateFromSearch(window.location.search)));
   const [layouts, setLayouts] = useState(stored.layouts || {});
+  // Which version of each area's default layout the saved layouts were made under.
+  const [layoutVersions, setLayoutVersions] = useState(stored.versions || {});
   const baseTable = scoped ? SCOPED_TABLE : DEFAULT_TABLE;
   const [table, setTableState] = useState(baseTable);
   // "Only these students": the students behind one part of a chart, chosen from its popup.
@@ -84,6 +111,22 @@ export function usePrepAnalysis({ scope = null } = {}) {
     return () => controller.abort();
   }, [api]);
 
+  // Once the server says which charts were replaced, the stored layouts use the new ones (and are
+  // saved that way), so size/view changes made later apply to the chart actually shown.
+  useEffect(() => {
+    if (catalog?.replacedCharts && Object.keys(catalog.replacedCharts).length) setLayouts((current) => replaceInLayouts(current, catalog.replacedCharts));
+  }, [catalog]);
+  // A redesigned default layout (e.g. Prep Coding, 2026-11-18) replaces older saved layouts once.
+  useEffect(() => {
+    if (!catalog?.defaultLayoutVersion) return;
+    const upgraded = upgradeToDefaults(layouts, layoutVersions, catalog.defaultLayoutVersion);
+    if (!upgraded) return;
+    setLayouts(upgraded.layouts);
+    setLayoutVersions(upgraded.versions);
+    // Only when the catalog arrives: the admin's later layout changes must never be undone.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog]);
+
   const fieldMap = useMemo(() => new Map((catalog?.fields || []).map((field) => [field.key, field])), [catalog]);
   const areas = useMemo(() => catalog?.areas || [], [catalog]);
   const area = scoped
@@ -95,14 +138,14 @@ export function usePrepAnalysis({ scope = null } = {}) {
   const layout = useMemo(() => {
     if (!catalog || !area) return null;
     const known = new Set(areaCharts.map((chart) => chart.id));
-    return (layouts[area] || defaultLayout(catalog, area)).filter((entry) => known.has(entry.id));
+    return replaceRetiredCharts(layouts[area] || defaultLayout(catalog, area), catalog.replacedCharts).filter((entry) => known.has(entry.id));
   }, [area, areaCharts, catalog, layouts]);
 
   const effectiveState = useMemo(() => (area && area !== state.area ? { ...state, area } : state), [area, state]);
 
   useEffect(() => {
-    if (catalog) writeStored({ layouts });
-  }, [catalog, layouts]);
+    if (catalog) writeStored({ layouts, versions: { ...layoutVersions, ...(catalog.defaultLayoutVersion || {}) } });
+  }, [catalog, layouts, layoutVersions]);
 
   // The request only changes with filters, chart settings and the table, not with a chart's view or width.
   const requestKey = useMemo(() => {
@@ -142,10 +185,11 @@ export function usePrepAnalysis({ scope = null } = {}) {
   const applyView = useCallback((view) => {
     const next = normalizeState(view.state, view.area);
     setState({ ...next, area: view.area });
-    if (Array.isArray(view.layout) && view.layout.length) setLayouts((current) => ({ ...current, [view.area]: view.layout }));
+    // A view saved before a chart was replaced opens with the new chart.
+    if (Array.isArray(view.layout) && view.layout.length) setLayouts((current) => ({ ...current, [view.area]: replaceRetiredCharts(view.layout, catalog?.replacedCharts) }));
     setTableState(baseTable);
     setFocusState(null);
-  }, [baseTable]);
+  }, [baseTable, catalog]);
   const setLayout = useCallback((next) => setLayouts((current) => ({ ...current, [area]: next })), [area]);
   const updateChart = useCallback((id, patch) => setLayouts((current) => {
     const list = current[area] || defaultLayout(catalog, area);

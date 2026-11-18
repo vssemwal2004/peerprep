@@ -9,7 +9,7 @@ import EmailTemplate from '../src/models/EmailTemplate.js';
 import MailJob from '../src/models/MailJob.js';
 import { decryptMailPayload } from '../src/services/mailQueueService.js';
 import {
-  STUDENT_MAIL_LIMITS, listStudentMailTemplates, previewStudentMail, renderStudentMail, sendStudentMail, validateStudentIds,
+  STUDENT_MAIL_LIMITS, listStudentMailTemplates, previewStudentMail, renderStudentMail, sendStudentMail, sendStudentTestMail, validateStudentIds,
 } from '../src/modules/prepAnalysis/prepAnalysis.email.js';
 import { matchingStudentIds, validatePrepAnalysisQuery } from '../src/modules/prepAnalysis/prepAnalysis.service.js';
 
@@ -63,8 +63,38 @@ test('student id lists are validated, de-duplicated and capped', () => {
 test('only the admin\'s own enabled templates are offered', async (t) => {
   if (guard(t)) return;
   const { templates, variables } = await listStudentMailTemplates();
-  assert.deepEqual(templates.map((template) => template.name), ['Practice reminder']);
+  // The ready-made "next step reminder" is added once, as an ordinary editable template.
+  assert.deepEqual(templates.map((template) => template.name), ['Practice reminder', 'Prep Coding: next step reminder']);
+  assert.equal(templates.find((template) => template.suggested)?.name, 'Prep Coding: next step reminder');
+  assert.match(templates[0].html, /Dear \{\{name\}\}/, 'the dialog gets the HTML to edit');
   assert.ok(variables.some((variable) => variable.key === 'firstName'));
+  await listStudentMailTemplates();
+  assert.equal(await EmailTemplate.countDocuments({ type: 'PREP_PRACTICE_NUDGE' }), 1, 'never added twice');
+  const nudge = await EmailTemplate.findOne({ type: 'PREP_PRACTICE_NUDGE' }).lean();
+  assert.equal(nudge.isSystem, false, 'editable in Settings → Email Templates');
+});
+
+test('an edited draft is used for this send only, with limits; the saved template is unchanged', async (t) => {
+  if (guard(t)) return;
+  const draft = { subject: 'Hello {{firstName}}', html: '<p>Edited for {{name}}</p>' };
+  const preview = await previewStudentMail({ user: admin, query: query(), templateId: String(custom._id), studentId: people.s2, draft });
+  assert.equal(preview.subject, 'Hello Bilal');
+  assert.equal(preview.html, '<p>Edited for Bilal Khan</p>');
+  assert.equal((await EmailTemplate.findById(custom._id).lean()).subject, 'Hi {{firstName}} ({{studentId}})');
+  await assert.rejects(previewStudentMail({ user: admin, query: query(), templateId: String(custom._id), studentId: people.s2, draft: { subject: '  ' } }), /Add a subject/);
+  await assert.rejects(previewStudentMail({ user: admin, query: query(), templateId: String(custom._id), studentId: people.s2, draft: { html: 'x'.repeat(STUDENT_MAIL_LIMITS.maxHtml + 1) } }), /too long/);
+});
+
+test('"send test to me" goes only to the signed-in admin, marked [Test], as the first student would see it', async (t) => {
+  if (guard(t)) return;
+  const result = await sendStudentTestMail({ user: admin, query: query(), templateId: String(custom._id), studentId: people.s1, draft: { subject: 'Hi {{firstName}}', html: '<p>{{name}}</p>' } });
+  assert.deepEqual(result, { sentTo: 'admin@example.test', asStudent: 'Asha <Rao>' });
+  const job = await MailJob.findOne({ to: 'admin@example.test' }).lean();
+  const payload = decryptMailPayload(job.payloadEncrypted);
+  assert.equal(payload.subject, '[Test] Hi Asha');
+  assert.equal(payload.html, '<p>Asha &lt;Rao&gt;</p>');
+  assert.equal(await MailJob.countDocuments({ to: 'asha@example.test', idempotencyKey: /^student-message-test/ }), 0, 'the student is never mailed by a test');
+  await assert.rejects(sendStudentTestMail({ user: { ...admin, email: '' }, query: query(), templateId: String(custom._id), studentId: people.s1 }), /no email address/);
 });
 
 test('preview shows what one student gets', async (t) => {

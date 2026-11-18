@@ -17,6 +17,7 @@ import { FilterDrawer, FilterToolbar } from "./components/FilterDrawer";
 import { KpiStrip, ScoreHelpDialog, StudentTable } from "./components/Insights";
 import SheetScope from "./components/SheetScope";
 import StudentDrawer from "./components/StudentDrawer";
+import TopStudentDialog from "./components/TopStudentDialog";
 import ViewsMenu from "./components/ViewsMenu";
 import CompareControl, { ClassCompareChip, CompareChip } from "./components/CompareBar";
 import CompareDashboard from "./components/CompareDashboard";
@@ -93,6 +94,14 @@ function PrepAnalysisView({ scope, embedded }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [settingsId, setSettingsId] = useState(null);
   const [studentId, setStudentId] = useState(null);
+  const [topStudent, setTopStudent] = useState(null);
+  const showChartStudent = useCallback((id, chart) => {
+    if (chart?.id === "top-students") {
+      const item = chart.data.items.find((entry) => entry.id === id);
+      if (item) { setTopStudent(item); return; }
+    }
+    setStudentId(id);
+  }, []);
   // The part popup: { chart, part } for the students behind a bar, slice or row.
   const [openPart, setOpenPart] = useState(null);
   const showPart = useCallback((chart, part) => setOpenPart({ chart, part }), []);
@@ -169,6 +178,16 @@ function PrepAnalysisView({ scope, embedded }) {
       onChange={(sheets) => { setFocus(null); update({ ...state, sheets }); }} />
   ) : null;
 
+  // One feature on the page: its name leads the filter line instead of taking a row of its own.
+  const soloGroup = area !== "all" && groups.length === 1 ? groups[0] : null;
+  const soloStyle = soloGroup ? sectionStyle(soloGroup.key) : null;
+  const SoloIcon = soloStyle?.Icon;
+  const sectionLead = soloGroup ? (
+    <h2 className="flex shrink-0 items-center gap-2 pl-0.5 text-[13.5px] font-bold text-slate-950 dark:text-white">
+      <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${soloStyle.chip}`}><SoloIcon className="h-4 w-4" /></span>{soloGroup.label}
+    </h2>
+  ) : null;
+
   return (
     <ToastProvider>
     <main className={`font-sans text-slate-900 dark:text-gray-100 ${embedded ? "overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-gray-800 dark:bg-gray-950" : "min-h-full bg-slate-50 dark:bg-gray-950"}`}>
@@ -193,13 +212,13 @@ function PrepAnalysisView({ scope, embedded }) {
           {sheetScope}
           <ChartFullPage key={fullChart} chartId={fullChart} cardChart={charts.find((chart) => chart.id === fullChart)} entry={entryById.get(fullChart)}
             analysis={analysis} meta={meta} refreshTick={refreshTick}
-            onBack={closeChart} onStudent={setStudentId} onPart={showPart} onOpenFilters={() => setFiltersOpen(true)} onFilterChange={update} filterExtra={filterChips}
+            onBack={closeChart} onStudent={showChartStudent} onPart={showPart} onOpenFilters={() => setFiltersOpen(true)} onFilterChange={update} filterExtra={filterChips}
             onSettings={() => setSettingsId(fullChart)} onView={(view) => updateChart(fullChart, { view })} />
         </div>
       ) : (
-      <div className="mx-auto max-w-[1680px] space-y-4 px-4 py-4">
+      <div className="mx-auto max-w-[1680px] space-y-3 px-4 py-3">
         {sheetScope}
-        <FilterToolbar state={state} catalog={catalog} fieldMap={fieldMap} meta={meta} loading={loading} onOpen={() => setFiltersOpen(true)} onChange={update} extra={filterChips} />
+        <FilterToolbar state={state} catalog={catalog} fieldMap={fieldMap} meta={meta} loading={loading} onOpen={() => setFiltersOpen(true)} onChange={update} extra={filterChips} lead={sectionLead} />
 
         {error && (
           <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
@@ -217,14 +236,30 @@ function PrepAnalysisView({ scope, embedded }) {
           // While comparing, a chart empty for everyone may still have data for one group, so all stay.
           const hidden = compare ? [] : allCharts.filter((chart) => emptyIds.has(chart.id));
           const sectionCharts = allCharts.filter((chart) => !hidden.includes(chart));
+          // Heat maps at the start of the layout lead the section, above its headline cards (the
+          // Prep Coding default); moved further down by the admin, they sit in the grid as usual.
+          const firstOther = sectionCharts.findIndex((chart) => chart.type !== "calendar");
+          const leading = firstOther === -1 ? sectionCharts : sectionCharts.slice(0, firstOther);
+          const gridCharts = sectionCharts.slice(leading.length);
+          const card = (chart, index) => (
+            <ChartCard key={chart.id} chart={chart} entry={entryById.get(chart.id)} analysis={analysis} index={index}
+              onChange={(patch) => updateChart(chart.id, patch)}
+              onSettings={() => setSettingsId(chart.id)}
+              onOpen={() => openChart(chart.id)}
+              onPart={showPart} compareSides={sidesFor(chart)}
+              onRemove={() => setLayout(layout.filter((entry) => entry.id !== chart.id))}
+              onStudent={showChartStudent} />
+          );
+          const gridClass = `grid grid-cols-12 gap-3 ${loading && data ? "opacity-80 transition-opacity" : ""}`;
           return (
             <section key={group.key} className="space-y-3" aria-label={group.label}>
-              <div className="flex items-center justify-between pt-1">
+              {!soloGroup && <div className="flex items-center justify-between pt-1">
                 <h2 className="flex items-center gap-2 text-sm font-bold text-slate-950 dark:text-white">
                   <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${style.chip}`}><SectionIcon className="h-4 w-4" /></span>{group.label}
                 </h2>
                 {area === "all" && <button type="button" onClick={() => chooseArea(group.module)} className="text-xs font-semibold text-sky-700 hover:underline dark:text-sky-300">Analyse {group.label} only →</button>}
-              </div>
+              </div>}
+              {leading.length > 0 && <div className={gridClass}>{leading.map((chart, index) => card(chart, index))}</div>}
               <KpiStrip section={group.key} kpis={group.kpis} loading={loading} state={state} fieldMap={fieldMap} onToggle={(rule) => update(toggleKpi(rule, state))}
                 compare={compare && data?.compare ? data.compare.map((side) => ({ label: side.label, kpis: side.kpiGroups.find((entry) => entry.key === group.key)?.kpis || [] })) : null} />
               {activeKpi?.section === group.key && studentList(`${activeKpi.kpi.label}: these students`,
@@ -233,19 +268,7 @@ function PrepAnalysisView({ scope, embedded }) {
                 <NoActivityNote section={group.label} charts={hidden} students={meta.matched} all={!sectionCharts.length}
                   onList={() => showPart(hidden[0], { key: ALL_STUDENTS, label: "Students in view" })} />
               )}
-              {sectionCharts.length > 0 && (
-                <div className={`grid grid-cols-12 gap-3 ${loading && data ? "opacity-80 transition-opacity" : ""}`}>
-                  {sectionCharts.map((chart, index) => (
-                    <ChartCard key={chart.id} chart={chart} entry={entryById.get(chart.id)} analysis={analysis} index={index}
-                      onChange={(patch) => updateChart(chart.id, patch)}
-                      onSettings={() => setSettingsId(chart.id)}
-                      onOpen={() => openChart(chart.id)}
-                      onPart={showPart} compareSides={sidesFor(chart)}
-                      onRemove={() => setLayout(layout.filter((entry) => entry.id !== chart.id))}
-                      onStudent={setStudentId} />
-                  ))}
-                </div>
-              )}
+              {gridCharts.length > 0 && <div className={gridClass}>{gridCharts.map((chart, index) => card(chart, leading.length + index))}</div>}
             </section>
           );
         })}
@@ -266,6 +289,8 @@ function PrepAnalysisView({ scope, embedded }) {
       <PartDialog open={openPart} analysis={analysis} layered={Boolean(studentId)} onClose={() => setOpenPart(null)} onStudent={setStudentId}
         onFocus={(part) => { setFocus(focusOn(analysis, openPart.chart, part)); setOpenPart(null); }}
         onOpenFull={fullChart ? undefined : () => { const chartId = openPart?.chart.id; setOpenPart(null); if (chartId) openChart(chartId); }} />
+      {topStudent && <TopStudentDialog item={topStudent} range={state.range} onClose={() => setTopStudent(null)}
+        onDetails={(id) => { setTopStudent(null); setStudentId(id); }} />}
       {studentId && <StudentDrawer studentId={studentId} range={state.range} onClose={() => setStudentId(null)} />}
     </main>
     </ToastProvider>

@@ -439,6 +439,23 @@ export async function getStudentProgressSummary(student, permissions = null, now
   return scoreStudentProgress(own, now, await servingPolicy(state));
 }
 
+/**
+ * Read-only progress for a peer profile: the same metrics and Prep Score the student sees on their
+ * own profile, plus coding totals. Never saves a score or computes a rank.
+ */
+export async function getPeerProgressSnapshot(student, now = new Date()) {
+  const permissions = await dashboardPermissions(student);
+  const [semesters, sharedCatalog, problemTotals] = await Promise.all([
+    permissions.learning ? curriculum() : [],
+    permissions.questions ? getSharedCodingCatalog() : [],
+    permissions.questions ? aggregate(Problem, [{ $match: publicProblemMatch }, { $group: { _id: '$difficulty', count: { $sum: 1 } } }]) : [],
+  ]);
+  const [row = {}] = await loadProgressRows([student], permissions, semesters, now, sharedCatalog);
+  const state = await ensurePrepScoreStore();
+  const progress = scoreStudentProgress(row, now, await servingPolicy(state));
+  return { permissions, row, progress, sharedCatalog, codingTotals: permissions.questions ? codingTotals(problemTotals, sharedCatalog) : null };
+}
+
 export async function getStudentUniversityRanking(student, permissions = null, now = new Date()) {
   const allowed = permissions || await dashboardPermissions(student);
   const { own } = await loadOwnRow(student, allowed, now);

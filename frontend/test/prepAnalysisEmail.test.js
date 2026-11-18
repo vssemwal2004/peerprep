@@ -25,8 +25,12 @@ before(async () => {
           const body = init.body ? JSON.parse(init.body) : null;
           requests.push({ path, body });
           if (path === '/student-ids') return json({ ids: ['s1', 's2', 's3'], total: 3, limit: 5000 });
-          if (path === '/email/templates') return json({ templates: [{ id: 't1', name: 'Practice reminder', subject: 'Hi {{firstName}}' }], variables: [{ key: 'name', label: 'Full name' }] });
-          if (path === '/email/preview') return json({ to: 'asha@example.test', name: 'Asha', subject: 'Hi Asha', html: '<p>Dear Asha</p>' });
+          if (path === '/email/templates') return json({ templates: [
+            { id: 't1', name: 'Practice reminder', subject: 'Hi {{firstName}}', html: '<p>Dear {{name}}</p>' },
+            { id: 't2', name: 'Prep Coding: next step reminder', subject: '{{firstName}}, your next step', html: '<p>Next step</p>', suggested: true },
+          ], variables: [{ key: 'name', label: 'Full name' }, { key: 'firstName', label: 'First name' }] });
+          if (path === '/email/preview') return json({ to: 'asha@example.test', name: 'Asha', subject: (body?.draft?.subject || 'Hi Asha').replace('{{firstName}}', 'Asha'), html: '<p>Dear Asha</p>' });
+          if (path === '/email/test') return json({ sentTo: 'admin@example.test', asStudent: 'Asha' }, 202);
           if (path === '/email/send') return json({ batchId: 'b1', template: { id: 't1', name: 'Practice reminder' }, requested: 3, queued: 2, noEmail: 1, notFound: 0 }, 202);
           return json({ message: `unexpected ${path}` }, 404);
         }
@@ -70,17 +74,46 @@ test('tick students, select all matching, then send a template to them', async (
   assert.match(document.querySelector('[role="status"]').textContent, /3 selected/);
 
   await click(button(/Send email/));
-  await settle();
-  assert.match(document.body.textContent, /To 3 selected students/);
-  assert.equal(document.querySelector('[role="dialog"] select').value, 't1', 'the first template is chosen');
+  await settle(500);
+  assert.match(document.body.textContent, /To 3 students/);
+  const select = document.querySelector('[role="dialog"] select');
+  assert.equal(select.value, 't2', 'the suggested ready-made template is chosen first');
   assert.equal(document.querySelector('iframe[title="Email preview"]').getAttribute('sandbox'), '', 'the template preview cannot run scripts');
   assert.match(document.body.textContent, /Preview for Asha · asha@example\.test/);
 
-  await click(button(/^Send to 3$/));
+  // Start from the other template, then edit the subject: the preview follows the edit.
+  await act(async () => { select.value = 't1'; select.dispatchEvent(new window.Event('change', { bubbles: true })); });
+  const subject = document.querySelector('[role="dialog"] input:not([type="checkbox"])');
+  assert.equal(subject.value, 'Hi {{firstName}}', 'the editor starts from the chosen template');
+  const setValue = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  await act(async () => { setValue.call(subject, 'Hello {{firstName}}'); subject.dispatchEvent(new window.Event('input', { bubbles: true })); });
+  await settle(500);
+  const lastPreview = requests.filter((entry) => entry.path === '/email/preview').at(-1);
+  assert.deepEqual(lastPreview.body.draft, { subject: 'Hello {{firstName}}', html: '<p>Dear {{name}}</p>' });
+  assert.match(document.body.textContent, /Undo my edits/);
+
+  // A variable button inserts at the cursor in the HTML.
+  await click(button(/^\{\{firstName\}\}$/));
+  assert.match(document.querySelector('textarea[aria-label="Email HTML"]').value, /\{\{firstName\}\}/);
+
+  // Test goes to me only.
+  await click(button(/Send test to me/));
+  await settle();
+  const tested = requests.find((entry) => entry.path === '/email/test');
+  assert.equal(tested.body.studentId, 's1');
+  assert.equal(tested.body.templateId, 't1');
+  assert.match(document.body.textContent, /Test sent to admin@example\.test/);
+
+  // Two steps: review, then confirm. No browser confirm() box.
+  await click(button(/Review & send to 3/));
+  assert.match(document.body.textContent, /Send “Hello \{\{firstName\}\}” to 3 students\?/);
+  assert.equal(requests.some((entry) => entry.path === '/email/send'), false, 'nothing is sent before confirming');
+  await click(button(/Yes, send to 3/));
   await settle();
   const sent = requests.find((entry) => entry.path === '/email/send');
   assert.deepEqual(sent.body.studentIds.sort(), ['s1', 's2', 's3']);
   assert.equal(sent.body.templateId, 't1');
+  assert.equal(sent.body.draft.subject, 'Hello {{firstName}}', 'the edited subject is what is sent');
   assert.match(document.body.textContent, /“Practice reminder” queued for 2 students\./);
   assert.match(document.body.textContent, /1 student has no email address/);
 });

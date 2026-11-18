@@ -146,6 +146,9 @@ export async function loadCodingFacts({ studentIds, range }) {
         attempts: { $sum: 1 },
         accepted: countStatus('AC'),
         wa: countStatus('WA'), tle: countStatus('TLE'), re: countStatus('RE'), ce: countStatus('CE'),
+        // When this problem was first accepted in the period ($min skips the nulls): dates the
+        // "Hard Problem Solvers" trend line.
+        firstAcceptedAt: { $min: { $cond: [{ $eq: ['$status', 'AC'] }, '$createdAt', null] } },
       } },
     ]).option({ maxTimeMS: FACT_LIMITS.maxQueryMs, allowDiskUse: true }),
     Submission.aggregate([
@@ -172,6 +175,7 @@ export async function loadCodingFacts({ studentIds, range }) {
       attempts: row.attempts,
       accepted: row.accepted,
       verdicts: { AC: row.accepted, WA: row.wa, TLE: row.tle, RE: row.re, CE: row.ce },
+      firstAcceptedAt: row.firstAcceptedAt || null,
     });
     byStudent.set(studentId, list);
   }

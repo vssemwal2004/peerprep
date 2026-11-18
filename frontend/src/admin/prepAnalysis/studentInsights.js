@@ -89,7 +89,7 @@ function assessmentLines(assessment) {
 function ownWorkLines(review, where) {
   if (!review?.flagged) return [];
   const why = [review.fast ? `${review.fast} very fast` : "", review.pasted ? `${review.pasted} mostly pasted` : ""].filter(Boolean).join(", ");
-  return [{ tone: "warn", text: `${plural(review.flagged, `${where} solve`)} to review (${why}). See the submission history below.` }];
+  return [{ tone: "warn", text: `${plural(review.flagged, `flagged ${where} solve`)} (${why}). See the submission history below.` }];
 }
 
 /** Up to `limit` lines, problems first, then tips, then good news. */

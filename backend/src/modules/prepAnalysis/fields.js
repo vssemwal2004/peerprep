@@ -102,7 +102,7 @@ const FIELD_LIST = [
   { key: 'coding.submissions', module: 'coding', group: 'Results', label: 'Code submissions', kind: 'number', qualifiers: 'coding', rankable: true, get: codingMetric('submissions') },
 
   // ---- Prep Coding: own work (first solves since tracking started; see services/solveEffort.js)
-  { key: 'coding.solvesToReview', module: 'coding', group: 'Own work', label: 'Solves to review (very fast or mostly pasted)', kind: 'number', rankable: true, get: (row) => row.coding.review.flagged },
+  { key: 'coding.solvesToReview', module: 'coding', group: 'Own work', label: 'Flagged solves (very fast or mostly pasted)', kind: 'number', rankable: true, get: (row) => row.coding.review.flagged },
   { key: 'coding.solvesTracked', module: 'coding', group: 'Own work', label: 'Solves with time tracked', kind: 'number', get: (row) => row.coding.review.tracked },
   { key: 'coding.medianSolveMinutes', module: 'coding', group: 'Own work', label: 'Median solve time (active)', kind: 'number', unit: 'min', rankable: true, get: (row) => row.coding.review.medianActiveMin },
 
@@ -128,7 +128,7 @@ const FIELD_LIST = [
   { key: 'quickprep.finished', module: 'quickprep', group: 'Results', label: 'Sheets finished', kind: 'number', rankable: true, get: (row) => row.quickprep?.finished ?? 0 },
   { key: 'quickprep.coverage', module: 'quickprep', group: 'Results', label: 'Open sheets started', kind: 'percent', rankable: true, get: (row) => (row.quickprep?.visibleSheets ? row.quickprep.coverage : null) },
   { key: 'quickprep.daysSinceActive', module: 'quickprep', group: 'Activity', label: 'Days since last sheet activity', kind: 'number', unit: 'days', get: (row) => row.quickprep?.daysSinceActive ?? null },
-  { key: 'quickprep.solvesToReview', module: 'quickprep', group: 'Own work', label: 'Sheet solves to review (very fast or mostly pasted)', kind: 'number', rankable: true, get: (row) => row.quickprep?.review?.flagged ?? 0 },
+  { key: 'quickprep.solvesToReview', module: 'quickprep', group: 'Own work', label: 'Flagged sheet solves (very fast or mostly pasted)', kind: 'number', rankable: true, get: (row) => row.quickprep?.review?.flagged ?? 0 },
   { key: 'quickprep.solvesTracked', module: 'quickprep', group: 'Own work', label: 'Sheet solves with time tracked', kind: 'number', get: (row) => row.quickprep?.review?.tracked ?? 0 },
   { key: 'quickprep.medianSolveMinutes', module: 'quickprep', group: 'Own work', label: 'Median sheet solve time (active)', kind: 'number', unit: 'min', rankable: true, get: (row) => row.quickprep?.review?.medianActiveMin ?? null },
 

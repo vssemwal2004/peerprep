@@ -87,6 +87,12 @@ export function summarizeReview(reviewed) {
 }
 export const emptyReview = () => reviewSummary([]);
 
+/** The earliest of some dates (ISO string), or null when none is set. */
+function earliest(dates) {
+  const times = dates.filter(Boolean).map((date) => new Date(date).getTime()).filter(Number.isFinite);
+  return times.length ? new Date(Math.min(...times)).toISOString() : null;
+}
+
 const inWindow = (date, range) => {
   if (!date) return false;
   const time = new Date(date).getTime();
@@ -176,9 +182,9 @@ function assessmentRow(student, facts, now, range) {
   const awaitingIds = [...(facts.awaiting?.get(id) || [])].filter((testId) => !latest.has(testId));
   // A missed test: meant for the student, over, started within the period and not taken.
   const inPeriod = (test) => !test.startTime || ((!range?.from || new Date(test.startTime) >= range.from) && (!range?.to || new Date(test.startTime) <= range.to));
-  const missedIds = [...facts.tests.values()]
-    .filter((test) => test.ended && inPeriod(test) && testAssignedTo(test, id) && !latest.has(test.id) && !awaitingIds.includes(test.id))
-    .map((test) => test.id);
+  const missedTests = [...facts.tests.values()]
+    .filter((test) => test.ended && inPeriod(test) && testAssignedTo(test, id) && !latest.has(test.id) && !awaitingIds.includes(test.id));
+  const missedIds = missedTests.map((test) => test.id);
   const lastAt = attempts.length ? attempts.at(-1).at : null;
   const days = daysSince(lastAt, now);
   return {
@@ -197,6 +203,8 @@ function assessmentRow(student, facts, now, range) {
     assignedIds,
     passedIds,
     missedIds,
+    // When each missed test closed (for the headline card's trend line).
+    missedDates: missedTests.map((test) => test.endedAt || test.startTime).filter(Boolean),
     byTest: latest,
     days: dailyCounts(attempts.map((attempt) => attempt.at)),
     daysSinceActive: days,
@@ -332,6 +340,10 @@ export function buildStudentRows({
     coding.solvedDifficulties = [...solvedDifficulties];
     // Prep Coding: library problems. Quick Prep: questions of the sheets this student started.
     coding.review = reviewSummary(solves.filter((entry) => entry.key.startsWith('local:')), difficultyOf);
+    // When the student became a Hard Problem Solver / was first flagged in the period: the points
+    // of the Prep Coding headline trend lines.
+    coding.firstHardAt = earliest(entries.filter((entry) => entry.accepted > 0 && entry.meta.difficulty === 'Hard').map((entry) => entry.firstAcceptedAt));
+    coding.firstFlaggedAt = earliest(coding.review.items.filter((item) => item.review?.reasons?.length).map((item) => item.at));
     const quickprepRow = quickprep ? quickPrepRow(student, quickprep, now, range) : null;
     if (quickprepRow) {
       const sheetKeys = new Set(quickprepRow.sheets.flatMap((sheetId) => [...(quickprep.sheets.get(sheetId)?.itemKeys || [])]));

@@ -117,7 +117,7 @@ function ProfileField({ label, value, onChange, placeholder = '', multiline = fa
 const secondaryButton = `rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800 ${focusRing}`;
 const primaryButton = `rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-sky-500 ${focusRing}`;
 
-export function EditProfileModal({ open, onClose, profileForm, setProfileForm, onSave, saving, error, success }) {
+export function EditProfileModal({ open, onClose, profileForm, setProfileForm, onSave, saving, error, success, showPeerVisibility = false }) {
   useEscape(open, onClose);
   const update = (key) => (event) => {
     const { value } = event.target;
@@ -159,6 +159,25 @@ export function EditProfileModal({ open, onClose, profileForm, setProfileForm, o
           <ProfileField label="GitHub URL" type="url" value={profileForm.githubUrl} onChange={update('githubUrl')} placeholder="https://github.com/..." />
           <ProfileField label="Portfolio URL" type="url" value={profileForm.portfolioUrl} onChange={update('portfolioUrl')} placeholder="https://yourportfolio.com" />
         </div>
+
+        {showPeerVisibility ? (
+          <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900/40">
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-slate-800 dark:text-zinc-100">Visible to peers</span>
+              <span className="mt-0.5 block text-xs leading-relaxed text-slate-500 dark:text-zinc-400">
+                Classmates at your university can find you, see your name, branch, semester, bio, links, badges and practice progress, and send you Prep Mate requests. Your email, phone, roll number, Prep Score, Prep Coins and test or interview results are never shown.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={profileForm.visibleToPeers !== false}
+              onChange={(event) => setProfileForm((prev) => ({ ...prev, visibleToPeers: event.target.checked }))}
+              className="peer sr-only"
+            />
+            <span aria-hidden="true" className="relative mt-0.5 h-6 w-11 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-sky-600 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500 peer-focus-visible:ring-offset-2 dark:bg-zinc-700 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-5" />
+          </label>
+        ) : null}
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/60 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">

@@ -4,7 +4,7 @@ import { chartInsight } from '../src/admin/prepAnalysis/charts/chartInsights.js'
 import {
   buildChartOption, CHART_TYPES, chartHeight, chartTable, viewsFor,
 } from '../src/admin/prepAnalysis/charts/chartOptions.js';
-import { chartPartAt, chartTableKeys, fullPageHeight, legendParts, trendPart } from '../src/admin/prepAnalysis/charts/chartParts.js';
+import { chartPartAt, chartTableKeys, fullPageHeight, legendParts, rowAt, trendPart } from '../src/admin/prepAnalysis/charts/chartParts.js';
 import { alpha, chartTheme } from '../src/admin/prepAnalysis/charts/chartTheme.js';
 import {
   compactOption, countActive, defaultFilterState, featureFields, groupName, groupText, isKpiActive, isMainField, kpiRule, listRule, newGroup,
@@ -232,6 +232,11 @@ const SAMPLES = {
     groupBy: 'semester', label: 'Average test score', unit: '%', passMark: 40,
     groups: [{ label: 'Sem 1', students: 5, count: 5, min: 10, q1: 30, median: 45, q3: 60, max: 90, mean: 46 }, { label: 'Sem 2', students: 3, count: 3, min: 35, q1: 40, median: 50, q3: 70, max: 80, mean: 55 }],
   },
+  bubble: {
+    valueLabel: 'students solving', itemLabel: 'Topic', cohort: 589,
+    tiers: [{ key: 'strong', label: 'Most practised' }, { key: 'growing', label: 'Growing' }, { key: 'focus', label: 'Needs focus' }],
+    items: [{ key: 'String', name: 'String', value: 9, pct: 1.5, accuracy: 60, tier: 'strong' }, { key: 'Stack', name: 'Stack', value: 4, pct: 0.7, accuracy: 50, tier: 'growing' }, { key: 'BFS {x}', name: 'BFS {x}', value: 1, pct: 0.2, accuracy: 100, tier: 'focus' }],
+  },
   combo: {
     barLabel: 'questions',
     categories: [{ key: 'Easy', label: 'Easy', students: 4, note: '4 students solved one' }, { key: 'Hard', label: 'Hard', students: 1, note: '1 students solved one' }],
@@ -257,7 +262,7 @@ test('every chart type builds in every view, light and dark, and is empty with n
     rankedStackedBar: { items: [] }, donut: { items: [] }, trend: { labels: [] }, funnel: { stages: [{ value: 0 }] },
     barList: { items: [] }, calendar: { days: [] }, radar: { student: null, indicators: [] }, histogram: { bins: [{ count: 0 }] },
     stackedBar: { groups: [] }, heatmap: { students: [], columns: [] }, scatter: { items: [] }, boxplot: { groups: [{ count: 0 }] },
-    combo: { categories: [], bars: [], lines: [] },
+    combo: { categories: [], bars: [], lines: [] }, bubble: { items: [] },
   };
   for (const [type, data] of Object.entries(empty)) assert.equal(buildChartOption({ type, data }, chartTheme(false)), null, `${type} is empty`);
   assert.ok(chartHeight({ type: 'stackedBar', data: { horizontal: true, groups: new Array(10).fill({}) } }) > chartHeight({ type: 'stackedBar', data: { horizontal: true, groups: [{}] } }));
@@ -266,8 +271,10 @@ test('every chart type builds in every view, light and dark, and is empty with n
 test('views change how a chart reads: steps with %, 100% bars, weekly lines', () => {
   const steps = buildChartOption({ type: 'funnel', data: SAMPLES.funnel }, chartTheme(false));
   assert.equal(steps.series[0].type, 'bar');
-  // Values sit in one right-aligned column (the second row axis), not at the end of each bar.
-  assert.equal(steps.yAxis[1].axisLabel.formatter('1'), '30 · 75%');
+  // Count and share are two right-aligned columns (row axes 2 and 3) under headings, never "30 · 75%".
+  assert.equal(steps.yAxis[1].axisLabel.formatter('1'), '30');
+  assert.equal(steps.yAxis[2].axisLabel.formatter('1'), '75%');
+  assert.deepEqual(steps.title.map((heading) => heading.text), ['STEP', 'STUDENTS', '% OF FIRST']);
   const percent = buildChartOption({ type: 'stackedBar', data: SAMPLES.stackedBar }, chartTheme(false), 'percent');
   assert.deepEqual(percent.series.map((series) => series.data[0]), [22, 33, 44]);
   const grouped = buildChartOption({ type: 'stackedBar', data: SAMPLES.stackedBar }, chartTheme(false), 'grouped');
@@ -321,13 +328,33 @@ test('every chart can be read as a table', () => {
   assert.deepEqual(chartTable({ type: 'barList', data: SAMPLES.barList }).ids, ['d'], 'rows know their student');
 });
 
+test('new parts: submission trend day/week keys, the funnel\'s lost students, and empty calendar days', () => {
+  const at = (type, data, params, view = 'chart') => chartPartAt({ type, data, drillable: true }, view, params);
+  const daily = { interval: 'day', labels: ['2026-11-05'], keys: ['2026-11-05'], series: [{ name: 'Accepted', values: [3] }, { name: 'Not accepted', values: [2] }] };
+  assert.equal(trendPart({ data: daily }, 0).key, '2026-11-05');
+  assert.doesNotMatch(trendPart({ data: daily }, 0).label, /Week of/, 'a day is labelled as a day');
+  const weekly = { interval: 'week', labels: ['2026-11-02'], keys: ['week:2026-11-02'], series: daily.series };
+  assert.equal(trendPart({ data: weekly }, 0).key, 'week:2026-11-02');
+  assert.equal(trendPart({ data: weekly }, 0).label, 'Week of 2026-11-02');
+  const funnel = { stages: [{ name: 'Students', value: 10 }, { name: 'Started practising', value: 4 }], drops: [{ key: 'lost:1', from: 'Students', to: 'Started practising', students: 6 }] };
+  assert.equal(at('funnel', funnel, { dataIndex: 1, seriesName: 'Lost since the step before' }, 'drop').key, 'lost:1', 'the red part lists who stopped, not who reached');
+  assert.equal(at('funnel', funnel, { dataIndex: 1, seriesName: 'Reached' }, 'drop').key, '1');
+  assert.equal(at('calendar', { days: [['2026-11-05', 2]] }, { value: ['2026-11-04', 0] }), null, 'an empty day shows its 0 but has nobody to list');
+  assert.equal(at('calendar', { days: [['2026-11-05', 2]] }, { value: ['2026-11-05', 2] }).key, '2026-11-05');
+  assert.deepEqual(chartTableKeys({ type: 'trend', data: weekly }), ['week:2026-11-02'], 'table rows drill with the same keys');
+});
+
 test('a click on a chart points at the part whose students can be listed', () => {
   const at = (type, data, params, view = 'chart') => chartPartAt({ type, data, drillable: true }, view, params);
   assert.deepEqual(at('donut', { centerLabel: 'problems solved', items: [{ key: 'Easy', name: 'Easy', value: 0 }, { key: 'Hard', name: 'Hard', value: 2, students: 1 }] }, { dataIndex: 0 }),
     { key: 'Hard', label: 'Hard', color: '#f43f5e', value: 2, unit: 'problems solved', students: 1 }, 'empty slices are not drawn, so indexes skip them');
   const top = { items: [{ id: 's1', name: 'Asha', score: 5, solved: { Easy: 1, Medium: 2, Hard: 3 } }] };
-  assert.deepEqual(at('rankedStackedBar', top, { dataIndex: 0, seriesName: 'Hard' }),
-    { key: 's1|Hard', label: 'Asha · Hard', color: '#f43f5e', value: 3, unit: 'Hard solved', students: 1, studentId: 's1' }, 'a bar colour is that student\'s work at that difficulty');
+  for (const view of ['chart', 'mix']) {
+    for (const seriesName of ['Easy', 'Medium', 'Hard']) {
+      assert.equal(at('rankedStackedBar', top, { dataIndex: 0, seriesName }, view), null, 'segments have no separate drill-down');
+    }
+    assert.deepEqual(rowAt({ type: 'rankedStackedBar', data: top }, view, 0), { studentId: 's1' }, 'the entire row opens a single student');
+  }
   assert.equal(at('radar', SAMPLES.radar, { componentType: 'radar', name: 'Graphs' }).key, 'Graphs', 'a topic name on the radar');
   assert.equal(at('stackedBar', SAMPLES.stackedBar, { dataIndex: 0, seriesName: 'Finished' }).key, 'Placement essentials|Finished');
   assert.deepEqual(legendParts({ type: 'donut', data: SAMPLES.donut }).map((part) => [part.key, part.share]), [['Easy', 75], ['cpp', 25]], 'legend chips are parts with their share');
@@ -366,8 +393,9 @@ test('top-student bars are as long as the score and the label is the score', () 
   const option = buildChartOption({ type: 'rankedStackedBar', data }, chartTheme(false));
   const length = option.series.reduce((sum, series) => sum + series.data[0], 0);
   assert.equal(Math.round(length * 10) / 10, 13.4);
+  assert.deepEqual(option.title.map((heading) => heading.text), ['Student', 'Prep Score']);
   assert.equal(option.yAxis[1].axisLabel.formatter('0'), '13.4');
-  assert.deepEqual(chartTable({ type: 'rankedStackedBar', data }).rows[0], [1, 'Depth', 13.4, 1, 0, 0, 0], 'the table shows problems solved in the period, like the drawer');
+  assert.deepEqual(chartTable({ type: 'rankedStackedBar', data }).rows[0], [1, 'Depth', 13.4, 1, 0, 0], 'the table shows problems solved in the period, like the drawer');
 });
 
 test('each chart says what stands out in one sentence, with no averages', () => {
@@ -396,7 +424,19 @@ test('charts speak the area\'s own units and colours, and escape names', () => {
   const behind = buildChartOption({ type: 'barList', data: SAMPLES.barList }, chartTheme(false));
   assert.equal(behind.yAxis[1].axisLabel.formatter('0'), '0%');
   const topics = buildChartOption({ type: 'barList', data: { valueLabel: 'students solving', cohort: 3000, items: [{ key: 'Graphs', name: 'Graphs', value: 1175, pct: 39.2 }] } }, chartTheme(false));
-  assert.equal(topics.yAxis[1].axisLabel.formatter('0'), '1,175 · 39.2%', 'counts of students say how many of everyone in view');
+  assert.equal(topics.yAxis[1].axisLabel.formatter('0'), '1,175', 'the count column');
+  assert.equal(topics.yAxis[2].axisLabel.formatter('0'), '39.2%', 'its share of everyone in view, in its own column');
+  assert.deepEqual(topics.title.map((heading) => heading.text), ['STUDENTS', '% OF STUDENTS'], 'every figures column has a short heading');
+  assert.equal(behind.yAxis.length, 2, 'no share column when there is no share');
+  // Bubbles: one per topic, sized by students, coloured by priority; names cannot break the label.
+  const bubbles = buildChartOption({ type: 'bubble', data: SAMPLES.bubble }, chartTheme(false));
+  const nodes = bubbles.series[0].data;
+  assert.equal(nodes.length, 3, 'every topic is a bubble, not a top-N');
+  assert.ok(nodes[0].symbolSize > nodes[1].symbolSize && nodes[1].symbolSize > nodes[2].symbolSize, 'more students, bigger bubble');
+  assert.deepEqual(nodes.map((node) => node.category), [0, 1, 2], 'colour follows the priority tier');
+  assert.equal(nodes[2].label.formatter(), '{name|BFS x}', 'rich-text markers in a topic name are removed');
+  assert.deepEqual(chartPartAt({ type: 'bubble', data: SAMPLES.bubble, drillable: true }, 'chart', { dataIndex: 1 }).key, 'Stack', 'a bubble opens its topic');
+  assert.equal(buildChartOption({ type: 'bubble', data: SAMPLES.bubble }, chartTheme(false), 'bars').yAxis[2].axisLabel.formatter('0'), '1.5%', 'the Bars view has the same columns');
   assert.equal(topics.yAxis[0].axisLabel.formatter('0'), 'Graphs', 'rows are indexes, labels are names');
   const histogram = buildChartOption({ type: 'histogram', data: SAMPLES.histogram }, chartTheme(false));
   assert.equal(histogram.xAxis.name, 'Course completed');
@@ -434,4 +474,29 @@ test('the old analytics page stays reachable for assessment analysis only when a
   assert.equal(pathAllowed('/admin/analysis/assessments', { questions: true, assessments: false }, 'admin', '', university), false);
   assert.equal(pathAllowed('/admin/analysis/assessments', { questions: false, assessments: true }, 'admin', '', university), true);
   assert.equal(pathAllowed('/admin/analysis', { questions: true }, 'admin', '', university), true);
+});
+
+test('heat map: Monday-first weeks, levels, streaks and figures for the period', async () => {
+  const { heatmapModel } = await import('../src/admin/prepAnalysis/charts/heatmapModel.js');
+  // 2026-11-02 is a Monday. Active: 3rd–5th (a 3-day run), and the 9th (the period end).
+  const model = heatmapModel({ from: '2026-11-02', to: '2026-11-09', unit: 'submissions', days: [['2026-11-03', 1], ['2026-11-04', 8], ['2026-11-05', 2], ['2026-11-09', 4]] });
+  assert.equal(model.weeks.length, 2);
+  assert.equal(model.weeks[0][0].day, '2026-11-02', 'weeks start on Monday');
+  assert.equal(model.weeks[1][1], null, 'days after the period end are blank');
+  assert.deepEqual(model.weeks[0].slice(1, 4).map((day) => day.level), [1, 4, 1], 'max 8 → steps of 2');
+  assert.equal(model.weeks[0][0].level, 0);
+  assert.deepEqual(model.stats, { total: 15, activeDays: 4, days: 8, busiest: { day: '2026-11-04', value: 8 }, currentStreak: 1, bestStreak: 3, perActiveDay: 3.8 });
+  assert.deepEqual(model.legend.map((entry) => entry.label), ['0', '1–2', '3–4', '5–6', '7+']);
+  // Today (the period end) without activity yet: the streak up to yesterday still counts.
+  const resting = heatmapModel({ from: '2026-11-02', to: '2026-11-06', days: [['2026-11-04', 1], ['2026-11-05', 1]] });
+  assert.equal(resting.stats.currentStreak, 2);
+});
+
+test('a redesigned default layout replaces the saved one once, then admin changes stay', async () => {
+  const { upgradeToDefaults } = await import('../src/admin/prepAnalysis/layoutDefaults.js');
+  const saved = { coding: [{ id: 'top-students' }], learning: [{ id: 'learning-trend' }] };
+  const upgraded = upgradeToDefaults(saved, {}, { coding: 2 });
+  assert.deepEqual(upgraded.layouts, { learning: [{ id: 'learning-trend' }] }, 'only the redesigned area falls back to its default');
+  assert.deepEqual(upgraded.versions, { coding: 2 });
+  assert.equal(upgradeToDefaults({ coding: [{ id: 'mine' }] }, upgraded.versions, { coding: 2 }), null, 'already on this version: nothing changes');
 });

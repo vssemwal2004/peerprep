@@ -61,7 +61,7 @@ export const EXPORT_COLUMNS = [
   { key: 'languages', label: 'Languages used', group: 'Prep Coding', module: 'coding', width: 18, get: (row) => list(row.coding.languages.map((language) => LANGUAGE_LABELS[language] || language)) },
   { key: 'topicsSolved', label: 'Topics solved', group: 'Prep Coding', module: 'coding', width: 30, get: (row) => list(row.coding.solvedTopics) },
   { key: 'solvesTracked', label: 'Solves with time tracked', group: 'Prep Coding', module: 'coding', kind: 'number', width: 11, get: (row) => row.coding.review.tracked },
-  { key: 'solvesToReview', label: 'Solves to review', group: 'Prep Coding', module: 'coding', kind: 'number', width: 10, get: (row) => row.coding.review.flagged },
+  { key: 'solvesToReview', label: 'Flagged solves', group: 'Prep Coding', module: 'coding', kind: 'number', width: 10, get: (row) => row.coding.review.flagged },
   { key: 'solvesFast', label: 'Very fast solves', group: 'Prep Coding', module: 'coding', kind: 'number', width: 9, get: (row) => row.coding.review.fast },
   { key: 'solvesPasted', label: 'Mostly pasted solves', group: 'Prep Coding', module: 'coding', kind: 'number', width: 10, get: (row) => row.coding.review.pasted },
   { key: 'medianSolveMinutes', label: 'Median solve time (min)', group: 'Prep Coding', module: 'coding', kind: 'decimal', width: 11, get: (row) => row.coding.review.medianActiveMin },
@@ -77,7 +77,7 @@ export const EXPORT_COLUMNS = [
   { key: 'quickPrepActivity', label: 'Sheet activity', group: 'Quick Prep', module: 'quickprep', width: 14, get: (row) => STATUS_LABELS.quickprepActivity[row.quickprep?.activity] },
   { key: 'daysSinceSheet', label: 'Days since last sheet activity', group: 'Quick Prep', module: 'quickprep', kind: 'number', width: 12, get: (row) => row.quickprep?.daysSinceActive ?? null },
   { key: 'sheetSolvesTracked', label: 'Sheet solves with time tracked', group: 'Quick Prep', module: 'quickprep', kind: 'number', width: 11, get: (row) => row.quickprep?.review?.tracked ?? null },
-  { key: 'sheetSolvesToReview', label: 'Sheet solves to review', group: 'Quick Prep', module: 'quickprep', kind: 'number', width: 10, get: (row) => row.quickprep?.review?.flagged ?? null },
+  { key: 'sheetSolvesToReview', label: 'Flagged sheet solves', group: 'Quick Prep', module: 'quickprep', kind: 'number', width: 10, get: (row) => row.quickprep?.review?.flagged ?? null },
   { key: 'sheetMedianSolveMinutes', label: 'Median sheet solve time (min)', group: 'Quick Prep', module: 'quickprep', kind: 'decimal', width: 11, get: (row) => row.quickprep?.review?.medianActiveMin ?? null },
 
   { key: 'learningProgress', label: 'Course completed %', group: 'Prep Learning', module: 'learning', kind: 'percent', width: 11, get: (row) => row.learning?.progress ?? null },
@@ -363,6 +363,7 @@ export function chartDataTable(type, data = {}) {
         columns: [numCol('#', 'number', 6), textCol('Student', 24), numCol('Prep Score', 'decimal'), numCol('Score from Easy', 'decimal'), numCol('Score from Medium', 'decimal'), numCol('Score from Hard', 'decimal'), numCol('Easy solved (all time)'), numCol('Medium solved (all time)'), numCol('Hard solved (all time)')],
         rows: (data.items || []).map((item) => [item.position, item.name, item.score, item.segments?.Easy ?? 0, item.segments?.Medium ?? 0, item.segments?.Hard ?? 0, item.counts?.Easy ?? 0, item.counts?.Medium ?? 0, item.counts?.Hard ?? 0]),
       };
+    case 'bubble':
     case 'barList': {
       const items = data.items || [];
       const has = (field) => items.some((item) => item[field] !== undefined && item[field] !== null);
@@ -386,7 +387,7 @@ export function chartDataTable(type, data = {}) {
       };
     }
     case 'trend':
-      return { columns: [textCol('Week of', 12), ...(data.series || []).map((series) => numCol(series.name))], rows: (data.labels || []).map((label, index) => [label, ...(data.series || []).map((series) => series.values[index] ?? 0)]) };
+      return { columns: [textCol(data.interval === 'day' ? 'Day' : 'Week of', 12), ...(data.series || []).map((series) => numCol(series.name))], rows: (data.labels || []).map((label, index) => [label, ...(data.series || []).map((series) => series.values[index] ?? 0)]) };
     case 'funnel': {
       const stages = data.stages || [];
       const top = stages[0]?.value || 0;

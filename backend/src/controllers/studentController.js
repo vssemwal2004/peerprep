@@ -12,13 +12,15 @@ import StudentActivity from '../models/StudentActivity.js';
 import {
   canonicalizeOptionalStudentFields,
   canonicalizeStudentMasterFields,
-  hasMasterValues,
   loadStudentMasterMaps,
   resolveOptionalStudentFields,
   resolveStudentMasterFields,
 } from '../services/masterDataService.js';
 import { resolveNewStudentFeatureAccess } from './studentAccessController.js';
-import { normalizeStudentFeatureAccess } from '../services/studentFeatureAccess.js';
+import { applyStudentFeatureChange, normalizeStudentFeatureAccess, normalizeStudentFeatures, parseStudentFeatureAccess } from '../services/studentFeatureAccess.js';
+import { invalidateUserCache } from '../middleware/auth.js';
+import { getIo } from '../utils/io.js';
+import { personalRoom } from '../utils/realtime.js';
 import { exactEmailPattern, normalizeEmailAddress } from '../utils/emailIdentity.js';
 import { currentTenant } from '../platform/tenantContext.js';
 import { storedScoresFor } from '../services/prepScore/sync.js';
@@ -1174,6 +1176,43 @@ export async function uploadStudentsCsv(req, res) {
   }
 }
 
+const TEACHER_OPTION_LIMIT = 50;
+
+/**
+ * The Teacher ID picker on "Add Students": only coordinators that exist (so a student can never be
+ * given an unknown Teacher ID), searchable by name, Teacher ID, email or department, at most 50 a
+ * time. An own-data coordinator may only add students to their own Teacher ID, so sees just that.
+ */
+export async function listTeacherOptions(req, res) {
+  try {
+    const ownOnly = req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all';
+    const query = { role: 'coordinator', coordinatorId: ownOnly ? req.user.coordinatorId : { $nin: [null, ''] } };
+    const search = String(req.query.search || '').trim().slice(0, 80);
+    if (search) {
+      const pattern = new RegExp(escapeRegex(search), 'i');
+      query.$or = [{ name: pattern }, { coordinatorId: pattern }, { email: pattern }, { department: pattern }];
+    }
+    const [coordinators, total] = await Promise.all([
+      User.find(query).select('name coordinatorId department isActive').sort({ name: 1 }).limit(TEACHER_OPTION_LIMIT).lean(),
+      User.countDocuments(query),
+    ]);
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({
+      ownOnly,
+      total,
+      teachers: coordinators.map((coordinator) => ({
+        id: coordinator.coordinatorId,
+        name: coordinator.name || coordinator.coordinatorId,
+        department: coordinator.department || '',
+        active: coordinator.isActive !== false,
+      })),
+    });
+  } catch (error) {
+    console.error('Error listing Teacher IDs:', error);
+    return res.status(500).json({ error: 'Could not load Teacher IDs' });
+  }
+}
+
 export async function createStudent(req, res) {
   try {
     const { name, email, studentid, branch, course, college, teacherid, semester, group, section, featureAccess } = req.body || {};
@@ -1193,12 +1232,9 @@ export async function createStudent(req, res) {
     if (!emailRegex.test(normalizedEmail || '')) return res.status(400).json({ error: 'Invalid email format' });
     const masterMaps = await loadStudentMasterMaps();
     const canonicalMasterFields = canonicalizeStudentMasterFields({ branch, course, college, semester: semesterNum }, masterMaps);
-    // Section / group: one of the Master Data values when the university has set them up, and a
-    // section is required once Master Data has sections.
+    // Section / group: optional (as in the CSV upload); when given, one of the Master Data values
+    // once the university has set them up.
     const optionalFields = canonicalizeOptionalStudentFields({ section: section ?? '', group: group ?? '' }, masterMaps);
-    if (!optionalFields.section && hasMasterValues(masterMaps, 'section')) {
-      return res.status(400).json({ error: 'Choose a section.' });
-    }
 
     // Parse and validate multiple coordinator IDs
     const teacherIdList = parseTeacherIds(teacherid);
@@ -1570,6 +1606,84 @@ export async function deleteStudentUploadBatch(req, res) {
   return res.status(409).json({
     error: 'Student-list deletion has moved to Settings → Bulk Uploads, where dependencies and record provenance are checked before deletion.',
   });
+}
+
+const BULK_ACCESS_MAX_IDS = 5000;
+const BULK_ACCESS_MAX_STUDENTS = 50000;
+const BULK_ACCESS_TYPES = new Set(['set', 'grant', 'revoke']);
+
+/**
+ * "Access & features" for many students at once: the ticked students (`studentIds`) or every
+ * student matching the list's filters (`allMatching` + `filters`, same query as the list).
+ * change: { type: 'grant' | 'revoke', features: [...] } turns features on/off and keeps the rest
+ * of each student's access; { type: 'set', access } replaces it. A student who would be left with
+ * no feature is skipped, never locked out. Students see the change live (socket), like one edit.
+ */
+export async function bulkUpdateStudentAccess(req, res) {
+  try {
+    const change = req.body?.change || {};
+    if (!BULK_ACCESS_TYPES.has(change.type)) return res.status(400).json({ error: 'Choose what to change: turn features on, turn them off, or set exact access.' });
+    let normalizedChange;
+    if (change.type === 'set') {
+      const access = parseStudentFeatureAccess(change.access);
+      if (access.mode === 'custom' && !access.features.length) return res.status(400).json({ error: 'Enable at least one feature.' });
+      normalizedChange = { type: 'set', access };
+    } else {
+      const features = normalizeStudentFeatures(change.features);
+      if (!features.length) return res.status(400).json({ error: 'Choose at least one feature.' });
+      normalizedChange = { type: change.type, features };
+    }
+
+    let query;
+    if (req.body?.allMatching === true) {
+      const filters = req.body.filters && typeof req.body.filters === 'object' ? req.body.filters : {};
+      query = buildStudentListQuery(req.user, filters).query;
+    } else {
+      const ids = Array.isArray(req.body?.studentIds) ? [...new Set(req.body.studentIds.map((id) => String(id).trim()))].filter((id) => /^[0-9a-f]{24}$/i.test(id)) : [];
+      if (!ids.length) return res.status(400).json({ error: 'Select at least one student.' });
+      if (ids.length > BULK_ACCESS_MAX_IDS) return res.status(400).json({ error: `At most ${BULK_ACCESS_MAX_IDS} students at a time; use "Select all matching" for more.` });
+      query = { _id: { $in: ids }, role: 'student' };
+    }
+    const students = await User.find({ ...query, role: 'student' }).select('_id featureAccess accessScope').limit(BULK_ACCESS_MAX_STUDENTS + 1).lean();
+    if (!students.length) return res.status(404).json({ error: 'No matching students were found.' });
+    if (students.length > BULK_ACCESS_MAX_STUDENTS) return res.status(400).json({ error: 'Too many students at once; narrow the filters.' });
+
+    const now = new Date();
+    const writes = [];
+    const changed = [];
+    let unchanged = 0;
+    let skipped = 0;
+    for (const student of students) {
+      const current = normalizeStudentFeatureAccess(student.featureAccess, { legacyAccessScope: student.accessScope });
+      const next = applyStudentFeatureChange(current, normalizedChange);
+      if (next.mode === 'custom' && !next.features.length) { skipped += 1; continue; }
+      const same = current.mode === next.mode && current.features.join(',') === next.features.join(',') && student.accessScope !== 'assessment_only';
+      if (same) { unchanged += 1; continue; }
+      writes.push({ updateOne: { filter: { _id: student._id, role: 'student' }, update: { $set: { featureAccess: { ...next, source: 'manual', updatedBy: req.user._id, updatedAt: now }, accessScope: 'full' } } } });
+      changed.push({ id: student._id, access: next });
+    }
+    for (let index = 0; index < writes.length; index += 1000) await User.bulkWrite(writes.slice(index, index + 1000), { ordered: false });
+
+    const io = getIo();
+    for (const { id, access } of changed) {
+      invalidateUserCache(id);
+      io?.to(personalRoom(id)).emit('student-access-updated', { access, updatedAt: now.toISOString() });
+    }
+    logActivity({
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      actionType: 'BULK_UPDATE',
+      targetType: 'STUDENT_ACCESS',
+      targetId: req.body?.allMatching === true ? 'bulk-access-all-matching' : 'bulk-access',
+      description: `${normalizedChange.type === 'set' ? 'Set' : normalizedChange.type === 'grant' ? 'Turned on' : 'Turned off'} feature access for ${changed.length} student${changed.length === 1 ? '' : 's'}`,
+      metadata: { change: normalizedChange, matched: students.length, updated: changed.length, unchanged, skipped, ...(req.body?.allMatching === true ? { filters: req.body.filters } : {}) },
+      req,
+    });
+    return res.json({ matched: students.length, updated: changed.length, unchanged, skipped });
+  } catch (error) {
+    console.error('Bulk access update failed:', error);
+    return res.status(500).json({ error: 'Could not update student access.' });
+  }
 }
 
 export async function bulkDeleteStudents(req, res) {

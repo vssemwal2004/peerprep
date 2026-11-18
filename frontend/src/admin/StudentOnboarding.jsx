@@ -8,7 +8,8 @@ import { useToast } from "../components/CustomToast";
 import { Upload, CheckCircle, AlertCircle, Plus, Loader2, FileText, Download, Users, BookOpen, Shield, ArrowRight, Mail, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import StudentAccessSelector from './components/StudentAccessSelector';
-import { ALL_STUDENT_FEATURES } from '../student/studentFeatureAccess';
+import TeacherPicker from './components/TeacherPicker';
+import { STANDARD_STUDENT_FEATURES } from '../student/studentFeatureAccess';
 import { DataTable, SortHeader, TablePager, useClientTable } from '../components/table';
 
 // Server result of a CSV upload/check, one row per CSV line.
@@ -64,8 +65,8 @@ export default function StudentOnboarding() {
   const [sendCredentialsAfterUpload, setSendCredentialsAfterUpload] = useState(false);
   const [showSingleConfirmation, setShowSingleConfirmation] = useState(false);
   const [masterData, setMasterData] = useState([]);
-  const [accessPolicy, setAccessPolicy] = useState({ defaultMode: 'all', defaultFeatures: [...ALL_STUDENT_FEATURES] });
-  const [studentAccess, setStudentAccess] = useState({ mode: 'all', features: [...ALL_STUDENT_FEATURES] });
+  const [accessPolicy, setAccessPolicy] = useState({ defaultMode: 'all', defaultFeatures: [...STANDARD_STUDENT_FEATURES] });
+  const [studentAccess, setStudentAccess] = useState({ mode: 'all', features: [...STANDARD_STUDENT_FEATURES] });
 
   useEffect(() => {
     let active = true;
@@ -96,8 +97,6 @@ export default function StudentOnboarding() {
     masterData
       .filter((entry) => entry.category === category && entry.isActive !== false)
       .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name));
-  // A section is required once Master Data lists sections; the group always stays optional.
-  const sectionRequired = masterData.some((entry) => entry.category === 'section' && entry.isActive !== false);
 
   // Email validation regex
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -473,21 +472,24 @@ export default function StudentOnboarding() {
   };
 
   const handleSingleChange = (k, v) => setSingleForm((s) => ({ ...s, [k]: v }));
+  const setTeacherIds = useCallback((value) => setSingleForm((s) => ({ ...s, teacherid: value })), []);
+
+  // What still stops the student from being added, in form order (shown beside the button, so a
+  // grey button is never a mystery). Text is checked trimmed: a pasted trailing space is not an error.
+  const singleProblems = () => {
+    const problems = [];
+    const text = (key) => String(singleForm[key] || '').trim();
+    [['name', 'Full Name'], ['email', 'Email Address'], ['studentid', 'Student ID'], ['branch', 'Branch'], ['teacherid', 'Teacher ID'],
+      ['semester', 'Semester'], ['course', 'Course'], ['college', 'Campus / College']].forEach(([key, label]) => { if (!text(key)) problems.push(label); });
+    if (text('email') && !emailRegex.test(text('email'))) problems.push('a valid email address');
+    return problems;
+  };
 
   const submitSingle = () => {
     setSingleMsg('');
-    const { name, email, studentid, branch, teacherid, semester, course, college } = singleForm;
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!name || !email || !studentid || !branch || !teacherid || !semester || !course || !college) {
-      setSingleMsg('Please fill in all required fields: Name, Email, Student ID, Branch, Course, College, Teacher ID, and Semester');
-      return;
-    }
-    if (sectionRequired && !singleForm.section) {
-      setSingleMsg('Please choose a section');
-      return;
-    }
-    if (!emailRegex.test(email)) {
-      setSingleMsg('Please enter a valid email address');
+    const problems = singleProblems();
+    if (problems.length) {
+      setSingleMsg(`Please fill in: ${problems.join(', ')}`);
       return;
     }
     setShowSingleConfirmation(true);
@@ -498,7 +500,8 @@ export default function StudentOnboarding() {
     setSingleLoading(true);
     try {
       // Password is auto-generated on backend
-      const data = await api.createStudent({ ...singleForm, ...(accessPolicy.defaultMode === 'all' ? {} : { featureAccess: studentAccess }) });
+      const trimmed = Object.fromEntries(Object.entries(singleForm).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value]));
+      const data = await api.createStudent({ ...trimmed, ...(accessPolicy.defaultMode === 'all' ? {} : { featureAccess: studentAccess }) });
       let mailMessage = 'Credential email was not requested.';
       if (sendCredentialsAfterUpload && data.id) {
         try {
@@ -540,11 +543,7 @@ export default function StudentOnboarding() {
     }
   };
 
-  const isSingleValid = () => {
-    const { course, name, email, studentid, branch, college, teacherid, semester } = singleForm;
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return course && name && email && studentid && branch && college && teacherid && semester && (!sectionRequired || singleForm.section) && emailRegex.test(email);
-  };
+  const isSingleValid = () => singleProblems().length === 0;
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col items-center py-4 sm:py-6 px-3 sm:px-4">
@@ -587,7 +586,7 @@ export default function StudentOnboarding() {
                 </div>
                 <div className="space-y-1 hidden lg:block">
                   <p><strong>Passwords:</strong> Automatically generated (7-8 characters) and sent via email to each student.</p>
-                  <p><strong>Teacher ID & Semester:</strong> Teacher ID must match the coordinator's five-digit number; use commas for multiple IDs (for example, 48327,61504). Semester must be 1-8.</p>
+                  <p><strong>Teacher ID & Semester:</strong> Teacher ID must be an existing coordinator's Teacher ID; use commas for several (for example, C001,C002). Semester must be 1-8.</p>
                 </div>
               </div>
             </div>
@@ -632,16 +631,18 @@ export default function StudentOnboarding() {
                 { key: 'email', label: 'Email Address *', placeholder: 'john@university.edu' },
                 { key: 'studentid', label: 'Student ID *', placeholder: 'STU2024001' },
                 { key: 'branch', label: 'Branch *', masterCategory: 'branch' },
-                { key: 'teacherid', label: 'Teacher ID(s) *', placeholder: '48327 or 48327,61504', hint: 'Five digits each; comma-separated for multiple' },
+                { key: 'teacherid', label: 'Teacher ID(s) *', picker: true, hint: 'Existing coordinators only; pick one or more' },
                 { key: 'semester', label: 'Semester *', masterCategory: 'semester' },
                 { key: 'course', label: 'Course *', masterCategory: 'course' },
                 { key: 'college', label: 'Campus / College *', masterCategory: 'campus' },
-                { key: 'section', label: sectionRequired ? 'Section *' : 'Section', masterCategory: 'section', emptyHint: 'Add sections in Master Data' },
+                { key: 'section', label: 'Section (Optional)', masterCategory: 'section', emptyHint: 'Add sections in Master Data' },
                 { key: 'group', label: 'Group (Optional)', masterCategory: 'group', emptyHint: 'Add groups in Master Data' },
-              ].map(({ key, label, placeholder, type, hint, masterCategory, emptyHint }) => (
+              ].map(({ key, label, placeholder, type, hint, masterCategory, emptyHint, picker }) => (
                 <div key={key} className="flex flex-col">
-                  <label className="text-xs font-medium text-slate-700 dark:text-gray-300 mb-1">{label}</label>
-                  {masterCategory ? (
+                  <label htmlFor={`single-${key}`} className="text-xs font-medium text-slate-700 dark:text-gray-300 mb-1">{label}</label>
+                  {picker ? (
+                    <TeacherPicker id={`single-${key}`} value={singleForm.teacherid} onChange={setTeacherIds} />
+                  ) : masterCategory ? (
                     <select
                       value={singleForm[key]}
                       onChange={(e) => handleSingleChange(key, e.target.value)}
@@ -668,7 +669,12 @@ export default function StudentOnboarding() {
                 </div>
               ))}
             </div>
-            <div className="flex gap-3 mt-4 justify-end">
+            <div className="flex flex-wrap items-center gap-3 mt-4 justify-end">
+              {singleProblems().length > 0 && (
+                <p className="mr-auto text-xs text-amber-700 dark:text-amber-300" aria-live="polite">
+                  To add this student, fill: {singleProblems().join(', ')}
+                </p>
+              )}
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}

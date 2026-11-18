@@ -34,7 +34,9 @@ export default defineConfig({
     sourcemap: false,
     // Modern browsers need substantially less compatibility code. Native
     // dynamic imports also keep route chunks truly on-demand.
-    target: 'es2022',
+    // safari15: newer syntax (e.g. class static blocks) is rewritten so iPhones and Macs on
+    // Safari 15+ run the app; newer *methods* are covered by src/polyfills.js.
+    target: ['es2022', 'safari15'],
     cssCodeSplit: true,
     reportCompressedSize: false,
   },

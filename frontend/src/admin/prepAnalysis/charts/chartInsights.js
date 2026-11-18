@@ -25,6 +25,16 @@ function weekChange(data) {
   return `${number(last)} ${name} in the latest week, ${change > 0 ? "up" : "down"} ${Math.abs(change)}% on the week before.`;
 }
 
+/** "63 submissions up to today: 29 accepted (46%), 34 not accepted, from 25 students." */
+function submissionSplitLine({ items }) {
+  const valueOf = (key) => (items || []).find((item) => item.key === key) || { value: 0, students: 0 };
+  const accepted = valueOf("Accepted");
+  const rejected = valueOf("Not accepted");
+  const total = accepted.value + rejected.value;
+  if (!total) return null;
+  return `${plural(total, "submission")} up to today: ${number(accepted.value)} accepted (${percentOf(accepted.value, total)}%), ${number(rejected.value)} not accepted.`;
+}
+
 function biggestDrop(stages = []) {
   let worst = null;
   for (let index = 1; index < stages.length; index += 1) {
@@ -78,6 +88,7 @@ const BY_ID = {
     const share = (key) => percentOf(items.find((item) => item.key === key)?.value || 0, total);
     return `${share("Easy")}% of solved problems are Easy, ${share("Medium")}% Medium and ${share("Hard")}% Hard.`;
   },
+  "submission-trend": submissionSplitLine,
   "practice-trend": weekChange,
   "learning-trend": weekChange,
   "practice-funnel": ({ stages }) => biggestDrop(stages),

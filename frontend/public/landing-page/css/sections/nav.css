@@ -91,7 +91,7 @@
   padding: 14px 8px; font-size: 20px; font-weight: 700; letter-spacing: -0.02em;
   border-bottom: 1px solid var(--line);
 }
-/* 721-1080px: Contact and Student login stay in the bar, so the sheet only
+/* 721-1080px: Contact and Login stay in the bar, so the sheet only
    repeats the section links. */
 @media (min-width: 721px) {
   .nav__sheet nav a[href^="http"],

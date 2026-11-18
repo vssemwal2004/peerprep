@@ -1,4 +1,4 @@
-import { Bell, BookOpen, CalendarClock, CheckCircle2, ClipboardList, Crown, Flame, Map as MapIcon, Medal, Megaphone, MessageSquare, Settings2, Target, Users } from 'lucide-react';
+import { Bell, BookOpen, CalendarClock, CheckCircle2, ClipboardList, Crown, Flame, Handshake, Map as MapIcon, Medal, Megaphone, MessageSquare, Settings2, Target, UserPlus, Users } from 'lucide-react';
 
 // Progress updates: the daily challenge, quests, badges, levels and streaks.
 export const PROGRESS_TYPES = new Set(['CHALLENGE', 'QUEST', 'BADGE', 'LEVEL', 'STREAK']);
@@ -15,6 +15,9 @@ const KINDS = {
   ASSESSMENT: { label: 'Assessment', icon: ClipboardList, tile: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300', chip: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300', rail: 'bg-amber-500', cta: 'Open' },
   INTERVIEW: { label: 'Interview', icon: Users, tile: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300', chip: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300', rail: 'bg-indigo-500', cta: 'Open' },
   FEEDBACK: { label: 'Feedback', icon: MessageSquare, tile: 'bg-teal-50 text-teal-600 dark:bg-teal-500/10 dark:text-teal-300', chip: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300', rail: 'bg-teal-500', cta: 'Open' },
+  // Peer network: Prep Mates (request → accept). Wording never says follow/follower.
+  PREP_MATE_REQUEST: { label: 'Prep Mate request', icon: UserPlus, tile: `${gradientTile} from-sky-500 to-indigo-500 shadow-[0_6px_14px_-6px_rgba(79,70,229,0.7)]`, chip: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300', rail: 'bg-indigo-500', cta: 'Review' },
+  PREP_MATE_ACCEPTED: { label: 'Prep Mate', icon: Handshake, tile: `${gradientTile} from-emerald-400 to-teal-500 shadow-[0_6px_14px_-6px_rgba(16,185,129,0.7)]`, chip: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300', rail: 'bg-emerald-500', cta: 'View profile' },
   SYSTEM: { label: 'Account', icon: Settings2, tile: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300', chip: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300', rail: 'bg-slate-400', cta: 'Open' },
 };
 // Scheduled ANVI interviews: assigned, booked, rescheduled, cancelled, reminders, missed, report released.

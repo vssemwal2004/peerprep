@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -50,6 +50,7 @@ import {
   Coins,
   Trophy,
   Inbox,
+  Handshake,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { canManageInterviewCompanies, isControlDeployment, isUniversityDeployment, PREP_COIN_PRICING_PATH, QUICKPREP_ANALYSIS_PATH, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
@@ -61,6 +62,9 @@ import { getSidebarWidth, STUDENT_SIDEBAR_PANEL_WIDTH, STUDENT_SIDEBAR_RAIL_WIDT
 import { firstStudentFeaturePath, hasStudentFeature } from '../student/studentFeatureAccess';
 import MobileNavigation from './MobileNavigation';
 import useIsMobileNav from './useIsMobileNav';
+import { canUsePeers, compactCount, PEER_TERMS, usePeerSummary } from '../student/peers/peerNetwork';
+
+const PrepMatesModal = lazy(() => import('../student/peers/PrepMatesModal'));
 
 const buildNavItems = (role = 'admin', accessScope = 'full') => {
   if (role === 'student') {
@@ -101,6 +105,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       { type: 'link', label: 'Interviews', to: '/student/interview', icon: CalendarDays, featureKey: 'interviews' },
       { type: 'link', label: 'AI Interviews', to: '/student/ai-interviews', icon: Bot, featureKey: 'ai_interviews' },
       { type: 'link', label: 'Learning', to: '/student/learning', icon: BookOpen, featureKey: 'learning' },
+      { type: 'link', label: 'Prep Mates', to: '/student/peers', icon: Users, featureKey: 'peers' },
     ];
   }
   if (role === 'coordinator') {
@@ -479,9 +484,14 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const homePath = isCoordinator ? '/coordinator/overview' : isAssessmentCandidate ? '/student/assessments' : isStudent ? firstStudentFeaturePath(user) : '/admin/overview';
   const accountMenuId = `${storagePrefix}-account-menu`;
   const accent = isCoordinator ? 'emerald' : 'sky';
+  // The Prep Mates count sits under the student's name in the account block (desktop rail only)
+  // and opens the Prep Mates popup.
+  const showPeerCounts = isStudent && !isMobileNav && canUsePeers(user);
+  const { summary: peerSummary } = usePeerSummary(showPeerCounts);
+  const [matesOpen, setMatesOpen] = useState(false);
   const navItems = useMemo(() => {
     const items = buildNavItems(role, user?.accessScope);
-    if (role === 'student') return items.filter((item) => !item.featureKey || hasStudentFeature(user, item.featureKey));
+    if (role === 'student') return items.filter((item) => !item.featureKey || (item.featureKey === 'peers' ? canUsePeers(user) : hasStudentFeature(user, item.featureKey)));
     if (role !== 'student' && (isUniversityDeployment || role !== 'admin')) items.unshift({ type: 'link', label: 'Prep Coin management', to: `/${role}/wallet`, icon: Wallet });
     if (role !== 'coordinator') return applyPlatformPermissions(items, allowsPath, role);
     return applyPlatformPermissions(items
@@ -963,6 +973,27 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
             </span>
             {isExpanded && <ChevronUp className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />}
           </button>
+          {showPeerCounts && isExpanded && (
+            <button
+              type="button"
+              onClick={() => setMatesOpen(true)}
+              className="mt-1.5 flex w-full items-center gap-2.5 rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-2 text-left transition hover:border-sky-300 hover:bg-sky-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-sky-950 dark:bg-sky-950/30 dark:hover:border-sky-800 dark:hover:bg-sky-950/60"
+              aria-label={`${peerSummary?.prepMates ?? 0} ${PEER_TERMS.prepMates}. Show list`}
+            >
+              <Handshake className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-300" aria-hidden="true" />
+              <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-700 dark:text-gray-200">
+                <span className="tabular-nums text-slate-900 dark:text-white">{peerSummary ? compactCount(peerSummary.prepMates) : '–'}</span> {PEER_TERMS.prepMates}
+              </span>
+              {peerSummary?.incomingRequests > 0 && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white" title="Prep Mate requests waiting">{peerSummary.incomingRequests}</span>
+              )}
+            </button>
+          )}
+          {showPeerCounts && (
+            <Suspense fallback={null}>
+              <PrepMatesModal open={matesOpen} onClose={() => setMatesOpen(false)} owner={{ id: String(user?._id || ''), name: user?.name }} count={peerSummary?.prepMates} isSelf />
+            </Suspense>
+          )}
         </div>
       </div>
     </aside>

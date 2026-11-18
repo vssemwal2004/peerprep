@@ -1,16 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ALL_STUDENT_FEATURES,
+  OPT_IN_STUDENT_FEATURES,
+  STANDARD_STUDENT_FEATURES,
   featureForStudentPath,
   firstStudentFeaturePath,
   hasStudentFeature,
   normalizeStudentAccess,
 } from '../src/student/studentFeatureAccess.js';
 
-test('missing access data remains backward-compatible with full access', () => {
-  assert.deepEqual(normalizeStudentAccess(), { mode: 'all', features: ALL_STUDENT_FEATURES });
+test('missing access data keeps every standard module; opt-in Prep Mates needs an admin to turn it on', () => {
+  assert.deepEqual(normalizeStudentAccess(), { mode: 'all', features: STANDARD_STUDENT_FEATURES });
   assert.equal(hasStudentFeature({ role: 'student' }, 'prep_coding'), true);
+  assert.deepEqual(OPT_IN_STUDENT_FEATURES, ['peers']);
+  assert.equal(hasStudentFeature({ role: 'student' }, 'peers'), false, '"All access" does not include Prep Mates');
+  assert.equal(hasStudentFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['peers'] } }, 'peers'), true);
 });
 
 test('custom access selects the first permitted landing page', () => {
