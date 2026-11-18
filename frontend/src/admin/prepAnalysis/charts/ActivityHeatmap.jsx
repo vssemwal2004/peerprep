@@ -19,17 +19,26 @@ const RAIL_FROM = 1080;
 const RAIL_MIN = 320;
 const RAIL_GAP = 20;
 const WEEKDAYS = ["Mon", "", "Wed", "", "Fri", "", ""];
+// The boxes' words per heat map (keyed by the data's unit).
+const WORDS = {
+  submissions: { thing: "Submissions", who: "Students who practised", last: "Last submission", days: "Days with practice" },
+  "topics completed": { thing: "Topics completed", who: "Students who completed a topic", last: "Last topic completed", days: "Days with learning" },
+  "sheets started or finished": { thing: "Sheets started/finished", who: "Students who worked on a sheet", last: "Last sheet activity", days: "Days with sheet work" },
+  "tests taken": { thing: "Tests taken", who: "Students who took a test", last: "Last test taken", days: "Days with a test" },
+  interviews: { thing: "Interviews", who: "Students who had an interview", last: "Last interview", days: "Days with an interview" },
+};
 const longDate = (day) => new Date(`${day}T00:00:00Z`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 const shortDate = (day) => new Date(`${day}T00:00:00Z`).toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
 const plain = (value) => Number(value || 0).toLocaleString();
 
 function Stat({ icon: Icon, label, value, note, tone }) {
   return (
-    <div className="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
-      <p className="flex items-center gap-1.5 truncate text-[11.5px] font-semibold text-slate-600 dark:text-slate-300">
-        <Icon className={`h-3.5 w-3.5 shrink-0 ${tone}`} aria-hidden="true" />{label}
+    <div className="flex min-w-0 flex-col rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
+      <p className="flex min-h-[32px] items-start gap-1.5 text-[11.5px] font-semibold leading-4 text-slate-600 dark:text-slate-300">
+        <Icon className={`mt-px h-3.5 w-3.5 shrink-0 ${tone}`} aria-hidden="true" /><span className="line-clamp-3" title={label}>{label}</span>
       </p>
-      <p className="mt-0.5 truncate text-[18px] font-extrabold tabular-nums leading-6 text-slate-900 dark:text-white">{value}</p>
+      {/* Numbers line up across a row even when one label wraps longer. */}
+      <p className="mt-auto truncate pt-0.5 text-[18px] font-extrabold tabular-nums leading-6 text-slate-900 dark:text-white">{value}</p>
       {note && <p className="truncate text-[11px] text-slate-500 dark:text-slate-400" title={note}>{note}</p>}
     </div>
   );
@@ -84,22 +93,23 @@ export default function ActivityHeatmap({ chart, onPart }) {
 
   // Plain counts an admin reads at a glance. The line above the card names the busiest date, so
   // it is not repeated here. "Students" comes from the chart summary (who did anything on the map).
-  const unitName = unit.charAt(0).toUpperCase() + unit.slice(1);
+  // Every label is a full phrase in the feature's own words, so a box reads on its own:
+  // "Tests taken in the last 30 days: 0 (since 19 Oct)".
+  const words = WORDS[unit] || { thing: unit.charAt(0).toUpperCase() + unit.slice(1), who: "Students with any activity", last: "Last activity", days: "Days with any activity" };
   const students = chart.summary?.students;
   const cohort = chart.summary?.cohort ?? chart.studentCount;
   const lastNote = stats.daysSinceActive === null ? "nothing yet" : stats.daysSinceActive === 0 ? "today" : stats.daysSinceActive === 1 ? "yesterday" : `${plain(stats.daysSinceActive)} days ago`;
+  const since = (back) => `since ${shortDate(new Date(Date.parse(`${chart.data.to}T00:00:00Z`) - back * 86_400_000).toISOString().slice(0, 10))}`;
   const figures = (
     <div className={`grid gap-2 ${(wide ? railWidth : width) >= 500 ? "grid-cols-3" : "grid-cols-2"} ${wide ? "flex-1" : ""}`}>
-      <Stat icon={Sigma} tone="text-sky-500" label={unitName} value={plain(stats.total)} note="in the last 12 months" />
+      <Stat icon={Sigma} tone="text-sky-500" label={`${words.thing} in the last 12 months`} value={plain(stats.total)} note="all students together" />
       {Number.isFinite(students)
-        ? <Stat icon={Users} tone="text-violet-500" label="Students active" value={plain(students)} note={`out of ${plain(cohort)} students`} />
-        : <Stat icon={CalendarCheck2} tone="text-violet-500" label="Days with activity" value={plain(stats.activeDays)} note={`out of ${plain(stats.days)} days`} />}
-      <Stat icon={History} tone="text-slate-500" label="Last activity" value={stats.lastActive ? shortDate(stats.lastActive) : "–"} note={lastNote} />
-      <Stat icon={CalendarDays} tone="text-emerald-500" label="This week" value={plain(stats.last7)} note="in the last 7 days" />
-      <Stat icon={Activity} tone="text-cyan-500" label="This month" value={plain(stats.last30)} note="in the last 30 days" />
-      {Number.isFinite(students)
-        ? <Stat icon={CalendarCheck2} tone="text-amber-500" label="Days with activity" value={plain(stats.activeDays)} note={`out of ${plain(stats.days)} days`} />
-        : <Stat icon={Flame} tone="text-rose-500" label="Longest run" value={`${plain(stats.bestStreak)} ${stats.bestStreak === 1 ? "day" : "days"}`} note="active days in a row" />}
+        ? <Stat icon={Users} tone="text-violet-500" label={words.who} value={plain(students)} note={`out of ${plain(cohort)} students`} />
+        : <Stat icon={Flame} tone="text-violet-500" label="Most days in a row" value={`${plain(stats.bestStreak)} ${stats.bestStreak === 1 ? "day" : "days"}`} note="in the last 12 months" />}
+      <Stat icon={History} tone="text-slate-500" label={words.last} value={stats.lastActive ? shortDate(stats.lastActive) : "None yet"} note={lastNote} />
+      <Stat icon={CalendarDays} tone="text-emerald-500" label={`${words.thing} in the last 7 days`} value={plain(stats.last7)} note={since(6)} />
+      <Stat icon={Activity} tone="text-cyan-500" label={`${words.thing} in the last 30 days`} value={plain(stats.last30)} note={since(29)} />
+      <Stat icon={CalendarCheck2} tone="text-amber-500" label={words.days} value={plain(stats.activeDays)} note={`out of the last ${plain(stats.days)} days`} />
     </div>
   );
 
