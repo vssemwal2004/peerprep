@@ -21,7 +21,8 @@ const activity = (levelSource = 'content') => ({ enabled: true, units: 1, levelS
 export const DEFAULT_PREP_SCORE_CONFIG = deepFreeze({
   formula: { volumeExponent: 0.4, qualityExponent: 1.5, scale: 1, decimalPlaces: 2 },
   modules: {
-    coding: { weight: 1, points: points(), activities: { problemSolved: activity() } },
+    // dailyTopicLimit: first solves per topic per IST day that count (0 = no limit). See topicQuota.js.
+    coding: { weight: 1, points: points(), dailyTopicLimit: 3, activities: { problemSolved: activity() } },
     assessment: { weight: 1, points: points(), passPercent: 40, activities: { assessmentCompleted: activity() } },
     interview: { weight: 1, points: points(), passPercent: 40, activities: { mockCompleted: activity('fixed'), aiCompleted: activity() } },
     learning: {
@@ -96,6 +97,7 @@ function normalizeModule(key, value) {
   ACTIVITY_KEYS[key].forEach((activityKey) => {
     result.activities[activityKey] = normalizeActivity(object(input.activities)[activityKey], defaults.activities[activityKey], `${label} ${activityKey}`, activityKey);
   });
+  if (defaults.dailyTopicLimit !== undefined) result.dailyTopicLimit = Math.trunc(finite(input.dailyTopicLimit ?? defaults.dailyTopicLimit, 'Daily solves per topic', { min: 0, max: 100 }));
   if (defaults.passPercent !== undefined) result.passPercent = finite(input.passPercent ?? defaults.passPercent, `${label} pass mark`, { min: 0, max: 100 });
   if (defaults.completionPercent !== undefined) result.completionPercent = finite(input.completionPercent ?? defaults.completionPercent, 'Video completion percentage', { min: 1, max: 100 });
   if (defaults.topicLevels) {
@@ -120,8 +122,9 @@ export function normalizePrepScoreConfig(value = {}) {
     },
     modules: {},
   };
+  // Only Prep Coding makes the Prep Score now; the other modules' settings are kept so older
+  // policies still load and the video completion percentage keeps working.
   MODULE_KEYS.forEach((key) => { normalized.modules[key] = normalizeModule(key, object(input.modules)[key]); });
-  if (!MODULE_KEYS.some((key) => normalized.modules[key].weight > 0)) throw new HttpError(400, 'At least one module weight must be greater than zero.');
   return normalized;
 }
 

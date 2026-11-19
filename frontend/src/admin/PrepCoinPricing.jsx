@@ -6,6 +6,7 @@ import { CardHeader, Glass } from '../overview/ui';
 import PrepCoinIcon from '../components/prepCoin/PrepCoinIcon';
 import { CoinPage } from './prepCoins/shared';
 import { buttonClass, inputClass } from './prepCoins/coinModel';
+import EarningSettings from './prepCoins/EarningSettings';
 
 const whole = (value) => Number.isSafeInteger(value) && value >= 0;
 
@@ -45,6 +46,7 @@ export default function PrepCoinPricing() {
       actions={<Link to="/admin/prep-coins" className={buttonClass.secondary}><LayoutDashboard className="h-4 w-4" />Overview</Link>}>
       {error && <p role="alert" className="mb-4 flex items-center gap-2 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-400/10 dark:text-rose-200"><AlertCircle className="h-4 w-4 shrink-0" />{error}</p>}
       {notice && <p role="status" className="mb-4 flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200"><CheckCircle2 className="h-4 w-4 shrink-0" />{notice}</p>}
+      <EarningSettings />
       {!pricing ? <p className="text-sm text-slate-500">{error ? '' : 'Loading Prep Coin prices…'}</p> : (
         <>
           <div className="grid gap-4 lg:grid-cols-2">

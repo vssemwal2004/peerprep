@@ -1,5 +1,4 @@
 import { Sigma } from 'lucide-react';
-import { MODULES } from './engine';
 import { card, helperText, NumberField, sectionTitle } from './fields';
 
 const V = ({ children }) => <var className="font-semibold not-italic text-sky-700 dark:text-sky-300">{children}</var>;
@@ -8,25 +7,25 @@ const V = ({ children }) => <var className="font-semibold not-italic text-sky-70
 export default function FormulaCard({ config, update }) {
   const { formula } = config;
   const rows = [
-    ['E, M, H', 'Easy, Medium and Hard activities a student has completed in the module', 'Counted from their work'],
-    ['e, m, h', 'Points for one Easy, Medium and Hard activity', 'Set per module below'],
-    ['N', 'Activity volume: E + M + H', 'Calculated'],
-    ['Q', 'Average points per activity: (e·E + m·M + h·H) ÷ N', 'Calculated'],
-    ['W', 'Module weight in the overall average', 'Set per module below'],
+    ['E, M, H', 'Easy, Medium and Hard practice problems solved (within the daily topic limit)', 'Counted from their work'],
+    ['e, m, h', 'Points for one Easy, Medium and Hard problem', 'Set below'],
+    ['N', 'Problems solved: E + M + H', 'Calculated'],
+    ['Q', 'Average points per problem: (e·E + m·M + h·H) ÷ N', 'Calculated'],
+    ['T', 'New solves per topic per day that count; later ones that day add nothing', 'Set below'],
   ];
   return (
     <section className={card} aria-labelledby="formula-title">
       <div className="flex items-center gap-2"><Sigma className="h-5 w-5 text-sky-600" aria-hidden="true" /><h2 id="formula-title" className={sectionTitle}>Formula</h2></div>
       <div className="mt-4 grid gap-3 rounded-xl bg-slate-50 p-4 font-mono text-sm text-slate-800 dark:bg-slate-800/60 dark:text-slate-100 lg:grid-cols-2">
         <div>
-          <p className={`mb-1 font-sans ${helperText}`}>Each module ({MODULES.map((module) => module.label.replace('Prep ', '')).join(', ')})</p>
-          <p>Module score = <V>S</V> × <V>N</V><sup><V>α</V></sup> × <V>Q</V><sup><V>β</V></sup></p>
+          <p className={`mb-1 font-sans ${helperText}`}>From practice coding only</p>
+          <p>Prep Score = <V>S</V> × <V>N</V><sup><V>α</V></sup> × <V>Q</V><sup><V>β</V></sup></p>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400"><V>N</V> = E + M + H &nbsp;·&nbsp; <V>Q</V> = (<V>e</V>·E + <V>m</V>·M + <V>h</V>·H) ÷ <V>N</V></p>
         </div>
         <div>
-          <p className={`mb-1 font-sans ${helperText}`}>Overall, over the modules a university licenses</p>
-          <p>Prep Score = Σ(<V>W</V> × module score) ÷ Σ<V>W</V></p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Shown to <V>d</V> decimal places · no upper limit</p>
+          <p className={`mb-1 font-sans ${helperText}`}>Daily topic limit</p>
+          <p>First <V>T</V> new solves per topic per day count</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Topic = rarest tag, or the one set on the problem · shown to <V>d</V> decimals</p>
         </div>
       </div>
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -82,7 +82,9 @@ test('direct Prep Analysis visits start on all students and feature links start 
 
 test('the feature comes first, and Quick Prep filters belong to Prep Coding', () => {
   const coding = featureFields(catalog, 'coding').map((entry) => entry.key);
-  assert.ok(coding.includes('quickprep.status') && coding.includes('coding.prepScore'), 'Quick Prep is inside Prep Coding');
+  assert.ok(coding.includes('quickprep.status'), 'Quick Prep is inside Prep Coding');
+  // The Prep Score is the Prep Coding score, so the coding copy is not offered twice.
+  assert.ok(!coding.includes('coding.prepScore'));
   assert.ok(coding.every((key) => !key.startsWith('student.')));
   assert.deepEqual([...new Set(featureFields(catalog, 'all').map((entry) => entry.module))], ['coding', 'learning', 'interview', 'assessment']);
   assert.deepEqual(studentFields(catalog).map((entry) => entry.key), ['student.semester', 'student.branch', 'student.college', 'student.search']);

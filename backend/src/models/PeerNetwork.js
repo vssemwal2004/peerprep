@@ -23,3 +23,17 @@ prepMateSchema.index({ toId: 1, status: 1, requestedAt: -1 });
 prepMateSchema.index({ fromId: 1, status: 1, requestedAt: -1 });
 
 export const PrepMate = tenantModel(mongoose.model('PrepMate', prepMateSchema));
+
+// A friendly "keep your streak going" nudge from one Prep Mate to another: at most one per sender,
+// receiver and IST day (unique key), so nudges can never become spam.
+const prepMateNudgeSchema = new Schema({
+  key: { type: String, required: true },
+  fromId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  toId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  day: { type: String, required: true },
+  sentAt: { type: Date, default: Date.now },
+}, { versionKey: false });
+prepMateNudgeSchema.index({ key: 1 }, { unique: true });
+prepMateNudgeSchema.index({ fromId: 1, day: 1 });
+
+export const PrepMateNudge = tenantModel(mongoose.model('PrepMateNudge', prepMateNudgeSchema));

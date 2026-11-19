@@ -7,6 +7,7 @@ import { BADGES, LEVELS, DOMAIN_ACCESS, dayKey, periodsAt, enabledDomains, abili
 import { getStudentProgressSummary } from './studentDashboardService.js';
 import { requireEngagementUniqueIndex } from '../utils/engagementIndexes.js';
 import { notifyOnce } from './notificationService.js';
+import { StudentDailyLogin } from '../models/MonthlyBadge.js';
 import { HttpError } from '../utils/errors.js';
 
 const pending = new Map();
@@ -217,6 +218,15 @@ async function refresh(student, now) {
     activityByDate[key] = (activityByDate[key] || 0) + 1;
     breakdownByDate[key] ||= {};
     breakdownByDate[key].challenges = (breakdownByDate[key].challenges || 0) + 1;
+  }
+  // Each day the student opened PeerPrep adds one "login" to the heatmap (services/dailyCheckIn.js).
+  const loginDays = await StudentDailyLogin.find({ studentId: scope.studentId, at: { $gte: yearStart } }).select('at').maxTimeMS(8000).lean();
+  for (const { at } of loginDays) {
+    const key = dayKey(at);
+    breakdownByDate[key] ||= {};
+    if (breakdownByDate[key].login) continue;
+    activityByDate[key] = (activityByDate[key] || 0) + 1;
+    breakdownByDate[key].login = 1;
   }
   const month = periods.monthly.periodKey;
   if (progression.lastMonth && progression.lastMonth !== month) {

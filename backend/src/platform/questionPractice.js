@@ -32,6 +32,8 @@ import { problemUsedInAssessment, serializeProblem, studentFailedCase } from '..
 import { interviewReportOptions, interviewReportSummaries, reporterKey, saveInterviewReport } from './interviewQuestionReports.js';
 import { questionQuickPreps } from '../services/questService.js';
 import { sanitizeEffort } from '../services/solveEffort.js';
+import { quotaForProblem, recordAcceptedSolve } from '../services/prepScore/topicQuota.js';
+import { rewardAcceptedSolve } from '../services/solveRewards.js';
 import { matchesSerialSearch, parseSerialSearch, serialSearchClause } from '../utils/problemSerial.js';
 
 const router = Router();
@@ -412,6 +414,21 @@ const sharedSampleImages = (images) => (Array.isArray(images) ? images : [])
   })
   .sort((a, b) => a.position - b.position);
 
+// The Prep Score topic a coding problem counts against and today's quota for it (problem page chip).
+router.get('/:source/:id/prep-score', asyncRoute(async (req, res) => {
+  const { source, id } = req.params;
+  if (!['local', 'shared'].includes(source) || !mongoose.isValidObjectId(id)) throw new HttpError(404, 'Problem not found');
+  if (source === 'shared') {
+    const question = await findVisible('shared', id);
+    if (question.questionType !== 'coding') throw new HttpError(404, 'Coding problem not found');
+  } else if (!await Problem.exists({ _id: id, status: { $in: ['published', 'Active', 'active'] }, visibility: { $ne: 'private' } })) {
+    throw new HttpError(404, 'Problem not found');
+  }
+  const quota = await quotaForProblem(req.user._id, source, id);
+  if (!quota) throw new HttpError(404, 'Problem not found');
+  res.json(quota);
+}));
+
 router.get('/shared/:id/problem', asyncRoute(async (req, res) => {
   const question = await findVisible('shared', req.params.id);
   if (question.questionType !== 'coding') throw new HttpError(404, 'Coding problem not found');
@@ -615,6 +632,10 @@ router.post('/:source/:id/attempts', compilerExecutionLimiter, asyncRoute(async 
   const graded = question.questionType === 'coding'
     ? await judgeCodingQuestion(question, req.params.source, answer, language)
     : { result: gradePracticeAnswer(question, answer) };
+  const sharedCodingSolve = req.params.source === 'shared' && question.questionType === 'coding' && graded.result === 'correct';
+  const alreadySolved = sharedCodingSolve && Boolean(await QuestionPracticeAttempt.exists({
+    studentId: req.user._id, source: 'shared', questionId: question._id, questionType: 'coding', result: 'correct',
+  }));
   await QuestionPracticeAttempt.create({ studentId: req.user._id, questionId: question._id,
     source: req.params.source, questionType: question.questionType, answer, language, result: graded.result,
     totalTestCases: graded.totalTestCases || 0, passedTestCases: graded.passedTestCases || 0,
@@ -626,8 +647,16 @@ router.post('/:source/:id/attempts', compilerExecutionLimiter, asyncRoute(async 
       QuestionPracticeAttempt.countDocuments({ source: 'shared', questionId: question._id, questionType: 'coding' }),
       QuestionPracticeAttempt.countDocuments({ source: 'shared', questionId: question._id, questionType: 'coding', result: 'correct' }),
     ]);
+    // Daily topic quota: decide (once) whether this first solve counts toward the Prep Score.
+    const prepScore = sharedCodingSolve
+      ? await recordAcceptedSolve({ studentId: req.user._id, source: 'shared', problemId: question._id, alreadySolved })
+        .catch((error) => { console.error('[questionPractice] Prep Score quota error:', error.message); return null; })
+      : null;
+    const coins = sharedCodingSolve
+      ? await rewardAcceptedSolve({ userId: req.user._id, source: 'shared', problemId: question._id, title: question.title || question.questionData?.problemDataSnapshot?.title, outcome: prepScore })
+      : null;
     res.status(201).json({ ...graded, totalSubmissions, acceptedSubmissions,
-      acceptanceRate: Number((acceptedSubmissions * 100 / totalSubmissions).toFixed(1)) });
+      acceptanceRate: Number((acceptedSubmissions * 100 / totalSubmissions).toFixed(1)), ...(prepScore ? { prepScore } : {}), ...(coins ? { coins } : {}) });
     return;
   }
   res.status(201).json(graded);

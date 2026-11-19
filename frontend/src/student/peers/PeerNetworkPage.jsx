@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { EyeOff, Inbox, Loader2, Search, Send, Users } from 'lucide-react';
+import { BarChart3, EyeOff, Inbox, Loader2, Search, Send, Users } from 'lucide-react';
+import PrepMatesCircle from './PrepMatesCircle';
+import PrepMatesFeed from './PrepMatesFeed';
 import { api } from '../../utils/api';
 import PeerAvatar from './PeerAvatar';
 import PeerActions from './PeerActions';
@@ -26,7 +28,14 @@ function PeerRow({ peer, onRelationChange }) {
           <span className="block truncate text-xs text-slate-500 dark:text-zinc-400">{peerSubtitle(peer) || 'Student'}</span>
         </span>
       </Link>
-      <PeerActions peer={peer} relation={peer.relation} size="sm" onRelationChange={(relation) => onRelationChange(peer.id, relation)} />
+      <div className="flex items-center gap-2">
+        {peer.relation?.mate === 'mates' && (
+          <Link to={`/student/peers/${peer.id}/compare`} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-zinc-300 dark:ring-zinc-700 dark:hover:bg-white/5">
+            <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />Compare
+          </Link>
+        )}
+        <PeerActions peer={peer} relation={peer.relation} size="sm" onRelationChange={(relation) => onRelationChange(peer.id, relation)} />
+      </div>
     </li>
   );
 }
@@ -88,13 +97,13 @@ export default function PeerNetworkPage() {
   const searching = query.trim().length >= 2;
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 pb-12 pt-5 sm:px-6">
+    <div className="mx-auto w-full max-w-6xl px-4 pb-12 pt-5 sm:px-6">
       <header className="mb-5 flex flex-col gap-1">
         <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
           <Users className="h-6 w-6 text-sky-600 dark:text-sky-400" aria-hidden="true" /> Prep Mates
         </h1>
         <p className="text-sm text-slate-500 dark:text-zinc-400">
-          Find classmates from your university and send a Prep Mate request. Once they accept, you are Prep Mates.
+          Practise with classmates from your university: race on your circle, see their progress and compare head to head.
         </p>
       </header>
 
@@ -131,7 +140,10 @@ export default function PeerNetworkPage() {
           )}
         </section>
       ) : (
-        <>
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-5">
+        <PrepMatesCircle />
+        <div>
           <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Peer lists">
             {TABS.map((item) => {
               const count = item.countKey ? summary?.[item.countKey] : null;
@@ -187,7 +199,12 @@ export default function PeerNetworkPage() {
               </>
             )}
           </section>
-        </>
+        </div>
+        </div>
+        <aside className="min-w-0 lg:sticky lg:top-[81px]" aria-label="Prep Mates activity">
+          <PrepMatesFeed />
+        </aside>
+        </div>
       )}
     </div>
   );

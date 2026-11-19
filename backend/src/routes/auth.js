@@ -12,6 +12,8 @@ import { verifyToken } from '../utils/jwt.js';
 import { deploymentRole } from '../platform/deployment.js';
 import { currentTenant, runForPlatform, runForTenant } from '../platform/tenantContext.js';
 import { getTenant } from '../platform/tenantConnections.js';
+import { dailyCheckIn } from '../services/dailyCheckIn.js';
+import { badgeHistory, evaluateMonthlyBadges } from '../services/monthlyBadges.js';
 const upload = multer();
 
 function getAuthCookieOptions() {
@@ -80,6 +82,21 @@ router.get('/global-ranking', requireAuth, requireStudent, requireFullStudent, r
 });
 router.post('/engagement/refresh', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('quickprep'), refreshStudentChallenges);
 router.get('/engagement/badges', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('quickprep'), getStudentChallengeBadges);
+// First app open of the day: heatmap login day, daily login coin, badge re-check. Idempotent per day.
+router.post('/daily-checkin', requireAuth, requireStudent, requireFullStudent, async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await dailyCheckIn(req.user) || { firstToday: false, coins: null });
+  } catch (error) { next(error); }
+});
+// Monthly badges: levels 1-10 per badge, targets from the student's own recent months.
+router.get('/badges/monthly', requireAuth, requireStudent, requireFullStudent, async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'private, no-store');
+    const [current, history] = await Promise.all([evaluateMonthlyBadges(req.user), badgeHistory(req.user._id)]);
+    res.json({ ...current, history });
+  } catch (error) { next(error); }
+});
 router.post('/dashboard/problem-view', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('prep_coding'), recordStudentProblemView);
 router.post('/dashboard/topic-view', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('learning'), recordStudentTopicView);
 

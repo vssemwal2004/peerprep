@@ -7,6 +7,8 @@ import { University } from '../src/platform/models.js';
 import User from '../src/models/User.js';
 import StudentChallenge from '../src/models/StudentChallenge.js';
 import AssessmentSubmission from '../src/models/AssessmentSubmission.js';
+import Problem from '../src/models/Problem.js';
+import Submission from '../src/models/Submission.js';
 import { getStudentGlobalRanking } from '../src/services/globalStudentRankingService.js';
 import { GLOBAL_RANK_VERSION, GlobalRankSnapshot, rankingPolicyKey, validateRankSnapshot, saveRankSnapshot, readGlobalRank, summarizeGlobalRank, snapshotScore, SNAPSHOT_MAX_AGE } from '../src/platform/globalRanking.js';
 import { PREP_SCORE_POLICY_VERSION } from '../src/services/prepScore/policy.js';
@@ -96,15 +98,19 @@ test('university service syncs verified server scores without identities or rest
       { role: 'student', isActive: true, accessScope: 'assessment_only' },
       { role: 'student', isActive: false, accessScope: 'full' },
     ]);
-    // Challenge XP does not count toward rank. One completed assessment is one
-    // Medium activity under the default configurable policy.
+    // Challenge XP and assessments do not count toward rank: the Prep Score is the Prep Coding
+    // score, and one Medium solve is 1^0.4 × 2^1.5 = 2.83 under the default policy.
     await StudentChallenge.collection.insertOne({ studentId: own, kind: 'daily', earnedAt: new Date(), rewardPoints: 20 });
-    await AssessmentSubmission.collection.insertOne({ studentId: own, assessmentId: new mongoose.Types.ObjectId(), status: 'submitted', evaluationStatus: 'completed', score: 50, maxMarks: 100, submittedAt: new Date() });
+    await AssessmentSubmission.collection.insertOne({ studentId: other, assessmentId: new mongoose.Types.ObjectId(), status: 'submitted', evaluationStatus: 'completed', score: 90, maxMarks: 100, submittedAt: new Date() });
+    const medium = new mongoose.Types.ObjectId();
+    await Problem.collection.insertOne({ _id: medium, title: 'Medium one', difficulty: 'Medium', status: 'published', visibility: 'public' });
+    await Submission.collection.insertOne({ user: own, problem: medium, mode: 'submit', status: 'AC', language: 'python' });
     const campus = await University.create({ universityId: 'campus-a', name: 'Campus', apiKeyHash: 'test-only', permissions: {}, sources: policy.sources });
     let transmitted;
     globalThis.fetch = async (url, options) => {
       const parsed = new URL(url);
-      if (parsed.pathname.endsWith('/policy')) return { ok: true, json: async () => ({ active: true, permissions: { assessments: true }, sources: policy.sources }) };
+      if (parsed.pathname.endsWith('/policy')) return { ok: true, json: async () => ({ active: true, permissions: { questions: true, assessments: true }, sources: policy.sources }) };
+      if (parsed.pathname.endsWith('/questions')) return { ok: true, json: async () => ({ questions: [] }) };
       if (parsed.pathname.endsWith('/rankings/snapshot')) {
         transmitted = JSON.parse(options.body);
         return { ok: true, json: async () => saveRankSnapshot(campus, transmitted) };
@@ -113,11 +119,12 @@ test('university service syncs verified server scores without identities or rest
       throw new Error('Unexpected network request');
     };
     // Empty mongoose permissions default to true; explicitly align this fixture's allocation.
-    for (const key of ['questions', 'learning', 'interviews', 'events']) campus.permissions[key] = false;
+    for (const key of ['learning', 'interviews', 'events']) campus.permissions[key] = false;
+    campus.permissions.questions = true;
     campus.permissions.assessments = true;
     await campus.save();
     const rank = await getStudentGlobalRanking({ _id: own, score: 99999 });
-    assert.equal(rank.status, 'ready'); assert.equal(rank.score, 2.83, 'Prep Score comes from verified assessment completion; challenge XP is not added'); assert.equal(rank.rank, 1); assert.equal(rank.totalStudents, 2);
+    assert.equal(rank.status, 'ready'); assert.equal(rank.score, 2.83, 'Prep Score comes from verified coding solves; challenge XP is not added'); assert.equal(rank.rank, 1); assert.equal(rank.totalStudents, 2);
     assert.doesNotMatch(JSON.stringify(transmitted), /Private|private@|studentId|99999/);
     assert.equal((await getStudentGlobalRanking({ _id: other })).status, 'unranked');
   } finally {

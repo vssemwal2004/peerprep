@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, History, RotateCcw, Save } from 'lucide-react';
 import { api } from '../utils/api';
-import { configProblem, MODULES } from './prepScore/engine';
-import { card, helperText, inputClass, sectionTitle } from './prepScore/fields';
+import { configProblem } from './prepScore/engine';
+import { card, helperText, inputClass, NumberField, sectionTitle } from './prepScore/fields';
 import FormulaCard from './prepScore/FormulaCard';
 import ModuleCard from './prepScore/ModuleCard';
 import Simulator from './prepScore/Simulator';
@@ -73,7 +73,7 @@ export default function PrepScoreAdjustment() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-600">Master Admin settings</p>
           <h1 className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">Prep Score Adjustment</h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">Every value in the Prep Score formula, for all universities. Students see only their score and rank, never these settings. Prep Coin is separate and unaffected.</p>
+          <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">Every value in the Prep Score formula, for all universities. The Prep Score comes from practice coding only. Students see only their score and rank, never these settings. Prep Coin is separate and unaffected.</p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-semibold">
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">Live: version {workspace.active.version}</span>
@@ -86,7 +86,16 @@ export default function PrepScoreAdjustment() {
 
       <FormulaCard config={config} update={update} />
       <div className="grid gap-5 xl:grid-cols-2">
-        {MODULES.map(({ key, label, symbol }) => <ModuleCard key={key} moduleKey={key} label={label} symbol={symbol} module={config.modules[key]} update={update} />)}
+        <ModuleCard moduleKey="coding" label="Prep Coding (makes the Prep Score)" module={config.modules.coding} update={update} />
+        {/* Not part of the Prep Score: decides when a learning topic counts as completed. */}
+        <section className={card} aria-labelledby="learning-video-title">
+          <h2 id="learning-video-title" className={sectionTitle}>Learning video completion</h2>
+          <p className={`mt-1 ${helperText}`}>Not part of the Prep Score.</p>
+          <div className="mt-3 max-w-xs">
+            <NumberField compact label="Video completion" symbol="v" value={config.modules.learning.completionPercent} min={1} max={100} suffix="%"
+              onChange={(value) => update(['modules', 'learning', 'completionPercent'], value)} helper="Share of a topic video watched before the topic counts as completed" />
+          </div>
+        </section>
       </div>
       <div className="grid gap-5 xl:grid-cols-2">
         <Simulator config={config} />

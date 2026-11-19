@@ -286,6 +286,11 @@ async function attachCodingClassification(problemFields) {
   if (tags.length !== codingTagIds.length) throw new HttpError(400, 'One or more selected tags are unavailable.');
   problemFields.codingTagIds = tags.map((tag) => tag._id);
   problemFields.tags = tags.map((tag) => tag.name);
+  // The Prep Score topic override must be one of the problem's own tags; anything else means automatic.
+  if (problemFields.scoreTopic !== undefined) {
+    const wanted = String(problemFields.scoreTopic || '').trim().toLowerCase();
+    problemFields.scoreTopic = problemFields.tags.find((tag) => tag.toLowerCase() === wanted) || '';
+  }
 }
 
 function normalizeSupportedLanguages(value) {
@@ -828,6 +833,8 @@ function buildProblemPayload(
     topicAncestorIds: [],
     codingTagIds: normalizeTopicIds(req.body.codingTagIds),
     companyTags: parseCommaOrJsonList(req.body.companyTags),
+    // Prep Score topic override; left untouched when the client does not send it.
+    ...(req.body.scoreTopic !== undefined ? { scoreTopic: String(req.body.scoreTopic ?? '').trim().slice(0, 120) } : {}),
     supportedLanguages,
     codeTemplates: normalizeCodeTemplates(req.body.codeTemplates, supportedLanguages),
     executionMode,

@@ -15,7 +15,7 @@ const activity = (levelSource = 'content') => ({ enabled: true, units: 1, levelS
 const CONFIG = {
   formula: { volumeExponent: 0.4, qualityExponent: 1.5, scale: 1, decimalPlaces: 2 },
   modules: {
-    coding: { weight: 1, points: points(), activities: { problemSolved: activity() } },
+    coding: { weight: 1, points: points(), dailyTopicLimit: 3, activities: { problemSolved: activity() } },
     assessment: { weight: 1, points: points(), passPercent: 40, activities: { assessmentCompleted: activity() } },
     interview: { weight: 1, points: points(), passPercent: 40, activities: { mockCompleted: activity('fixed'), aiCompleted: activity() } },
     learning: { weight: 1, points: points(), completionPercent: 100, topicLevels: { easy: 'Easy', 'easy-medium': 'Easy', medium: 'Medium', 'medium-hard': 'Hard', hard: 'Hard' }, activities: { videoCompleted: activity() } },
@@ -56,22 +56,24 @@ const setInput = async (input, value) => {
     input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   });
 };
-const simulatorTotal = () => document.querySelector('#simulator-title').closest('section').querySelector('tfoot td:last-child').textContent;
+const simulatorTotal = () => document.querySelector('#simulator-total').textContent;
 
 test('the Master Admin sees the formula with named variables and every value is editable', async () => {
   await mount();
   const text = document.body.textContent;
   assert.match(text, /Prep Score Adjustment/);
-  assert.match(text, /Module score = S × Nα × Qβ/);
-  for (const label of ['Volume exponent', 'Difficulty exponent', 'Scale', 'Decimal places', 'Pass mark', 'Video completion', 'Topic difficulty → level']) assert.ok(text.includes(label), label);
-  assert.equal(document.querySelectorAll('section[aria-labelledby^="module-"]').length, 4, 'one card per module');
+  // The Prep Score is the Prep Coding score: no module weights, no overall average.
+  assert.match(text, /Prep Score = S × Nα × Qβ/);
+  assert.doesNotMatch(text, /Σ\(W|Weight/);
+  for (const label of ['Volume exponent', 'Difficulty exponent', 'Scale', 'Decimal places', 'Daily solves per topic', 'Video completion']) assert.ok(text.includes(label), label);
+  assert.equal(document.querySelectorAll('section[aria-labelledby^="module-"]').length, 1, 'only the Prep Coding card');
   assert.match(text, /Live: version 5/);
   assert.match(text, /Restore as draft/, 'older versions can be restored');
 });
 
 test('the simulator follows unsaved values exactly like the server formula', async () => {
   await mount();
-  const counts = { coding: { Easy: 12, Medium: 8, Hard: 3 }, assessment: { Easy: 1, Medium: 2, Hard: 1 }, interview: { Easy: 0, Medium: 2, Hard: 1 }, learning: { Easy: 6, Medium: 4, Hard: 2 } };
+  const counts = { coding: { Easy: 12, Medium: 8, Hard: 3 } };
   assert.equal(Number(simulatorTotal().replace(/,/g, '')), engine.simulate(CONFIG, counts).total);
   const hard = [...document.querySelectorAll('section[aria-labelledby="module-coding"] input')].find((input) => input.closest('label')?.textContent.startsWith('Hardh'));
   await setInput(hard, 9);
@@ -85,9 +87,17 @@ test('invalid values block saving with a plain explanation', async () => {
   await mount();
   const easy = [...document.querySelectorAll('section[aria-labelledby="module-coding"] input')].find((input) => input.closest('label')?.textContent.startsWith('Easye'));
   await setInput(easy, 7);
-  assert.match(document.body.textContent, /Prep Coding: points must rise from Easy to Medium to Hard/);
+  assert.match(document.body.textContent, /Points must rise from Easy to Medium to Hard/);
   const save = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Save draft'));
   assert.equal(save.disabled, true);
+});
+
+test('the daily topic limit must be a whole number', async () => {
+  await mount();
+  const limit = [...document.querySelectorAll('section[aria-labelledby="module-coding"] input')].find((input) => input.closest('label')?.textContent.startsWith('Daily solves per topic'));
+  assert.ok(limit, 'the limit is editable');
+  await setInput(limit, 2.5);
+  assert.match(document.body.textContent, /Daily solves per topic must be a whole number/);
 });
 
 test('only the Master Admin can open the page: university admins are routed away', () => {

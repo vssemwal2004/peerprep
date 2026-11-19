@@ -282,6 +282,8 @@ function buildProblemLibraryPayload(problem = {}, { sampleTestCases = [], hidden
       topicAncestorIds: Array.isArray(problem.topicAncestorIds) ? problem.topicAncestorIds : [],
       codingTagIds: Array.isArray(problem.codingTagIds) ? problem.codingTagIds : [],
       keywords,
+      // Prep Score topic override, read by services/prepScore/topicQuota.js for shared questions.
+      scoreTopic: String(problem.scoreTopic || ''),
       problemDataSnapshot: snapshot,
     },
     createdBy: problem.createdBy,

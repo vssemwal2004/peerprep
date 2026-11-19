@@ -3,6 +3,7 @@ import { requireAdmin, requireAuth } from '../middleware/auth.js';
 import { isControlPlane } from '../platform/deployment.js';
 import { HttpError } from '../utils/errors.js';
 import { coinFeatureCatalog, getCoinPricing, saveCoinPricing } from '../platform/coinSpend.js';
+import { getEarningConfig, saveEarningConfig } from '../platform/coinEarn.js';
 
 const router = Router();
 const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res)).catch(next);
@@ -21,6 +22,17 @@ router.put('/', asyncRoute(async (req, res) => {
     features: req.body?.features, expectedVersion: req.body?.expectedVersion, reason: req.body?.reason, actorId: req.user._id,
   });
   res.json({ ...pricing, catalog: coinFeatureCatalog() });
+}));
+
+// Coins students earn: daily login, each counted solve, and each monthly badge level (1-10).
+router.get('/earning', asyncRoute(async (req, res) => {
+  res.set('Cache-Control', 'private, no-store').json(await getEarningConfig({ fresh: true }));
+}));
+
+router.put('/earning', asyncRoute(async (req, res) => {
+  res.json(await saveEarningConfig({
+    earning: req.body?.earning, expectedVersion: req.body?.expectedVersion, reason: req.body?.reason, actorId: req.user._id,
+  }));
 }));
 
 export default router;

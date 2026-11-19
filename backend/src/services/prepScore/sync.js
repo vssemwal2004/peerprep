@@ -31,6 +31,9 @@ const FULL_REBUILD_MS = 6 * 60 * 60_000;
 const REBUILD_BUDGET_MS = 5_000;
 
 const PERMISSION_KEYS = ['questions', 'learning', 'assessments', 'interviews', 'events'];
+// Bumped when the engine's arithmetic changes without a policy change: a different key makes every
+// university rebuild its stored scores once (coding-only-1: Prep Score = Prep Coding score, 2026-11).
+const ENGINE_KEY = 'coding-only-1';
 const STUDENT_FIELDS = '_id role semester college isActive accessScope';
 // [model, student field, extra filter]. Runs and live-test heartbeats never change a score.
 const ACTIVITY_SOURCES = [
@@ -50,7 +53,7 @@ const eligible = (student) => student.role === 'student' && student.isActive !==
 
 async function tenantScope() {
   const permissions = await dashboardPermissions({});
-  return { permissions, permissionsKey: JSON.stringify(PERMISSION_KEYS.map((key) => permissions[key] === true)) };
+  return { permissions, permissionsKey: `${JSON.stringify(PERMISSION_KEYS.map((key) => permissions[key] === true))}|${ENGINE_KEY}` };
 }
 
 /** Admin-only module detail kept beside the total. */

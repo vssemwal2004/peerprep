@@ -73,6 +73,18 @@ export default function PeerRealtimeBridge() {
         const seen = readSeenRequests(window.localStorage, myId);
         seen.add(String(payload.requestId));
         writeSeenRequests(window.localStorage, myId, seen);
+      } else if (payload.kind === 'mate-nudge') {
+        const practice = () => navigate('/problems');
+        toast.show({
+          id: `mate-nudge:${actor.id}`,
+          type: 'peer',
+          avatar: { name: actor.name, url: actor.avatarUrl },
+          title: `${actor.name} nudged you`,
+          message: 'Your Prep Mate is cheering for you. One problem today keeps your streak going.',
+          onClick: practice,
+          duration: 9000,
+          actions: [{ label: 'Practice now', variant: 'primary', onClick: practice }],
+        });
       } else if (payload.kind === 'mate-accepted') {
         toast.show({
           id: `mate-accepted:${payload.requestId}`,

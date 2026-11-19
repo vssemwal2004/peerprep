@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Notification from '../models/Notification.js';
-import { PrepMate } from '../models/PeerNetwork.js';
+import { PrepMate, PrepMateNudge } from '../models/PeerNetwork.js';
 import { Quest, QuestEnrollment } from '../models/AdaptiveEngagement.js';
 import Submission from '../models/Submission.js';
 import Progress from '../models/Progress.js';
@@ -609,7 +609,7 @@ const indexedTenants = new Map();
 export function ensurePeerIndexes() {
   const key = currentTenant()?.universityId || 'platform';
   if (!indexedTenants.has(key)) {
-    const work = PrepMate.createIndexes()
+    const work = Promise.all([PrepMate.createIndexes(), PrepMateNudge.createIndexes()])
       .catch((error) => { indexedTenants.delete(key); throw error; });
     indexedTenants.set(key, work);
   }

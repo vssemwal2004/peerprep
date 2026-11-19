@@ -111,6 +111,7 @@ export function serializeProblem(
     topicAncestorIds: problem.topicAncestorIds || [],
     codingTagIds: problem.codingTagIds || [],
     companyTags: problem.companyTags || [],
+    scoreTopic: problem.scoreTopic || '',
     supportedLanguages: problem.supportedLanguages || [],
     validatedLanguages: Array.isArray(problem.validatedLanguages) ? problem.validatedLanguages : [],
     codeTemplates: getVisibleCodeTemplates(problem.codeTemplates),

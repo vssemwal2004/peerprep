@@ -114,7 +114,9 @@ coinWalletSchema.index({ universityId: 1, userId: 1 }, { unique: true });
 const coinMovementSchema = new mongoose.Schema({
   universityId: { type: String, required: true, index: true },
   requestId: { type: String, required: true, unique: true },
-  kind: { type: String, enum: ['initial', 'topup', 'admin_to_coordinator', 'coordinator_to_student', 'superadmin_to_coordinator', 'superadmin_to_student', 'student_spend', 'student_refund'], required: true },
+  // earn_*: coins the platform mints for a student's own work (daily login, a solve, a badge level).
+  // They never come out of a university balance. See platform/coinEarn.js.
+  kind: { type: String, enum: ['initial', 'topup', 'admin_to_coordinator', 'coordinator_to_student', 'superadmin_to_coordinator', 'superadmin_to_student', 'student_spend', 'student_refund', 'earn_login', 'earn_solve', 'earn_badge'], required: true },
   amount: { type: Number, required: true, min: 1 },
   actorId: { type: mongoose.Schema.Types.ObjectId, required: true },
   fromRole: { type: String, required: true },
@@ -124,6 +126,8 @@ const coinMovementSchema = new mongoose.Schema({
   // Spends and refunds only: what the coins paid for.
   featureKey: String,
   chargeId: mongoose.Schema.Types.ObjectId,
+  // Earnings only: what the coins were for, e.g. "Daily login" or "Problem Solver · Level 3".
+  note: String,
 }, { timestamps: true });
 coinMovementSchema.index({ universityId: 1, createdAt: -1 });
 coinMovementSchema.index({ universityId: 1, toUserId: 1, createdAt: -1 });
@@ -156,6 +160,8 @@ const coinPricingSchema = new mongoose.Schema({
   _id: { type: String, default: 'current' },
   version: { type: Number, default: 0 },
   features: { type: mongoose.Schema.Types.Mixed, default: {} },
+  // Only on the 'earning' document: coins students earn (platform/coinEarn.js).
+  earning: mongoose.Schema.Types.Mixed,
   updatedBy: mongoose.Schema.Types.ObjectId,
   reason: { type: String, default: '' },
 }, { timestamps: true, minimize: false });

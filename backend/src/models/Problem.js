@@ -84,6 +84,13 @@ const problemSchema = new mongoose.Schema({
     type: String,
     trim: true,
   }],
+  // Admin override: the tag this problem's solves count against for the daily Prep Score topic
+  // limit. Empty = automatic (the problem's rarest tag). Must be one of `tags`.
+  scoreTopic: {
+    type: String,
+    trim: true,
+    default: '',
+  },
   topicIds: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'CodingTopic',

@@ -1,23 +1,19 @@
-import { BookOpen, ClipboardCheck, Code2, Gauge, MessagesSquare } from 'lucide-react';
+import { Gauge } from 'lucide-react';
 import { formatScore } from '../../student/prepScore/formatScore';
 
-// Module key in the stored score -> university module that must be enabled to show it.
-const MODULES = [
-  { key: 'coding', module: 'questions', label: 'Prep Coding', Icon: Code2 },
-  { key: 'assessment', module: 'assessments', label: 'Prep Assessment', Icon: ClipboardCheck },
-  { key: 'interview', module: 'interviews', label: 'Prep Interview', Icon: MessagesSquare },
-  { key: 'learning', module: 'learning', label: 'Prep Learning', Icon: BookOpen },
+const LEVELS = [
+  { key: 'Easy', tone: 'text-emerald-600 dark:text-emerald-400' },
+  { key: 'Medium', tone: 'text-amber-600 dark:text-amber-400' },
+  { key: 'Hard', tone: 'text-rose-600 dark:text-rose-400' },
 ];
 
 /**
- * Staff view of a student's Prep Score: the overall number plus the module scores behind it.
+ * Staff view of a student's Prep Score (= the Prep Coding score) and the counted solves behind it.
  * Reads the same stored score that ranks and Prep Analysis use. Hidden when it could not be read.
  */
-export default function PrepScoreCard({ prepScore, visible = {} }) {
+export default function PrepScoreCard({ prepScore }) {
   if (!prepScore) return null;
-  const modules = MODULES
-    .filter((item) => visible[item.module] !== false && prepScore.features?.[item.key])
-    .map((item) => ({ ...item, score: prepScore.features[item.key].score }));
+  const counts = prepScore.features?.coding?.counts || null;
 
   return (
     <section
@@ -37,30 +33,26 @@ export default function PrepScoreCard({ prepScore, visible = {} }) {
               {formatScore(prepScore.total)}
             </p>
             <p className="mt-1.5 text-[11.5px] text-sky-100">
-              {prepScore.hasProgress ? 'Overall · from verified activity' : 'No scored activity yet'}
+              {prepScore.hasProgress ? 'From practice coding solves' : 'No coding solves yet'}
             </p>
           </div>
         </div>
 
         <div className="p-4">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Module scores</p>
-          {modules.length ? (
-            <ul className="grid gap-2 sm:grid-cols-2">
-              {modules.map(({ key, label, Icon, score }) => (
-                <li key={key} className="flex items-center gap-2.5 rounded-lg bg-slate-50 px-3 py-2.5 dark:bg-white/[0.04]">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
-                    <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-slate-700 dark:text-zinc-200">{label}</span>
-                  <span className="text-[15px] font-bold tabular-nums text-slate-950 dark:text-zinc-50" aria-label={`${label} ${formatScore(score)}`}>
-                    {formatScore(score)}
-                  </span>
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Solves counted in the score</p>
+          {counts ? (
+            <ul className="grid grid-cols-3 gap-2">
+              {LEVELS.map(({ key, tone }) => (
+                <li key={key} className="rounded-lg bg-slate-50 px-3 py-2.5 dark:bg-white/[0.04]">
+                  <span className="block text-[11.5px] font-medium text-slate-500 dark:text-zinc-400">{key}</span>
+                  <span className={`text-[17px] font-bold tabular-nums ${tone}`}>{Number(counts[key] || 0)}</span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-[12.5px] text-slate-500 dark:text-zinc-400">Module scores appear once the student is active in an enabled module.</p>
+            <p className="text-[12.5px] text-slate-500 dark:text-zinc-400">Appears once the student solves a practice problem.</p>
           )}
+          <p className="mt-2 text-[11px] text-slate-400 dark:text-zinc-500">Solves over the daily per-topic limit are not counted.</p>
         </div>
       </div>
     </section>

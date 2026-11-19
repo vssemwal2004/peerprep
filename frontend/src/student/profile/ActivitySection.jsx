@@ -41,7 +41,7 @@ const VIEWS = [
 ];
 
 /** Heatmap + 30-day trend in one card. Streak figures live in Coding Progress (not repeated here). */
-const CATEGORY_LABELS = { events: 'Peer interviews', interviews: 'AI interviews', challenges: 'Challenges' };
+const CATEGORY_LABELS = { events: 'Peer interviews', interviews: 'AI interviews', challenges: 'Challenges', login: 'Logins' };
 const categoryLabel = (key) => CATEGORY_LABELS[key] || key;
 
 export default function ActivitySection({ activity, activityStats, loading, breakdown, domains = [], verified = false }) {
@@ -49,7 +49,8 @@ export default function ActivitySection({ activity, activityStats, loading, brea
   const [domain, setDomain] = useState('all');
   // Completed plans and targets, badges and level-ups get their own filter once any exist.
   const hasChallenges = useMemo(() => Object.values(breakdown || {}).some((counts) => counts?.challenges > 0), [breakdown]);
-  const categories = hasChallenges ? [...domains, 'challenges'] : domains;
+  const hasLogins = useMemo(() => Object.values(breakdown || {}).some((counts) => counts?.login > 0), [breakdown]);
+  const categories = [...domains, ...(hasChallenges ? ['challenges'] : []), ...(hasLogins ? ['login'] : [])];
   const selectedDomain = categories.includes(domain) ? domain : 'all';
   const filtered = useMemo(() => selectedDomain === 'all' || !breakdown ? activity : Object.fromEntries(Object.entries(breakdown).map(([key, counts]) => [key, counts[selectedDomain] || 0])), [activity, breakdown, selectedDomain]);
   const endingDayKey = verified ? new Date(Date.now() + 3.5 * 3600000).toISOString().slice(0, 10) : null;

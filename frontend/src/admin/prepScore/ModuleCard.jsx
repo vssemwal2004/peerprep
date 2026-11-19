@@ -39,23 +39,28 @@ function ActivityRow({ activityKey, activity, onChange }) {
   );
 }
 
-/** Weight, points and activity rules for one module. */
-export default function ModuleCard({ moduleKey, label, symbol, module, update }) {
+/** Points, daily topic limit and activity rules for the Prep Coding module (the Prep Score). */
+export default function ModuleCard({ moduleKey, label, module, update }) {
   const Icon = ICONS[moduleKey];
   const set = (path, value) => update(['modules', moduleKey, ...path], value);
   return (
     <section className={card} aria-labelledby={`module-${moduleKey}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"><Icon className="h-4 w-4" aria-hidden="true" /></span>
-          <div><h2 id={`module-${moduleKey}`} className={sectionTitle}>{label}</h2><p className={helperText}>Module score <var className="font-mono not-italic">{symbol}</var></p></div>
-        </div>
-        <div className="w-28"><NumberField compact label="Weight" symbol="W" value={module.weight} min={0} max={100} step={0.5} onChange={(value) => set(['weight'], value)} /></div>
+      <div className="flex items-center gap-2">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"><Icon className="h-4 w-4" aria-hidden="true" /></span>
+        <h2 id={`module-${moduleKey}`} className={sectionTitle}>{label}</h2>
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-3">
         {LEVELS.map((level) => <NumberField key={level} compact label={level} symbol={POINT_SYMBOLS[level]} value={module.points[level]} min={0.01} max={1000} step={0.5} suffix="pts" onChange={(value) => set(['points', level], value)} />)}
       </div>
+
+      {module.dailyTopicLimit !== undefined && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <NumberField compact label="Daily solves per topic" symbol="T" value={module.dailyTopicLimit} min={0} max={100} step={1} suffix="/ day"
+            onChange={(value) => set(['dailyTopicLimit'], value)}
+            helper="New solves per topic that count each day (IST). 0 = no limit. Applies to solves after publishing." />
+        </div>
+      )}
 
       {(module.passPercent !== undefined || module.completionPercent !== undefined) && (
         <div className="mt-3 grid gap-3 sm:grid-cols-2">

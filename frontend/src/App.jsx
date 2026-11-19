@@ -22,6 +22,7 @@ const AdminLayout = lazy(() => import('./admin/AdminLayout'));
 const CoordinatorLayout = lazy(() => import('./coordinator/CoordinatorLayout'));
 const GlobalSidebar = lazy(() => import('./components/GlobalSidebar'));
 const StudentDashboardHeader = lazy(() => import('./components/StudentDashboardHeader'));
+const StudentRewardsLayer = lazy(() => import('./student/rewards/StudentRewardsLayer'));
 const AnnouncementPopup = lazy(() => import('./student/AnnouncementPopup'));
 const Footer = lazy(() => import('./components/Footer').then(m => ({ default: m.Footer })));
 
@@ -64,6 +65,7 @@ const StudentAnalytics = lazy(() => import("./student/StudentAnalytics"));
 const StudentResume = lazy(() => import("./student/StudentResume"));
 const PeerNetworkPage = lazy(() => import("./student/peers/PeerNetworkPage"));
 const PeerProfilePage = lazy(() => import("./student/peers/PeerProfilePage"));
+const PeerComparePage = lazy(() => import("./student/peers/PeerComparePage"));
 const PeerRealtimeBridge = lazy(() => import("./student/peers/PeerRealtimeBridge"));
 
 // Admin Pages
@@ -365,7 +367,7 @@ function AppContent() {
     && !isFeedbackForm
     && !isAssessmentAttempt
     && !isProblemSolver;
-  const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges|analysis(\/[^/]+)?|peers(\/[^/]+)?)\/?$/.test(location.pathname);
+  const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges|analysis(\/[^/]+)?|peers(\/[^/]+(\/compare)?)?)\/?$/.test(location.pathname);
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
   // Admin and coordinator shells key their own page area (see ShellPage); keying this
   // boundary per navigation remounted the whole shell and hid the sidebar on every click.
@@ -388,6 +390,10 @@ function AppContent() {
       {isStudentShell && (
         // Announcements marked "show as popup", once after each login (never during tests or interviews).
         <Suspense fallback={null}><AnnouncementPopup /></Suspense>
+      )}
+      {user?.role === 'student' && user?.accessScope !== 'assessment_only' && (isStudentShell || isProblemSolver) && (
+        // Daily check-in, coin popup + sound, badge level card. Never during a test attempt.
+        <Suspense fallback={null}><StudentRewardsLayer userId={user._id || user.id} /></Suspense>
       )}
       {isStudentShell && (
         // Peer network realtime: Pacer / Prep Mate toasts and live count refreshes.
@@ -439,6 +445,7 @@ function AppContent() {
         <Route path="/student/profile" element={<StudentProtectedRoute><StudentProfile /></StudentProtectedRoute>} />
         <Route path="/student/peers" element={<StudentProtectedRoute><PeerNetworkPage /></StudentProtectedRoute>} />
         <Route path="/student/peers/:id" element={<StudentProtectedRoute><PeerProfilePage /></StudentProtectedRoute>} />
+        <Route path="/student/peers/:id/compare" element={<StudentProtectedRoute><PeerComparePage /></StudentProtectedRoute>} />
         <Route path="/student/wallet" element={<StudentProtectedRoute><StudentCoinHistory /></StudentProtectedRoute>} />
         <Route path="/student/rankings" element={<StudentProtectedRoute><StudentRankings /></StudentProtectedRoute>} />
         <Route path="/student/quickprep" element={<StudentProtectedRoute><StudentQuests /></StudentProtectedRoute>} />

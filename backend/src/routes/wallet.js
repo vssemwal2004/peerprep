@@ -34,6 +34,8 @@ router.get('/', asyncRoute(async (req, res) => {
       // Spent coins leave the wallet (negative); everything else adds to it.
       direction: row.fromUserId && String(row.fromUserId) === String(req.user._id) ? 'out' : 'in',
       feature: row.featureKey ? features.get(row.featureKey) || 'PeerPrep feature' : null,
+      // Earned coins (earn_login / earn_solve / earn_badge): what they were for.
+      note: row.note || null,
       fromName: row.fromUserId ? names.get(String(row.fromUserId)) || 'Former user' : 'PeerPrep',
       toName: row.toUserId ? names.get(String(row.toUserId)) || 'Former user' : row.toRole === 'platform' ? 'PeerPrep' : 'University wallet',
     })),

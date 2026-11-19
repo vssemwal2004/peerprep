@@ -15,6 +15,8 @@ import { validateObjectId } from '../utils/validators.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
 import { readTestcaseTextObject } from '../utils/testcaseStorage.js';
 import { createNotification } from './notificationService.js';
+import { recordAcceptedSolve } from './prepScore/topicQuota.js';
+import { rewardAcceptedSolve } from './solveRewards.js';
 import { getIo } from '../utils/io.js';
 import { personalRoom, compilerMonitorRoom } from '../utils/realtime.js';
 import {
@@ -1689,6 +1691,21 @@ async function runCompilerExecutionJob(job) {
       && isHiddenJudgeFailure(submitResult.persisted.failedCase)
       && !(await problemUsedInAssessment(problem._id).catch(() => true));
     const responsePayload = buildSubmitApiResponse(submitResult.persisted, { revealHidden });
+    if (job.name === 'submit' && !assessmentId && submitResult.persisted.status === 'AC' && userId && problem?._id) {
+      // Daily topic quota: decide (once) whether this first solve counts toward the Prep Score.
+      try {
+        const alreadySolved = Boolean(await Submission.exists({
+          user: userId, problem: problem._id, mode: 'submit', assessmentId: null,
+          status: { $in: ['AC', 'Accepted', 'ACCEPTED', 'ACCEPT'] }, ...(submissionId ? { _id: { $ne: submissionId } } : {}),
+        }));
+        const prepScore = await recordAcceptedSolve({ studentId: userId, source: 'local', problemId: problem._id, alreadySolved });
+        if (prepScore) responsePayload.prepScore = prepScore;
+        const coins = await rewardAcceptedSolve({ userId, source: 'local', problemId: problem._id, title: problem.title, outcome: prepScore });
+        if (coins) responsePayload.coins = coins;
+      } catch (error) {
+        console.error('[processCompilerExecutionJob] Prep Score quota error:', error.message);
+      }
+    }
     if (job.name === 'assessment-code-submit' && finalizedSubmission) {
       const assessmentMarks = await syncAssessmentAnswerFromTrackedSubmission(finalizedSubmission);
       if (assessmentMarks) responsePayload.assessmentMarks = assessmentMarks;

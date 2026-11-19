@@ -1347,6 +1347,8 @@ if (!isValidated || publishedProblem.status !== 'published') {
                     tagIds={form.codingTagIds || []}
                     onTopicsChange={(topicIds) => updateField('topicIds', topicIds)}
                     onTagsChange={(codingTagIds) => updateField('codingTagIds', codingTagIds)}
+                    scoreTopic={form.scoreTopic || ''}
+                    onScoreTopicChange={(scoreTopic) => updateField('scoreTopic', scoreTopic)}
                   />
                 </div>
                 <div className="md:col-span-2">

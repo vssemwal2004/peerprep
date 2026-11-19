@@ -490,6 +490,12 @@ export const api = {
   walletPricing: () => request('/wallet/pricing', { skipCache: true }),
   adminCoinPricing: () => request('/platform/admin/coin-pricing', { skipCache: true }),
   saveAdminCoinPricing: (body) => request('/platform/admin/coin-pricing', { method: 'PUT', body, skipCache: true }),
+  // Coins students earn (daily login, solve, badge levels 1-10): Master Admin only.
+  adminCoinEarning: () => request('/platform/admin/coin-pricing/earning', { skipCache: true }),
+  saveAdminCoinEarning: (body) => request('/platform/admin/coin-pricing/earning', { method: 'PUT', body, skipCache: true }),
+  // Student: first open of the day (heatmap login day + daily coin) and this month's badge ladders.
+  dailyCheckIn: () => request('/auth/daily-checkin', { method: 'POST', skipCache: true }),
+  monthlyBadges: () => request('/auth/badges/monthly', { skipCache: true }),
   platformStudents: (id, page = 1, search = '', { pageSize, sortBy, sortOrder } = {}) => request(`/platform/admin/universities/${encodeURIComponent(id)}/students?${new URLSearchParams({
     page: String(page), search, ...(pageSize ? { pageSize: String(pageSize) } : {}), ...(sortBy ? { sortBy, sortOrder: sortOrder === 'desc' ? 'desc' : 'asc' } : {}),
   }).toString()}`, { skipCache: true }),
@@ -505,6 +511,8 @@ export const api = {
   getPracticeQuestion: (source, id) => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}`, { skipCache: true }),
   submitPracticeAnswer: (source, id, answer, language = '') => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}/attempts`, { method: 'POST', body: { answer, language }, skipCache: true }),
   getSharedStudentProblem: (id) => request(`/student/questions/shared/${encodeURIComponent(id)}/problem`, { skipCache: true }),
+  // source: 'local' | 'shared'. The Prep Score topic this problem counts against and today's quota.
+  getPrepScoreTopicQuota: (source, id) => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}/prep-score`, { skipCache: true }),
   runSharedStudentProblem: (id, body) => request(`/student/questions/shared/${encodeURIComponent(id)}/run`, { method: 'POST', body, timeoutMs: 0 }),
   submitSharedStudentProblem: (id, { sourceCode, language, effort }) => request(`/student/questions/shared/${encodeURIComponent(id)}/attempts`, { method: 'POST', body: { answer: sourceCode, language, ...(effort ? { effort } : {}) }, timeoutMs: 0 }),
   listSharedStudentSubmissions: (id) => request(`/student/questions/shared/${encodeURIComponent(id)}/submissions`, { skipCache: true }),
@@ -652,6 +660,11 @@ export const api = {
   getPeerNetwork: (tab, before) => request(`/student/peers/me/network?tab=${encodeURIComponent(tab)}${before ? `&before=${encodeURIComponent(before)}` : ''}`, { skipCache: true }),
   getPeerNetworkOf: (id, tab, before) => request(`/student/peers/${encodeURIComponent(id)}/network?tab=${encodeURIComponent(tab)}${before ? `&before=${encodeURIComponent(before)}` : ''}`, { skipCache: true }),
   getPeerProfile: (id) => request(`/student/peers/${encodeURIComponent(id)}`, { skipCache: true }),
+  // Prep Mates circle: leaderboard (week | month | all), activity feed, head-to-head, nudge.
+  getPeerCircle: (period = 'week') => request(`/student/peers/me/circle?period=${encodeURIComponent(period)}`, { skipCache: true }),
+  getPeerFeed: () => request('/student/peers/me/feed', { skipCache: true }),
+  comparePrepMate: (id) => request(`/student/peers/${encodeURIComponent(id)}/compare`, { skipCache: true }),
+  nudgePrepMate: (id) => request(`/student/peers/${encodeURIComponent(id)}/nudge`, { method: 'POST' }),
   requestPrepMate: (id) => request(`/student/peers/${encodeURIComponent(id)}/mate`, { method: 'POST' }),
   cancelPrepMateRequest: (id) => request(`/student/peers/${encodeURIComponent(id)}/mate-request`, { method: 'DELETE' }),
   removePrepMate: (id) => request(`/student/peers/${encodeURIComponent(id)}/mate`, { method: 'DELETE' }),

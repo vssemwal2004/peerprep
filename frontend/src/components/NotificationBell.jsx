@@ -1,5 +1,11 @@
 import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { isProgressNotification } from './notificationKinds';
+import { isProgressNotification, notificationKind, notificationRoute } from './notificationKinds';
+import { useOptionalToast } from './CustomToast';
+import { playRewardSound } from '../student/rewards/rewardSound';
+
+// Notices that never pop a toast: their own UI already shows them at that moment.
+// (Prep Mate requests, acceptances and nudges get richer toasts from PeerRealtimeBridge.)
+const QUIET_TOAST_TYPES = new Set(['BADGE', 'CODING', 'PREP_MATE_REQUEST', 'PREP_MATE_ACCEPTED', 'PREP_MATE_NUDGE']);
 import { PEER_NETWORK_EVENT, canUsePeers } from '../student/peers/peerNetwork';
 import { Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -179,6 +185,25 @@ function NotificationBell({ buttonClassName = '' }) {
     return () => clearTimeout(timer);
   }, [ringing]);
 
+  // A new notice also pops a toast (with a soft sound for students) unless the panel is already
+  // open. Badge levels have their own card and accepted-solve notices repeat the solver's result.
+  const toast = useOptionalToast();
+  const openRef = useRef(isOpen);
+  openRef.current = isOpen;
+  const toastRef = useRef(null);
+  toastRef.current = (notif) => {
+    const type = String(notif?.type || '').toUpperCase();
+    if (!toast || openRef.current || QUIET_TOAST_TYPES.has(type) || document.visibilityState !== 'visible') return;
+    const kind = notificationKind(notif);
+    const route = notificationRoute(notif);
+    toast.show({
+      id: `notification:${notif._id}`, type: isProgressNotification(notif) ? 'success' : 'info',
+      title: notif.title || kind.label, message: notif.message || '', duration: 6000,
+      onClick: route ? () => navigate(route) : null,
+    });
+    if (user?.role === 'student') playRewardSound('notice');
+  };
+
   useEffect(() => {
     const handleNewNotification = (notif) => {
       const id = String(notif?._id || '');
@@ -187,6 +212,7 @@ function NotificationBell({ buttonClassName = '' }) {
       setNotifications((prev) => [notif, ...prev]);
       setServerUnreadCount((prev) => prev + 1);
       setRinging(true);
+      toastRef.current?.(notif);
     };
     socketService.on('new_notification', handleNewNotification);
     return () => {

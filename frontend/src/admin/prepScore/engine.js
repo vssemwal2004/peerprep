@@ -25,20 +25,11 @@ export function moduleScore(counts = {}, points = {}, formula = {}) {
   return count(formula.scale) * (volume ** count(formula.volumeExponent)) * (averagePoints ** count(formula.qualityExponent));
 }
 
-/** { total, modules: { key: score } } for per-module Easy/Medium/Hard counts. */
+/** { total, modules: { coding } }: the Prep Score is the Prep Coding score alone (2026-11). */
 export function simulate(config, counts = {}) {
   const places = config.formula.decimalPlaces;
-  const modules = {};
-  let weighted = 0;
-  let weights = 0;
-  for (const { key } of MODULES) {
-    const module = config.modules[key];
-    const exact = moduleScore(counts[key], module.points, config.formula);
-    modules[key] = roundScore(exact, places);
-    weighted += exact * count(module.weight);
-    weights += count(module.weight);
-  }
-  return { total: weights ? roundScore(weighted / weights, places) : 0, modules };
+  const coding = roundScore(moduleScore(counts.coding, config.modules.coding.points, config.formula), places);
+  return { total: coding, modules: { coding } };
 }
 
 /** The first problem with a config, phrased for the admin, or '' when it can be saved. */
@@ -47,11 +38,10 @@ const hasBlank = (value) => (typeof value === 'number' ? !Number.isFinite(value)
 
 export function configProblem(config) {
   if (hasBlank(config)) return 'Fill in every value before saving.';
-  for (const { key, label } of MODULES) {
-    const { points } = config.modules[key];
-    if (LEVELS.some((level) => !(Number(points[level]) > 0))) return `${label}: every difficulty needs points above 0.`;
-    if (!(points.Easy <= points.Medium && points.Medium <= points.Hard)) return `${label}: points must rise from Easy to Medium to Hard.`;
-  }
-  if (!MODULES.some(({ key }) => Number(config.modules[key].weight) > 0)) return 'At least one module needs a weight above 0.';
+  const { points, dailyTopicLimit } = config.modules.coding;
+  if (LEVELS.some((level) => !(Number(points[level]) > 0))) return 'Every difficulty needs points above 0.';
+  if (!(points.Easy <= points.Medium && points.Medium <= points.Hard)) return 'Points must rise from Easy to Medium to Hard.';
+  const limit = Number(dailyTopicLimit ?? 0);
+  if (!Number.isInteger(limit) || limit < 0 || limit > 100) return 'Daily solves per topic must be a whole number from 0 to 100.';
   return '';
 }

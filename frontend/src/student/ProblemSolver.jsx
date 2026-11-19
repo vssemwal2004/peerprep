@@ -15,6 +15,7 @@ import {
   Maximize2,
   BookOpenText,
   Clock3,
+  Gauge,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
@@ -37,6 +38,8 @@ import AnviApproach, { ANVI_ASK_EVENT, AnviMark } from '../components/AnviApproa
 import QuickPrepMembership from './problems/QuickPrepMembership';
 import FailedTestCasePanel from './problems/FailedTestCasePanel';
 import { pickPracticeLanguage, rememberPracticeLanguage } from './practiceLanguage';
+import { quotaAfterSolve, quotaChip, quotaToast } from './prepScore/topicQuota';
+import { announceCoinsEarned } from './rewards/rewardEvents';
 import { useOptionalAuth } from '../context/AuthContext';
 import { DifficultyBadge, EmptyState, LoadingPanel } from '../admin/compiler/CompilerUi';
 import {
@@ -380,7 +383,25 @@ function ReadingSectionTitle({ children, meta }) {
   return <div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">{children}</h2>{meta ? <span className="text-xs text-slate-400 dark:text-gray-500">{meta}</span> : null}</div>;
 }
 
-function ProblemDescriptionPanel({ problem, language, verifiedCompanies }) {
+const QUOTA_CHIP_TONES = {
+  ok: 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300',
+  full: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-800',
+  done: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300',
+  muted: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
+};
+
+/** Which Prep Score topic this problem counts against and how many counted solves are left today. */
+function PrepScoreQuotaChip({ quota, studentStatus }) {
+  const chip = quotaChip(quota, studentStatus);
+  if (!chip) return null;
+  return (
+    <span title={chip.title} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${QUOTA_CHIP_TONES[chip.tone]}`}>
+      <Gauge className="h-3.5 w-3.5" aria-hidden="true" /> {chip.label}
+    </span>
+  );
+}
+
+function ProblemDescriptionPanel({ problem, language, verifiedCompanies, prepQuota }) {
   const [activeMetaPanel, setActiveMetaPanel] = useState('');
   const [anviRequestKey, setAnviRequestKey] = useState(0);
 
@@ -416,6 +437,7 @@ function ProblemDescriptionPanel({ problem, language, verifiedCompanies }) {
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <DifficultyBadge difficulty={problem.difficulty} />
           <StudentProgressBadge status={problem.studentStatus || 'Unsolved'} />
+          <PrepScoreQuotaChip quota={prepQuota} studentStatus={problem.studentStatus} />
           <QuickPrepMembership key={problem._id} quickPreps={problem.quickPreps} />
           <button
             type="button"
@@ -1058,6 +1080,26 @@ export default function ProblemSolver() {
   }, [problemId, reportSource]);
   const confirmedCompanies = verifiedCompanies.key === verifiedKey ? verifiedCompanies.companies : NO_COMPANIES;
 
+  // Daily per-topic Prep Score quota for this problem (chip) and the notice after an accepted submit.
+  const quotaSource = isSharedProblem ? 'shared' : 'local';
+  const [prepQuota, setPrepQuota] = useState({ key: '', value: null });
+  useEffect(() => {
+    if (!problemId) return undefined;
+    let active = true;
+    const key = `${quotaSource}:${problemId}`;
+    api.getPrepScoreTopicQuota(quotaSource, problemId)
+      .then((data) => { if (active) setPrepQuota({ key, value: data || null }); })
+      .catch(() => { if (active) setPrepQuota({ key, value: null }); });
+    return () => { active = false; };
+  }, [problemId, quotaSource]);
+  const currentPrepQuota = prepQuota.key === `${quotaSource}:${problemId}` ? prepQuota.value : null;
+  const announcePrepScore = useCallback((outcome) => {
+    if (!outcome) return;
+    setPrepQuota((previous) => ({ key: previous.key, value: quotaAfterSolve(previous.value, outcome) }));
+    const notice = quotaToast(outcome);
+    if (notice) toast[notice.type](notice.message, { title: notice.title, duration: notice.duration });
+  }, [toast]);
+
   const stopSubmissionPolling = useCallback(() => {
     if (submissionPollRef.current) {
       clearInterval(submissionPollRef.current);
@@ -1591,6 +1633,8 @@ export default function ProblemSolver() {
           if (accepted) {
             celebrate({ passed: response.passedTestCases, total: response.totalTestCases, runtimeMs: response.executionTimeMs,
               memoryKb: response.memoryUsedKb, language: getLanguageLabel(language) });
+            announcePrepScore(response.prepScore);
+            if (response.coins) announceCoinsEarned({ kind: 'solve', ...response.coins, note: `Solved ${problem.title || 'a problem'}` });
           }
           setActiveConsoleTab('result');
           await loadSubmissions({ silent: true, selectLatest: true });
@@ -1611,9 +1655,10 @@ export default function ProblemSolver() {
         return;
       }
 
+      let jobResult = null;
       if (queuedJob?.jobId) {
         toast.info('Submission received. Waiting for final verdict.');
-        await api.waitForExecutionResult(queuedJob.jobId, {
+        jobResult = await api.waitForExecutionResult(queuedJob.jobId, {
           intervalMs: 1000,
           onStillQueued: () => toast.info('Your submission is saved and queued. The verdict will appear when it is judged.'),
         });
@@ -1628,6 +1673,9 @@ export default function ProblemSolver() {
         finalizeTrackedSubmission(matchedSubmission, {
           successMessage: `Submission finished with verdict ${statusLabel(matchedSubmission.status)}`,
         });
+        announcePrepScore(jobResult?.result?.response?.prepScore);
+        const earned = jobResult?.result?.response?.coins;
+        if (earned) announceCoinsEarned({ kind: 'solve', ...earned, note: `Solved ${problem.title || 'a problem'}` });
         return;
       }
 
@@ -1952,7 +2000,7 @@ export default function ProblemSolver() {
             />
             <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth">
               {activeLeftTab === 'description' ? (
-                <ProblemDescriptionPanel problem={problem} language={language} verifiedCompanies={confirmedCompanies} />
+                <ProblemDescriptionPanel problem={problem} language={language} verifiedCompanies={confirmedCompanies} prepQuota={currentPrepQuota} />
               ) : activeLeftTab === 'editorial' ? (
                 <EditorialPanel editorial={problem.editorial} editorialMeta={problem.editorialMeta} editorialSolutions={problem.editorialSolutions} title={problem.title} />
               ) : activeLeftTab === 'submissions' ? (
@@ -2029,7 +2077,7 @@ export default function ProblemSolver() {
             />
             <div className="max-h-[calc(100vh-14rem)] overflow-y-auto scroll-smooth">
               {activeLeftTab === 'description' ? (
-                <ProblemDescriptionPanel problem={problem} language={language} verifiedCompanies={confirmedCompanies} />
+                <ProblemDescriptionPanel problem={problem} language={language} verifiedCompanies={confirmedCompanies} prepQuota={currentPrepQuota} />
               ) : activeLeftTab === 'editorial' ? (
                 <EditorialPanel editorial={problem.editorial} editorialMeta={problem.editorialMeta} editorialSolutions={problem.editorialSolutions} title={problem.title} />
               ) : activeLeftTab === 'submissions' ? (

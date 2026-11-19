@@ -4,6 +4,7 @@ import StudentDashboardHeader from '../../components/StudentDashboardHeader';
 import PrepCoinIcon from '../../components/prepCoin/PrepCoinIcon';
 import { api } from '../../utils/api';
 import { PREP_COIN_CHANGED } from './prepCoinEvents';
+import { COINS_EARNED } from '../rewards/rewardEvents';
 
 const card = 'rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.05)] dark:border-zinc-800 dark:bg-[#242424]';
 const FILTERS = [
@@ -16,6 +17,10 @@ const FILTERS = [
 function describe(row) {
   if (row.kind === 'student_spend') return { title: `Spent on ${row.feature || 'a PeerPrep feature'}`, Icon: ArrowUpRight, sign: '−', group: 'out', tone: 'text-slate-900 dark:text-zinc-100', chip: 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-zinc-300' };
   if (row.kind === 'student_refund') return { title: `Refunded: ${row.feature || 'a PeerPrep feature'}`, Icon: RotateCcw, sign: '+', group: 'refund', tone: 'text-emerald-700 dark:text-emerald-300', chip: 'bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300' };
+  if (String(row.kind).startsWith('earn_')) {
+    const fallback = { earn_login: 'Daily login', earn_solve: 'Problem solved', earn_badge: 'Badge level' }[row.kind] || 'Earned';
+    return { title: `Earned: ${row.note || fallback}`, Icon: Gift, sign: '+', group: 'in', tone: 'text-emerald-700 dark:text-emerald-300', chip: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300' };
+  }
   return { title: `Received from ${row.fromName}`, Icon: ArrowDownLeft, sign: '+', group: 'in', tone: 'text-emerald-700 dark:text-emerald-300', chip: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300' };
 }
 
@@ -42,7 +47,8 @@ export default function StudentCoinHistory() {
     };
     load();
     window.addEventListener(PREP_COIN_CHANGED, load);
-    return () => window.removeEventListener(PREP_COIN_CHANGED, load);
+    window.addEventListener(COINS_EARNED, load);
+    return () => { window.removeEventListener(PREP_COIN_CHANGED, load); window.removeEventListener(COINS_EARNED, load); };
   }, []);
 
   const view = useMemo(() => {

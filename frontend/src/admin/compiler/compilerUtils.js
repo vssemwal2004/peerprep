@@ -232,6 +232,7 @@ export function createProblemFormFromProblem(problem) {
     topicIds: (problem?.topicIds || []).map(String),
     codingTagIds: (problem?.codingTagIds || []).map(String),
     companyTags: (problem?.companyTags || []).join(', '),
+    scoreTopic: problem?.scoreTopic || '',
     supportedLanguages,
     codeTemplates: normalizeCompilerCodeMap(problem?.codeTemplates),
     executionMode: problem?.executionMode === 'full_program' ? 'full_program' : 'function',
@@ -333,6 +334,7 @@ export function buildProblemFormData(problemForm, status) {
   formData.append('topicIds', JSON.stringify(problemForm.topicIds || []));
   formData.append('codingTagIds', JSON.stringify(problemForm.codingTagIds || []));
   formData.append('companyTags', problemForm.companyTags || '');
+  formData.append('scoreTopic', problemForm.scoreTopic || '');
   formData.append('visibility', problemForm.visibility || 'public');
   formData.append('supportedLanguages', JSON.stringify(supportedLanguages));
   formData.append('codeTemplates', JSON.stringify(normalizeCompilerCodeMap(problemForm.codeTemplates)));

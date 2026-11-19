@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import {
-  BookOpen, CalendarRange, CheckCircle2, ChevronRight, CodeXml, GitBranch, Github, Globe,
+  BarChart3, BookOpen, CalendarRange, CheckCircle2, ChevronRight, CodeXml, GitBranch, Github, Globe,
   GraduationCap, Handshake, Linkedin, ListChecks, Lock, Map as MapIcon, Medal, ShieldCheck, Trophy,
 } from 'lucide-react';
 import { Card, EmptyRow, ProgressBar } from '../profile/ui';
@@ -100,7 +100,14 @@ export function PeerIdentityCard({ profile, progress, network, relation, isSelf,
             This is how classmates see you · Edit profile
           </Link>
         ) : (
-          <PeerActions peer={profile} relation={relation} onRelationChange={onRelationChange} block />
+          <div className="flex flex-col gap-2">
+            <PeerActions peer={profile} relation={relation} onRelationChange={onRelationChange} block />
+            {relation?.mate === 'mates' && (
+              <Link to={`/student/peers/${profile.id}/compare`} className={`inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-semibold text-white hover:bg-slate-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white ${focusRing}`}>
+                <BarChart3 className="h-4 w-4" aria-hidden="true" /> Compare with me
+              </Link>
+            )}
+          </div>
         )}
 
         <section aria-labelledby="peer-about-title" className="border-t border-slate-100 pt-4 dark:border-zinc-800">

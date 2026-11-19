@@ -76,10 +76,13 @@ export const areaModules = (area, catalog) => (area === "all"
   ? (catalog?.areas || []).map((entry) => entry.key).filter((key) => key !== "all")
   : [area]);
 
+// The Prep Score IS the Prep Coding score now, so the coding copy only stays for old saved views.
+const DUPLICATE_FIELDS = new Set(["coding.prepScore"]);
+
 /** The chosen feature's own fields. */
 export function featureFields(catalog, area) {
   const modules = new Set(areaModules(area, catalog));
-  return catalog.fields.filter((field) => field.module !== "student" && modules.has(field.module));
+  return catalog.fields.filter((field) => field.module !== "student" && modules.has(field.module) && !DUPLICATE_FIELDS.has(field.key));
 }
 
 export const studentFields = (catalog) => catalog.fields.filter((field) => field.module === "student");
@@ -92,8 +95,7 @@ export const rankMetrics = (catalog, area) => [
 // The filters shown straight away; the rest sit under "More filters".
 const MAIN_FIELDS = new Set([
   "student.semester", "student.branch", "student.course", "student.section", "student.group", "student.college", "student.prepScore",
-  "learning.prepScore", "interview.prepScore", "assessment.prepScore",
-  "coding.practiceStatus", "coding.prepScore", "coding.solved", "coding.solvedHard", "coding.solvedTopics", "coding.solvesToReview",
+  "coding.practiceStatus", "coding.solved", "coding.solvedHard", "coding.solvedTopics", "coding.solvesToReview",
   "quickprep.status", "quickprep.activity", "quickprep.progress", "quickprep.sheets", "quickprep.finished", "quickprep.solvesToReview",
   "learning.status", "learning.progress", "learning.subjects",
   "interview.status", "interview.done", "interview.mockScore", "interview.aiCompleted",

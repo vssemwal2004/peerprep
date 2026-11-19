@@ -14,6 +14,7 @@ import Assessment from '../models/Assessment.js';
 import AIInterview from '../models/AIInterview.js';
 import { aiInterviewLevel, assessmentLevel, prepScore, scoreFeatures } from './prepScore/engine.js';
 import { ensurePrepScoreStore, rankFromStore, saveOwnScore, servingPolicy } from './prepScore/sync.js';
+import { uncountedSolvesFor } from './prepScore/topicQuota.js';
 import { LEVELS } from './adaptiveEngagementRules.js';
 import { engagementTenant } from './engagementPolicyService.js';
 import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
@@ -352,6 +353,13 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
     permissions.interviews ? aggregate(InterviewEngagementReceipt, [{ $match: { $or: adaptiveScopes, completedAt: { $ne: null } } }, { $group: { _id: '$studentId', aiInterviews: { $sum: 1 }, interviewIds: { $push: '$interviewId' } } }]) : [],
   ]);
   const aiMap = new Map(aiInterviews.map((entry) => [String(entry._id), entry]));
+  // Solves past the daily topic limit stay solved but add nothing to the Prep Score.
+  const uncounted = permissions.questions ? await uncountedSolvesFor(ids) : new Map();
+  const uncountedLocalIds = [...new Set([...uncounted.values()].flat().filter((key) => key.startsWith('local:')).map((key) => key.slice(6)))]
+    .filter((id) => mongoose.isValidObjectId(id));
+  const uncountedLocalLevels = uncountedLocalIds.length
+    ? new Map((await Problem.find({ _id: { $in: uncountedLocalIds.map(objectId) } }).select('difficulty').maxTimeMS(QUERY_TIMEOUT_MS).lean()).map((problem) => [String(problem._id), problem.difficulty]))
+    : new Map();
   const [testLevels, aiLevels] = await Promise.all([
     contentLevels(Assessment, assessments.flatMap((entry) => entry.assessmentAttempts.map((attempt) => attempt.assessmentId)), ASSESSMENT_LEVEL_FIELDS, assessmentLevel),
     contentLevels(AIInterview, aiInterviews.flatMap((entry) => entry.interviewIds), 'data.difficulty publishedSnapshot.data.difficulty', aiInterviewLevel),
@@ -397,6 +405,19 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
     const { assessmentAttempts = [], ...assessmentRow } = maps[1].get(id) || {};
     const { mockPercents = [], ...interviewRow } = maps[2].get(id) || {};
     const ai = aiMap.get(id);
+    const notCounted = { easy: 0, medium: 0, hard: 0, unknown: 0 };
+    for (const key of uncounted.get(id) || []) {
+      const [source, problemId] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
+      if (source === 'local') {
+        const level = String(uncountedLocalLevels.get(problemId) || '').toLowerCase();
+        if (level in notCounted) notCounted[level] += 1;
+      } else if (source === 'shared' && sharedMap.has(problemId)) {
+        const question = sharedMap.get(problemId);
+        const level = String(question?.difficulty || question?.questionData?.problemDataSnapshot?.difficulty || '').toLowerCase();
+        notCounted[['easy', 'medium', 'hard'].includes(level) ? level : 'unknown'] += 1;
+      }
+    }
+    const scored = (field, level) => Math.max(0, count(codingRow[field]) - notCounted[level]);
     return {
       studentId: id, ...codingRow, ...assessmentRow, ...interviewRow, ...challengeMap.get(id),
       adaptiveLevel: progressionMap.get(id),
@@ -405,9 +426,10 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
       aiInterviews: ai?.aiInterviews || 0, scoreFeatures: features,
       scoreEvidence: {
         problemSolved: [
-          { level: 'Easy', count: count(codingRow.easySolved) }, { level: 'Medium', count: count(codingRow.mediumSolved) },
-          { level: 'Hard', count: count(codingRow.hardSolved) }, { level: null, count: count(codingRow.unknownSolved) },
+          { level: 'Easy', count: scored('easySolved', 'easy') }, { level: 'Medium', count: scored('mediumSolved', 'medium') },
+          { level: 'Hard', count: scored('hardSolved', 'hard') }, { level: null, count: scored('unknownSolved', 'unknown') },
         ].filter((item) => item.count > 0),
+        codingSolvedTotal: ['easySolved', 'mediumSolved', 'hardSolved', 'unknownSolved'].reduce((sum, field) => sum + count(codingRow[field]), 0),
         assessmentCompleted: assessmentAttempts.map((attempt) => ({ level: testLevels.get(String(attempt.assessmentId)) || null, percent: attempt.percent })),
         mockCompleted: mockPercents.map((percent) => ({ percent })),
         aiCompleted: (ai?.interviewIds || []).map((interviewId) => ({ level: aiLevels.get(String(interviewId)) || null })),

@@ -16,6 +16,9 @@ export const useToast = () => {
   return context;
 };
 
+/** The toast API when a ToastProvider is present, otherwise null (for components that only sometimes toast). */
+export const useOptionalToast = () => useContext(ToastContext) || null;
+
 /**
  * Normalise every call shape into one toast object:
  *   toast.success('Saved')                         (existing calls)

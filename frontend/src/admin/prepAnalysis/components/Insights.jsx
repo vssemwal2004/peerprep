@@ -318,18 +318,18 @@ const COLUMNS = {
 const scoreCell = (value) => (value === null || value === undefined ? "—" : (
   <b className="tabular-nums text-slate-900 dark:text-white">{formatScore(value?.score ?? value)}</b>
 ));
-// Prep Coding leads with its Prep Score and Prep Learning with course completed;
-// Prep Interview and Prep Assessment lead with their own Prep Score points.
+// Prep Coding leads with the Prep Score (which is the Prep Coding score) and Prep Learning with
+// course completed; Prep Interview and Prep Assessment lead with their own activity points, which
+// are NOT part of the Prep Score.
 for (const area of ["interview", "assessment"]) {
-  COLUMNS[area] = [{ label: "Prep Score", sort: "featureScore", render: (row) => scoreCell(row.scores?.features?.[area]) }, ...COLUMNS[area]];
+  COLUMNS[area] = [{ label: "Activity points", sort: "featureScore", render: (row) => scoreCell(row.scores?.features?.[area]) }, ...COLUMNS[area]];
 }
 COLUMNS.all = [
-  { label: "Prep Score (overall)", sort: "overallScore", render: (row) => scoreCell(row.scores?.total) },
-  { ...COLUMNS.coding[0], label: "Prep Coding" },
+  { ...COLUMNS.coding[0], label: "Prep Score", sort: "overallScore" },
   { ...COLUMNS.quickprep[0], label: "Quick Prep" },
-  { label: "Prep Learning", sort: "learningScore", render: (row) => scoreCell(row.scores?.features?.learning) },
-  { ...COLUMNS.interview[0], label: "Prep Interview", sort: "interviewScore" },
-  { ...COLUMNS.assessment[0], label: "Prep Assessment", sort: "assessmentScore" },
+  { ...COLUMNS.learning[0], label: "Prep Learning" },
+  { ...COLUMNS.interview[0], label: "Interview points", sort: "interviewScore" },
+  { ...COLUMNS.assessment[0], label: "Assessment points", sort: "assessmentScore" },
 ];
 // One assessment's page: the stored Prep Score covers every test, so it is left out here.
 const SCOPED_ASSESSMENT_COLUMNS = [
@@ -343,7 +343,7 @@ const SCOPED_ASSESSMENT_COLUMNS = [
 ];
 // Sorts that start A–Z (or place 1 first) on the first click; figures start high-to-low.
 const ASC_FIRST = new Set(["position", "name", "className", "practiceStatus", "languages", "sheetStatus", "sheetLastActive", "learningStatus", "interviewStatus", "testStatus"]);
-const POSITION_HINT = { coding: "Prep Score", quickprep: "sheet progress", learning: "course completed", interview: "Prep Score", assessment: "Prep Score", all: "overall Prep Score" };
+const POSITION_HINT = { coding: "Prep Score", quickprep: "sheet progress", learning: "course completed", interview: "interview activity points", assessment: "assessment activity points", all: "Prep Score" };
 
 /**
  * The students on the page, sorted and paged on the server. `title` and `actions` (e.g. a
@@ -494,8 +494,8 @@ export function ScoreHelpDialog({ open, onClose }) {
           <li>Click any student (in the table or a chart) to see their full profile.</li>
         </ul>
         <p className="font-bold text-slate-900 dark:text-white">Prep Score</p>
-        <p>Each student's current Prep Score: exactly the number they see and are ranked on, from verified Coding, Assessment, Interview and Learning work. The values behind it are set by the Master Admin in Prep Score Adjustment.</p>
-        <p>The selected period narrows activity figures, not the Prep Score. Use the module columns and the student drawer to see which module each score comes from.</p>
+        <p>Each student's current Prep Score: exactly the number they see and are ranked on, from practice coding problems solved (up to the daily limit per topic). The values behind it are set by the Master Admin in Prep Score Adjustment.</p>
+        <p>The selected period narrows activity figures, not the Prep Score. Interview and assessment activity points are shown for reference and are not part of the Prep Score.</p>
         <p><b className="text-slate-900 dark:text-white">Course completed (Prep Learning)</b>: topics a student completed out of the topics they can open (their semester and earlier).</p>
         <p><b className="text-slate-900 dark:text-white">Sheet progress (Quick Prep sheets, part of Prep Coding)</b>: questions solved out of all questions in the sheets the student started.</p>
       </div>

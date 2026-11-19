@@ -15,6 +15,7 @@ import { PracticeSuggestions } from './dashboard/DiscoverySections';
 import { AnnouncementsCard, ComingUpCard, RankCard } from './dashboard/RailCards';
 import { card, CardTitle, TitleIcon, Unavailable } from './dashboard/ui';
 import BadgeShelf from './dashboard/BadgeShelf';
+import MonthlyBadgesCard from './dashboard/MonthlyBadgesCard';
 import { badgeShelfData, getGreeting, getUpcomingItems, getWeekActivity, numeric, sortAnnouncements } from './dashboard/dashboardUtils';
 import AchievementCelebration from './engagement/AchievementCelebration';
 import { featureForStudentPath, hasStudentFeature } from './studentFeatureAccess';
@@ -123,6 +124,7 @@ export default function StudentDashboard() {
         </aside>
 
         <div className="min-w-0 space-y-8 [grid-area:body]" data-dashboard-main>
+          {canQuestions && <div {...rise(3)}><MonthlyBadgesCard /></div>}
           {canQuestions && <CodingSheets />}
           {showPractice && <div {...rise(4)}><PracticeSuggestions problems={suggestions} section={progress} onRetry={sections.refresh} /></div>}
         </div>

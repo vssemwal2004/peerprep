@@ -56,6 +56,14 @@
 .prep-coin-icon--pop { animation: prep-coin-icon-pop .7s cubic-bezier(.3, 1.6, .5, 1); }
 @keyframes prep-coin-icon-sheen { 0%, 60% { transform: translateX(-130%); } 85%, 100% { transform: translateX(130%); } }
 @keyframes prep-coin-icon-pop { 0% { transform: scale(1) rotateY(0); } 45% { transform: scale(1.28) rotateY(180deg); } 100% { transform: scale(1) rotateY(360deg); } }
+/* "+N" that floats up off the header balance when coins are earned. */
+.prep-coin-gain { animation: prep-coin-gain 1.6s cubic-bezier(.2, .8, .3, 1) forwards; }
+@keyframes prep-coin-gain {
+  0% { opacity: 0; transform: translateY(6px) scale(.7); }
+  15% { opacity: 1; transform: translateY(0) scale(1.1); }
+  70% { opacity: 1; transform: translateY(-6px) scale(1); }
+  100% { opacity: 0; transform: translateY(-14px) scale(.95); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .prep-coin-icon__sheen, .prep-coin-icon--pop { animation: none; }
+  .prep-coin-icon__sheen, .prep-coin-icon--pop, .prep-coin-gain { animation: none; }
 }

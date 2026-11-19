@@ -6,7 +6,8 @@ export function scopeEngagement(data, allowsModule) {
   const domains = (data.domains || []).filter((domain) => allowsModule(modules[domain]));
   const badges = (data.badges || []).filter((badge) => !modules[badge.category] || domains.includes(badge.category));
   // Challenge milestones are not a feature of their own; they stay while any feature remains allowed.
-  const keep = (key) => domains.includes(key) || (key === 'challenges' && domains.length > 0);
+  // Login days (opening PeerPrep) are not a feature either, and always count.
+  const keep = (key) => domains.includes(key) || key === 'login' || (key === 'challenges' && domains.length > 0);
   const breakdownByDate = Object.fromEntries(Object.entries(data.activity?.breakdownByDate || {}).map(([day, counts]) => [day,
     Object.fromEntries(Object.entries(counts).filter(([key]) => keep(key))),
   ]));

@@ -4,7 +4,11 @@ import { api } from '../../utils/api';
 
 const idOf = (value) => String(value?._id || value || '');
 
-export default function CodingClassificationPicker({ topicIds = [], tagIds = [], onTopicsChange, onTagsChange }) {
+/**
+ * `scoreTopic` / `onScoreTopicChange` (optional): which selected tag this problem's solves count
+ * against for the daily Prep Score topic limit. '' = automatic, the rarest tag (fewest questions).
+ */
+export default function CodingClassificationPicker({ topicIds = [], tagIds = [], onTopicsChange, onTagsChange, scoreTopic, onScoreTopicChange }) {
   const rootRef = useRef(null);
   const [topics, setTopics] = useState([]);
   const [tags, setTags] = useState([]);
@@ -118,6 +122,20 @@ export default function CodingClassificationPicker({ topicIds = [], tagIds = [],
       <div className="flex flex-wrap gap-2">{selectedTopics.map((topic) => <span key={idOf(topic)} className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300">{topic.name}<button type="button" onClick={() => selectTopic(idOf(topic))} aria-label={`Remove ${topic.name}`}><X className="h-3 w-3" /></button></span>)}</div>
       <div className="flex flex-wrap gap-2">{selectedTags.map((tag) => <span key={idOf(tag)} className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300">{tag.name}<button type="button" onClick={() => selectTag(idOf(tag))} aria-label={`Remove ${tag.name}`}><X className="h-3 w-3" /></button></span>)}</div>
     </div>}
+    {onScoreTopicChange && selectedTags.length > 1 && (() => {
+      const rarest = [...selectedTags].sort((a, b) => (a.questionCount || 0) - (b.questionCount || 0) || String(a.name).localeCompare(String(b.name)))[0];
+      const current = selectedTags.some((tag) => tag.name === scoreTopic) ? scoreTopic : '';
+      return (
+        <label className="block md:col-span-2">
+          <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-gray-300">Prep Score topic <span className="font-normal text-slate-400">(daily limit counts this problem under one tag)</span></span>
+          <select value={current} onChange={(event) => onScoreTopicChange(event.target.value)}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 md:w-1/2">
+            <option value="">Automatic: rarest tag ({rarest?.name})</option>
+            {selectedTags.map((tag) => <option key={idOf(tag)} value={tag.name}>{tag.name}</option>)}
+          </select>
+        </label>
+      );
+    })()}
     {error && <div className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-950/30 dark:text-rose-300 md:col-span-2">{error}</div>}
   </div>;
 }

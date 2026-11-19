@@ -14,7 +14,8 @@ import { parseDateRange, parseDayKey, rangeDayKeys, rangeEcho } from '../utils/d
 
 const DAY_MS = 86_400_000;
 const QUERY_MS = 8_000;
-const KINDS = ['initial', 'topup', 'admin_to_coordinator', 'coordinator_to_student', 'superadmin_to_coordinator', 'superadmin_to_student', 'student_spend', 'student_refund'];
+const EARN_KINDS = ['earn_login', 'earn_solve', 'earn_badge'];
+const KINDS = ['initial', 'topup', 'admin_to_coordinator', 'coordinator_to_student', 'superadmin_to_coordinator', 'superadmin_to_student', 'student_spend', 'student_refund', ...EARN_KINDS];
 const featureLabel = new Map(COIN_FEATURES.map((feature) => [feature.key, feature.label]));
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -69,6 +70,7 @@ async function presentMovements(rows) {
     from: describeParty(row.fromRole, row.fromUserId, row.universityId, names, universities),
     to: describeParty(row.toRole, row.toUserId, row.universityId, names, universities),
     feature: row.featureKey ? featureLabel.get(row.featureKey) || row.featureKey : null,
+    note: row.note || null,
   }));
 }
 
@@ -113,6 +115,8 @@ export async function coinConsoleSummary(now = new Date(), range = null) {
   const spent = flow.byKind.find((row) => row.kind === 'student_spend')?.amount || 0;
   const refunded = flow.byKind.find((row) => row.kind === 'student_refund')?.amount || 0;
   const issued = flow.byKind.filter((row) => ['initial', 'topup', 'superadmin_to_coordinator', 'superadmin_to_student'].includes(row.kind)).reduce((sum, row) => sum + row.amount, 0);
+  // Minted for students' own work (login, solves, badge levels); never from a university balance.
+  const earned = flow.byKind.filter((row) => EARN_KINDS.includes(row.kind)).reduce((sum, row) => sum + row.amount, 0);
   const shared = new Map(distributed.map((row) => [row._id, row.amount]));
   const chargeCount = Object.fromEntries(charges.map((row) => [row._id, row.n]));
   const [movements, holderNames, names] = await Promise.all([
@@ -133,7 +137,7 @@ export async function coinConsoleSummary(now = new Date(), range = null) {
       students: sumOf(walletTotals.filter((row) => row._id.role === 'student'), 'balance'),
       coordinators: sumOf(walletTotals.filter((row) => row._id.role === 'coordinator'), 'balance'),
     },
-    month: { issued, spent, refunded, netSpent: Math.max(0, spent - refunded), charges: chargeCount.captured || 0, refunds: chargeCount.refunded || 0, pending: chargeCount.pending || 0, freeUses },
+    month: { issued, earned, spent, refunded, netSpent: Math.max(0, spent - refunded), charges: chargeCount.captured || 0, refunds: chargeCount.refunded || 0, pending: chargeCount.pending || 0, freeUses },
     trend: flow.trend,
     byKind: flow.byKind,
     features: COIN_FEATURES.map((feature) => {
@@ -158,7 +162,7 @@ export async function coinLedger(query = {}) {
   const filter = {};
   const kind = String(query.kind || '');
   if (kind) {
-    const groups = { issued: ['initial', 'topup', 'superadmin_to_coordinator', 'superadmin_to_student'], shared: ['admin_to_coordinator', 'coordinator_to_student'], spent: ['student_spend'], refunded: ['student_refund'] };
+    const groups = { issued: ['initial', 'topup', 'superadmin_to_coordinator', 'superadmin_to_student'], shared: ['admin_to_coordinator', 'coordinator_to_student'], spent: ['student_spend'], refunded: ['student_refund'], earned: EARN_KINDS };
     if (groups[kind]) filter.kind = { $in: groups[kind] };
     else if (KINDS.includes(kind)) filter.kind = kind;
     else throw new HttpError(400, 'Invalid movement type');

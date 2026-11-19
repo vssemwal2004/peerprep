@@ -123,6 +123,15 @@ beforeEach(async () => {
   quests = [];
   api.listQuests = async () => { calls.push(['quests']); return { quests: structuredClone(quests) }; };
   api.getStudentChallengeBadges = async () => { throw new Error('Badge pagination must be mocked explicitly'); };
+  api.monthlyBadges = async () => ({
+    month: '2035-01', resetsAt: '2035-01-31T18:30:00.000Z', coinsThisMonth: 3, newLevels: [], history: [],
+    tracks: ['solver', 'medium', 'hard', 'explorer', 'consistent', 'regular'].map((key, index) => ({
+      key, title: `Badge ${index}`, unit: 'things', description: '', value: index, level: index ? 1 : 0, tier: index ? 'Bronze' : null,
+      targets: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], coinsEarned: index ? 1 : 0,
+      next: { level: index ? 2 : 1, target: index ? 2 : 1, coins: 2, tier: 'Bronze' },
+      levels: Array.from({ length: 10 }, (_, at) => ({ level: at + 1, target: at + 1, coins: at + 1, tier: 'Bronze', earned: Boolean(index) && at === 0 })),
+    })),
+  });
   api.claimAchievements = async () => ({ events: [] });
   api.acknowledgeAchievements = async () => ({ acknowledged: true });
   api.listStudentAnnouncements = async () => { calls.push(['announcements']); return { announcements: structuredClone(announcements) }; };
@@ -290,8 +299,9 @@ test('accessible document order follows greeting and recent work, then the progr
     'Announcements', 'Coding progress', 'Prep Score & rank', 'Global standing', 'Coming up',
   ], 'Any announcement leads the rail');
   assert.deepEqual([...main.querySelectorAll('h2')].map((heading) => heading.textContent), [
-    'Coding sheets', 'Next in practice',
+    'January badges', 'Coding sheets', 'Next in practice',
   ]);
+  assert.equal(document.querySelectorAll('#badges li.rounded-2xl').length, 6, 'six monthly badges, each with levels 1-10');
 });
 
 test('the greeting shows a compact badge shelf; the full collection stays on the profile', async () => {

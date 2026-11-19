@@ -19,12 +19,17 @@ export const KIND_META = {
   coordinator_to_student: { label: 'Coordinator → student', group: 'shared', Icon: ArrowRightLeft, chip: SHARED },
   student_spend: { label: 'Spent', group: 'spent', Icon: ArrowUpRight, chip: SPENT },
   student_refund: { label: 'Refund', group: 'refunded', Icon: RotateCcw, chip: NEUTRAL },
+  // Minted by PeerPrep for a student's own work; never from a university balance.
+  earn_login: { label: 'Earned: daily login', group: 'earned', Icon: Sparkles, chip: SHARED },
+  earn_solve: { label: 'Earned: problem solved', group: 'earned', Icon: Sparkles, chip: SHARED },
+  earn_badge: { label: 'Earned: badge level', group: 'earned', Icon: Sparkles, chip: SHARED },
 };
 
 export const KIND_GROUPS = [
   { value: '', label: 'All movements' },
   { value: 'issued', label: 'Issued' },
   { value: 'shared', label: 'Passed on' },
+  { value: 'earned', label: 'Earned by students' },
   { value: 'spent', label: 'Spent' },
   { value: 'refunded', label: 'Refunded' },
 ];
