@@ -4,7 +4,7 @@ import {
   cancelPrepMateRequest, ensurePeerIndexes, getNetworkSummary, getPeerProfile, listNetwork,
   removePrepMate, requestPrepMate, respondPrepMateRequest, searchPeers,
 } from '../services/peerNetworkService.js';
-import { compareWithMate, getCircle, getFeed, nudgeMate } from '../services/peerCircleService.js';
+import { compareWithMate, getCircle, getMateDirectory, nudgeMate } from '../services/peerCircleService.js';
 
 // Mounted at /student/peers behind requireAuth, requireStudent, requireFullStudent and the
 // 'peers' feature. Every query is limited to the caller's university: their university database,
@@ -19,9 +19,13 @@ router.get('/search', peerSearchLimiter, asyncRoute(async (req, res) => send(res
 router.get('/me/summary', asyncRoute(async (req, res) => send(res, await getNetworkSummary(req.user))));
 router.get('/me/network', asyncRoute(async (req, res) => send(res, await listNetwork(req.user, String(req.query.tab || ''), { before: req.query.before }))));
 
-// Prep Mates circle (accepted Prep Mates only, practice-only data): leaderboard, feed, compare, nudge.
-router.get('/me/circle', asyncRoute(async (req, res) => send(res, await getCircle(req.user, String(req.query.period || 'week')))));
-router.get('/me/feed', asyncRoute(async (req, res) => send(res, await getFeed(req.user))));
+// Prep Mates circle (accepted Prep Mates only, practice-only data): ranking, directory, compare, Prep Ping.
+router.get('/me/circle', asyncRoute(async (req, res) => send(res, await getCircle(req.user, {
+  period: String(req.query.period || 'week'), page: req.query.page, limit: req.query.limit, q: String(req.query.q || ''),
+}))));
+router.get('/me/mates', asyncRoute(async (req, res) => send(res, await getMateDirectory(req.user, {
+  q: String(req.query.q || ''), sort: String(req.query.sort || 'recent'), page: req.query.page,
+}))));
 router.get('/:id/compare', peerSearchLimiter, asyncRoute(async (req, res) => send(res, await compareWithMate(req.user, req.params.id))));
 router.post('/:id/nudge', peerActionLimiter, asyncRoute(async (req, res) => send(res, await nudgeMate(req.user, req.params.id))));
 

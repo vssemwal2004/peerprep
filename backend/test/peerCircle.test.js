@@ -8,8 +8,9 @@ import Submission from '../src/models/Submission.js';
 import Notification from '../src/models/Notification.js';
 import { PrepMate, PrepMateNudge } from '../src/models/PeerNetwork.js';
 import { BadgeLevelAward } from '../src/models/MonthlyBadge.js';
+import { PrepScoreSolve } from '../src/models/PrepScoreTopicQuota.js';
 import { STANDARD_STUDENT_FEATURES } from '../src/services/studentFeatureAccess.js';
-import { compareWithMate, getCircle, getFeed, istWeekStart, nudgeMate, streaks } from '../src/services/peerCircleService.js';
+import { compareWithMate, getCircle, getMateDirectory, istWeekStart, nudgeMate, streaks } from '../src/services/peerCircleService.js';
 
 let mongo;
 const id = () => new mongoose.Types.ObjectId();
@@ -30,7 +31,7 @@ after(async () => {
   else process.env.PEERPREP_DEPLOYMENT_ROLE = originalRole;
 });
 beforeEach(async () => {
-  await Promise.all([User, Problem, Submission, Notification, PrepMate, PrepMateNudge, BadgeLevelAward].map((model) => model.deleteMany({})));
+  await Promise.all([User, Problem, Submission, Notification, PrepMate, PrepMateNudge, BadgeLevelAward, PrepScoreSolve].map((model) => model.deleteMany({})));
 });
 
 async function student(name, college = 'GEU') {
@@ -46,6 +47,8 @@ async function solve(user, { difficulty = 'Easy', tags = ['Array'], at = hoursAg
   const problemId = id();
   await Problem.collection.insertOne({ _id: problemId, title: `P-${problemId}`, difficulty, tags, status: 'published', visibility: 'public' });
   await Submission.collection.insertOne({ user: user._id, problem: problemId, mode: 'submit', status: 'AC', language: 'python', createdAt: at });
+  // The first-solve ledger the activity feed reads (written on every accepted first solve).
+  await PrepScoreSolve.collection.insertOne({ studentId: user._id, problemKey: `local:${problemId}`, topic: tags[0] || 'General', day: at.toISOString().slice(0, 10), counted: true, solvedAt: at });
 }
 
 test('streaks and IST weeks', () => {
@@ -90,21 +93,32 @@ test('nudges: Prep Mates only, not after practising, once per day, and the mate 
   assert.deepEqual(await nudgeMate(asha, idle._id, new Date(NOW.getTime() + 86_400_000)), { nudged: true });
 });
 
-test('the feed shows Prep Mates\' recent solves and badge levels, grouped per day', async () => {
-  const [asha, ravi, stranger] = await Promise.all([student('Asha'), student('Ravi'), student('Stranger')]);
-  await mates(asha, ravi);
-  await Promise.all([solve(ravi), solve(ravi), solve(ravi, { at: hoursAgo(30) }), solve(stranger), solve(asha), solve(ravi, { at: new Date('2026-09-01T08:00:00Z') })]);
-  await BadgeLevelAward.create([
-    { studentId: ravi._id, month: '2026-11', track: 'solver', level: 1, earnedAt: hoursAgo(2) },
-    { studentId: ravi._id, month: '2026-11', track: 'solver', level: 2, earnedAt: hoursAgo(2) },
-  ]);
-  const { items } = await getFeed(asha, NOW);
-  assert.ok(items.every((item) => item.mate.name === 'Ravi'), 'only Prep Mates, never yourself or strangers');
-  const solved = items.filter((item) => item.type === 'solved');
-  assert.deepEqual(solved.map((item) => item.count).sort(), [1, 2], 'one card per day');
-  const badges = items.filter((item) => item.type === 'badge');
-  assert.equal(badges.length, 1, 'only the highest new level is shown');
-  assert.equal(badges[0].badge.level, 2);
+test('a big circle: the podium, your own row, paged ranks with name search, and the directory', async () => {
+  const asha = await student('Asha');
+  const mates = await Promise.all(Array.from({ length: 23 }, (_, index) => student(`Mate ${String(index).padStart(2, '0')}`)));
+  await Promise.all(mates.map((mate) => (async () => { await PrepMate.create({ pairKey: [String(asha._id), String(mate._id)].sort().join(':'), fromId: asha._id, toId: mate._id, status: 'accepted', requestedAt: NOW, respondedAt: NOW }); })()));
+  // Mate 00 solves 3, Mate 01 solves 2, Asha 1, everyone else 0.
+  await Promise.all([solve(mates[0]), solve(mates[0]), solve(mates[0]), solve(mates[1]), solve(mates[1]), solve(asha)]);
+  const first = await getCircle(asha, { period: 'week', page: 1, limit: 10 }, NOW);
+  assert.equal(first.total, 24);
+  assert.deepEqual(first.podium.map((row) => [row.name, row.rank]), [['Mate 00', 1], ['Mate 01', 2], ['Asha', 3]]);
+  assert.deepEqual([first.you.rank, first.you.solved], [3, 1]);
+  assert.equal(first.rows.length, 10);
+  assert.equal(first.pages, 3);
+  assert.equal(first.practisedToday, 2, 'two Prep Mates practised today');
+  const third = await getCircle(asha, { period: 'week', page: 3, limit: 10 }, NOW);
+  assert.equal(third.rows.length, 4);
+  assert.ok(third.rows.every((row) => row.rank === 4), 'ties share a rank');
+  const search = await getCircle(asha, { q: 'mate 01' }, NOW);
+  assert.deepEqual(search.rows.map((row) => [row.name, row.rank]), [['Mate 01', 2]], 'search keeps the global rank');
+
+  const directory = await getMateDirectory(asha, { sort: 'active' }, NOW);
+  assert.equal(directory.total, 23);
+  assert.equal(directory.items.length, 12);
+  assert.equal(directory.pages, 2);
+  assert.deepEqual(directory.items.slice(0, 2).map((row) => [row.name, row.thisWeek]), [['Mate 00', 3], ['Mate 01', 2]]);
+  const byName = await getMateDirectory(asha, { sort: 'name', q: 'mate 2' }, NOW);
+  assert.deepEqual(byName.items.map((row) => row.name), ['Mate 20', 'Mate 21', 'Mate 22']);
 });
 
 test('compare: head-to-head numbers for you and one Prep Mate', async () => {

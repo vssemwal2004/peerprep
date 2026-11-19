@@ -299,9 +299,14 @@ test('accessible document order follows greeting and recent work, then the progr
     'Announcements', 'Coding progress', 'Prep Score & rank', 'Global standing', 'Coming up',
   ], 'Any announcement leads the rail');
   assert.deepEqual([...main.querySelectorAll('h2')].map((heading) => heading.textContent), [
-    'January badges', 'Coding sheets', 'Next in practice',
+    'Coding sheets', 'January badges', 'Next in practice',
   ]);
-  assert.equal(document.querySelectorAll('#badges li.rounded-2xl').length, 6, 'six monthly badges, each with levels 1-10');
+  // Badges come after the coding sheets: three at first, the rest behind "Show all".
+  assert.equal(document.querySelectorAll('#badges > ul > li').length, 3, 'three monthly badges at first');
+  const more = [...document.querySelectorAll('#badges button')].find((button) => button.textContent.includes('Show all 6 badges'));
+  assert.ok(more, 'a button opens the other badges');
+  await act(async () => { more.click(); });
+  assert.equal(document.querySelectorAll('#badges > ul > li').length, 6);
 });
 
 test('the greeting shows a compact badge shelf; the full collection stays on the profile', async () => {

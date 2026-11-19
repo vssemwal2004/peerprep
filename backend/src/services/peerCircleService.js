@@ -23,13 +23,13 @@ import { TRACKS, tierOf } from './monthlyBadges.js';
 const QUERY_TIMEOUT_MS = 8_000;
 const DAY_MS = 86_400_000;
 const IST_OFFSET_MS = 330 * 60_000;
-const CIRCLE_LIMIT = 60;
-const FEED_DAYS = 14;
-const FEED_LIMIT = 30;
+// Prep Mates read per request (ids and card fields only); counts run in the database.
+const MATES_CAP = 5_000;
+const LEADERBOARD_PAGE = 10;
+const DIRECTORY_PAGE = 12;
 const WEEKS = 8;
 const TOPIC_LIMIT = 8;
 const NUDGES_PER_DAY = 20;
-const STREAK_MILESTONES = new Set([3, 7, 14, 21, 30, 50, 75, 100, 150, 200, 365]);
 const ACCEPTED = ['AC', 'Accepted', 'ACCEPTED', 'ACCEPT'];
 const PERIODS = new Set(['week', 'month', 'all']);
 
@@ -167,16 +167,103 @@ export function summarizeFacts(fact, now = new Date()) {
 
 // ---------------------------------------------------------------- mates
 
-/** The viewer's accepted Prep Mates who are still discoverable in their university (most recent first). */
-async function circleMates(viewerId, cohort) {
+/**
+ * The viewer's accepted Prep Mates who are still discoverable in their university, most recently
+ * added first (each with `since`). Scales to thousands: only ids and card fields are read.
+ */
+async function circleMates(viewerId, cohort, limit = MATES_CAP) {
   const id = objectId(viewerId);
   const links = await PrepMate.find({ status: 'accepted', $or: [{ fromId: id }, { toId: id }] })
-    .sort({ respondedAt: -1 }).limit(CIRCLE_LIMIT * 2).select('fromId toId').maxTimeMS(QUERY_TIMEOUT_MS).lean();
-  const otherIds = links.map((doc) => (idString(doc.fromId) === idString(id) ? doc.toId : doc.fromId));
-  if (!otherIds.length) return [];
-  const people = await User.find({ _id: { $in: otherIds }, ...discoverableFilter(cohort) }).select('_id name avatarUrl course branch semester').maxTimeMS(QUERY_TIMEOUT_MS).lean();
+    .sort({ respondedAt: -1 }).limit(limit).select('fromId toId respondedAt').maxTimeMS(QUERY_TIMEOUT_MS).lean();
+  const sinceById = new Map(links.map((doc) => [idString(idString(doc.fromId) === idString(id) ? doc.toId : doc.fromId), doc.respondedAt]));
+  if (!sinceById.size) return [];
+  const people = await User.find({ _id: { $in: [...sinceById.keys()].map(objectId) }, ...discoverableFilter(cohort) })
+    .select('_id name avatarUrl course branch semester').maxTimeMS(QUERY_TIMEOUT_MS).lean();
   const byId = new Map(people.map((person) => [idString(person), person]));
-  return otherIds.map((otherId) => byId.get(idString(otherId))).filter(Boolean).slice(0, CIRCLE_LIMIT);
+  return [...sinceById.keys()].filter((key) => byId.has(key)).map((key) => ({ ...byId.get(key), since: sinceById.get(key) }));
+}
+
+// ---------------------------------------------------------------- counts that scale
+
+const PUBLIC_PROBLEM = { status: { $in: ['published', 'Active', 'active'] }, $or: [{ visibility: 'public' }, { visibility: { $exists: false } }] };
+const istMidnight = (day) => new Date(Date.parse(`${day}T00:00:00+05:30`));
+function periodStart(period, now) {
+  if (period === 'week') return istMidnight(istWeekStart(now));
+  if (period === 'month') return istMidnight(`${istDay(now).slice(0, 7)}-01`);
+  return null;
+}
+
+/**
+ * Practice problems first solved per student (since `since`, or all time), counted in the database:
+ * Map(studentId -> count). Same rule as everywhere else: published public problems + shared catalogue.
+ */
+export async function solvedCounts(studentIds, since = null) {
+  const ids = studentIds.map(objectId);
+  const counts = new Map();
+  if (!ids.length) return counts;
+  const catalog = await getSharedCodingCatalog().catch(() => []);
+  const catalogIds = catalog.map((question) => objectId(question._id));
+  const sinceStage = since ? [{ $match: { at: { $gte: since } } }] : [];
+  const [local, shared] = await Promise.all([
+    Submission.aggregate([
+      { $match: { user: { $in: ids }, mode: 'submit', assessmentId: null, status: { $in: ACCEPTED } } },
+      { $group: { _id: { user: '$user', problem: '$problem' }, at: { $min: '$createdAt' } } },
+      ...sinceStage,
+      { $lookup: { from: Problem.collection.name, localField: '_id.problem', foreignField: '_id', as: 'problem', pipeline: [{ $match: PUBLIC_PROBLEM }, { $project: { _id: 1 } }] } },
+      { $match: { 'problem.0': { $exists: true } } },
+      { $group: { _id: '$_id.user', solved: { $sum: 1 } } },
+    ]).option({ maxTimeMS: QUERY_TIMEOUT_MS, allowDiskUse: true }),
+    catalogIds.length ? QuestionPracticeAttempt.aggregate([
+      { $match: { studentId: { $in: ids }, source: 'shared', questionType: 'coding', result: 'correct', questionId: { $in: catalogIds } } },
+      { $group: { _id: { user: '$studentId', problem: '$questionId' }, at: { $min: '$createdAt' } } },
+      ...sinceStage,
+      { $group: { _id: '$_id.user', solved: { $sum: 1 } } },
+    ]).option({ maxTimeMS: QUERY_TIMEOUT_MS, allowDiskUse: true }) : [],
+  ]);
+  for (const row of [...local, ...shared]) counts.set(idString(row._id), (counts.get(idString(row._id)) || 0) + row.solved);
+  return counts;
+}
+
+/** Students (of `studentIds`) who submitted practice code today (IST). */
+async function practisedToday(studentIds, now) {
+  const ids = studentIds.map(objectId);
+  if (!ids.length) return new Set();
+  const start = istMidnight(istDay(now));
+  const [local, shared] = await Promise.all([
+    Submission.distinct('user', { user: { $in: ids }, mode: 'submit', assessmentId: null, createdAt: { $gte: start } }).maxTimeMS(QUERY_TIMEOUT_MS),
+    QuestionPracticeAttempt.distinct('studentId', { studentId: { $in: ids }, source: 'shared', questionType: 'coding', createdAt: { $gte: start } }).maxTimeMS(QUERY_TIMEOUT_MS),
+  ]);
+  return new Set([...local, ...shared].map(idString));
+}
+
+/** Current practice streak for a few students (the rows on screen): Map(studentId -> days). */
+async function currentStreaks(studentIds, now) {
+  const ids = [...new Set(studentIds.map(idString))].map(objectId);
+  const result = new Map();
+  if (!ids.length) return result;
+  const since = new Date(now.getTime() - 400 * DAY_MS);
+  const istDayOf = (field) => ({ $dateToString: { format: '%Y-%m-%d', date: field, timezone: 'Asia/Kolkata' } });
+  const [local, shared] = await Promise.all([
+    Submission.aggregate([{ $match: { user: { $in: ids }, mode: 'submit', assessmentId: null, createdAt: { $gte: since } } }, { $group: { _id: { user: '$user', day: istDayOf('$createdAt') } } }]).option({ maxTimeMS: QUERY_TIMEOUT_MS }),
+    QuestionPracticeAttempt.aggregate([{ $match: { studentId: { $in: ids }, source: 'shared', questionType: 'coding', createdAt: { $gte: since } } }, { $group: { _id: { user: '$studentId', day: istDayOf('$createdAt') } } }]).option({ maxTimeMS: QUERY_TIMEOUT_MS }),
+  ]);
+  const days = new Map(ids.map((id) => [idString(id), new Set()]));
+  for (const row of [...local, ...shared]) days.get(idString(row._id.user))?.add(row._id.day);
+  for (const [id, set] of days) result.set(id, streaks(set, istDay(now)).current);
+  return result;
+}
+
+/** Competition ranks (ties share a rank) by solved, then name: rows are sorted in place. */
+function rankRows(rows) {
+  rows.sort((a, b) => b.solved - a.solved || a.name.localeCompare(b.name));
+  let rank = 0;
+  let previous = null;
+  rows.forEach((row, index) => {
+    if (previous === null || row.solved !== previous) rank = index + 1;
+    previous = row.solved;
+    row.rank = rank;
+  });
+  return rows;
 }
 
 async function requireMate(viewer, rawId, cohort) {
@@ -192,83 +279,74 @@ async function requireMate(viewer, rawId, cohort) {
 
 // ---------------------------------------------------------------- leaderboard
 
-export async function getCircle(viewer, rawPeriod = 'week', now = new Date()) {
-  const period = PERIODS.has(rawPeriod) ? rawPeriod : 'week';
-  const { self, cohort } = await peerScope(viewer);
-  const mates = await circleMates(self._id, cohort);
-  const today = istDay(now);
-  const [facts, nudged] = await Promise.all([
-    practiceFacts([self._id, ...mates.map((mate) => mate._id)], now),
-    PrepMateNudge.find({ fromId: objectId(self._id), day: today }).select('toId').lean(),
+/** Adds streak, today's status, all-time solved and the Prep Ping state to the rows on screen. */
+async function enrichRows(rows, viewerId, now) {
+  if (!rows.length) return rows;
+  const ids = rows.map((row) => row.id);
+  const [streakById, today, allTime, pinged] = await Promise.all([
+    currentStreaks(ids, now), practisedToday(ids, now), solvedCounts(ids),
+    PrepMateNudge.find({ fromId: objectId(viewerId), day: istDay(now), toId: { $in: ids.map(objectId) } }).select('toId').lean(),
   ]);
-  const nudgedIds = new Set(nudged.map((row) => idString(row.toId)));
-  const rowFor = (person, isYou) => {
-    const stats = summarizeFacts(facts.get(idString(person)) || { solves: [], days: new Set() }, now);
-    const solved = period === 'week' ? stats.thisWeek : period === 'month' ? stats.thisMonth : stats.totals.total;
-    const wasNudged = nudgedIds.has(idString(person));
-    return {
-      ...peerCard(person), isYou, solved, totalSolved: stats.totals.total, streak: stats.streak.current, practisedToday: stats.practisedToday,
-      nudged: !isYou && wasNudged, canNudge: !isYou && !stats.practisedToday && !wasNudged,
-    };
-  };
-  const rows = [rowFor(self, true), ...mates.map((mate) => rowFor(mate, false))]
-    .sort((a, b) => b.solved - a.solved || b.streak - a.streak || a.name.localeCompare(b.name));
-  let rank = 0;
-  let previous = null;
-  rows.forEach((row, index) => {
-    if (previous === null || row.solved !== previous) rank = index + 1;
-    previous = row.solved;
-    row.rank = rank;
-  });
-  return { period, day: today, mates: mates.length, rows };
+  const pingedIds = new Set(pinged.map((row) => idString(row.toId)));
+  for (const row of rows) {
+    row.streak = streakById.get(row.id) || 0;
+    row.practisedToday = today.has(row.id);
+    row.totalSolved = allTime.get(row.id) || 0;
+    row.nudged = !row.isYou && pingedIds.has(row.id);
+    row.canNudge = !row.isYou && !row.practisedToday && !row.nudged;
+  }
+  return rows;
 }
 
-// ---------------------------------------------------------------- activity feed
-
-export async function getFeed(viewer, now = new Date()) {
+/**
+ * The race between you and ALL your Prep Mates for a period, ranked in the database (scales to
+ * thousands). Returns the podium (top 3), your own row, one page of the ranking (optionally filtered
+ * by name; ranks stay global) and how many Prep Mates practised today.
+ */
+export async function getCircle(viewer, options = {}, now = new Date()) {
+  const { period: rawPeriod = 'week', page: rawPage = 1, limit: rawLimit = LEADERBOARD_PAGE, q = '' } = typeof options === 'string' ? { period: options } : options;
+  const period = PERIODS.has(rawPeriod) ? rawPeriod : 'week';
+  const limit = Math.min(50, Math.max(1, Number.parseInt(rawLimit, 10) || LEADERBOARD_PAGE));
   const { self, cohort } = await peerScope(viewer);
   const mates = await circleMates(self._id, cohort);
-  if (!mates.length) return { items: [] };
-  const since = new Date(now.getTime() - FEED_DAYS * DAY_MS);
-  const [facts, badgeRows] = await Promise.all([
-    practiceFacts(mates.map((mate) => mate._id), now),
-    BadgeLevelAward.find({ studentId: { $in: mates.map((mate) => objectId(mate._id)) }, earnedAt: { $gte: since } })
-      .sort({ earnedAt: -1 }).limit(200).lean(),
+  const people = [self, ...mates];
+  const [counts, today] = await Promise.all([
+    solvedCounts(people.map((person) => person._id), periodStart(period, now)),
+    practisedToday(mates.map((mate) => mate._id), now),
   ]);
-  const titles = new Map(TRACKS.map((track) => [track.key, track.title]));
-  const items = [];
-  for (const mate of mates) {
-    const card = peerCard(mate);
-    const fact = facts.get(idString(mate));
-    const byDay = new Map();
-    for (const solve of fact.solves.filter((row) => new Date(row.at) >= since)) {
-      const day = istDay(solve.at);
-      const group = byDay.get(day) || { at: solve.at, problems: [] };
-      if (new Date(solve.at) > new Date(group.at)) group.at = solve.at;
-      group.problems.push({ title: solve.title, difficulty: solve.difficulty });
-      byDay.set(day, group);
-    }
-    for (const [day, group] of byDay) {
-      items.push({ id: `solved:${card.id}:${day}`, type: 'solved', mate: card, at: group.at, count: group.problems.length, problems: group.problems.slice(0, 3) });
-    }
-    const { current } = streaks(fact.days, istDay(now));
-    if (STREAK_MILESTONES.has(current) && fact.days.has(istDay(now))) {
-      items.push({ id: `streak:${card.id}:${istDay(now)}`, type: 'streak', mate: card, at: now, days: current });
-    }
-  }
-  // Only each badge's highest new level per mate and month, so a catch-up never floods the feed.
-  const bestBadge = new Map();
-  for (const award of badgeRows) {
-    const key = `${idString(award.studentId)}:${award.month}:${award.track}`;
-    if (!bestBadge.has(key) || bestBadge.get(key).level < award.level) bestBadge.set(key, award);
-  }
-  const mateById = new Map(mates.map((mate) => [idString(mate), peerCard(mate)]));
-  for (const award of bestBadge.values()) {
-    items.push({ id: `badge:${idString(award.studentId)}:${award.month}:${award.track}:${award.level}`, type: 'badge', mate: mateById.get(idString(award.studentId)),
-      at: award.earnedAt, badge: { title: titles.get(award.track) || award.track, level: award.level, tier: tierOf(award.level) } });
-  }
-  items.sort((a, b) => new Date(b.at) - new Date(a.at));
-  return { items: items.slice(0, FEED_LIMIT) };
+  const all = rankRows(people.map((person) => ({ ...peerCard(person), isYou: idString(person) === idString(self), solved: counts.get(idString(person)) || 0 })));
+  const query = String(q || '').trim().toLowerCase().slice(0, 40);
+  const filtered = query ? all.filter((row) => row.name.toLowerCase().includes(query)) : all;
+  const pages = Math.max(1, Math.ceil(filtered.length / limit));
+  const page = Math.min(pages, Math.max(1, Number.parseInt(rawPage, 10) || 1));
+  const rows = filtered.slice((page - 1) * limit, page * limit);
+  const podium = all.slice(0, 3);
+  const you = all.find((row) => row.isYou);
+  // One enrichment pass for every row shown (podium, page and you), shared by reference.
+  await enrichRows([...new Set([...podium, ...rows, you])], self._id, now);
+  return { period, day: istDay(now), total: all.length, mates: mates.length, practisedToday: today.size, you, podium, rows, page, pages, limit, q: query };
+}
+
+/**
+ * Your Prep Mates as a searchable, sortable, paged directory with quick practice stats.
+ * sort: recent (newest Prep Mates first) | name | active (most solved this week).
+ */
+export async function getMateDirectory(viewer, { q = '', sort = 'recent', page: rawPage = 1 } = {}, now = new Date()) {
+  const { self, cohort } = await peerScope(viewer);
+  const mates = await circleMates(self._id, cohort);
+  const query = String(q || '').trim().toLowerCase().slice(0, 40);
+  let list = mates.map((mate) => ({ ...peerCard(mate), since: mate.since }));
+  if (query) list = list.filter((row) => row.name.toLowerCase().includes(query));
+  const week = sort === 'active' || list.length <= DIRECTORY_PAGE ? await solvedCounts(list.map((row) => row.id), periodStart('week', now)) : null;
+  if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name));
+  if (sort === 'active') list.sort((a, b) => (week.get(b.id) || 0) - (week.get(a.id) || 0) || a.name.localeCompare(b.name));
+  const pages = Math.max(1, Math.ceil(list.length / DIRECTORY_PAGE));
+  const page = Math.min(pages, Math.max(1, Number.parseInt(rawPage, 10) || 1));
+  const items = list.slice((page - 1) * DIRECTORY_PAGE, page * DIRECTORY_PAGE);
+  const weekCounts = week || await solvedCounts(items.map((row) => row.id), periodStart('week', now));
+  await enrichRows(items, self._id, now);
+  for (const item of items) item.thisWeek = weekCounts.get(item.id) || 0;
+  return { total: mates.length, matching: list.length, items, page, pages, sort, q: query };
 }
 
 // ---------------------------------------------------------------- nudges
@@ -345,20 +423,26 @@ export async function compareWithMate(viewer, rawId, now = new Date()) {
   const mate = await requireMate(self, rawId, cohort);
   const month = istDay(now).slice(0, 7);
   const mates = await circleMates(self._id, cohort);
-  const selfFull = await User.findById(objectId(self._id)).select('_id role featureAccess accessScope semester college').lean();
-  const mateFull = await User.findById(objectId(mate._id)).select('_id role featureAccess accessScope semester college').lean();
-  const [facts, levels, selfProgress, mateProgress] = await Promise.all([
-    practiceFacts([self._id, ...mates.map((row) => row._id)], now),
+  const circleIds = [self, ...mates].map((person) => person._id);
+  const [selfFull, mateFull] = await Promise.all([
+    User.findById(objectId(self._id)).select('_id role featureAccess accessScope semester college').lean(),
+    User.findById(objectId(mate._id)).select('_id role featureAccess accessScope semester college').lean(),
+  ]);
+  // Full practice detail for the two of you; ranks across the whole circle come from database counts.
+  const [facts, levels, selfProgress, mateProgress, allTimeCounts, weekCounts] = await Promise.all([
+    practiceFacts([self._id, mate._id], now),
     monthlyBadgeLevels([self._id, mate._id], month),
     peerProgressFor(selfFull).catch(() => null),
     peerProgressFor(mateFull).catch(() => null),
+    solvedCounts(circleIds),
+    solvedCounts(circleIds, periodStart('week', now)),
   ]);
   const empty = { solves: [], days: new Set() };
-  const circle = [self, ...mates].map((person) => ({ id: idString(person), stats: summarizeFacts(facts.get(idString(person)) || empty, now) }));
-  const allTime = ranksBy(circle, (entry) => entry.stats.totals.total);
-  const weekly = ranksBy(circle, (entry) => entry.stats.thisWeek);
-  const you = circle[0].stats;
-  const them = circle.find((entry) => entry.id === idString(mate)).stats;
+  const circle = circleIds.map((id) => ({ id: idString(id) }));
+  const allTime = ranksBy(circle, (entry) => allTimeCounts.get(entry.id) || 0);
+  const weekly = ranksBy(circle, (entry) => weekCounts.get(entry.id) || 0);
+  const you = summarizeFacts(facts.get(idString(self)) || empty, now);
+  const them = summarizeFacts(facts.get(idString(mate)) || empty, now);
   const tags = [...new Set([...you.topics.keys(), ...them.topics.keys()])]
     .map((tag) => ({ tag, you: you.topics.get(tag) || 0, mate: them.topics.get(tag) || 0 }))
     .sort((a, b) => (b.you + b.mate) - (a.you + a.mate) || a.tag.localeCompare(b.tag))

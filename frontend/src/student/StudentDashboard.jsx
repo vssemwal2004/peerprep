@@ -124,8 +124,8 @@ export default function StudentDashboard() {
         </aside>
 
         <div className="min-w-0 space-y-8 [grid-area:body]" data-dashboard-main>
-          {canQuestions && <div {...rise(3)}><MonthlyBadgesCard /></div>}
           {canQuestions && <CodingSheets />}
+          {canQuestions && <div {...rise(3)}><MonthlyBadgesCard /></div>}
           {showPractice && <div {...rise(4)}><PracticeSuggestions problems={suggestions} section={progress} onRetry={sections.refresh} /></div>}
         </div>
       </div>
