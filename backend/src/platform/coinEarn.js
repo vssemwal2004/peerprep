@@ -15,7 +15,11 @@ import { currentTenant } from './tenantContext.js';
 
 export const EARN_KINDS = Object.freeze(['login', 'solve', 'badge']);
 export const BADGE_LEVELS = 10;
-export const DEFAULT_EARNING = Object.freeze({ login: 1, solve: 2, badgeLevels: Object.freeze([1, 2, 3, 4, 6, 8, 10, 13, 16, 20]) });
+// Badge levels 1-2 are an honour only; coins start at level 3 and stay modest, so Prep Coins remain
+// precious (2026-11-19). Master Admin can change every amount in Prep Coin pricing.
+export const DEFAULT_EARNING = Object.freeze({ login: 1, solve: 2, badgeLevels: Object.freeze([0, 0, 1, 1, 2, 3, 4, 5, 7, 10]) });
+// The previous defaults: a saved configuration still equal to them follows the new defaults.
+const PREVIOUS_BADGE_DEFAULTS = Object.freeze([1, 2, 3, 4, 6, 8, 10, 13, 16, 20]);
 const MAX_EARN = 1_000;
 const CACHE_MS = 15_000;
 const EARNING_DOC = 'earning';
@@ -49,7 +53,10 @@ export function clearEarningCache() { cache = null; cachedAt = 0; }
 export async function getEarningConfig({ fresh = false } = {}) {
   if (!fresh && cache && Date.now() - cachedAt < CACHE_MS) return cache;
   const row = await PlatformCoinPricing.findById(EARNING_DOC).lean();
-  cache = { version: row?.version || 0, earning: normalizeEarning(row?.earning || {}), updatedAt: row?.updatedAt || null };
+  const stored = { ...(row?.earning || {}) };
+  // A configuration saved with the untouched old badge amounts follows the new defaults.
+  if (Array.isArray(stored.badgeLevels) && stored.badgeLevels.join(',') === PREVIOUS_BADGE_DEFAULTS.join(',')) delete stored.badgeLevels;
+  cache = { version: row?.version || 0, earning: normalizeEarning(stored), updatedAt: row?.updatedAt || null };
   cachedAt = Date.now();
   return cache;
 }

@@ -53,17 +53,20 @@ const balanceOf = async (userId) => (await PlatformCoinWallet.findOne({ universi
 
 test('ladders: floors for new students, strictly rising levels, day badges within the month, growth from history', () => {
   const fresh = buildLadder([], '2026-11');
+  // Four badges only, all practice; level 1 is already a full month of work.
+  assert.deepEqual(fresh.map((track) => track.key), ['solver', 'medium', 'hard', 'consistent']);
   const solver = fresh.find((track) => track.key === 'solver');
-  assert.equal(solver.baseline, 8);
-  assert.equal(solver.targets.length, 10);
+  assert.equal(solver.baseline, 12);
+  assert.deepEqual(solver.targets, [12, 15, 17, 20, 22, 24, 29, 34, 39, 48]);
   assert.ok(solver.targets.every((target, index) => !index || target > solver.targets[index - 1]), 'each level asks more');
-  const regular = fresh.find((track) => track.key === 'regular');
-  assert.ok(regular.targets.at(-1) <= 30, 'login days never exceed the days in November');
+  const days = fresh.find((track) => track.key === 'consistent');
+  assert.deepEqual(days.targets, [10, 12, 14, 16, 18, 20, 24, 28, 29, 30], 'practice days never exceed the days in November');
+  assert.deepEqual(fresh.find((track) => track.key === 'hard').targets.slice(0, 3), [2, 3, 4]);
   // A strong student's targets are built from their own months and rise above the average.
-  const strong = buildLadder([{ solver: 100, regular: 30, consistent: 30 }, { solver: 90, regular: 30, consistent: 29 }, { solver: 110, regular: 31, consistent: 30 }], '2026-11');
+  const strong = buildLadder([{ solver: 100, consistent: 30 }, { solver: 90, consistent: 29 }, { solver: 110, consistent: 30 }], '2026-11');
   const strongSolver = strong.find((track) => track.key === 'solver');
   assert.equal(strongSolver.baseline, 110, 'average 100 × 1.1');
-  assert.equal(strongSolver.targets[3], 110, 'level 4 = baseline');
+  assert.equal(strongSolver.targets[0], 110, 'level 1 = beating your own recent month');
   assert.equal(strongSolver.targets[9], 440);
   const strongDays = strong.find((track) => track.key === 'consistent').targets;
   assert.equal(new Set(strongDays).size, 10);
@@ -74,7 +77,8 @@ test('ladders: floors for new students, strictly rising levels, day badges withi
 });
 
 test('earning amounts are validated and harder badge levels never pay less', () => {
-  assert.deepEqual(normalizeEarning({}), { login: 1, solve: 2, badgeLevels: [...DEFAULT_EARNING.badgeLevels] });
+  assert.deepEqual(normalizeEarning({}), { login: 1, solve: 2, badgeLevels: [0, 0, 1, 1, 2, 3, 4, 5, 7, 10] });
+  assert.deepEqual(normalizeEarning({}).badgeLevels, [...DEFAULT_EARNING.badgeLevels]);
   assert.throws(() => normalizeEarning({ badgeLevels: [5, 4, 6, 7, 8, 9, 10, 11, 12, 13] }), /cannot pay fewer/);
   assert.throws(() => normalizeEarning({ badgeLevels: [1, 2] }), /all 10/);
   assert.throws(() => normalizeEarning({ solve: -1 }), /whole number/);
@@ -140,23 +144,25 @@ test('solve coins: 2 for a counted first solve, nothing for re-solves or solves 
 test('monthly badges: reached levels are awarded once with their coins and a bell notice', async (t) => {
   if (skipped) return t.skip('replica set unavailable');
   const learner = await student();
-  // 10 Easy problems first solved this month: the new-student ladder for "Problem Solver" is 2, 4, 6, 8, 10 …
-  const problems = Array.from({ length: 10 }, () => id());
+  // A ladder made under the old, easy rules this month is rebuilt once under the new rules.
+  await BadgeLadder.create({ studentId: learner._id, month: monthOf(NOW), tracks: [{ key: 'solver', baseline: 8, targets: [2, 4, 6, 8, 10, 12, 16, 20, 24, 32] }] });
+  // 24 Easy problems first solved this month: the new-student "Problem Solver" ladder is 12, 15, 17, 20, 22, 24 …
+  const problems = Array.from({ length: 24 }, () => id());
   await Problem.collection.insertMany(problems.map((problemId, index) => ({ _id: problemId, title: `P${index}`, difficulty: 'Easy', status: 'published', visibility: 'public', tags: [`T${index % 4}`] })));
   await Submission.collection.insertMany(problems.map((problemId) => ({ user: learner._id, problem: problemId, mode: 'submit', status: 'AC', language: 'python', createdAt: new Date('2026-11-10T06:00:00Z') })));
   const view = await evaluateMonthlyBadges(learner, NOW);
   assert.equal(view.month, monthOf(NOW));
+  assert.deepEqual(view.tracks.map((track) => track.key), ['solver', 'medium', 'hard', 'consistent']);
   const solver = view.tracks.find((track) => track.key === 'solver');
-  assert.deepEqual(solver.targets.slice(0, 5), [2, 4, 6, 8, 10]);
-  assert.equal(solver.value, 10);
-  assert.equal(solver.level, 5);
-  assert.equal(solver.next.level, 6);
-  const explorer = view.tracks.find((track) => track.key === 'explorer');
-  assert.equal(explorer.value, 4, 'four distinct topics');
+  assert.deepEqual(solver.targets.slice(0, 6), [12, 15, 17, 20, 22, 24]);
+  assert.equal(solver.value, 24);
+  assert.equal(solver.level, 6);
+  assert.equal(solver.next.level, 7);
+  assert.equal(view.tracks.find((track) => track.key === 'consistent').level, 0, 'one practice day is far from 10');
   const levels = await BadgeLevelAward.find({ studentId: learner._id }).lean();
   const paid = levels.reduce((sum, award) => sum + award.coins, 0);
   assert.equal(await balanceOf(learner._id), paid, 'every awarded level paid its coins');
-  assert.ok(paid >= 1 + 2 + 3 + 4 + 6, 'levels 1-5 of Problem Solver at least');
+  assert.equal(paid, 0 + 0 + 1 + 1 + 2 + 3, 'levels 1-2 are an honour only; 24 solves earn 7 badge coins');
   assert.ok(await Notification.exists({ userId: learner._id, type: 'BADGE' }));
   // Evaluating again awards and pays nothing new.
   await evaluateMonthlyBadges(learner, NOW);

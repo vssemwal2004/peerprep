@@ -1,5 +1,5 @@
-// Prep Mates circle: a leaderboard of you and your Prep Mates, an activity feed of their practice,
-// friendly streak nudges, and a head-to-head comparison with one Prep Mate.
+// Prep Mates circle: a ranking of you and your Prep Mates (with your standing summarised), a
+// directory, classmate suggestions, friendly "Prep Ping" nudges, and a head-to-head comparison.
 //
 // Privacy: only ACCEPTED Prep Mates who are still discoverable in your university (peerScope) ever
 // appear. Everything is practice-only (practice problems solved, practice days, topics, monthly
@@ -321,10 +321,91 @@ export async function getCircle(viewer, options = {}, now = new Date()) {
   const page = Math.min(pages, Math.max(1, Number.parseInt(rawPage, 10) || 1));
   const rows = filtered.slice((page - 1) * limit, page * limit);
   const podium = all.slice(0, 3);
-  const you = all.find((row) => row.isYou);
+  const youIndex = all.findIndex((row) => row.isYou);
+  const you = all[youIndex];
   // One enrichment pass for every row shown (podium, page and you), shared by reference.
   await enrichRows([...new Set([...podium, ...rows, you])], self._id, now);
-  return { period, day: istDay(now), total: all.length, mates: mates.length, practisedToday: today.size, you, podium, rows, page, pages, limit, q: query };
+  return {
+    period, day: istDay(now), total: all.length, mates: mates.length, practisedToday: today.size, you, podium, rows, page, pages, limit, q: query,
+    youPage: Math.floor(youIndex / limit) + 1,
+    ...standing(all, youIndex),
+  };
+}
+
+const pointer = (row) => (row ? { id: row.id, name: row.name, avatarUrl: row.avatarUrl, rank: row.rank, solved: row.solved } : null);
+
+/**
+ * Where you stand in a big circle, summarised without listing everyone: the nearest Prep Mate above
+ * you (and how many solves pass them), the nearest below, your top percentage, the median and a
+ * histogram of everyone's solved count for the period.
+ */
+export function standing(all, youIndex) {
+  const you = all[youIndex];
+  if (!you) return { ahead: null, behind: null, topPercent: null, median: 0, distribution: { bins: [], youBin: -1 } };
+  let ahead = null;
+  for (let index = youIndex - 1; index >= 0; index -= 1) if (all[index].solved > you.solved) { ahead = all[index]; break; }
+  const behind = all.slice(youIndex + 1).find((row) => row.solved < you.solved) || null;
+  const values = all.map((row) => row.solved).sort((a, b) => a - b);
+  const middle = Math.floor(values.length / 2);
+  const median = values.length % 2 ? values[middle] : (values[middle - 1] + values[middle]) / 2;
+  const max = values.at(-1) || 0;
+  const binCount = Math.max(1, Math.min(12, max + 1));
+  const width = Math.max(1, Math.ceil((max + 1) / binCount));
+  const bins = Array.from({ length: Math.ceil((max + 1) / width) }, (_, index) => ({ from: index * width, to: index * width + width - 1, count: 0 }));
+  for (const value of values) bins[Math.floor(value / width)].count += 1;
+  return {
+    ahead: ahead && { ...pointer(ahead), toPass: ahead.solved - you.solved + 1 },
+    behind: behind && { ...pointer(behind), lead: you.solved - behind.solved },
+    topPercent: all.length > 1 ? Math.max(1, Math.ceil((you.rank / all.length) * 100)) : null,
+    median,
+    distribution: { bins, youBin: Math.floor(you.solved / width) },
+  };
+}
+
+// ---------------------------------------------------------------- suggestions
+
+const SUGGESTIONS = 8;
+const activeCache = new Map();
+
+/** Students with the most practice submissions in the last 7 days (whole database, cached 10 min). */
+async function recentlyActive(now) {
+  const key = istDay(now);
+  const cached = activeCache.get(key);
+  if (cached && cached.at > Date.now() - 600_000) return cached.ids;
+  const rows = await Submission.aggregate([
+    { $match: { mode: 'submit', assessmentId: null, createdAt: { $gte: new Date(now.getTime() - 7 * DAY_MS), $lte: now } } },
+    { $group: { _id: '$user', submissions: { $sum: 1 } } },
+    { $sort: { submissions: -1 } },
+    { $limit: 400 },
+  ]).option({ maxTimeMS: QUERY_TIMEOUT_MS, allowDiskUse: true }).catch(() => []);
+  const ids = rows.map((row) => idString(row._id));
+  activeCache.clear();
+  activeCache.set(key, { at: Date.now(), ids });
+  return ids;
+}
+
+/**
+ * Classmates to add: discoverable students of your university you have no Prep Mate link with
+ * (accepted, pending or declined), most active this week first, then newest accounts.
+ */
+export async function getSuggestions(viewer, now = new Date()) {
+  const { self, cohort } = await peerScope(viewer);
+  const id = objectId(self._id);
+  const links = await PrepMate.find({ $or: [{ fromId: id }, { toId: id }] }).select('fromId toId').limit(MATES_CAP * 2).maxTimeMS(QUERY_TIMEOUT_MS).lean();
+  const excluded = new Set([idString(id), ...links.flatMap((doc) => [idString(doc.fromId), idString(doc.toId)])]);
+  const active = (await recentlyActive(now)).filter((key) => !excluded.has(key));
+  const people = active.length ? await User.find({ _id: { $in: active.map(objectId) }, ...discoverableFilter(cohort) })
+    .select('_id name avatarUrl course branch semester').maxTimeMS(QUERY_TIMEOUT_MS).lean() : [];
+  const order = new Map(active.map((key, index) => [key, index]));
+  const picked = people.sort((a, b) => order.get(idString(a)) - order.get(idString(b))).slice(0, SUGGESTIONS);
+  if (picked.length < SUGGESTIONS) {
+    const skip = [...excluded, ...picked.map(idString)].map(objectId);
+    const more = await User.find({ _id: { $nin: skip }, ...discoverableFilter(cohort) })
+      .select('_id name avatarUrl course branch semester').sort({ _id: -1 }).limit(SUGGESTIONS - picked.length).maxTimeMS(QUERY_TIMEOUT_MS).lean();
+    picked.push(...more);
+  }
+  const week = await solvedCounts(picked.map((person) => person._id), periodStart('week', now));
+  return { items: picked.map((person) => ({ ...peerCard(person), thisWeek: week.get(idString(person)) || 0, relation: { mate: 'none', requestId: null } })) };
 }
 
 /**
@@ -428,19 +509,27 @@ export async function compareWithMate(viewer, rawId, now = new Date()) {
     User.findById(objectId(self._id)).select('_id role featureAccess accessScope semester college').lean(),
     User.findById(objectId(mate._id)).select('_id role featureAccess accessScope semester college').lean(),
   ]);
-  // Full practice detail for the two of you; ranks across the whole circle come from database counts.
-  const [facts, levels, selfProgress, mateProgress, allTimeCounts, weekCounts] = await Promise.all([
-    practiceFacts([self._id, mate._id], now),
-    monthlyBadgeLevels([self._id, mate._id], month),
-    peerProgressFor(selfFull).catch(() => null),
-    peerProgressFor(mateFull).catch(() => null),
-    solvedCounts(circleIds),
-    solvedCounts(circleIds, periodStart('week', now)),
-  ]);
-  const empty = { solves: [], days: new Set() };
+  // Ranks across the whole circle come from database counts; full practice detail only for the two
+  // of you plus the circle's top two others (the optional extra lines on the weekly chart).
+  const [allTimeCounts, weekCounts] = await Promise.all([solvedCounts(circleIds), solvedCounts(circleIds, periodStart('week', now))]);
   const circle = circleIds.map((id) => ({ id: idString(id) }));
   const allTime = ranksBy(circle, (entry) => allTimeCounts.get(entry.id) || 0);
   const weekly = ranksBy(circle, (entry) => weekCounts.get(entry.id) || 0);
+  const personById = new Map([self, ...mates].map((person) => [idString(person), person]));
+  const selfId = idString(self);
+  const mateId = idString(mate);
+  const solvedOf = (key) => allTimeCounts.get(key) || 0;
+  const byAllTime = [...personById.keys()].sort((a, b) => solvedOf(b) - solvedOf(a) || personById.get(a).name.localeCompare(personById.get(b).name));
+  const otherIds = byAllTime.filter((key) => key !== selfId && key !== mateId && solvedOf(key) > 0).slice(0, 2);
+  const leaderIds = [...new Set([...byAllTime.slice(0, 5), selfId, mateId])]
+    .sort((a, b) => solvedOf(b) - solvedOf(a) || personById.get(a).name.localeCompare(personById.get(b).name));
+  const [facts, levels, selfProgress, mateProgress] = await Promise.all([
+    practiceFacts([self._id, mate._id, ...otherIds], now),
+    monthlyBadgeLevels([self._id, mate._id], month),
+    peerProgressFor(selfFull).catch(() => null),
+    peerProgressFor(mateFull).catch(() => null),
+  ]);
+  const empty = { solves: [], days: new Set() };
   const you = summarizeFacts(facts.get(idString(self)) || empty, now);
   const them = summarizeFacts(facts.get(idString(mate)) || empty, now);
   const tags = [...new Set([...you.topics.keys(), ...them.topics.keys()])]
@@ -462,6 +551,13 @@ export async function compareWithMate(viewer, rawId, now = new Date()) {
     you: side(self, you, selfProgress),
     mate: side(mate, them, mateProgress),
     topics: tags,
+    // The top of your circle by all-time solves, always including the two of you.
+    leaders: leaderIds.map((key) => ({ ...peerCard(personById.get(key)), solved: solvedOf(key), rank: allTime.get(key), isYou: key === selfId, isMate: key === mateId })),
+    // Up to two more Prep Mates (the circle's leaders) for the optional chart lines.
+    others: otherIds.map((key) => {
+      const stats = summarizeFacts(facts.get(key) || empty, now);
+      return { ...peerCard(personById.get(key)), total: stats.totals.total, weekly: stats.weekly, rank: allTime.get(key) };
+    }),
     badges: TRACKS.map((track) => ({ key: track.key, title: track.title, you: levels.get(`${idString(self)}:${track.key}`) || 0, mate: levels.get(`${idString(mate)}:${track.key}`) || 0 })),
   };
 }

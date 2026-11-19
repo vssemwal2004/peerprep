@@ -39,7 +39,7 @@ function BadgeCard({ track }) {
         <p className="mt-0.5 truncate text-[11.5px] text-slate-500 dark:text-zinc-400">{track.description}</p>
         {/* Ten level pips: filled up to the current level. */}
         <ol className="mt-2.5 flex gap-1" aria-label={`Level ${track.level} of 10`}>
-          {track.levels.map((entry) => <li key={entry.level} title={`Level ${entry.level} (${entry.tier}): ${entry.target} ${track.unit} · +${entry.coins} coins`}
+          {track.levels.map((entry) => <li key={entry.level} title={`Level ${entry.level} (${entry.tier}): ${entry.target} ${track.unit}${entry.coins ? ` · +${entry.coins} coins` : ''}`}
             className={`h-1.5 flex-1 rounded-full ${entry.earned ? '' : 'bg-slate-100 dark:bg-white/[0.07]'}`} style={entry.earned ? { backgroundColor: look.accent } : undefined} />)}
         </ol>
       </div>
@@ -48,7 +48,9 @@ function BadgeCard({ track }) {
       <div className="mb-1.5 flex items-baseline justify-between gap-2 text-[12px]">
         <span className="text-slate-500 dark:text-zinc-400"><b className="text-[15px] text-slate-900 dark:text-white">{track.value}</b>{next ? <span className="text-slate-400 dark:text-zinc-500"> / {next.target}</span> : null} {track.unit}</span>
         {next
-          ? <span className="inline-flex items-center gap-1 text-slate-500 dark:text-zinc-400">Level {next.level}<PrepCoinIcon size={13} /><b className="text-amber-700 dark:text-amber-300">+{next.coins}</b></span>
+          ? <span className="inline-flex items-center gap-1 text-slate-500 dark:text-zinc-400">Level {next.level}{next.coins > 0
+            ? <><PrepCoinIcon size={13} /><b className="text-amber-700 dark:text-amber-300">+{next.coins}</b></>
+            : <span className="text-slate-400 dark:text-zinc-500">· badge only</span>}</span>
           : <span className="font-semibold" style={{ color: look.accent }}>All 10 levels</span>}
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.07]" role="progressbar" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100} aria-label={`${track.title} progress to the next level`}>

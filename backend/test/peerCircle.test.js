@@ -10,7 +10,7 @@ import { PrepMate, PrepMateNudge } from '../src/models/PeerNetwork.js';
 import { BadgeLevelAward } from '../src/models/MonthlyBadge.js';
 import { PrepScoreSolve } from '../src/models/PrepScoreTopicQuota.js';
 import { STANDARD_STUDENT_FEATURES } from '../src/services/studentFeatureAccess.js';
-import { compareWithMate, getCircle, getMateDirectory, istWeekStart, nudgeMate, streaks } from '../src/services/peerCircleService.js';
+import { compareWithMate, getCircle, getMateDirectory, getSuggestions, istWeekStart, nudgeMate, streaks } from '../src/services/peerCircleService.js';
 
 let mongo;
 const id = () => new mongoose.Types.ObjectId();
@@ -109,6 +109,12 @@ test('a big circle: the podium, your own row, paged ranks with name search, and 
   const third = await getCircle(asha, { period: 'week', page: 3, limit: 10 }, NOW);
   assert.equal(third.rows.length, 4);
   assert.ok(third.rows.every((row) => row.rank === 4), 'ties share a rank');
+  // Standing: Mate 01 (2) is the nearest above Asha (1); passing needs 2 more; 21 mates on 0 below.
+  assert.deepEqual([first.ahead.name, first.ahead.toPass, first.behind.lead, first.youPage], ['Mate 01', 2, 1, 1]);
+  assert.equal(first.topPercent, 13, 'rank 3 of 24 is the top 13%');
+  assert.equal(first.median, 0);
+  assert.deepEqual(first.distribution.bins.map((bin) => bin.count), [21, 1, 1, 1]);
+  assert.equal(first.distribution.youBin, 1);
   const search = await getCircle(asha, { q: 'mate 01' }, NOW);
   assert.deepEqual(search.rows.map((row) => [row.name, row.rank]), [['Mate 01', 2]], 'search keeps the global rank');
 
@@ -132,10 +138,23 @@ test('compare: head-to-head numbers for you and one Prep Mate', async () => {
   assert.equal(result.you.weekly.length, 8);
   assert.equal(result.mate.weekly.at(-1).solved, 2);
   assert.deepEqual(result.topics.map((topic) => [topic.tag, topic.you, topic.mate]), [['DP', 1, 1], ['Graph', 0, 2]]);
-  assert.equal(result.badges.length, 6);
+  assert.equal(result.badges.length, 4);
   assert.deepEqual([result.you.rank.allTime, result.mate.rank.allTime, result.you.rank.of], [2, 1, 2], 'rank in your circle');
   assert.equal(result.you.days30.length, 30);
   assert.equal(result.you.days30.at(-1).active, true, 'practised today');
   assert.ok('level' in result.mate && 'badgesEarned' in result.mate);
+  assert.deepEqual(result.leaders.map((row) => [row.name, row.solved, row.isYou, row.isMate]), [['Ravi', 2, false, true], ['Asha', 1, true, false]]);
+  assert.deepEqual(result.others, [], 'no other Prep Mates with solves');
   assert.ok(!JSON.stringify(result).includes('@secret.test'));
+});
+
+test('compare adds the circle leaders; suggestions skip anyone already linked', async () => {
+  const [asha, ravi, top, pending, fresh, elsewhere] = await Promise.all([student('Asha'), student('Ravi'), student('Top'), student('Pending'), student('Fresh'), student('Far', 'Elsewhere')]);
+  await Promise.all([mates(asha, ravi), mates(asha, top), mates(asha, pending, 'pending')]);
+  await Promise.all([solve(top), solve(top), solve(ravi), solve(fresh)]);
+  const result = await compareWithMate(asha, ravi._id, NOW);
+  assert.deepEqual(result.leaders.map((row) => row.name), ['Top', 'Ravi', 'Asha']);
+  assert.deepEqual(result.others.map((row) => [row.name, row.total, row.weekly.length]), [['Top', 2, 8]]);
+  const { items } = await getSuggestions(asha, NOW);
+  assert.deepEqual(items.map((row) => [row.name, row.thisWeek]), [['Fresh', 1]], 'not mates, not pending, same university only');
 });

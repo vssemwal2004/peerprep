@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { CalendarCheck, EyeOff, Inbox, Loader2, Medal, Search, Users } from 'lucide-react';
+import { EyeOff, Loader2, Search } from 'lucide-react';
 import { api } from '../../utils/api';
 import PeerAvatar from './PeerAvatar';
 import PeerActions from './PeerActions';
 import RaceBoard from './RaceBoard';
 import MateDirectory from './MateDirectory';
-import { PEER_NETWORK_EVENT, compactCount, errorMessage, peerSubtitle, usePeerSummary } from './peerNetwork';
+import StandingHero from './StandingHero';
+import { CircleWelcome, Suggestions } from './Suggestions';
+import { PEER_NETWORK_EVENT, errorMessage, peerSubtitle, usePeerSummary } from './peerNetwork';
 import { usePeerSearch } from './usePeerSearch';
-import { card, focusRing, TitleIcon } from '../dashboard/ui';
 
 /** Search any classmate in your university (not only Prep Mates) and send a request from the list. */
 function FindClassmates() {
@@ -24,7 +25,7 @@ function FindClassmates() {
   const searching = query.trim().length >= 2;
   return <div ref={box} className="relative w-full sm:w-80">
     <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-    <input type="search" value={query} onFocus={() => setOpen(true)} onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
+    <input id="find-classmates" type="search" value={query} onFocus={() => setOpen(true)} onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
       placeholder="Find classmates by name" aria-label="Find classmates by name"
       className="h-10 w-full rounded-xl border border-[#e6e7eb] bg-white pl-10 pr-9 text-[13.5px] text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-500/10 dark:border-white/[0.08] dark:bg-[#242424] dark:text-white" />
     {search.loading && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" aria-hidden="true" />}
@@ -42,19 +43,14 @@ function FindClassmates() {
   </div>;
 }
 
-function StatTile({ icon, tone, label, value, hint, to }) {
-  const body = <>
-    <TitleIcon icon={icon} tone={tone} />
-    <div className="min-w-0">
-      <p className="text-[11.5px] font-medium text-slate-500 dark:text-zinc-400">{label}</p>
-      <p className="text-[20px] font-bold leading-tight tabular-nums text-slate-900 dark:text-white">{value}<span className="ml-1 text-[12px] font-medium text-slate-400 dark:text-zinc-500">{hint}</span></p>
-    </div>
-  </>;
-  const className = `${card} flex items-center gap-3 p-3.5`;
-  return to ? <Link to={to} className={`${className} transition hover:border-[#dcdee4] ${focusRing}`}>{body}</Link> : <div className={className}>{body}</div>;
+/** Hand-drawn stroke under "Mates", the dashboard's greeting motif. */
+function TitleUnderline() {
+  return <svg viewBox="0 0 200 16" preserveAspectRatio="none" fill="none" aria-hidden="true" className="pointer-events-none absolute -bottom-2.5 left-0 h-3 w-full overflow-visible text-amber-400 dark:text-amber-500">
+    <path d="M4 11.5C52 5.5 118 3.2 196 7.5" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" pathLength="1" className="dashboard-underline" />
+  </svg>;
 }
 
-/** The race data, shared by the summary tiles, the race board and the today card. */
+/** The ranking data, shared by the standing card and the leaderboard. */
 function useCircle() {
   const [period, setPeriod] = useState('week');
   const [page, setPage] = useState(1);
@@ -72,7 +68,7 @@ function useCircle() {
   const markPinged = (peerId) => setState((current) => {
     if (!current.data) return current;
     const patch = (row) => (row?.id === peerId ? { ...row, nudged: true, canNudge: false } : row);
-    return { ...current, data: { ...current.data, rows: current.data.rows.map(patch), podium: current.data.podium.map(patch) } };
+    return { ...current, data: { ...current.data, rows: current.data.rows.map(patch), podium: current.data.podium.map(patch), you: current.data.you } };
   });
   return {
     ...state, reload: load, period, page, query, markPinged,
@@ -95,13 +91,18 @@ export default function PeerNetworkPage() {
     if (!params.get('tab') && summary.incomingRequests > 0) navigate('/student/peers?tab=incoming', { replace: true });
   }, [summary, params, navigate]);
 
-  const you = circle.data?.you;
+  // No Prep Mates yet: a welcome with steps and classmates to add instead of empty boards.
+  const empty = circle.data ? circle.data.mates === 0 : summary ? summary.prepMates === 0 : false;
+  const focusFind = () => { const input = document.getElementById('find-classmates'); input?.scrollIntoView({ block: 'center', behavior: 'smooth' }); input?.focus(); };
   return <div className="min-h-[calc(100dvh-65px)] bg-[#f6f7f9] font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:text-zinc-100">
     <div className="mx-auto max-w-[1180px] px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
-      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <header className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="flex items-center gap-2.5 text-[26px] font-semibold tracking-[-0.02em] text-slate-900 dark:text-white"><Users className="h-6 w-6 text-sky-600 dark:text-sky-400" aria-hidden="true" />Prep Mates</h1>
-          <p className="mt-1 text-[14px] text-slate-500 dark:text-zinc-400">See where you stand among classmates from your university and compare your practice with any Prep Mate.</p>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-zinc-500">Your university circle</p>
+          <h1 className="mt-1 text-[30px] font-medium leading-tight tracking-[-0.03em] text-slate-900 sm:text-[34px] dark:text-zinc-50">
+            Prep <span className="relative inline-block font-bold text-sky-600 dark:text-sky-400">Mates<TitleUnderline /></span>
+          </h1>
+          <p className="mt-3 max-w-xl text-[14px] text-slate-500 dark:text-zinc-400">See where you stand among classmates and compare your practice with any Prep Mate.</p>
         </div>
         <FindClassmates />
       </header>
@@ -111,19 +112,17 @@ export default function PeerNetworkPage() {
         <p>Your profile is hidden from classmates, so you can browse but not connect. Turn on <strong>Visible to peers</strong> in <Link to="/student/profile" className="font-semibold underline">Edit Profile</Link>.</p>
       </div>}
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile icon={Users} tone="sky" label="Prep Mates" value={compactCount(summary?.prepMates ?? 0)} to="/student/peers#my-prep-mates" />
-        <StatTile icon={Inbox} tone="rose" label="Requests waiting" value={compactCount(summary?.incomingRequests ?? 0)} to="/student/peers?tab=incoming" />
-        <StatTile icon={Medal} tone="amber" label={`Your rank ${{ week: 'this week', month: 'this month', all: 'all time' }[circle.period]}`} value={you ? `#${you.rank}` : '—'} hint={circle.data ? `of ${circle.data.total}` : ''} />
-        <StatTile icon={CalendarCheck} tone="emerald" label="Practised today" value={circle.data?.practisedToday ?? 0} hint={circle.data ? `of ${circle.data.mates}` : ''} />
-      </div>
-
-      {/* One column, built around comparing: the ranking (Compare on every row) and your Prep Mates. */}
-      <div className="min-w-0 space-y-6">
-        <RaceBoard circle={circle} period={circle.period} onPeriod={circle.setPeriod} onPage={circle.setPage}
-          query={circle.query} onQuery={circle.setQuery} onPinged={circle.markPinged} />
+      {/* One column, built around comparing: standing, leaderboard (Compare on every row), directory. */}
+      {empty ? <div className="min-w-0 space-y-6">
+        <CircleWelcome onFind={focusFind} />
+        <Suggestions />
+        {(summary?.incomingRequests > 0 || params.get('tab')) && <MateDirectory summary={summary} onPinged={circle.markPinged} />}
+      </div> : <div className="min-w-0 space-y-6">
+        <StandingHero circle={circle} summary={summary} />
+        <RaceBoard circle={circle} onPinged={circle.markPinged} />
         <MateDirectory summary={summary} onPinged={circle.markPinged} />
-      </div>
+        <Suggestions title="Grow your circle" subtitle="Classmates practising this week who are not your Prep Mates yet" />
+      </div>}
     </div>
   </div>;
 }

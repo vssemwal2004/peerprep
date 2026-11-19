@@ -16,6 +16,8 @@ const badgeLadderSchema = new mongoose.Schema({
   // IST calendar month, YYYY-MM.
   month: { type: String, required: true },
   tracks: { type: [ladderTrackSchema], default: [] },
+  // Ladder rules version (services/monthlyBadges.js LADDER_RULES); an older one is rebuilt once.
+  rules: { type: String, default: null },
 }, { versionKey: false, timestamps: true });
 badgeLadderSchema.index({ studentId: 1, month: 1 }, { unique: true });
 

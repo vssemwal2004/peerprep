@@ -663,6 +663,7 @@ export const api = {
   // Prep Mates circle: leaderboard (week | month | all), activity feed, head-to-head, nudge.
   getPeerCircle: (period = 'week', { page = 1, q = '', limit = 10 } = {}) => request(`/student/peers/me/circle?${new URLSearchParams({ period, page: String(page), limit: String(limit), ...(q ? { q } : {}) })}`, { skipCache: true }),
   getPeerMates: ({ q = '', sort = 'recent', page = 1 } = {}) => request(`/student/peers/me/mates?${new URLSearchParams({ sort, page: String(page), ...(q ? { q } : {}) })}`, { skipCache: true }),
+  getPeerSuggestions: () => request('/student/peers/me/suggestions', { skipCache: true }),
   comparePrepMate: (id) => request(`/student/peers/${encodeURIComponent(id)}/compare`, { skipCache: true }),
   nudgePrepMate: (id) => request(`/student/peers/${encodeURIComponent(id)}/nudge`, { method: 'POST' }),
   requestPrepMate: (id) => request(`/student/peers/${encodeURIComponent(id)}/mate`, { method: 'POST' }),

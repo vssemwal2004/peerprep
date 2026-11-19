@@ -1,6 +1,7 @@
 // Monthly badges: the same badges for every student, levels 1-10 each month, with targets built
 // from the student's OWN last three months, so they keep rising as the student improves and never
-// run out. Each level pays Prep Coins once (harder levels pay more, Master Admin sets the amounts).
+// run out. Levels are hard on purpose; from level 3 a level pays Prep Coins once (harder levels pay
+// more, Master Admin sets the amounts).
 //
 // - Months are IST calendar months. A month's ladder is created on first use and then frozen.
 // - Solves count as they do for the Prep Score: the first accepted solve of a problem, within the
@@ -25,18 +26,22 @@ const IST_OFFSET_MS = 330 * 60_000;
 const QUERY_TIMEOUT_MS = 8_000;
 const HISTORY_MONTHS = 3;
 const ACCEPTED = ['AC', 'Accepted', 'ACCEPTED', 'ACCEPT'];
-// Each next month asks a little more than the recent average.
+// Each next month asks more than the recent average.
 const GROWTH = 1.1;
-// Level k's target = baseline × MULTIPLIERS[k - 1]; level 4 is "your usual month, plus a bit".
-const MULTIPLIERS = Object.freeze([0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4]);
+// Badges are meant to be precious (2026-11-19): level 1 already means beating your own recent
+// month (baseline = 110% of your 3-month average, never below the badge's floor), and level 10
+// asks for four times that. Level k's target = baseline × MULTIPLIERS[k - 1].
+const MULTIPLIERS = Object.freeze([1, 1.2, 1.4, 1.6, 1.8, 2, 2.4, 2.8, 3.2, 4]);
+// Bumped when the rules change, so this month's ladder is rebuilt under the new rules once.
+export const LADDER_RULES = 'precious-1';
 
+// Only four badges, all earned by practice (opening the app, or touching many topics with easy
+// solves, no longer earns a badge).
 export const TRACKS = Object.freeze([
-  { key: 'solver', title: 'Problem Solver', unit: 'problems solved', description: 'New problems solved this month', floor: 8 },
-  { key: 'medium', title: 'Medium Master', unit: 'Medium problems', description: 'New Medium problems solved this month', floor: 3 },
-  { key: 'hard', title: 'Hard Hitter', unit: 'Hard problems', description: 'New Hard problems solved this month', floor: 1 },
-  { key: 'explorer', title: 'Topic Explorer', unit: 'topics', description: 'Different topics among this month\'s solves', floor: 3 },
-  { key: 'consistent', title: 'Consistency', unit: 'practice days', description: 'Days you submitted code this month', floor: 5, days: true },
-  { key: 'regular', title: 'Daily Visitor', unit: 'login days', description: 'Days you opened PeerPrep this month', floor: 8, days: true },
+  { key: 'solver', title: 'Problem Solver', unit: 'problems solved', description: 'New problems solved this month', floor: 12 },
+  { key: 'medium', title: 'Medium Master', unit: 'Medium problems', description: 'New Medium problems solved this month', floor: 4 },
+  { key: 'hard', title: 'Hard Hitter', unit: 'Hard problems', description: 'New Hard problems solved this month', floor: 2 },
+  { key: 'consistent', title: 'Consistency', unit: 'practice days', description: 'Days you submitted code this month', floor: 10, days: true },
 ].map(Object.freeze));
 const TRACK_BY_KEY = new Map(TRACKS.map((track) => [track.key, track]));
 
@@ -164,12 +169,15 @@ function sharedFirstsNeedCatalog() {
 async function ladderFor(studentId, month) {
   const filter = { studentId: objectId(studentId), month };
   const existing = await BadgeLadder.findOne(filter).lean();
-  if (existing) return existing;
+  if (existing?.rules === LADDER_RULES) return existing;
   const first = shiftMonth(month, -HISTORY_MONTHS);
   const values = await monthlyValues(studentId, first, shiftMonth(month, -1));
   const history = [1, 2, 3].map((back) => values[shiftMonth(month, -back)] || emptyValues());
+  const tracks = buildLadder(history, month);
+  // A ladder made under older rules is replaced once (levels already awarded stay awarded).
+  if (existing) return BadgeLadder.findOneAndUpdate({ ...filter, rules: existing.rules ?? null }, { $set: { tracks, rules: LADDER_RULES } }, { new: true }).lean().then((doc) => doc || BadgeLadder.findOne(filter).lean());
   try {
-    return await BadgeLadder.findOneAndUpdate(filter, { $setOnInsert: { tracks: buildLadder(history, month) } }, { upsert: true, new: true }).lean();
+    return await BadgeLadder.findOneAndUpdate(filter, { $setOnInsert: { tracks, rules: LADDER_RULES } }, { upsert: true, new: true }).lean();
   } catch (error) {
     if (error?.code !== 11000) throw error;
     return BadgeLadder.findOne(filter).lean();
