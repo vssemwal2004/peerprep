@@ -302,7 +302,7 @@ function PauseOverlay({ proctor, camera, onEnd, endDisabled, startedAt, deadline
   // A camera pause is logged, not counted as a violation.
   const recorded = reason === "fullscreen_exit" && proctor.leftFullscreen && proctor.label;
   return <div ref={dialogRef} data-testid="anvi-pause-overlay" data-reason={reason} role="dialog" aria-modal="true" aria-labelledby="anvi-pause-title" aria-describedby="anvi-pause-body"
-    className="fixed inset-0 z-[88] flex items-center justify-center bg-slate-50/75 p-4 backdrop-blur-xl dark:bg-[#0a0b10]/80">
+    className="fixed inset-0 z-[88] flex items-center justify-center bg-slate-50/75 p-4 backdrop-blur-xl dark:bg-[#121212]/80">
     <div className={`w-full max-w-md rounded-3xl p-6 text-center ring-1 sm:p-8 ${surface} ${surfaceRing} ${surfaceShadow}`}>
       <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-100 to-fuchsia-100 text-violet-700 ring-1 ring-violet-200 dark:from-violet-500/20 dark:to-fuchsia-500/10 dark:text-violet-200 dark:ring-violet-400/20">
         <PauseCircle className="h-7 w-7" aria-hidden="true" />
@@ -557,7 +557,7 @@ export default function LiveCall({ attempt, live, studentName, studentAvatar = "
   const behindOverlay = proctorPaused && !ending ? { inert: true } : {};
   return (
     <div data-anvi-room="live" data-proctored={proctor.enabled ? "on" : undefined} data-proctor-paused={proctorPaused ? "on" : undefined}
-      className={`fixed inset-0 z-[80] isolate flex flex-col overflow-hidden bg-[#f6f5fb] text-slate-900 dark:bg-[#0a0b10] dark:text-zinc-100 ${blockSelect ? "select-none" : ""}`}>
+      className={`fixed inset-0 z-[80] isolate flex flex-col overflow-hidden bg-[#f6f5fb] text-slate-900 dark:bg-[#121212] dark:text-zinc-100 ${blockSelect ? "select-none" : ""}`}>
       <RoomBackdrop />
       <header {...behindOverlay} className="flex h-14 shrink-0 items-center justify-between gap-3 px-3 sm:h-16 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">

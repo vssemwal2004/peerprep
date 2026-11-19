@@ -80,10 +80,10 @@ test('nudges: Prep Mates only, not after practising, once per day, and the mate 
   await assert.rejects(() => nudgeMate(asha, ravi._id, NOW), /already practised today/);
   await assert.rejects(() => nudgeMate(asha, stranger._id, NOW), /Only your Prep Mates/);
   assert.deepEqual(await nudgeMate(asha, idle._id, NOW), { nudged: true });
-  await assert.rejects(() => nudgeMate(asha, idle._id, NOW), /already nudged/);
+  await assert.rejects(() => nudgeMate(asha, idle._id, NOW), /already sent Idle a Prep Ping/);
   const notice = await Notification.findOne({ userId: idle._id }).lean();
   assert.equal(notice.type, 'PREP_MATE_NUDGE');
-  assert.match(notice.title, /Asha nudged you/);
+  assert.match(notice.title, /Asha sent you a Prep Ping/);
   const circle = await getCircle(asha, 'week', NOW);
   assert.equal(circle.rows.find((row) => row.name === 'Idle').nudged, true);
   // A new day allows a new nudge.
@@ -119,5 +119,9 @@ test('compare: head-to-head numbers for you and one Prep Mate', async () => {
   assert.equal(result.mate.weekly.at(-1).solved, 2);
   assert.deepEqual(result.topics.map((topic) => [topic.tag, topic.you, topic.mate]), [['DP', 1, 1], ['Graph', 0, 2]]);
   assert.equal(result.badges.length, 6);
+  assert.deepEqual([result.you.rank.allTime, result.mate.rank.allTime, result.you.rank.of], [2, 1, 2], 'rank in your circle');
+  assert.equal(result.you.days30.length, 30);
+  assert.equal(result.you.days30.at(-1).active, true, 'practised today');
+  assert.ok('level' in result.mate && 'badgesEarned' in result.mate);
   assert.ok(!JSON.stringify(result).includes('@secret.test'));
 });

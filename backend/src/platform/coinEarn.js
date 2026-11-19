@@ -82,6 +82,50 @@ async function earningStudent(user) {
   return studentHasFeature(row, 'prep_coins') ? row : null;
 }
 
+// Standalone MongoDB (no replica set) rejects transactions with IllegalOperation (code 20).
+let transactionsUnsupported = false;
+const isNoTransactionSupport = (error) => error?.code === 20
+  || /Transaction numbers are only allowed|replica set member or mongos|transactions are not supported/i.test(error?.message || '');
+
+async function creditInTransaction(scope, userId, coins, movement) {
+  let balance = 0;
+  await mongoose.connection.transaction(async (session) => {
+    if (await PlatformCoinMovement.exists({ requestId: movement.requestId }).session(session)) throw Object.assign(new Error('duplicate'), { code: 11000 });
+    const wallet = await PlatformCoinWallet.findOneAndUpdate(
+      { universityId: scope, userId },
+      { $setOnInsert: { role: 'student' }, $inc: { balance: coins } },
+      { upsert: true, new: true, session, setDefaultsOnInsert: false },
+    );
+    if (wallet.role !== 'student') throw new HttpError(409, 'Wallet is unavailable');
+    balance = wallet.balance;
+    await PlatformCoinMovement.create([movement], { session });
+  });
+  return balance;
+}
+
+/**
+ * Without transactions: the ledger row goes first, so its unique requestId still guarantees a reward
+ * is paid at most once (a duplicate stops before the wallet changes); then the wallet is credited.
+ */
+async function creditWithoutTransaction(scope, userId, coins, movement) {
+  const created = await PlatformCoinMovement.create(movement);
+  try {
+    const wallet = await PlatformCoinWallet.findOneAndUpdate(
+      { universityId: scope, userId },
+      { $setOnInsert: { role: 'student' }, $inc: { balance: coins } },
+      { upsert: true, new: true, setDefaultsOnInsert: false },
+    );
+    return wallet.balance;
+  } catch (error) {
+    // Roll the ledger row back so a later retry can pay this reward.
+    await PlatformCoinMovement.deleteOne({ _id: created._id }).catch(() => {});
+    throw error;
+  }
+}
+
+/** Test hook: force the no-transaction path. */
+export function setEarnTransactionsUnsupported(value) { transactionsUnsupported = Boolean(value); }
+
 /**
  * Mints `amount` coins to a student once per (kind, key). Returns
  * { amount, balance, kind, note } when paid, { duplicate: true } when already paid, or null when
@@ -97,26 +141,30 @@ export async function creditEarning({ user, kind, key, amount, note = '' }) {
   const scope = earnScope();
   const requestId = `earn:${kind}:${scope}:${userId}:${key}`;
   if (await PlatformCoinMovement.exists({ requestId })) return { duplicate: true };
+  const movement = {
+    universityId: scope, requestId, kind: `earn_${kind}`, amount: coins, actorId: userId,
+    fromRole: 'platform', toRole: 'student', toUserId: userId, note: String(note).slice(0, 120),
+  };
   let balance = 0;
   try {
-    await mongoose.connection.transaction(async (session) => {
-      balance = 0;
-      if (await PlatformCoinMovement.exists({ requestId }).session(session)) throw Object.assign(new Error('duplicate'), { code: 11000 });
-      const wallet = await PlatformCoinWallet.findOneAndUpdate(
-        { universityId: scope, userId },
-        { $setOnInsert: { role: 'student' }, $inc: { balance: coins } },
-        { upsert: true, new: true, session, setDefaultsOnInsert: false },
-      );
-      if (wallet.role !== 'student') throw new HttpError(409, 'Wallet is unavailable');
-      balance = wallet.balance;
-      await PlatformCoinMovement.create([{
-        universityId: scope, requestId, kind: `earn_${kind}`, amount: coins, actorId: userId,
-        fromRole: 'platform', toRole: 'student', toUserId: userId, note: String(note).slice(0, 120),
-      }], { session });
-    });
+    balance = transactionsUnsupported
+      ? await creditWithoutTransaction(scope, userId, coins, movement)
+      : await creditInTransaction(scope, userId, coins, movement);
   } catch (error) {
     if (error?.code === 11000) return { duplicate: true };
-    throw error;
+    if (!transactionsUnsupported && isNoTransactionSupport(error)) {
+      // A standalone MongoDB (local development) cannot run transactions; remember and fall back.
+      transactionsUnsupported = true;
+      console.warn('[PrepCoin] MongoDB has no transaction support (not a replica set); earned coins use the ledger-first fallback.');
+      try {
+        balance = await creditWithoutTransaction(scope, userId, coins, movement);
+      } catch (fallbackError) {
+        if (fallbackError?.code === 11000) return { duplicate: true };
+        throw fallbackError;
+      }
+    } else {
+      throw error;
+    }
   }
   const paid = { kind, amount: coins, balance, note: String(note).slice(0, 120) };
   // A hint for open tabs: the header counter and coin popup update at once.

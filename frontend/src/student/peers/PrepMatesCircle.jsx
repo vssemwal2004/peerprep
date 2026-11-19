@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BarChart3, Check, Flame, Hand, Loader2, Trophy } from 'lucide-react';
+import { BarChart3, Check, Flame, Loader2, Trophy, Zap } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useOptionalToast } from '../../components/CustomToast';
 import PeerAvatar from './PeerAvatar';
@@ -24,21 +24,22 @@ function Rank({ rank }) {
 function NudgeButton({ row, onNudged }) {
   const toast = useOptionalToast();
   const [busy, setBusy] = useState(false);
-  if (row.nudged) return <span className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[12px] font-semibold text-slate-400 dark:text-zinc-500"><Check className="h-3.5 w-3.5" aria-hidden="true" />Nudged</span>;
+  if (row.nudged) return <span className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[12px] font-semibold text-slate-400 dark:text-zinc-500"><Check className="h-3.5 w-3.5" aria-hidden="true" />Pinged</span>;
   if (!row.canNudge) return null;
-  const nudge = async () => {
+  // "Prep Ping": a friendly reminder to a Prep Mate who has not practised today (once a day).
+  const ping = async () => {
     setBusy(true);
     try {
       await api.nudgePrepMate(row.id);
       onNudged(row.id);
-      toast?.success(`Nudge sent. ${firstName(row.name)} will get a friendly reminder.`);
+      toast?.success(`Prep Ping sent. ${firstName(row.name)} will get a friendly reminder.`);
     } catch (error) {
       toast?.error(errorMessage(error));
     } finally { setBusy(false); }
   };
-  return <button type="button" onClick={nudge} disabled={busy} title={`${firstName(row.name)} has not practised today. Send a friendly reminder.`}
+  return <button type="button" onClick={ping} disabled={busy} title={`${firstName(row.name)} has not practised today. Send a Prep Ping.`} aria-label={`Send ${row.name} a Prep Ping`}
     className="inline-flex h-8 items-center gap-1 rounded-lg bg-amber-50 px-2.5 text-[12px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200 transition hover:bg-amber-100 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-400/20">
-    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Hand className="h-3.5 w-3.5" aria-hidden="true" />}Nudge
+    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Zap className="h-3.5 w-3.5" aria-hidden="true" />}Prep Ping
   </button>;
 }
 

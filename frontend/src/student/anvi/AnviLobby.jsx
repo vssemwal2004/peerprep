@@ -62,9 +62,9 @@ function RejoinLobby({ attempt, support, onStart, studentName = "" }) {
   const { check, online } = micCheck;
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-50 text-slate-900 dark:bg-[#111318] dark:text-zinc-100" data-anvi-lobby="room">
+    <div className="relative min-h-screen overflow-hidden bg-slate-50 text-slate-900 dark:bg-[#1a1a1a] dark:text-zinc-100" data-anvi-lobby="room">
       <span aria-hidden="true" className="pointer-events-none absolute -top-48 left-1/2 h-[520px] w-[900px] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(99,102,241,0.14),transparent)] dark:bg-[radial-gradient(closest-side,rgba(124,58,237,0.2),transparent)]" />
-      <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/75 backdrop-blur-md dark:border-white/[0.06] dark:bg-[#111318]/75">
+      <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/75 backdrop-blur-md dark:border-white/[0.06] dark:bg-[#1a1a1a]/75">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
           <Link to="/student/ai-interviews" className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-100">
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />All interviews

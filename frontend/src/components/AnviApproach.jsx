@@ -120,7 +120,7 @@ export default function AnviApproach({ approaches = [], requestKey = 0, onReques
   }
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-br from-white via-violet-50/65 to-cyan-50/60 shadow-[0_16px_45px_rgba(76,29,149,0.12)] dark:border-violet-800/70 dark:from-[#171123] dark:via-[#161022] dark:to-[#07171d]">
+    <section className="overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-br from-white via-violet-50/65 to-cyan-50/60 shadow-[0_16px_45px_rgba(76,29,149,0.12)] dark:border-violet-800/70 dark:from-[#1a1a1a] dark:via-[#181818] dark:to-[#141414]">
       <div className="h-1 bg-gradient-to-r from-cyan-400 via-violet-500 to-fuchsia-500" />
       <div className="p-5 sm:p-6">
         <div className="flex items-start justify-between gap-4">

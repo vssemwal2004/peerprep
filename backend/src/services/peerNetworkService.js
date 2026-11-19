@@ -424,6 +424,11 @@ async function cachedPeerProgress(peer) {
   return value;
 }
 
+/** The practice-only progress a classmate may see (level, milestone badges, modules): cached 60 s. */
+export function peerProgressFor(student) {
+  return cachedPeerProgress(student);
+}
+
 export function clearPeerProgressCache() {
   progressCache.clear();
 }

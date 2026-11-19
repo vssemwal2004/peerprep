@@ -15,7 +15,7 @@ import { HttpError } from '../utils/errors.js';
 import { getIo } from '../utils/io.js';
 import { personalRoom } from '../utils/realtime.js';
 import { notifyOnce } from './notificationService.js';
-import { discoverableFilter, peerCard, peerScope } from './peerNetworkService.js';
+import { discoverableFilter, peerCard, peerProgressFor, peerScope } from './peerNetworkService.js';
 import { getSharedCodingCatalog } from './studentDashboardService.js';
 import { istDay } from './prepScore/topicQuota.js';
 import { TRACKS, tierOf } from './monthlyBadges.js';
@@ -186,7 +186,7 @@ async function requireMate(viewer, rawId, cohort) {
     PrepMate.findOne({ pairKey: pairKeyOf(viewer._id, id), status: 'accepted' }).select('_id').lean(),
     User.findOne({ _id: objectId(id), ...discoverableFilter(cohort) }).select('_id name avatarUrl course branch semester').lean(),
   ]);
-  if (!link || !mate) throw new HttpError(404, 'Only your Prep Mates can be compared or nudged.', { code: 'NOT_PREP_MATE' });
+  if (!link || !mate) throw new HttpError(404, 'Only your Prep Mates can be compared or sent a Prep Ping.', { code: 'NOT_PREP_MATE' });
   return mate;
 }
 
@@ -279,17 +279,18 @@ export async function nudgeMate(viewer, rawId, now = new Date()) {
   const day = istDay(now);
   const facts = await practiceFacts([mate._id], now);
   if (facts.get(idString(mate))?.days.has(day)) throw new HttpError(409, `${peerCard(mate).name} has already practised today.`, { code: 'ALREADY_PRACTISED' });
-  if (await PrepMateNudge.countDocuments({ fromId: objectId(self._id), day }) >= NUDGES_PER_DAY) throw new HttpError(429, 'That is enough nudges for today.');
+  if (await PrepMateNudge.countDocuments({ fromId: objectId(self._id), day }) >= NUDGES_PER_DAY) throw new HttpError(429, 'That is enough Prep Pings for today.');
   try {
     await PrepMateNudge.create({ key: `${idString(self)}:${idString(mate)}:${day}`, fromId: objectId(self._id), toId: objectId(mate._id), day, sentAt: now });
   } catch (error) {
-    if (error?.code === 11000) throw new HttpError(429, `You already nudged ${peerCard(mate).name} today.`, { code: 'ALREADY_NUDGED' });
+    if (error?.code === 11000) throw new HttpError(429, `You already sent ${peerCard(mate).name} a Prep Ping today.`, { code: 'ALREADY_NUDGED' });
     throw error;
   }
+  // Students see this as a "Prep Ping" (the internal names stay "nudge").
   const from = peerCard(self);
   await notifyOnce({
     userId: mate._id, dedupeKey: `prep-mate-nudge:${idString(self)}:${day}`, type: 'PREP_MATE_NUDGE',
-    title: `${from.name} nudged you`, message: 'Your Prep Mate is cheering for you. Solve one problem today to keep your streak going.',
+    title: `${from.name} sent you a Prep Ping`, message: 'Your Prep Mate is cheering for you. Solve one problem today to keep your streak going.',
     actionUrl: '/problems', now,
   }).catch(() => false);
   getIo()?.to(personalRoom(idString(mate))).emit('peer-network-updated', { kind: 'mate-nudge', actor: from, targetId: idString(mate) });
@@ -308,22 +309,74 @@ async function monthlyBadgeLevels(ids, month) {
   return levels;
 }
 
+/** Competition rank (ties share a rank) of each id by `value`, highest first. */
+function ranksBy(entries, value) {
+  const sorted = [...entries].sort((a, b) => value(b) - value(a));
+  const ranks = new Map();
+  let rank = 0;
+  let previous = null;
+  sorted.forEach((entry, index) => {
+    if (previous === null || value(entry) !== previous) rank = index + 1;
+    previous = value(entry);
+    ranks.set(entry.id, rank);
+  });
+  return ranks;
+}
+
+/** Practice days of the last 30 IST days, oldest first: [{ day, active }]. */
+function last30(days, now) {
+  const today = istDay(now);
+  return Array.from({ length: 30 }, (_, index) => {
+    const day = shiftDay(today, index - 29);
+    return { day, active: days.has(day) };
+  });
+}
+
+const publicLevel = (progress) => (progress?.level ? { level: progress.level.level, title: progress.level.title } : null);
+const publicBadges = (progress) => (progress?.badges ? { earned: progress.badges.earned || 0, milestones: progress.badges.milestones || 0 } : { earned: 0, milestones: 0 });
+
+/**
+ * Head to head with one Prep Mate: profile (level, lifetime badges, rank in your circle), questions
+ * (difficulty, weeks, topics), consistency (streaks, 30-day strip) and this month's badge levels.
+ * Practice-only, like everything a classmate may see.
+ */
 export async function compareWithMate(viewer, rawId, now = new Date()) {
   const { self, cohort } = await peerScope(viewer);
   const mate = await requireMate(self, rawId, cohort);
   const month = istDay(now).slice(0, 7);
-  const [facts, levels] = await Promise.all([practiceFacts([self._id, mate._id], now), monthlyBadgeLevels([self._id, mate._id], month)]);
-  const you = summarizeFacts(facts.get(idString(self)), now);
-  const them = summarizeFacts(facts.get(idString(mate)), now);
+  const mates = await circleMates(self._id, cohort);
+  const selfFull = await User.findById(objectId(self._id)).select('_id role featureAccess accessScope semester college').lean();
+  const mateFull = await User.findById(objectId(mate._id)).select('_id role featureAccess accessScope semester college').lean();
+  const [facts, levels, selfProgress, mateProgress] = await Promise.all([
+    practiceFacts([self._id, ...mates.map((row) => row._id)], now),
+    monthlyBadgeLevels([self._id, mate._id], month),
+    peerProgressFor(selfFull).catch(() => null),
+    peerProgressFor(mateFull).catch(() => null),
+  ]);
+  const empty = { solves: [], days: new Set() };
+  const circle = [self, ...mates].map((person) => ({ id: idString(person), stats: summarizeFacts(facts.get(idString(person)) || empty, now) }));
+  const allTime = ranksBy(circle, (entry) => entry.stats.totals.total);
+  const weekly = ranksBy(circle, (entry) => entry.stats.thisWeek);
+  const you = circle[0].stats;
+  const them = circle.find((entry) => entry.id === idString(mate)).stats;
   const tags = [...new Set([...you.topics.keys(), ...them.topics.keys()])]
     .map((tag) => ({ tag, you: you.topics.get(tag) || 0, mate: them.topics.get(tag) || 0 }))
     .sort((a, b) => (b.you + b.mate) - (a.you + a.mate) || a.tag.localeCompare(b.tag))
     .slice(0, TOPIC_LIMIT);
-  const strip = ({ topics, ...rest }) => rest;
+  const side = (person, stats, progress) => {
+    const { topics, ...rest } = stats;
+    return {
+      ...peerCard(person), ...rest,
+      days30: last30((facts.get(idString(person)) || empty).days, now),
+      level: publicLevel(progress), badgesEarned: publicBadges(progress),
+      rank: { allTime: allTime.get(idString(person)), thisWeek: weekly.get(idString(person)), of: circle.length },
+      monthBadgeLevels: TRACKS.reduce((sum, track) => sum + (levels.get(`${idString(person)}:${track.key}`) || 0), 0),
+    };
+  };
   return {
     month,
-    you: { ...peerCard(self), ...strip(you) },
-    mate: { ...peerCard(mate), ...strip(them) },
+    you: side(self, you, selfProgress),
+    mate: side(mate, them, mateProgress),
     topics: tags,
     badges: TRACKS.map((track) => ({ key: track.key, title: track.title, you: levels.get(`${idString(self)}:${track.key}`) || 0, mate: levels.get(`${idString(mate)}:${track.key}`) || 0 })),
   };

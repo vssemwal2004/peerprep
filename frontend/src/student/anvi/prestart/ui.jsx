@@ -35,7 +35,7 @@ function MicAvatar({ studentName, size }) {
   return <span className="relative flex shrink-0 items-center justify-center">
     <span aria-hidden="true" className="absolute inset-0 rounded-full bg-emerald-400/30 motion-reduce:hidden"
       style={{ transform: "scale(calc(1 + var(--lvl, 0) * 0.3))", opacity: "min(1, calc(var(--lvl, 0) * 1.6))", transition: "transform 90ms linear" }} />
-    <span className={`relative flex items-center justify-center rounded-full bg-violet-600 font-semibold tracking-wide text-white ring-4 ring-white dark:bg-violet-500 dark:ring-[#111318] ${size}`}>{initialsOf(studentName)}</span>
+    <span className={`relative flex items-center justify-center rounded-full bg-violet-600 font-semibold tracking-wide text-white ring-4 ring-white dark:bg-violet-500 dark:ring-[#1a1a1a] ${size}`}>{initialsOf(studentName)}</span>
   </span>;
 }
 

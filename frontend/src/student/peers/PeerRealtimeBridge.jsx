@@ -79,7 +79,7 @@ export default function PeerRealtimeBridge() {
           id: `mate-nudge:${actor.id}`,
           type: 'peer',
           avatar: { name: actor.name, url: actor.avatarUrl },
-          title: `${actor.name} nudged you`,
+          title: `${actor.name} sent you a Prep Ping`,
           message: 'Your Prep Mate is cheering for you. One problem today keeps your streak going.',
           onClick: practice,
           duration: 9000,

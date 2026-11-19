@@ -268,15 +268,15 @@ export default function PrestartFlow({ setup, support, starting = false, startEr
   </button>;
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="anvi-prestart-title" data-anvi-lobby="prestart" data-phase={current}
-      className="fixed inset-0 z-[80] flex h-[100dvh] items-center justify-center overflow-hidden bg-slate-50 p-0 text-slate-900 antialiased [font-family:Inter,ui-sans-serif,system-ui,sans-serif] dark:bg-[#0b0c10] dark:text-zinc-100 sm:p-6">
+      className="fixed inset-0 z-[80] flex h-[100dvh] items-center justify-center overflow-hidden bg-slate-50 p-0 text-slate-900 antialiased [font-family:Inter,ui-sans-serif,system-ui,sans-serif] dark:bg-[#121212] dark:text-zinc-100 sm:p-6">
       <AiMotionStyles />
       {/* A soft wash of the primary colour behind the card. */}
       <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_70%_at_50%_0%,rgba(124,58,237,0.10),transparent)] dark:bg-[radial-gradient(60%_70%_at_50%_0%,rgba(139,92,246,0.16),transparent)]" />
 
       {/* One contained card, centred, as in the assessment's secure setup: the dark step rail on the left,
           the current step on the right with its own Back / Next footer. */}
-      <div className="anvi-fade-up relative z-10 flex h-full w-full max-w-6xl overflow-hidden bg-white shadow-2xl shadow-slate-900/10 ring-1 ring-slate-900/10 dark:bg-[#14161c] dark:shadow-black/40 dark:ring-white/10 sm:h-[min(780px,calc(100dvh-3rem))] sm:rounded-2xl">
-        <aside className="relative hidden w-[300px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-gradient-to-b from-violet-50 via-slate-50 to-slate-50 p-7 text-slate-900 dark:border-white/[0.06] dark:from-[#1a1526] dark:via-[#121319] dark:to-[#0f1015] dark:text-white md:flex">
+      <div className="anvi-fade-up relative z-10 flex h-full w-full max-w-6xl overflow-hidden bg-white shadow-2xl shadow-slate-900/10 ring-1 ring-slate-900/10 dark:bg-[#1c1c1c] dark:shadow-black/40 dark:ring-white/10 sm:h-[min(780px,calc(100dvh-3rem))] sm:rounded-2xl">
+        <aside className="relative hidden w-[300px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-gradient-to-b from-violet-50 via-slate-50 to-slate-50 p-7 text-slate-900 dark:border-white/[0.06] dark:from-[#1c1c1c] dark:via-[#181818] dark:to-[#141414] dark:text-white md:flex">
           <span aria-hidden="true" className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-violet-300/30 blur-3xl dark:bg-violet-600/25" />
           <span aria-hidden="true" className="pointer-events-none absolute -bottom-28 -right-20 h-64 w-64 rounded-full bg-fuchsia-200/30 blur-3xl dark:bg-fuchsia-500/10" />
           <div className="relative flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-violet-700 dark:text-violet-300">
@@ -355,7 +355,7 @@ export default function PrestartFlow({ setup, support, starting = false, startEr
           </main>
 
           {/* Back / Next (Join on the last phase), fixed to the bottom of the card. */}
-          <footer className="shrink-0 border-t border-slate-200 bg-white px-5 py-3.5 dark:border-white/[0.06] dark:bg-[#14161c] sm:px-9">
+          <footer className="shrink-0 border-t border-slate-200 bg-white px-5 py-3.5 dark:border-white/[0.06] dark:bg-[#1c1c1c] sm:px-9">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 sm:flex-nowrap">
               <p id={onReady ? "anvi-join-hint" : "anvi-phase-hint"} aria-live="polite" className="order-1 w-full text-center text-xs text-slate-500 empty:hidden dark:text-zinc-400 sm:order-2 sm:w-auto sm:min-w-0 sm:flex-1 sm:text-right">{onReady ? joinHint : blocker}</p>
               <div className="order-2 sm:order-1">

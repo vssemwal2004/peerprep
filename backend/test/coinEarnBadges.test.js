@@ -96,6 +96,20 @@ test('earned coins are minted once per key, only for students with Prep Coin on'
   assert.equal(await creditEarning({ user: { _id: id(), role: 'coordinator' }, kind: 'login', key: 'd', amount: 1 }), null);
 });
 
+test('without transaction support (standalone MongoDB) earnings still pay exactly once', async (t) => {
+  if (skipped) return t.skip('replica set unavailable');
+  const { setEarnTransactionsUnsupported } = await import('../src/platform/coinEarn.js');
+  setEarnTransactionsUnsupported(true);
+  try {
+    const learner = await student();
+    await Promise.all([1, 2, 3].map(() => creditEarning({ user: learner, kind: 'login', key: '2026-11-15', amount: 1 })));
+    assert.equal(await balanceOf(learner._id), 1);
+    assert.equal(await PlatformCoinMovement.countDocuments({ toUserId: learner._id }), 1);
+  } finally {
+    setEarnTransactionsUnsupported(false);
+  }
+});
+
 test('daily check-in: first open of the IST day pays 1 coin and marks the heatmap; later opens do not', async (t) => {
   if (skipped) return t.skip('replica set unavailable');
   const learner = await student();
