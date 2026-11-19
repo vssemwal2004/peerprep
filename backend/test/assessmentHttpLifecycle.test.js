@@ -243,7 +243,11 @@ test('an in-progress attempt is never graded back; correct answers wait for the 
   assert.equal(done.permissions.canViewQuestionReview, true);
   assert.equal(done.permissions.canViewCorrectAnswers, false);
   assert.ok(done.questionWise.length > 0);
-  assert.ok(done.questionWise.every((row) => row.correctOptionIndex === undefined && row.correctAnswer === undefined));
+  assert.ok(done.questionWise.every((row) => row.correctOptionIndex === undefined && row.correctAnswer === undefined && row.correctOptionIndexes === undefined));
+  // Every option is listed with the student's choice, so a report can show all options.
+  assert.deepEqual(done.questionWise[0].selectedOptionIndexes, [0]);
+  assert.ok(done.questionWise[0].options.length > 1);
+  assert.deepEqual(done.questionWise[1].selectedOptionIndexes, [], 'unanswered');
 });
 test('a tab-switch pause gives back at most 30 s, and no pause starts after the deadline', async () => {
   const assessment = await fixture({ settings: { tabSwitchLimit: 1, tabSwitchAction: 'pause' } });

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 
 // Shared by the side panels that collapse to an icon rail (Prep Assessment filters, Prep Library).
-// Same feel as the global sidebar: a 0.8 s slide with the same easing.
+// Same feel as the global sidebar: a 0.3 s slide with the same easing (0.8 s felt sluggish and
+// stuttered in Safari).
 export const RAIL_WIDTH = 60;
 export const RAIL_PANEL_WIDTH = 240;
 // Literal class strings so Tailwind generates them.
-export const RAIL_SLIDE = 'duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)]';
+export const RAIL_SLIDE = 'duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none';
 
 function useMediaQuery(query) {
   const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);

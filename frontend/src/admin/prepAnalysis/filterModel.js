@@ -418,6 +418,8 @@ const KPI_RULES = Object.freeze({
   "coding.active": { field: "coding.practiceStatus", operator: "anyOf", value: ["active"] },
   "coding.stopped": { field: "coding.practiceStatus", operator: "anyOf", value: ["inactive", "never"] },
   "coding.hard": { field: "coding.solvedHard", operator: "gte", value: "1" },
+  // Accepted / total submissions: the students behind those submissions (at least one submission).
+  "coding.submissions": { field: "coding.submissions", operator: "gte", value: "1" },
   "quickprep.sheetStarted": { field: "quickprep.status", operator: "anyOf", value: ["finished", "inProgress"] },
   "quickprep.sheetActive": { field: "quickprep.activity", operator: "anyOf", value: ["active"] },
   "quickprep.sheetFinished": { field: "quickprep.status", operator: "anyOf", value: ["finished"] },

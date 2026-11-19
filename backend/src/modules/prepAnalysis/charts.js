@@ -140,20 +140,44 @@ export function weekStart(day) {
 
 // Topic bubbles: priority by how many students solve a topic compared with the most-solved one.
 export const TOPIC_BUBBLE_LIMIT = 300;
-export const TOPIC_TIERS = Object.freeze([
-  { key: 'strong', label: 'Most practised', hint: 'At least two-thirds as many students as the top topic' },
-  { key: 'growing', label: 'Growing', hint: 'One-third to two-thirds as many students as the top topic' },
-  { key: 'focus', label: 'Needs focus', hint: 'Fewer than one-third as many students as the top topic' },
-]);
-export const topicTier = (students, most) => (!most ? 'focus' : students / most >= 2 / 3 ? 'strong' : students / most >= 1 / 3 ? 'growing' : 'focus');
+// Up to eight groups, each its own bubble size and colour, built from the student counts actually
+// present (2026-11-19: shares of the top topic left most topics in one colour when counts are
+// small). Eight or fewer different counts: one group per count. More: the different counts are
+// split into eight runs of about equal length. `level` 0 (most students) … 7 (fewest) picks the
+// size and colour; with fewer groups the levels spread over the whole range.
+export const TOPIC_TIER_LEVELS = 8;
+const studentsText = (low, high) => (low === high ? `${low.toLocaleString('en-US')} student${low === 1 ? '' : 's'}` : `${low.toLocaleString('en-US')}–${high.toLocaleString('en-US')} students`);
 
-/** The steps of "How far students get", shared by the chart and its student lists (drill.js). */
+/** Groups for these per-topic student counts: [{ key, level, low, high, label }], most students first. */
+export function topicTiers(values) {
+  const distinct = [...new Set(values.filter((value) => Number.isFinite(value)))].sort((a, b) => b - a);
+  if (!distinct.length) return [];
+  const runs = distinct.length <= TOPIC_TIER_LEVELS
+    ? distinct.map((value) => [value])
+    : Array.from({ length: TOPIC_TIER_LEVELS }, (_, index) => distinct.slice(Math.floor((index * distinct.length) / TOPIC_TIER_LEVELS), Math.floor(((index + 1) * distinct.length) / TOPIC_TIER_LEVELS)));
+  return runs.map((run, index) => {
+    const level = runs.length === 1 ? 0 : Math.round((index * (TOPIC_TIER_LEVELS - 1)) / (runs.length - 1));
+    const high = run[0];
+    const low = run.at(-1);
+    return { key: `t${level}`, level, low, high, label: studentsText(low, high) };
+  });
+}
+/** The group a count belongs to (its key). */
+export const topicTier = (tiers, students) => (tiers.find((tier) => students >= tier.low && students <= tier.high) || tiers.at(-1))?.key || 't7';
+/** The groups with how many topics each holds. */
+export const topicTierRanges = (tiers, items) => tiers.map((tier) => ({ ...tier, topics: items.filter((item) => item.tier === tier.key).length }));
+
+/**
+ * The steps of the "Practice journey" funnel, shared by the chart and its student lists (drill.js).
+ * `gap`: who stopped just before this step (reached the step above, not this one), in plain words;
+ * `furthest`: how a student whose furthest step is this one is described in lists.
+ */
 export const CODING_FUNNEL_STAGES = Object.freeze([
-  { name: 'Students', test: () => true },
-  { name: 'Started practising', test: (row) => row.coding.submissions > 0 },
-  { name: 'Solved a problem', test: (row) => row.coding.solved.total > 0 },
-  { name: 'Solved a Medium', test: (row) => row.coding.solved.Medium > 0 },
-  { name: 'Solved a Hard', test: (row) => row.coding.solved.Hard > 0 },
+  { name: 'All students', furthest: 'Not started', test: () => true },
+  { name: 'Tried a problem', gap: 'Never tried a problem', furthest: 'Tried a problem', test: (row) => row.coding.submissions > 0 },
+  { name: 'Solved a problem', gap: 'Tried, but nothing solved yet', furthest: 'Solved a problem', test: (row) => row.coding.solved.total > 0 },
+  { name: 'Solved a Medium', gap: 'Solved, but no Medium yet', furthest: 'Solved a Medium', test: (row) => row.coding.solved.Medium > 0 },
+  { name: 'Solved a Hard', gap: 'Solved Medium, but no Hard yet', furthest: 'Solved a Hard', test: (row) => row.coding.solved.Hard > 0 },
 ]);
 
 /** The submission outcomes the "Trend of submissions till today" donut is split into. */
@@ -310,8 +334,8 @@ const CODING_CHARTS = [
   },
   {
     id: 'practice-funnel', type: 'funnel', size: 'md',
-    title: 'How far students get',
-    question: 'From signing up to solving Hard problems, where do students stop?',
+    title: 'Practice journey',
+    question: 'How many students reach each step, from trying a first problem to solving a Hard one, and where do they stop?',
     build: ({ rows }) => ({
       stages: CODING_FUNNEL_STAGES.map((stage) => ({ name: stage.name, value: rows.filter(stage.test).length })),
       // Between each two steps: the students who reached the first but not the second, counted
@@ -319,7 +343,7 @@ const CODING_CHARTS = [
       // A click on a drop lists them (drill key "lost:<index of the second step>").
       drops: CODING_FUNNEL_STAGES.slice(1).map((stage, offset) => {
         const before = CODING_FUNNEL_STAGES[offset];
-        return { key: `lost:${offset + 1}`, from: before.name, to: stage.name, students: rows.filter((row) => before.test(row) && !stage.test(row)).length };
+        return { key: `lost:${offset + 1}`, from: before.name, to: stage.name, label: stage.gap, students: rows.filter((row) => before.test(row) && !stage.test(row)).length };
       }),
     }),
   },
@@ -333,20 +357,21 @@ const CODING_CHARTS = [
       const sorted = [...topicStats(rows).entries()].filter(([, topic]) => topic.students > 0)
         .sort((left, right) => right[1].students - left[1].students || left[0].localeCompare(right[0]));
       const items = sorted.slice(0, TOPIC_BUBBLE_LIMIT);
-      const most = items[0]?.[1].students || 0;
+      const tiers = topicTiers(items.map(([, topic]) => topic.students));
+      const bubbles = items.map(([name, topic]) => ({
+        key: name, name, value: topic.students, pct: percentOne(topic.students, rows.length),
+        attempted: topic.attempted, solved: topic.solved, accuracy: percentOne(topic.accepted, topic.attempts),
+        tier: topicTier(tiers, topic.students),
+        note: `${percentOne(topic.students, rows.length)}% of students · ${percentOne(topic.accepted, topic.attempts)}% accurate`,
+      }));
       return {
         valueLabel: 'students solving',
         itemLabel: 'Topic',
         cohort: rows.length,
         // More topics than can be drawn as bubbles (very rare): the table and download still list all.
         hidden: Math.max(0, sorted.length - items.length),
-        tiers: TOPIC_TIERS,
-        items: items.map(([name, topic]) => ({
-          key: name, name, value: topic.students, pct: percentOne(topic.students, rows.length),
-          attempted: topic.attempted, solved: topic.solved, accuracy: percentOne(topic.accepted, topic.attempts),
-          tier: topicTier(topic.students, most),
-          note: `${percentOne(topic.students, rows.length)}% of students · ${percentOne(topic.accepted, topic.attempts)}% accurate`,
-        })),
+        tiers: topicTierRanges(tiers, bubbles),
+        items: bubbles,
       };
     },
   },
@@ -742,7 +767,69 @@ export const quickPrepStatusLabel = (row) => ({ finished: QUICKPREP_STATUS_SERIE
 const lastSheetVisit = (row) => (row.quickprep.daysSinceActive === null ? 'Not opened yet'
   : row.quickprep.daysSinceActive === 0 ? 'Opened today' : `Last opened ${row.quickprep.daysSinceActive} day${row.quickprep.daysSinceActive === 1 ? '' : 's'} ago`);
 
+/**
+ * The steps of the Quick Prep "Sheet journey", shared by the chart and its student lists
+ * (featureDrills.js). `gap`: who stopped just before this step, in plain words.
+ */
+export const QUICKPREP_FUNNEL_STAGES = Object.freeze([
+  { name: 'All students', test: () => true },
+  { name: 'Opened a sheet', gap: 'Never opened a sheet', test: (row) => row.quickprep.started > 0 },
+  { name: 'Solved a question', gap: 'Opened, but nothing solved yet', test: (row) => row.quickprep.solved > 0 },
+  { name: 'Half of a sheet', gap: 'Solving, but under half of any sheet', test: (row) => [...row.quickprep.bySheet.values()].some((entry) => entry.total && entry.solved / entry.total >= 0.5) },
+  { name: 'Finished a sheet', gap: 'Past half, but no sheet finished', test: (row) => row.quickprep.finished > 0 },
+]);
+
 const QUICKPREP_CHARTS = [
+  {
+    // Every sheet students have started, as a bubble sized by how many started it and grouped
+    // (size + colour) by that count, like the coding topic bubbles. A bubble lists its starters.
+    id: 'quickprep-sheet-bubbles', type: 'bubble', size: 'md',
+    title: 'Sheets students are working on',
+    question: 'Which Quick Prep sheets do the most students work on, and how many finish them?',
+    build: ({ rows, sheets }) => {
+      const list = openSheets(sheets).map((sheet) => {
+        const open = rows.filter((row) => sheetOpenTo(row, sheet)).length;
+        const starters = rows.filter((row) => row.quickprep?.bySheet.has(sheet.id));
+        const finished = starters.filter((row) => row.quickprep.bySheet.get(sheet.id).finished).length;
+        return { sheet, open, starters: starters.length, finished };
+      }).filter((entry) => entry.starters > 0)
+        .sort((left, right) => right.starters - left.starters || left.sheet.title.localeCompare(right.sheet.title))
+        .slice(0, TOPIC_BUBBLE_LIMIT);
+      const tiers = topicTiers(list.map((entry) => entry.starters));
+      const items = list.map((entry) => ({
+        key: entry.sheet.id, name: entry.sheet.title, value: entry.starters,
+        pct: entry.open ? round1q((entry.starters / entry.open) * 100) : 0,
+        tier: topicTier(tiers, entry.starters),
+        detail: `${entry.finished} finished · ${entry.starters ? Math.round((entry.finished / entry.starters) * 100) : 0}% finish rate`,
+      }));
+      return {
+        valueLabel: 'students started', itemLabel: 'Sheet', cohort: rows.length, pctLabel: 'of the students it is open to',
+        tiers: topicTierRanges(tiers, items).map((tier) => ({ ...tier, label: tier.label.replace('students', 'started').replace('student', 'started') })),
+        items,
+      };
+    },
+  },
+  {
+    // Easy / Medium / Hard as three progress rings: the share of started questions solved.
+    id: 'quickprep-difficulty-rings', type: 'rings', size: 'sm',
+    title: 'Solve rate by difficulty',
+    question: 'Across the sheets students started, what share of Easy, Medium and Hard questions are solved?',
+    build: ({ rows, sheets }) => {
+      const levels = new Map(QP_LEVELS.map((level) => [level, { solved: 0, open: 0, students: new Set() }]));
+      for (const row of rows) {
+        for (const question of startedQuestions(row, sheets).values()) {
+          const level = levels.get(levelOf(question.difficulty));
+          if (question.solved) { level.solved += 1; level.students.add(row.id); } else level.open += 1;
+        }
+      }
+      const items = QP_LEVELS.filter((level) => levels.get(level).solved + levels.get(level).open > 0).map((level) => {
+        const entry = levels.get(level);
+        const total = entry.solved + entry.open;
+        return { key: level, label: level, value: round1q((entry.solved / total) * 100), solved: entry.solved, total, students: entry.students.size };
+      });
+      return { unit: '%', valueLabel: 'of started questions solved', items };
+    },
+  },
   {
     id: 'quickprep-sheets', type: 'stackedBar', size: 'lg',
     title: 'Progress by sheet',
@@ -807,18 +894,17 @@ const QUICKPREP_CHARTS = [
   },
   {
     id: 'quickprep-funnel', type: 'funnel', size: 'sm',
-    title: 'How far students get in sheets',
-    question: 'From opening a sheet to finishing one, where do students stop?',
+    title: 'Sheet journey',
+    question: 'How many students reach each step, from opening a sheet to finishing one, and where do they stop?',
     build: ({ rows }) => {
       const withData = rows.filter((row) => row.quickprep);
       return {
-        stages: [
-          { name: 'Students', value: withData.length },
-          { name: 'Started a sheet', value: sheetStarters(withData).length },
-          { name: 'Solved a question', value: withData.filter((row) => row.quickprep.solved > 0).length },
-          { name: 'Half of a sheet', value: withData.filter((row) => [...row.quickprep.bySheet.values()].some((entry) => entry.total && entry.solved / entry.total >= 0.5)).length },
-          { name: 'Finished a sheet', value: withData.filter((row) => row.quickprep.finished > 0).length },
-        ],
+        stages: QUICKPREP_FUNNEL_STAGES.map((stage) => ({ name: stage.name, value: withData.filter(stage.test).length })),
+        // Between two steps: who reached the first but not the second (drill key "lost:<step>").
+        drops: QUICKPREP_FUNNEL_STAGES.slice(1).map((stage, offset) => {
+          const before = QUICKPREP_FUNNEL_STAGES[offset];
+          return { key: `lost:${offset + 1}`, from: before.name, to: stage.name, label: stage.gap, students: withData.filter((row) => before.test(row) && !stage.test(row)).length };
+        }),
       };
     },
   },
@@ -1348,11 +1434,17 @@ export const CHART_BY_ID = new Map(CHARTS.map((chart) => [chart.id, chart]));
 // the big tables last. "id:size" sets the card's width on that page (sm 4, md 6, lg 8, full 12);
 // a bare id keeps the chart's own `size`. The "all" page is one block per feature, each row full.
 const LAYOUTS = {
-  coding: ['activity-calendar', 'top-students', 'submission-trend', 'practice-trend', 'practice-funnel', 'topic-strength', 'needs-attention', 'tough-problems',
-    'student-profile', 'failure-reasons', 'language-usage', 'score-spread', 'class-spread', 'student-map'],
-  quickprep: ['quickprep-calendar', 'quickprep-sheet-health', 'quickprep-leaders:lg', 'quickprep-own-work', 'quickprep-trend:full',
-    'quickprep-funnel:md', 'quickprep-difficulty-mix', 'quickprep-needs-attention', 'quickprep-hardest-questions',
-    'quickprep-pace:sm', 'quickprep-spread:sm', 'quickprep-coverage:sm', 'quickprep-by-class', 'quickprep-class-spread', 'quickprep-sheets:full', 'quickprep-matrix'],
+  // 2026-11-19: "Student skill profile" left the default page; "Trend of submissions till today"
+  // took its place in the row of three, so "Top students" runs the full width.
+  coding: ['activity-calendar', 'top-students:full', 'practice-trend', 'practice-funnel', 'topic-strength', 'needs-attention', 'tough-problems',
+    'submission-trend', 'failure-reasons', 'language-usage', 'score-spread', 'class-spread', 'student-map'],
+  // 2026-11-19 redesign: activity (heat map, weekly lines + own-work donut), then sheets (bubbles +
+  // journey funnel, sheet health), students (leaders + stuck), difficulty rings with two
+  // histograms, questions and classes, and the student × sheet grid last.
+  quickprep: ['quickprep-calendar', 'quickprep-trend:lg', 'quickprep-own-work:sm', 'quickprep-sheet-bubbles:md', 'quickprep-funnel:md',
+    'quickprep-sheet-health:full', 'quickprep-leaders:md', 'quickprep-needs-attention:md',
+    'quickprep-difficulty-rings:sm', 'quickprep-pace:sm', 'quickprep-spread:sm', 'quickprep-hardest-questions:md', 'quickprep-by-class:md',
+    'quickprep-class-spread:md', 'quickprep-coverage:md', 'quickprep-matrix:full'],
   learning: ['learning-calendar', 'learning-leaders:lg', 'learning-funnel', 'learning-trend:full', 'learning-subjects:full', 'learning-needs-attention', 'learning-spread'],
   interview: ['interview-calendar', 'interview-leaders:lg', 'interview-mix', 'interview-trend:full', 'interview-ratings', 'interview-funnel',
     'interview-needs-attention', 'interview-spread'],
@@ -1369,7 +1461,7 @@ export const DEFAULT_SIZES = perArea((entries) => Object.freeze(Object.fromEntri
 
 // Raise an area's number when its default layout is redesigned: a layout this browser saved
 // under an older number is replaced by the new default once; changes made after that stay.
-export const DEFAULT_LAYOUT_VERSION = Object.freeze({ coding: 2, quickprep: 2, learning: 2, interview: 2, assessment: 2, all: 2 });
+export const DEFAULT_LAYOUT_VERSION = Object.freeze({ coding: 3, quickprep: 3, learning: 2, interview: 2, assessment: 2, all: 2 });
 
 // Headline numbers: a few actionable student counts per feature. Prep Coding also
 // includes accepted / total submissions because it is the clearest cohort-level

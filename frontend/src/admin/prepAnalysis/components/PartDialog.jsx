@@ -170,6 +170,27 @@ function PartDialogBody({ analysis, chart, part, layered, onClose, onStudent, on
           <IconButton label="Close" onClick={onClose}><X className="h-4 w-4" /></IconButton>
         </header>
 
+        {/* Every action sits at the top, under the title: email first, then filter, open and download. */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-5 py-2.5 dark:border-gray-800 dark:bg-white/[0.02]">
+          {selectable && result?.rows?.length > 0 && (
+            <Button tone="primary" disabled={emailLoading} onClick={emailStudents}
+              title={selection.count ? "Email the ticked students" : "Email every student in this list (tick some to email only them)"}>
+              {emailLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+              {selection.count ? `Email ${selection.count.toLocaleString()} selected` : `Email these ${Number(result.total ?? students ?? 0).toLocaleString()} students`}
+            </Button>
+          )}
+          {emailNote && <p className="text-[12px] text-amber-700 dark:text-amber-300">{emailNote}</p>}
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {part.studentId && <Button onClick={() => onStudent(part.studentId)}><UserRound className="h-3.5 w-3.5" />Full profile</Button>}
+            {onFocus && group === null && <Button onClick={() => onFocus(part)} title="Show the whole page for just these students"><Filter className="h-3.5 w-3.5" />Filter page to these</Button>}
+            {onOpenFull && <Button onClick={onOpenFull}><Maximize2 className="h-3.5 w-3.5" />Full chart</Button>}
+            <Button disabled={download.busy} onClick={() => download.run("csv", part.key, label, group)}><Sheet className="h-3.5 w-3.5" />CSV</Button>
+            <Button disabled={download.busy} onClick={() => download.run("xlsx", part.key, label, group)}>
+              {download.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />}Download Excel
+            </Button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-2.5 px-5 pt-4 sm:grid-cols-4">
           <Tile label="Students" hint="Students behind this part, of the students in view">
             {students !== undefined ? <><AnimatedNumber value={students} /><span className="text-[12px] font-semibold text-slate-400"> / {Number(cohort || 0).toLocaleString()}</span></> : "—"}
@@ -203,7 +224,7 @@ function PartDialogBody({ analysis, chart, part, layered, onClose, onStudent, on
             loadAll={() => drillStudentIds(analysis, chart.id, { group, key: part.key, search: drill.query })}
             onEmail={() => setEmailIds(selection.ids)} />
         )}
-        <div className="mx-5 flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-gray-800">
+        <div className="mx-5 mb-5 flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-gray-800">
           <div className="min-h-0 flex-1 overflow-auto">
             <DrillTable drill={drill} onStudent={onStudent} selection={selectable ? selection : null} />
           </div>
@@ -212,30 +233,10 @@ function PartDialogBody({ analysis, chart, part, layered, onClose, onStudent, on
               busy={drill.loading} noun={tab === "students" ? "students" : "rows"} />
           )}
         </div>
-
-        <footer className="flex flex-wrap items-center gap-2 px-5 py-3.5">
-          {selectable && result?.rows?.length > 0 && (
-            <>
-              <Button tone="primary" disabled={emailLoading} onClick={emailStudents}
-                title={selection.count ? "Email the ticked students" : "Email every student in this list (tick some to email only them)"}>
-                {emailLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
-                {selection.count ? `Email ${selection.count.toLocaleString()} selected` : `Email these ${Number(result.total ?? students ?? 0).toLocaleString()} students`}
-              </Button>
-              {emailNote && <p className="text-[12px] text-amber-700 dark:text-amber-300">{emailNote}</p>}
-            </>
-          )}
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            {part.studentId && <Button onClick={() => onStudent(part.studentId)}><UserRound className="h-3.5 w-3.5" />Full profile</Button>}
-            {onFocus && group === null && <Button onClick={() => onFocus(part)} title="Show the whole page for just these students"><Filter className="h-3.5 w-3.5" />Filter page to these</Button>}
-            {onOpenFull && <Button onClick={onOpenFull}><Maximize2 className="h-3.5 w-3.5" />Full chart</Button>}
-            <Button disabled={download.busy} onClick={() => download.run("csv", part.key, label, group)}><Sheet className="h-3.5 w-3.5" />CSV</Button>
-            <Button disabled={download.busy} onClick={() => download.run("xlsx", part.key, label, group)}>
-              {download.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />}Download Excel
-            </Button>
-          </div>
-        </footer>
       </motion.section>
-      <SendEmailDialog open={Boolean(emailIds)} onClose={closeEmail} studentIds={emailIds || []} body={chartRequest(analysis, chart.id, {}, group)} />
+      {/* A Practice journey gap suggests the email written for exactly that gap. */}
+      <SendEmailDialog open={Boolean(emailIds)} onClose={closeEmail} studentIds={emailIds || []} body={chartRequest(analysis, chart.id, {}, group)}
+        stage={chart.id === "practice-funnel" && /^lost:\d+$/.test(String(part.key)) ? String(part.key) : null} />
     </div>
   );
 }

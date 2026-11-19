@@ -3,6 +3,7 @@ import { Bookmark, Check, Loader2, Save, Share2, Trash2, Users } from "lucide-re
 import { prepAnalysisApi } from "../api";
 import { useToasts } from "./Toasts";
 import { Button, IconButton, Popover, focusRing, inputClass } from "./ui";
+import { emitMilestone } from "../guide/tourContext";
 
 /**
  * Saved views: the current filters, period and charts under a name. Open one in a click; your
@@ -35,6 +36,7 @@ export default function ViewsMenu({ area, state, layout, onApply }) {
     setActive(view.id);
     setName("");
     toasts.show({ title: `Saved “${view.name}”` });
+    emitMilestone("savedView");
   });
   const overwrite = (view) => run(`update:${view.id}`, async () => {
     const saved = await prepAnalysisApi.views.update(view.id, { area, state, layout });

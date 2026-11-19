@@ -5,8 +5,10 @@ import useStudentSelection from "./useStudentSelection";
 import { AnimatedNumber } from "./Motion";
 import {
   Activity, ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, BadgeCheck, Bot, BookOpenCheck, CalendarClock, CheckCircle2, CircleDashed, ClipboardList,
-  Flag, Flame, ListChecks, MessagesSquare, PauseCircle, PlayCircle, Search, Target, Trophy, UserCheck, UserX, Users, X, XCircle,
+  Flag, Flame, Info, ListChecks, MessagesSquare, PauseCircle, PlayCircle, Search, Target, Trophy, UserCheck, UserX, Users, X, XCircle,
 } from "lucide-react";
+import HoverCard from "../guide/HoverCard";
+import { KPI_EXPLAIN } from "../guide/explain";
 import { DIFFICULTY_COLORS } from "../charts/chartTheme";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
 import { isKpiActive, kpiRule } from "../filterModel";
@@ -168,7 +170,7 @@ export function KpiStrip({ section = "coding", kpis, loading, state, fieldMap, o
     return <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">{Array.from({ length: 6 }, (_, index) => <div key={index} className="h-[84px] animate-pulse rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900" />)}</div>;
   }
   return (
-    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 ${kpis.length > 5 ? "xl:grid-cols-6" : "xl:grid-cols-5"} ${loading ? "opacity-70" : ""}`}>
+    <div data-tour="kpis" className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 ${kpis.length > 5 ? "xl:grid-cols-6" : "xl:grid-cols-5"} ${loading ? "opacity-70" : ""}`}>
       {kpis.map((kpi) => {
         const Icon = KPI_ICONS[kpi.id] || Activity;
         const pick = state && onToggle ? kpiRule(section, kpi.id, fieldMap) : null;
@@ -179,7 +181,16 @@ export function KpiStrip({ section = "coding", kpis, loading, state, fieldMap, o
         const body = (
           <>
             <div className="flex items-start justify-between gap-2">
-              <p className="truncate text-xs font-semibold text-slate-600 dark:text-slate-300">{kpi.label}</p>
+              <p className="flex min-w-0 items-center gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                <span className="truncate">{kpi.label}</span>
+                {/* How this number is counted, in plain words (never toggles the card). */}
+                {KPI_EXPLAIN[`${section}.${kpi.id}`] && (
+                  <HoverCard title={`How “${kpi.label}” is counted`} body={KPI_EXPLAIN[`${section}.${kpi.id}`]} width={280}
+                    className="inline-flex shrink-0 text-slate-300 hover:text-sky-600 dark:text-slate-600 dark:hover:text-sky-400">
+                    <Info className="h-3 w-3" aria-label={`How ${kpi.label} is counted`} />
+                  </HoverCard>
+                )}
+              </p>
               <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${warn ? "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300" : style.chip}`}><Icon className="h-4 w-4" /></span>
             </div>
             <div className="flex min-w-0 items-end justify-between gap-3">

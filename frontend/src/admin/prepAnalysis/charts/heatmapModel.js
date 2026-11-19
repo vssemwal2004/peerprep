@@ -37,6 +37,29 @@ export function heatmapModel(data) {
   });
   if (!months.length || months[0].index >= 3) months.unshift({ index: 0, label: monthOf(data.from) });
 
+  // Month blocks for drawing: a week that holds the 1st of a month is split in two columns (the old
+  // month's days, then the new month's), so a small gap can separate every month.
+  // columns: [{ cells: [7 × cell|null], month: "YYYY-MM", startsMonth, label }].
+  const columns = [];
+  let previous = null;
+  for (const week of weeks) {
+    const parts = new Map();
+    week.forEach((cell, weekday) => {
+      if (!cell) return;
+      const month = cell.day.slice(0, 7);
+      if (!parts.has(month)) parts.set(month, Array(7).fill(null));
+      parts.get(month)[weekday] = cell;
+    });
+    for (const [month, cells] of parts) {
+      const startsMonth = month !== previous;
+      columns.push({ cells, month, startsMonth: startsMonth && previous !== null, label: startsMonth ? monthOf(`${month}-01`) : null });
+      previous = month;
+    }
+  }
+  // The first, partial month is named only when it is wide enough for its name.
+  const secondStart = columns.findIndex((column, index) => index > 0 && column.startsMonth);
+  if (columns[0] && secondStart !== -1 && secondStart < 3) columns[0].label = null;
+
   // Figures for the period.
   let total = 0;
   let activeDays = 0;
@@ -71,7 +94,7 @@ export function heatmapModel(data) {
   for (let day = to; day >= from; day -= DAY_MS) if (counts.get(dayOf(day))) { lastActive = dayOf(day); break; }
 
   return {
-    weeks, months, step, max,
+    weeks, months, columns, step, max,
     legend: [0, 1, 2, 3, 4].map((level) => {
       const low = (level - 1) * step + 1;
       const high = level * step;

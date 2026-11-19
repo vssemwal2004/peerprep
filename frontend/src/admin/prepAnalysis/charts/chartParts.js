@@ -43,7 +43,12 @@ export function chartPartAt(chart, view, params) {
     case "barList": {
       const item = data.items?.[index];
       if (!item?.key) return null;
-      return { key: item.key, label: item.name, value: item.value, unit: data.valueLabel, students: item.students ?? (data.valueLabel === "students solving" ? item.value : undefined) };
+      return { key: item.key, label: item.name, value: item.value, unit: data.valueLabel, students: item.students ?? (/^students /.test(data.valueLabel || "") ? item.value : undefined) };
+    }
+    case "rings": {
+      // A ring (or, in the Bars view, a bar) is the students who solved a question of that difficulty.
+      const item = data.items?.[index];
+      return item ? { key: item.key, label: `${item.label} questions`, color: keyColor(item.key, index), value: item.solved, unit: "questions solved", students: item.students } : null;
     }
     case "histogram": {
       const bin = data.bins?.[index];
@@ -53,7 +58,7 @@ export function chartPartAt(chart, view, params) {
       const stage = data.stages?.[index];
       // Drop-off view: the red "lost" part is the students who stopped before this step.
       const drop = params?.seriesName === "Lost since the step before" && index > 0 ? data.drops?.[index - 1] : null;
-      if (drop) return { key: drop.key, label: `Reached “${drop.from}”, not “${drop.to}”`, value: drop.students, unit: "students", students: drop.students, color: "#f43f5e" };
+      if (drop) return { key: drop.key, label: drop.label || `Reached “${drop.from}”, not “${drop.to}”`, value: drop.students, unit: "students", students: drop.students, color: "#f43f5e" };
       return stage ? { key: String(index), label: stage.name, value: stage.value, unit: "students", students: stage.value } : null;
     }
     case "trend":
@@ -178,6 +183,7 @@ export function chartTableKeys(chart) {
     case "bubble":
     case "barList": return (data.items || []).map((item) => item.key || null);
     case "histogram": return (data.bins || []).map((bin, index) => bin.key ?? String(index));
+    case "rings": return (data.items || []).map((item) => item.key);
     case "funnel": return (data.stages || []).map((_, index) => String(index));
     case "trend": return [...(data.keys || data.labels || [])];
     case "radar": return (data.indicators || []).map((indicator) => indicator.name);

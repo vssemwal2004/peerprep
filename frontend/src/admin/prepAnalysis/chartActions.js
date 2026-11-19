@@ -6,6 +6,7 @@ import { useCallback, useRef, useState } from "react";
 import { createPrepAnalysisApi } from "./api";
 import { useToasts } from "./components/Toasts";
 import { optionLookup, summaryLines, toQueryRequest } from "./filterModel";
+import { emitMilestone } from "./guide/tourContext";
 
 /**
  * The /query body for one chart, with its own filter and options (plus `options`), any focus,
@@ -43,7 +44,7 @@ export function drillStudentIds(analysis, chartId, { group = null, key = "", sea
   return createPrepAnalysisApi(analysis.scope).studentIds({ ...chartRequest(analysis, chartId, {}, group), drill: { chartId, key, view: "students", search } }, signal);
 }
 
-/** The chart's detailed file: Excel (summary, chart data, students, detail) or CSV (students). */
+/** The chart's detailed file: Excel (summary, chart data, students, detail), CSV or PDF (students). */
 export function downloadChart(analysis, chartId, { key = "", format = "xlsx", group = null } = {}) {
   const side = analysis.compareRequest && (group === 0 || group === 1) ? [`Group: ${analysis.compareRequest[group].label}`] : [];
   const summary = [...filterLines(analysis), ...(analysis.focus ? [`Only: ${analysis.focus.label}`] : []), ...side];
@@ -58,11 +59,12 @@ export function useChartDownload(analysis, chartId) {
   analysisRef.current = analysis;
   const run = useCallback(async (format, key = "", label = "", group = null) => {
     setBusy(true);
-    const kind = format === "xlsx" ? "Excel" : "CSV";
+    const kind = { xlsx: "Excel", csv: "CSV", pdf: "PDF" }[format] || "File";
     const id = toasts.show({ tone: "busy", title: `Preparing ${kind}…`, text: label });
     try {
       const result = await downloadChart(analysisRef.current, chartId, { format, key, group });
       toasts.update(id, { tone: "done", title: `${kind} downloaded${result.rowCount != null ? ` · ${result.rowCount.toLocaleString()} students` : ""}`, text: result.filename });
+      emitMilestone("download");
     } catch (error) {
       toasts.update(id, { tone: "error", title: "Download failed", text: error.message });
     } finally {

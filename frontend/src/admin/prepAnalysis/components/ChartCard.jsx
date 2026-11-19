@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
-  Activity, Aperture, BarChart3, BarChartHorizontal, CalendarDays, CalendarRange, ChartCandlestick, ChartColumnBig, ChartScatter, CircleDot, Columns3, EyeOff,
-  FileSpreadsheet, Filter, Funnel, Grid3x3, Image as ImageIcon, Info, Layers, LayoutGrid, LineChart, ListOrdered, Maximize2, MoreHorizontal,
+  Activity, Aperture, BarChart3, BarChartHorizontal, CalendarDays, CalendarRange, ChartCandlestick, ChartColumnBig, ChartScatter, ChevronLeft, ChevronRight, CircleDot, Columns3, Download, EyeOff,
+  FileSpreadsheet, FileText, Filter, Funnel, Grid3x3, Image as ImageIcon, Info, Layers, LayoutGrid, LineChart, ListOrdered, Maximize2, MoreHorizontal,
   Percent, PieChart, Radar, Sheet, SlidersHorizontal, Sparkles, Spline, Table2, Target, TrendingDown, TrendingUp, Users,
 } from "lucide-react";
 import { SortHeader, TablePager, useClientTable } from "../../../components/table";
@@ -10,6 +10,9 @@ import EChart from "../charts/EChart";
 import ActivityHeatmap from "../charts/ActivityHeatmap";
 import FunnelSteps from "../charts/FunnelSteps";
 import TopicBubbles from "../charts/TopicBubbles";
+import RadialRings from "../charts/RadialRings";
+import GuideLauncher from "../guide/GuideLauncher";
+import GlossaryText from "../guide/GlossaryText";
 import { chartInsight } from "../charts/chartInsights";
 import { buildChartOption, chartHeight, chartTable, viewsFor } from "../charts/chartOptions";
 import { ALL_STUDENTS, chartPartAt, chartTableKeys, legendParts, naturalHeight, rowAt, trendPart } from "../charts/chartParts";
@@ -28,7 +31,7 @@ const SIZE_SPANS = {
 const SIZES = [{ value: "sm", label: "Small" }, { value: "md", label: "Half" }, { value: "lg", label: "Wide" }, { value: "full", label: "Full" }];
 // Each way of showing a chart as an icon; the label is its tooltip.
 const CHART_ICONS = {
-  rankedStackedBar: BarChartHorizontal, barList: BarChartHorizontal, bubble: CircleDot, donut: PieChart, trend: LineChart, funnel: ListOrdered, histogram: BarChart3, stackedBar: BarChart3,
+  rankedStackedBar: BarChartHorizontal, barList: BarChartHorizontal, bubble: CircleDot, rings: Target, donut: PieChart, trend: LineChart, funnel: ListOrdered, histogram: BarChart3, stackedBar: BarChart3,
   heatmap: Grid3x3, calendar: CalendarDays, radar: Radar, scatter: ChartScatter, boxplot: ChartCandlestick, combo: ChartColumnBig,
 };
 const VIEW_ICONS = {
@@ -168,6 +171,8 @@ export function ChartBody({ chart, height, view = "chart", onStudent, onPart, on
   if (chart.type === "funnel" && view === "chart" && chart.data?.drops?.length) return <FunnelSteps chart={chart} onPart={partClick} height={height} />;
   // Topic bubbles: packed in SVG so every bubble fits the card (no force layout running off the edge).
   if (chart.type === "bubble" && view === "chart") return <TopicBubbles chart={chart} onPart={partClick} height={height} />;
+  // Progress rings (Easy / Medium / Hard solve rates) with their legend.
+  if (chart.type === "rings" && view === "chart") return <RadialRings chart={chart} onPart={partClick} height={height} />;
   // Daily heat map: small fixed-size dots with the period's figures beside or below them.
   if (chart.type === "calendar" && view === "chart") return <ActivityHeatmap chart={chart} onPart={partClick} />;
   // Every row keeps its room; beyond the card's height the rows scroll.
@@ -182,11 +187,11 @@ export function ChartBody({ chart, height, view = "chart", onStudent, onPart, on
     return (
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="min-w-0 flex-1">{canvas}</div>
-        <div className="sm:w-[42%] sm:max-w-[200px]"><PartLegend parts={legend} onPart={partClick} vertical /></div>
+        <div className="sm:w-[42%] sm:max-w-[200px]" data-tour="legend"><PartLegend parts={legend} onPart={partClick} vertical /></div>
       </div>
     );
   }
-  return <div><PartLegend parts={legend} onPart={chart.type === "rankedStackedBar" ? undefined : partClick} />{canvas}</div>;
+  return <div><div data-tour="legend"><PartLegend parts={legend} onPart={chart.type === "rankedStackedBar" ? undefined : partClick} /></div>{canvas}</div>;
 }
 
 function MenuItem({ icon: Icon, children, onClick, tone, disabled }) {
@@ -198,24 +203,94 @@ function MenuItem({ icon: Icon, children, onClick, tone, disabled }) {
   );
 }
 
-function CardMenu({ chart, view, size, onSize, onSettings, onOpen, onRemove, onDownload, instanceRef }) {
+// The download formats, all with the same students (Excel adds the chart's numbers and detail).
+const DOWNLOAD_FORMATS = [
+  { format: "xlsx", label: "Excel", note: "Summary, chart data and students", Icon: FileSpreadsheet },
+  { format: "csv", label: "CSV", note: "Students, for any spreadsheet", Icon: Sheet },
+  { format: "pdf", label: "PDF", note: "Printable list of students", Icon: FileText },
+];
+
+/** The groups a chart's download can be limited to: its chips ("Stopped practising", "Never practised"…). */
+function downloadGroups(chart) {
+  const chips = chart?.data?.chips || [];
+  if (!chips.length) return [];
+  const all = chips.reduce((sum, chip) => sum + (Number(chip.value) || 0), 0);
+  return [...chips.map((chip) => ({ key: chip.key, label: chip.label, count: chip.value })), { key: "", label: "Everyone", count: all }];
+}
+
+function MenuStepHeader({ title, subtitle, onBack }) {
+  return (
+    <div className="mb-1 flex items-center gap-1.5 border-b border-slate-100 px-1 pb-1.5 dark:border-gray-700">
+      <button type="button" onClick={onBack} aria-label="Back" className={`flex h-6 w-6 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/[0.06] ${focusRing}`}>
+        <ChevronLeft className="h-3.5 w-3.5" />
+      </button>
+      <div className="min-w-0">
+        <p className="text-[12px] font-bold text-slate-900 dark:text-white">{title}</p>
+        {subtitle && <p className="truncate text-[10.5px] text-slate-500 dark:text-slate-400">{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
+export function CardMenu({ chart, view, size, onSize, onSettings, onOpen, onRemove, onDownload, instanceRef }) {
   const [open, setOpen] = useState(false);
+  // Download in steps: which students (when the chart has groups), then which format.
+  const [step, setStep] = useState("menu");
+  const [choice, setChoice] = useState(null);
   const anchorRef = useRef(null);
-  const run = (action) => () => { setOpen(false); action(); };
+  const groups = downloadGroups(chart);
+  const close = () => { setOpen(false); setStep("menu"); setChoice(null); };
+  const run = (action) => () => { close(); action(); };
   const saveImage = () => {
     const url = instanceRef.current?.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: isDarkMode() ? "#111827" : "#ffffff" });
     if (url) saveFile(fileName(chart, "png"), url);
   };
+  const startDownload = () => {
+    if (groups.length) { setStep("data"); return; }
+    setChoice({ key: "", label: "" });
+    setStep("format");
+  };
+  const optionClass = `flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left hover:bg-slate-100 dark:hover:bg-white/[0.06] ${focusRing}`;
   return (
     <>
-      <span ref={anchorRef} className="inline-flex"><IconButton label="More options" onClick={() => setOpen(true)}><MoreHorizontal className="h-4 w-4" /></IconButton></span>
-      <Popover open={open} anchorRef={anchorRef} onClose={() => setOpen(false)} minWidth={220} label={`${chart.title} options`}>
+      <span ref={anchorRef} className="inline-flex" data-tour="menu"><IconButton label="More options" onClick={() => setOpen(true)}><MoreHorizontal className="h-4 w-4" /></IconButton></span>
+      <Popover open={open} anchorRef={anchorRef} onClose={close} minWidth={240} label={`${chart.title} options`}>
+        {step === "data" ? (
+          <div className="p-1.5">
+            <MenuStepHeader title="Download" subtitle="Which students?" onBack={() => setStep("menu")} />
+            {groups.map((group) => (
+              <button key={group.key || "all"} type="button" onClick={() => { setChoice(group); setStep("format"); }} className={optionClass}>
+                <Users className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-slate-700 dark:text-slate-200">{group.label}</span>
+                <span className="rounded-full bg-slate-100 px-1.5 text-[10.5px] font-semibold tabular-nums text-slate-600 dark:bg-white/[0.08] dark:text-slate-300">{Number(group.count || 0).toLocaleString()}</span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              </button>
+            ))}
+          </div>
+        ) : step === "format" ? (
+          <div className="p-1.5">
+            <MenuStepHeader title="Choose a format" subtitle={choice?.label || "Every student in this chart"} onBack={() => setStep(groups.length ? "data" : "menu")} />
+            {DOWNLOAD_FORMATS.map(({ format, label, note, Icon }) => (
+              <button key={format} type="button" className={optionClass}
+                onClick={run(() => onDownload(format, choice?.key || "", choice?.label ? `${chart.title} · ${choice.label}` : chart.title))}>
+                <Icon className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
+                <span className="min-w-0">
+                  <span className="block text-[12px] font-semibold text-slate-800 dark:text-slate-100">{label}</span>
+                  <span className="block truncate text-[10.5px] text-slate-500 dark:text-slate-400">{note}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
         <div className="p-1.5">
           <MenuItem icon={Maximize2} onClick={run(onOpen)}>Open full page</MenuItem>
           <MenuItem icon={SlidersHorizontal} onClick={run(onSettings)}>Settings</MenuItem>
           <div className="my-1 border-t border-slate-100 dark:border-gray-700" />
-          <MenuItem icon={FileSpreadsheet} onClick={run(() => onDownload("xlsx"))}>Download Excel</MenuItem>
-          <MenuItem icon={Sheet} onClick={run(() => onDownload("csv"))}>Download CSV</MenuItem>
+          <button type="button" onClick={startDownload}
+            className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[12px] font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/[0.06] ${focusRing}`}>
+            <Download className="h-3.5 w-3.5 shrink-0 opacity-70" /><span className="flex-1">Download</span>
+            <span className="text-[10.5px] text-slate-400">Excel · CSV · PDF</span><ChevronRight className="h-3.5 w-3.5 opacity-60" />
+          </button>
           <MenuItem icon={ImageIcon} onClick={run(saveImage)} disabled={view === "table"}>Save image</MenuItem>
           <div className="my-1 border-t border-slate-100 dark:border-gray-700" />
           <div className="grid grid-cols-4 gap-1 px-1.5 py-1" role="group" aria-label="Width">
@@ -229,6 +304,7 @@ function CardMenu({ chart, view, size, onSize, onSettings, onOpen, onRemove, onD
           <div className="my-1 border-t border-slate-100 dark:border-gray-700" />
           <MenuItem icon={EyeOff} tone="danger" onClick={run(onRemove)}>Hide</MenuItem>
         </div>
+        )}
       </Popover>
     </>
   );
@@ -244,7 +320,7 @@ export function ViewToggle({ type, view, onChange, size = "sm" }) {
         const Icon = viewIcon(type, option.value);
         const active = view === option.value;
         return (
-          <button key={option.value} type="button" role="radio" aria-checked={active} aria-label={option.label} title={option.label} onClick={() => onChange(option.value)}
+          <button key={option.value} type="button" role="radio" aria-checked={active} aria-label={option.label} title={option.label} onClick={() => onChange(option.value)} data-tour={`view-${option.value}`}
             className={`flex items-center justify-center rounded-md transition-colors ${size === "sm" ? "h-6 w-7" : "h-7 w-8"} ${active ? "bg-white text-sky-700 shadow-sm dark:bg-gray-800 dark:text-sky-300" : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"} ${focusRing}`}>
             <Icon className="h-3.5 w-3.5" />
           </button>
@@ -304,17 +380,23 @@ export default function ChartCard({ chart, entry, analysis, index = 0, compareSi
   const insight = useMemo(() => chartInsight(chart), [chart]);
   const download = useChartDownload(analysis, chart.id);
   const open = useCallback(() => onOpen(), [onOpen]);
+  // What a guide on this card works with: the card element, the chart instance, its view and actions.
+  const rootRef = useRef(null);
+  const guideContext = useCallback(() => ({
+    chart, data: chart.data || {}, view, insight, root: rootRef.current, instance: instanceRef,
+    setView: (next) => onChange({ view: next }), openPart: (part) => onPart(chart, part), openFull: open,
+  }), [chart, view, insight, onChange, onPart, open]);
   // Clicks on controls and on the chart itself are handled where they happen.
   const onCardClick = (event) => { if (!event.target.closest("button, a, input, select, textarea, [data-own-clicks]")) open(); };
   return (
     <motion.article layout={!reduced} initial={reduced ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.32, delay: reduced ? 0 : Math.min(index, 12) * 0.035, ease: "easeOut" }}
-      onClick={onCardClick} data-chart-id={chart.id}
+      onClick={onCardClick} data-chart-id={chart.id} ref={rootRef}
       className={`${SIZE_SPANS[size] || SIZE_SPANS.md} group flex min-w-0 cursor-pointer flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[box-shadow,border-color] duration-200 hover:border-slate-300 hover:shadow-[0_10px_30px_rgba(15,23,42,0.08)] dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700`}>
       <header className="flex items-center gap-2.5">
         <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${style.chip}`}><SectionIcon className="h-3.5 w-3.5" /></span>
         <h3 className="min-w-0 truncate text-[13.5px] font-bold text-slate-900 group-hover:text-sky-700 dark:text-white dark:group-hover:text-sky-300">{chart.title}</h3>
-        <span className="shrink-0 text-slate-300 hover:text-slate-500 dark:text-slate-600" title={chart.question} aria-label={chart.question} data-own-clicks><Info className="h-3.5 w-3.5" /></span>
+        <GuideLauncher chart={chart} ctx={guideContext} />
         {chart.filterError && (
           <button type="button" onClick={onSettings} className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-rose-50 px-1.5 py-0.5 text-[9.5px] font-bold text-rose-700 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-300" title={`This chart's own filter no longer works and was ignored: ${chart.filterError} Click to set it again.`}>
             <Filter className="h-2.5 w-2.5" />Filter ignored
@@ -326,24 +408,24 @@ export default function ChartCard({ chart, entry, analysis, index = 0, compareSi
           </button>
         )}
         <div className="-mr-1 ml-auto flex shrink-0 items-center gap-0.5">
-          <span className="hidden sm:inline-flex"><ViewToggle type={chart.type} view={view} onChange={(next) => onChange({ view: next })} /></span>
-          <IconButton label="Open full page" onClick={open}><Maximize2 className="h-3.5 w-3.5" /></IconButton>
+          <span className="hidden sm:inline-flex" data-tour="views"><ViewToggle type={chart.type} view={view} onChange={(next) => onChange({ view: next })} /></span>
+          <span className="inline-flex" data-tour="expand"><IconButton label="Open full page" onClick={open}><Maximize2 className="h-3.5 w-3.5" /></IconButton></span>
           <CardMenu chart={chart} view={view} size={size} instanceRef={instanceRef} onSize={(next) => onChange({ size: next })} onSettings={onSettings}
-            onOpen={open} onRemove={onRemove} onDownload={(format) => download.run(format, "", chart.title)} />
+            onOpen={open} onRemove={onRemove} onDownload={(format, key = "", label = chart.title) => download.run(format, key, label)} />
         </div>
       </header>
       {insight && !compareSides && (
-        <p className={`mt-3 flex items-start gap-1.5 rounded-lg px-2.5 py-1.5 text-[11.5px] leading-[1.45] ${style.note}`}>
-          <Sparkles className={`mt-[2px] h-3 w-3 shrink-0 ${style.spark}`} aria-hidden="true" /><span>{insight}</span>
+        <p data-tour="insight" className={`mt-3 flex items-start gap-1.5 rounded-lg px-2.5 py-1.5 text-[11.5px] leading-[1.45] ${style.note}`}>
+          <Sparkles className={`mt-[2px] h-3 w-3 shrink-0 ${style.spark}`} aria-hidden="true" /><span><GlossaryText text={insight} /></span>
         </p>
       )}
-      <div className="mt-3 min-w-0 flex-1 cursor-default" data-own-clicks>
+      <div className="mt-3 min-w-0 flex-1 cursor-default" data-own-clicks data-tour="body">
         {compareSides
           ? <CompareBodies sides={compareSides} view={view} height={chartHeight({ ...chart, size })} stacked={size === "sm"} onStudent={onStudent} onPart={onPart} onBlank={open} />
           : <ChartBody chart={chart} view={view} height={chartHeight({ ...chart, size })} onStudent={onStudent} onPart={(part) => onPart(chart, part)} onBlank={open} instanceRef={instanceRef} />}
       </div>
       <footer className="mt-2 flex items-center justify-between gap-2">
-        {compareSides ? <span /> : <CoverageChip summary={chart.summary} studentCount={chart.studentCount} />}
+        {compareSides ? <span /> : <span className="inline-flex" data-tour="coverage"><CoverageChip summary={chart.summary} studentCount={chart.studentCount} /></span>}
         <span className="text-[10.5px] font-semibold text-sky-600 opacity-0 transition-opacity group-hover:opacity-100 [@media(hover:none)]:opacity-100 dark:text-sky-400">Open full page →</span>
       </footer>
     </motion.article>

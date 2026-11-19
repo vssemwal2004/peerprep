@@ -10,6 +10,7 @@ import { enqueueMailJobs } from '../../services/mailQueueService.js';
 import { getDashboardUrl, renderTemplate } from '../../utils/mailer.js';
 import { HttpError } from '../../utils/errors.js';
 import { studentRowsByIds } from './prepAnalysis.service.js';
+import { FUNNEL_GAP_BY_STAGE, FUNNEL_GAP_BY_TYPE, FUNNEL_GAP_TEMPLATES } from './prepAnalysis.emailLayout.js';
 
 export const STUDENT_MAIL_LIMITS = Object.freeze({ maxRecipients: 5000, maxSubject: 300, maxHtml: 200_000 });
 
@@ -51,13 +52,22 @@ export const PRACTICE_NUDGE_TEMPLATE = Object.freeze({
 </div>`.trim(),
 });
 
-async function ensurePracticeNudgeTemplate() {
+// The ready-made templates: the general next-step reminder and one per "Practice journey" gap.
+const READY_MADE = [PRACTICE_NUDGE_TEMPLATE, ...FUNNEL_GAP_TEMPLATES.map(({ stage, title, blocks, accent, ...template }) => template)];
+
+async function ensureReadyMadeTemplates() {
   try {
-    const exists = await EmailTemplate.exists({ type: PRACTICE_NUDGE_TYPE });
-    if (!exists) await EmailTemplate.create({ ...PRACTICE_NUDGE_TEMPLATE, isSystem: false, isEnabled: true });
+    const existing = new Set((await EmailTemplate.find({ type: { $in: READY_MADE.map((template) => template.type) } }).select('type').lean()).map((row) => row.type));
+    for (const template of READY_MADE.filter((entry) => !existing.has(entry.type))) {
+      try {
+        await EmailTemplate.create({ ...template, isSystem: false, isEnabled: true });
+      } catch (error) {
+        // Two admins opening the picker at once: the unique type lets only one create it.
+        if (error?.code !== 11000) throw error;
+      }
+    }
   } catch (error) {
-    // Two admins opening the picker at once: the unique type lets only one create it.
-    if (error?.code !== 11000) console.warn('[prep-analysis] could not add the next-step template:', error.message);
+    console.warn('[prep-analysis] could not add the ready-made email templates:', error.message);
   }
 }
 
@@ -102,15 +112,22 @@ export function renderStudentMail(template, row, dashboardUrl = '') {
   };
 }
 
-/** The admin's own enabled templates, for the picker (with their HTML, which the dialog lets them edit). */
-export async function listStudentMailTemplates() {
-  await ensurePracticeNudgeTemplate();
+/**
+ * The admin's own enabled templates, for the picker (with their HTML, which the dialog lets them
+ * edit). `stage`: a "Practice journey" gap (lost:1 … lost:4) being emailed; its own template is
+ * suggested, otherwise the general next-step reminder.
+ */
+export async function listStudentMailTemplates({ stage } = {}) {
+  await ensureReadyMadeTemplates();
   const templates = await EmailTemplate.find({ isSystem: { $ne: true }, isEnabled: { $ne: false } })
     .select('name subject htmlContent type variables updatedAt').sort({ name: 1 }).limit(200).lean();
+  const stageType = FUNNEL_GAP_BY_STAGE.get(String(stage || ''))?.type;
+  const suggestedType = stageType && templates.some((template) => template.type === stageType) ? stageType : PRACTICE_NUDGE_TYPE;
   return {
     templates: templates.map((template) => ({
       id: String(template._id), name: template.name, subject: template.subject, html: template.htmlContent || '',
-      variables: template.variables || [], updatedAt: template.updatedAt, suggested: template.type === PRACTICE_NUDGE_TYPE,
+      variables: template.variables || [], updatedAt: template.updatedAt, suggested: template.type === suggestedType,
+      stage: FUNNEL_GAP_BY_TYPE.get(template.type)?.stage || null,
     })),
     variables: STUDENT_MAIL_VARIABLES,
     limits: STUDENT_MAIL_LIMITS,

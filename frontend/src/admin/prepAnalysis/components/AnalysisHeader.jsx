@@ -21,7 +21,7 @@ export default function AnalysisHeader({ areas, area, onArea, period, onPeriod, 
             <h1 className="text-[16px] font-bold tracking-tight text-slate-950 dark:text-white">Prep Analysis</h1>
           </div>
         )}
-        {!embedded && <nav aria-label="Feature" className="flex max-w-full overflow-x-auto rounded-xl bg-slate-100 p-1 [scrollbar-width:none] dark:bg-white/[0.06]">
+        {!embedded && <nav aria-label="Feature" data-tour="areas" className="flex max-w-full overflow-x-auto rounded-xl bg-slate-100 p-1 [scrollbar-width:none] dark:bg-white/[0.06]">
           {areas.map((entry) => {
             const Icon = AREA_ICONS[entry.key] || LayoutGrid;
             const active = entry.key === area;
@@ -35,7 +35,7 @@ export default function AnalysisHeader({ areas, area, onArea, period, onPeriod, 
             );
           })}
         </nav>}
-        <DateRangeFilter value={period} onChange={onPeriod} presets={RANGE_PRESET_VALUES} />
+        <span className="inline-flex" data-tour="period"><DateRangeFilter value={period} onChange={onPeriod} presets={RANGE_PRESET_VALUES} /></span>
         <div className="ml-auto flex flex-wrap items-center gap-2">{children}</div>
       </div>
     </header>

@@ -232,6 +232,7 @@ const SAMPLES = {
   calendar: { from: '2025-10-10', to: '2026-10-10', unit: 'topics completed', days: [['2026-10-01', 4], ['2026-10-03', 1]], max: 4 },
   radar: { student: { id: 'a', name: 'Asha', score: 61 }, indicators: [{ name: 'Arrays', max: 5 }, { name: 'Graphs', max: 5 }, { name: 'DP', max: 5 }], values: [5, 2, 1] },
   histogram: { label: 'Course completed', bins: Array.from({ length: 10 }, (_, index) => ({ label: `${index * 10}–${index * 10 + 10}%`, count: index % 3 })) },
+  rings: { unit: '%', valueLabel: 'of started questions solved', items: [{ key: 'Easy', label: 'Easy', value: 75, solved: 6, total: 8, students: 2 }, { key: 'Hard', label: 'Hard', value: 37.5, solved: 3, total: 8, students: 1 }] },
   stackedBar: { series: ['Finished', 'In progress', 'Not started'], horizontal: true, groups: [{ label: 'Placement essentials', students: 9, values: { Finished: 2, 'In progress': 3, 'Not started': 4 } }] },
   heatmap: { unit: '% solved', max: 100, students: ['Asha', 'Bilal'], columns: ['Sheet A', 'Sheet B'], cells: [[0, 0, 100], [1, 0, 25], [0, 1, 20], [1, 1, 0]] },
   scatter: {
@@ -270,7 +271,7 @@ test('every chart type builds in every view, light and dark, and is empty with n
   }
   const empty = {
     rankedStackedBar: { items: [] }, donut: { items: [] }, trend: { labels: [] }, funnel: { stages: [{ value: 0 }] },
-    barList: { items: [] }, calendar: { days: [] }, radar: { student: null, indicators: [] }, histogram: { bins: [{ count: 0 }] },
+    barList: { items: [] }, calendar: { days: [] }, radar: { student: null, indicators: [] }, histogram: { bins: [{ count: 0 }] }, rings: { items: [] },
     stackedBar: { groups: [] }, heatmap: { students: [], columns: [] }, scatter: { items: [] }, boxplot: { groups: [{ count: 0 }] },
     combo: { categories: [], bars: [], lines: [] }, bubble: { items: [] },
   };
@@ -401,8 +402,11 @@ test('the skill profile shows every student in view, or one student next to the 
 test('top-student bars are as long as the score and the label is the score', () => {
   const data = { items: [{ id: 'a', name: 'Depth', position: 1, score: 13.4, segments: { Easy: 0.4, Medium: 3.6, Hard: 9.4 }, counts: { Easy: 2, Medium: 6, Hard: 6 }, solved: { Easy: 1, Medium: 0, Hard: 0 } }] };
   const option = buildChartOption({ type: 'rankedStackedBar', data }, chartTheme(false));
-  const length = option.series.reduce((sum, series) => sum + series.data[0], 0);
+  const length = option.series.reduce((sum, series) => sum + series.data[0].value, 0);
   assert.equal(Math.round(length * 10) / 10, 13.4);
+  // Only the bar's outer ends are rounded: Easy starts it, Hard ends it.
+  assert.deepEqual(option.series.map((series) => series.data[0].itemStyle.borderRadius), [[7, 0, 0, 7], [0, 0, 0, 0], [0, 7, 7, 0]]);
+  assert.match(option.yAxis[0].axisLabel.formatter('0'), /^\{m1\|1\} {2}\{n\|Depth\}$/, 'gold rank badge, then the name');
   assert.deepEqual(option.title.map((heading) => heading.text), ['Student', 'Prep Score']);
   assert.equal(option.yAxis[1].axisLabel.formatter('0'), '13.4');
   assert.deepEqual(chartTable({ type: 'rankedStackedBar', data }).rows[0], [1, 'Depth', 13.4, 1, 0, 0], 'the table shows problems solved in the period, like the drawer');

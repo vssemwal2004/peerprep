@@ -33,6 +33,7 @@ export default function EChart({ buildOption, height, ariaLabel, onClick, onBlan
   clickRef.current = onClick;
   const blankRef = useRef(onBlankClick);
   blankRef.current = onBlankClick;
+  const hoverRef = useRef(null);
   const dark = useDarkMode();
   const [ready, setReady] = useState(false);
 
@@ -53,8 +54,30 @@ export default function EChart({ buildOption, height, ariaLabel, onClick, onBlan
       chart.getZr().on("click", (event) => {
         setTimeout(() => { if (!event.peerprepHandled) blankRef.current?.({ x: event.offsetX, y: event.offsetY }, chart); }, 0);
       });
+      // Trend charts: show the nearest point's tooltip wherever the pointer is on the canvas, even
+      // outside the plot rectangle (edge points, Safari's pointer offsets). A tap does the same.
+      const showNearest = (event, force = false) => {
+        if (hoverRef.current !== "nearest-x") return;
+        const count = hoverRef.count || 0;
+        if (!count) return;
+        let index;
+        // The plot's own conversion works for any pixel, inside the plot or beside it.
+        try { [index] = chart.convertFromPixel({ gridIndex: 0 }, [event.offsetX, event.offsetY]) || []; } catch { return; }
+        if (!Number.isFinite(index)) return;
+        index = Math.max(0, Math.min(count - 1, Math.round(index)));
+        if (hoverRef.index === index && !force) return;
+        hoverRef.index = index;
+        chart.dispatchAction({ type: "showTip", seriesIndex: 0, dataIndex: index });
+      };
       chart.getZr().on("mousemove", (event) => {
         if (!event.target) chart.getZr().setCursorStyle(blankRef.current ? "pointer" : "default");
+        showNearest(event);
+      });
+      chart.getZr().on("mousedown", (event) => showNearest(event, true));
+      chart.getZr().on("globalout", () => {
+        if (hoverRef.current !== "nearest-x") return;
+        hoverRef.index = null;
+        chart.dispatchAction({ type: "hideTip" });
       });
       if (instanceRef) instanceRef.current = chart;
       // Lets the local browser checks find bars and slices; never in a production build.
@@ -74,8 +97,14 @@ export default function EChart({ buildOption, height, ariaLabel, onClick, onBlan
 
   useEffect(() => {
     if (!ready || !chartRef.current) return;
-    const option = buildOption(chartTheme(dark));
-    if (option) chartRef.current.setOption({ aria: { enabled: true }, ...option }, { notMerge: true, lazyUpdate: true });
+    const built = buildOption(chartTheme(dark));
+    if (!built) return;
+    // `peerprepHover` is ours, not an ECharts option: how the pointer picks a point.
+    const { peerprepHover, ...option } = built;
+    hoverRef.current = peerprepHover || null;
+    hoverRef.count = Array.isArray(option.xAxis) ? option.xAxis[0]?.data?.length : option.xAxis?.data?.length;
+    hoverRef.index = null;
+    chartRef.current.setOption({ aria: { enabled: true }, ...option }, { notMerge: true, lazyUpdate: true });
   }, [buildOption, dark, ready]);
 
   return (

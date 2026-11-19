@@ -1,9 +1,11 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { AlertCircle, CheckCircle2, CheckSquare, Loader2, Mail, Send, X } from "lucide-react";
 import { useAnalysisApi } from "../analysisScope";
 import { Button, IconButton, focusRing } from "./ui";
+import { emailTextToHtml, htmlToEmailText } from "./emailText";
+import { emitMilestone } from "../guide/tourContext";
 
 const boxClass = `h-4 w-4 cursor-pointer rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-gray-600 dark:bg-gray-900 ${focusRing}`;
 
@@ -66,13 +68,19 @@ const inputClass = "block w-full rounded-lg border border-slate-200 bg-white px-
  * test to yourself, then confirm and queue it for all of them. The saved template is never changed.
  * `body` is the page's query body (period, scope…).
  */
-export function SendEmailDialog({ open, onClose, studentIds, body }) {
+export function SendEmailDialog({ open, onClose, studentIds, body, stage = null }) {
   const api = useAnalysisApi();
   const titleId = useId();
   const htmlRef = useRef(null);
+  const textRef = useRef(null);
   const [templates, setTemplates] = useState({ loading: true, list: [], variables: [], error: "" });
   const [templateId, setTemplateId] = useState("");
   const [draft, setDraft] = useState({ subject: "", html: "" });
+  // Plain text (default) or HTML. The text is the email in the standard layout; typing in it
+  // rebuilds the HTML. A custom-designed template has no text form and opens as HTML.
+  const [mode, setMode] = useState("text");
+  const [text, setText] = useState({ value: "", meta: null, available: false });
+  const [modeNote, setModeNote] = useState("");
   const [shownDraft, setShownDraft] = useState({ subject: "", html: "" });
   const [preview, setPreview] = useState({ loading: false, data: null, error: "" });
   const [sending, setSending] = useState(false);
@@ -90,21 +98,44 @@ export function SendEmailDialog({ open, onClose, studentIds, body }) {
     if (!open) return undefined;
     setResult(null); setError(""); setConfirming(false); setTest({ busy: false, note: "", error: "" });
     const controller = new AbortController();
-    api.email.templates(controller.signal)
+    api.email.templates(controller.signal, stage)
       .then((data) => {
         const list = data.templates || [];
         setTemplates({ loading: false, list, variables: data.variables || [], error: "" });
-        // The ready-made "next step reminder" first, when nothing was picked yet.
+        // The suggested template first (for a Practice journey gap: the one written for it).
         setTemplateId((current) => current || list.find((template) => template.suggested)?.id || list[0]?.id || "");
       })
       .catch((cause) => { if (cause.name !== "AbortError") setTemplates({ loading: false, list: [], variables: [], error: cause.message }); });
     return () => controller.abort();
-  }, [api, open]);
+  }, [api, open, stage]);
 
-  // A new template choice starts the editor from that template.
+  // A new template choice starts the editor from that template, as text when it has a text form.
+  const startFrom = useCallback((template) => {
+    setDraft({ subject: template.subject || "", html: template.html || "" });
+    const parsed = htmlToEmailText(template.html || "");
+    setText(parsed ? { value: parsed.text, meta: parsed.meta, available: true } : { value: "", meta: null, available: false });
+    setMode(parsed ? "text" : "html");
+    setModeNote(parsed ? "" : "This template has its own design, so it is edited as HTML.");
+  }, []);
   useEffect(() => {
-    if (chosen) setDraft({ subject: chosen.subject || "", html: chosen.html || "" });
-  }, [chosen]);
+    if (chosen) startFrom(chosen);
+  }, [chosen, startFrom]);
+
+  const editText = (value) => {
+    setText((current) => ({ ...current, value }));
+    setDraft((current) => ({ ...current, html: emailTextToHtml(value, text.meta || undefined) }));
+  };
+  const switchMode = (next) => {
+    if (next === mode) return;
+    if (next === "text") {
+      // Back from HTML: read the (maybe edited) HTML as text again.
+      const parsed = htmlToEmailText(draft.html);
+      if (!parsed) { setModeNote("This HTML is a custom design, so it can only be edited as HTML."); return; }
+      setText({ value: parsed.text, meta: parsed.meta, available: true });
+    }
+    setModeNote("");
+    setMode(next);
+  };
 
   // The preview follows the editor, a moment after typing stops.
   useEffect(() => {
@@ -137,7 +168,7 @@ export function SendEmailDialog({ open, onClose, studentIds, body }) {
   const send = async () => {
     if (!ready) return;
     setSending(true); setError("");
-    try { setResult(await api.email.send({ ...JSON.parse(bodyKey), templateId, studentIds: ids, draft })); setConfirming(false); }
+    try { setResult(await api.email.send({ ...JSON.parse(bodyKey), templateId, studentIds: ids, draft })); setConfirming(false); emitMilestone("email"); }
     catch (cause) { setError(cause.message || "The email could not be sent."); setConfirming(false); }
     finally { setSending(false); }
   };
@@ -149,16 +180,19 @@ export function SendEmailDialog({ open, onClose, studentIds, body }) {
       setTest({ busy: false, note: `Test sent to ${sent.sentTo} (as ${sent.asStudent} would see it).`, error: "" });
     } catch (cause) { setTest({ busy: false, note: "", error: cause.message || "The test could not be sent." }); }
   };
-  // Clicking a variable puts it where the cursor is in the HTML.
+  // Clicking a variable puts it where the cursor is, in the text or the HTML (whichever is open).
   const insertVariable = (key) => {
     const token = `{{${key}}}`;
-    const field = htmlRef.current;
-    if (!field) { setDraft((current) => ({ ...current, html: current.html + token })); return; }
-    const start = field.selectionStart ?? draft.html.length;
-    const end = field.selectionEnd ?? start;
-    setDraft((current) => ({ ...current, html: current.html.slice(0, start) + token + current.html.slice(end) }));
+    const inText = mode === "text";
+    const field = inText ? textRef.current : htmlRef.current;
+    const current = inText ? text.value : draft.html;
+    const start = field?.selectionStart ?? current.length;
+    const end = field?.selectionEnd ?? start;
+    const next = current.slice(0, start) + token + current.slice(end);
+    if (inText) editText(next);
+    else setDraft((value) => ({ ...value, html: next }));
     // After React has put the new text in: cursor just after the inserted variable.
-    setTimeout(() => { field.focus(); field.setSelectionRange(start + token.length, start + token.length); }, 0);
+    if (field) setTimeout(() => { field.focus(); field.setSelectionRange(start + token.length, start + token.length); }, 0);
   };
 
   return createPortal(
@@ -210,13 +244,23 @@ export function SendEmailDialog({ open, onClose, studentIds, body }) {
                 </label>
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[12px] font-semibold text-slate-600 dark:text-slate-300">Email (HTML)</span>
+                    {/* Plain text by default; HTML shows (and edits) the code the text builds. */}
+                    <div role="tablist" aria-label="Edit the email as" className="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-white/[0.06]">
+                      {[["text", "Plain text"], ["html", "HTML"]].map(([value, label]) => (
+                        <button key={value} type="button" role="tab" aria-selected={mode === value} disabled={sending}
+                          onClick={() => switchMode(value)}
+                          className={`h-7 rounded-md px-3 text-[12px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${mode === value ? "bg-white text-slate-900 shadow-sm dark:bg-gray-800 dark:text-white" : "text-slate-500 hover:text-slate-800 dark:text-slate-400"} ${focusRing}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                     {edited && (
-                      <button type="button" onClick={() => setDraft({ subject: chosen.subject || "", html: chosen.html || "" })} className={`rounded text-[11.5px] font-semibold text-sky-700 hover:underline dark:text-sky-300 ${focusRing}`}>
+                      <button type="button" onClick={() => startFrom(chosen)} className={`rounded text-[11.5px] font-semibold text-sky-700 hover:underline dark:text-sky-300 ${focusRing}`}>
                         Undo my edits
                       </button>
                     )}
                   </div>
+                  {modeNote && <p className="mt-1.5 text-[11.5px] text-amber-700 dark:text-amber-300">{modeNote}</p>}
                   <div className="mt-1 flex flex-wrap gap-1" aria-label="Insert a student detail">
                     {templates.variables.map((variable) => (
                       <button key={variable.key} type="button" disabled={sending} onClick={() => insertVariable(variable.key)} title={`Insert ${variable.label}`}
@@ -225,9 +269,20 @@ export function SendEmailDialog({ open, onClose, studentIds, body }) {
                       </button>
                     ))}
                   </div>
-                  <textarea ref={htmlRef} value={draft.html} disabled={sending} spellCheck={false} aria-label="Email HTML"
-                    onChange={(event) => setDraft((current) => ({ ...current, html: event.target.value }))}
-                    className={`mt-1.5 h-[300px] resize-y py-2 font-mono text-[11.5px] leading-relaxed lg:h-[380px] ${inputClass}`} />
+                  {mode === "text" ? (
+                    <>
+                      <textarea ref={textRef} value={text.value} disabled={sending} aria-label="Email text"
+                        onChange={(event) => editText(event.target.value)}
+                        className={`mt-1.5 h-[300px] resize-y px-3 py-2.5 text-[13.5px] leading-[1.7] lg:h-[380px] ${inputClass}`} />
+                      <p className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                        <code className="font-mono">#</code> heading · blank line = new paragraph · <code className="font-mono">- </code>bullet · <code className="font-mono">[Button](&#123;&#123;dashboardUrl&#125;&#125;)</code> button. The HTML updates as you type.
+                      </p>
+                    </>
+                  ) : (
+                    <textarea ref={htmlRef} value={draft.html} disabled={sending} spellCheck={false} aria-label="Email HTML"
+                      onChange={(event) => setDraft((current) => ({ ...current, html: event.target.value }))}
+                      className={`mt-1.5 h-[300px] resize-y py-2 font-mono text-[11.5px] leading-relaxed lg:h-[380px] ${inputClass}`} />
+                  )}
                   <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                     {edited ? "Edited for this send only; the saved template stays as it is." : "Edit freely; the saved template stays as it is."} Change templates for good in{" "}
                     <Link to="/admin/settings/email-templates" className="font-semibold text-sky-700 underline dark:text-sky-300">Email Templates</Link>.

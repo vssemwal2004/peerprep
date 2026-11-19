@@ -7,8 +7,10 @@ import {
   queryPrepAnalysis, listMatchingStudentIds, listEmailTemplatesForStudents, previewEmailToStudent, sendEmailToStudents, sendTestEmailToMe,
 } from './prepAnalysis.controller.js';
 import { studentMailLimiter } from '../../middleware/rateLimiter.js';
+import { getGuideProgress, updateGuideProgress } from './prepAnalysis.guides.js';
 
 const router = Router();
+const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 
 router.use(requireAuth);
 router.use(requireAdmin);
@@ -33,5 +35,8 @@ router.get('/views', listPrepAnalysisViews);
 router.post('/views', createPrepAnalysisView);
 router.patch('/views/:viewId', updatePrepAnalysisView);
 router.delete('/views/:viewId', deletePrepAnalysisView);
+// Each admin's progress through the page and chart guides.
+router.get('/guides/progress', asyncRoute(async (req, res) => res.set('Cache-Control', 'private, no-store').json(await getGuideProgress(req.user))));
+router.patch('/guides/progress', asyncRoute(async (req, res) => res.set('Cache-Control', 'private, no-store').json(await updateGuideProgress(req.user, req.body))));
 
 export default router;

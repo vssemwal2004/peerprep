@@ -135,21 +135,34 @@ for (const role of ['admin', 'coordinator']) {
     assert.equal(parent.getAttribute('aria-expanded'), 'true');
   });
 
-  test(`${role}: hover expansion uses the 20% narrower width and collapse stays 4rem`, async () => {
+  test(`${role}: hover expands the sidebar OVER the page; only the pin reserves its width`, async () => {
+    window.localStorage.removeItem(`${role}SidebarPinned`);
     await mount(role, role === 'admin' ? AdminLayout : CoordinatorLayout);
     const sidebar = document.querySelector('aside');
     const layout = sidebar.parentElement;
     const content = layout.querySelector('main[data-app-scroll-container]');
+    const wait = (ms) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
     assert.ok(layout.classList.contains('h-screen'));
     assert.ok(layout.classList.contains('overflow-hidden'));
     assert.ok(content.classList.contains('h-screen'));
     assert.ok(content.classList.contains('overflow-y-auto'));
+    assert.ok(!content.className.includes('transition-[padding]'), 'the page never animates its padding');
     assert.equal(layout.style.getPropertyValue('--admin-sidebar-width'), '4rem');
+    assert.equal(sidebar.style.width, '4rem');
     await act(async () => sidebar.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
-    assert.equal(layout.style.getPropertyValue('--admin-sidebar-width'), '13.6rem');
+    await wait(120); // hover intent
+    assert.equal(sidebar.style.width, '13.6rem', 'the sidebar opens');
+    assert.equal(layout.style.getPropertyValue('--admin-sidebar-width'), '4rem', 'the page does not move');
     await act(async () => sidebar.dispatchEvent(new dom.window.MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })));
-    // Collapse is scheduled, even when the admin delay is zero.
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    await wait(200);
+    assert.equal(sidebar.style.width, '4rem');
+    // Pinning keeps it open and reserves its width; unpinning gives the space back.
+    const pin = document.querySelector('[aria-label="Keep sidebar open"]');
+    await act(async () => pin.click());
+    assert.equal(layout.style.getPropertyValue('--admin-sidebar-width'), '13.6rem');
+    assert.equal(sidebar.style.width, '13.6rem');
+    assert.equal(window.localStorage.getItem(`${role}SidebarPinned`), 'true');
+    await act(async () => document.querySelector('[aria-label="Unpin sidebar (it opens on hover)"]').click());
     assert.equal(layout.style.getPropertyValue('--admin-sidebar-width'), '4rem');
   });
 }

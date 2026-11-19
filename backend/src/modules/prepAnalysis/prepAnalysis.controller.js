@@ -87,7 +87,7 @@ export async function listMatchingStudentIds(req, res) {
 
 export async function listEmailTemplatesForStudents(req, res) {
   res.set('Cache-Control', 'private, no-store');
-  res.json(await listStudentMailTemplates());
+  res.json(await listStudentMailTemplates({ stage: String(req.query.stage || '').slice(0, 20) }));
 }
 
 // `draft` ({ subject, html }): the template as edited in the dialog, for this send only.

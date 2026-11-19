@@ -5,7 +5,7 @@
 
 import { PASS_PERCENT } from './assessmentFacts.js';
 import {
-  ATTENTION_GROUPS, GROUP_BY, OWN_WORK_KINDS, QP_PACE_BANDS, levelOf, ownWorkKind, paceBandOf, paceDaysOf, quickPrepStatusLabel, startedQuestions, weekStart,
+  ATTENTION_GROUPS, GROUP_BY, OWN_WORK_KINDS, QP_PACE_BANDS, QUICKPREP_FUNNEL_STAGES, levelOf, ownWorkKind, paceBandOf, paceDaysOf, quickPrepStatusLabel, startedQuestions, weekStart,
 } from './charts.js';
 import { RATINGS } from './interviewFacts.js';
 
@@ -91,13 +91,29 @@ const INTERVIEW = {
 
 // ---------------------------------------------------------------- shared shapes
 
-/** Funnel steps: the students at step `key` (an index). */
+/**
+ * Funnel steps: the students at step `key` (an index), or with "lost:<index>" the students who
+ * reached the step before but not that step (the gap between two steps).
+ */
 function funnelDrill(feature, has, stages) {
+  const lostStep = (key) => {
+    const match = /^lost:(\d+)$/.exec(String(key || ''));
+    const index = match ? Number(match[1]) : null;
+    return index && index < stages.length ? index : null;
+  };
   return {
-    label: (key) => stages[Number(key)]?.name || 'Every step',
+    label: (key) => {
+      const lost = lostStep(key);
+      if (lost !== null) return stages[lost].gap || `Reached “${stages[lost - 1].name}”, not “${stages[lost].name}”`;
+      return stages[Number(key)]?.name || 'Every step';
+    },
     students(rows, key) {
-      const stage = stages[Number(key)];
-      return { sort: feature.columns[0].key, columns: feature.columns, items: rows.filter((row) => has(row) && (!stage || stage.test(row))).map((row) => ({ row, values: feature.values(row) })) };
+      const lost = lostStep(key);
+      const stage = lost === null ? stages[Number(key)] : null;
+      const keep = lost !== null
+        ? (row) => stages[lost - 1].test(row) && !stages[lost].test(row)
+        : (row) => !stage || stage.test(row);
+      return { sort: feature.columns[0].key, columns: feature.columns, items: rows.filter((row) => has(row) && keep(row)).map((row) => ({ row, values: feature.values(row) })) };
     },
   };
 }
@@ -261,13 +277,7 @@ export const FEATURE_DRILLS = {
     },
     detail: (rows, title, series, context) => QUICKPREP.detail(rows.filter(hasQuickPrep), context, (row, sheetId) => !title || context.sheets?.get(sheetId)?.title === title),
   }),
-  'quickprep-funnel': funnelDrill(QUICKPREP, hasQuickPrep, [
-    { name: 'Students', test: () => true },
-    { name: 'Started a sheet', test: (row) => row.quickprep.started > 0 },
-    { name: 'Solved a question', test: (row) => row.quickprep.solved > 0 },
-    { name: 'Half of a sheet', test: (row) => [...row.quickprep.bySheet.values()].some((entry) => entry.total && entry.solved / entry.total >= 0.5) },
-    { name: 'Finished a sheet', test: (row) => row.quickprep.finished > 0 },
-  ]),
+  'quickprep-funnel': funnelDrill(QUICKPREP, hasQuickPrep, QUICKPREP_FUNNEL_STAGES),
   'quickprep-spread': bandDrill(QUICKPREP, (row) => row.quickprep?.started > 0, (row) => row.quickprep.progress, 'Sheet progress'),
   'quickprep-coverage': bandDrill(QUICKPREP, (row) => row.quickprep?.visibleSheets > 0, (row) => row.quickprep.coverage, 'Open sheets started'),
   'quickprep-trend': timeDrill(QUICKPREP, hasQuickPrep, (row) => [...row.quickprep.days].map(([day, [started, finished]]) => [day, started + finished]), 'Sheets started or finished', true),
@@ -436,9 +446,13 @@ export const FEATURE_DRILLS = {
   ], 'Interviews', true),
   'interview-calendar': timeDrill(INTERVIEW, hasInterview, (row) => [...row.interview.days], 'Interviews', false),
 };
+// A sheet bubble (key: the sheet id) lists its starters, like a sheet's column in "Sheet health";
+// a difficulty ring lists who solved a question of that difficulty, like "Solve rate by difficulty".
+FEATURE_DRILLS['quickprep-sheet-bubbles'] = FEATURE_DRILLS['quickprep-sheet-health'];
+FEATURE_DRILLS['quickprep-difficulty-rings'] = FEATURE_DRILLS['quickprep-difficulty-mix'];
 
 // Which detail table each feature drill's second tab shows.
 export const FEATURE_DETAIL_LABELS = Object.freeze({
-  'learning-subjects': 'Subjects', 'quickprep-sheets': 'Sheets', 'quickprep-matrix': 'Sheets', 'quickprep-sheet-health': 'Sheets', 'assessment-tests': 'Tests', 'assessment-scores': 'Tests',
+  'learning-subjects': 'Subjects', 'quickprep-sheets': 'Sheets', 'quickprep-matrix': 'Sheets', 'quickprep-sheet-health': 'Sheets', 'quickprep-sheet-bubbles': 'Sheets', 'assessment-tests': 'Tests', 'assessment-scores': 'Tests',
   'interview-ratings': 'Mock interviews', 'interview-mix': 'Mock interviews',
 });

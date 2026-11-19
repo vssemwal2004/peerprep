@@ -433,10 +433,10 @@ export function chartDataTable(type, data = {}) {
 
 export const CHART_EXPORT_LIMITS = Object.freeze({ maxStudents: EXPORT_LIMITS.maxRows, maxDetailRows: 200000 });
 
-/** A chart download is Excel (every sheet) or CSV (the students); `summary` lines describe the filters. */
+/** A chart download is Excel (every sheet), CSV or PDF (the students); `summary` lines describe the filters. */
 export function validateChartExportOptions(body = {}) {
-  const format = ['csv', 'xlsx'].includes(body.format) ? body.format : null;
-  if (!format) throw new HttpError(400, 'Choose Excel or CSV.');
+  const format = ['csv', 'xlsx', 'pdf'].includes(body.format) ? body.format : null;
+  if (!format) throw new HttpError(400, 'Choose Excel, CSV or PDF.');
   const summary = (Array.isArray(body.summary) ? body.summary : []).map((line) => cleanText(line)).filter(Boolean).slice(0, EXPORT_LIMITS.maxSummaryLines);
   return { format, summary };
 }
@@ -546,9 +546,25 @@ export function renderChartCsv(book) {
   return Buffer.from(`﻿${lines.map((line) => line.map(csvCell).join(',')).join('\r\n')}\r\n`, 'utf8');
 }
 
+/**
+ * PDF: the same students as the CSV, under the same details, filters and figures, in the page
+ * layout of the student-list PDF (title band, filters, striped table, page numbers).
+ */
+export function renderChartPdf(book) {
+  return renderPdf({
+    title: book.title,
+    details: [...book.details, ...book.figures],
+    filters: book.filters,
+    columns: book.students.columns,
+    rows: book.students.rows,
+    truncated: book.students.truncated,
+  });
+}
+
 export const CHART_EXPORT_TYPES = Object.freeze({
   csv: { contentType: 'text/csv; charset=utf-8', extension: 'csv', render: async (book) => renderChartCsv(book) },
   xlsx: { contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', extension: 'xlsx', render: renderChartXlsx },
+  pdf: { contentType: 'application/pdf', extension: 'pdf', render: renderChartPdf },
 });
 
 export const EXPORT_TYPES = Object.freeze({

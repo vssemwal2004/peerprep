@@ -529,16 +529,18 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
     ? (isExpanded ? STUDENT_SIDEBAR_PANEL_WIDTH : STUDENT_SIDEBAR_RAIL_WIDTH)
     : getSidebarWidth(isExpanded);
 
+  // Every role: a short hover intent before opening (passing the cursor over the rail does not flash
+  // it open) and a short grace before closing. Hover expands over the page; pinning keeps it open.
   const handleSidebarEnter = () => {
     window.clearTimeout(hoverTimerRef.current);
-    if (!isStudent || isPinned) { onExpand(); return; }
+    if (isPinned) { onExpand(); return; }
     hoverTimerRef.current = window.setTimeout(onExpand, 90);
   };
 
   const handleSidebarLeave = () => {
     window.clearTimeout(hoverTimerRef.current);
-    if (profileOpenRef.current || openGroup || (isStudent && isPinned)) return;
-    hoverTimerRef.current = window.setTimeout(onCollapse, isStudent ? 160 : 0);
+    if (profileOpenRef.current || openGroup || isPinned) return;
+    hoverTimerRef.current = window.setTimeout(onCollapse, 160);
   };
 
   useEffect(() => () => window.clearTimeout(hoverTimerRef.current), []);
@@ -658,16 +660,20 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
     <aside
       onMouseEnter={handleSidebarEnter}
       onMouseLeave={handleSidebarLeave}
-      className={`fixed left-0 top-0 z-[70] h-screen overflow-visible border-r transition-[width,box-shadow,background-color] ease-[cubic-bezier(0.22,1,0.36,1)] ${isStudent ? `border-sky-100 bg-[#f8fbff] duration-300 dark:border-sky-950 dark:bg-slate-950 ${isExpanded ? 'shadow-[10px_0_32px_rgba(14,165,233,0.09)] dark:shadow-black/30' : 'shadow-[3px_0_18px_rgba(14,165,233,0.05)]'}` : 'border-sky-100 bg-sky-50/90 shadow-[4px_0_28px_rgba(14,165,233,0.08)] backdrop-blur-2xl duration-[800ms] dark:border-sky-950 dark:bg-slate-950/95 dark:shadow-black/20'}`}
+      // Solid colours and one 300ms width animation on a fixed element: no backdrop blur (Safari
+      // repaints the blur on every frame while the width changes) and no page relayout on hover.
+      className={`fixed left-0 top-0 z-[70] h-screen overflow-visible border-r transition-[width,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${isStudent ? 'border-sky-100 bg-[#f8fbff] dark:border-sky-950 dark:bg-slate-950' : 'border-sky-100 bg-[#f1f8fe] dark:border-sky-950 dark:bg-slate-950'} ${isExpanded && !isPinned ? 'shadow-[12px_0_36px_rgba(15,23,42,0.12)] dark:shadow-[12px_0_36px_rgba(0,0,0,0.45)]' : 'shadow-[3px_0_18px_rgba(14,165,233,0.05)] dark:shadow-none'}`}
       style={{ width: resolvedSidebarWidth }}
     >
       {!isStudent && <button
         type="button"
-        onClick={isExpanded ? onCollapse : onExpand}
+        onClick={onTogglePin}
         className="absolute -right-3 top-[68px] z-10 flex h-7 w-7 items-center justify-center rounded-full border bg-white text-slate-500 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-sky-700 dark:hover:text-sky-400"
-        aria-label={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+        aria-label={isPinned ? 'Unpin sidebar (it opens on hover)' : 'Keep sidebar open'}
+        title={isPinned ? 'Unpin sidebar (it opens on hover)' : 'Keep sidebar open'}
+        aria-pressed={isPinned}
       >
-        {isExpanded ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
+        {isPinned ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
       </button>}
       <div className="flex h-full min-h-0 flex-col">
         <div className={`relative mx-2 shrink-0 border-b border-sky-100 bg-[#f8fbff] dark:border-sky-950 dark:bg-slate-950 ${isStudent ? 'h-[68px]' : 'h-[76px]'}`}>
@@ -680,7 +686,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
             {isStudent ? <>
               <img src="/images/peerprep-mark.png" alt="PeerPrep" className={`absolute left-1/2 top-1/2 h-11 w-11 -translate-x-1/2 -translate-y-1/2 object-contain transition-[opacity,transform] duration-200 ease-out ${isExpanded ? 'scale-90 opacity-0' : 'scale-100 opacity-100'}`} />
               <img src="/images/peerprep-wordmark.png" alt="PeerPrep" className={`absolute left-1 top-1/2 h-auto w-[158px] -translate-y-1/2 object-contain transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isExpanded ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0'}`} />
-            </> : <img src="/images/logo.png" alt="PeerPrep" className={`absolute top-1/2 h-auto w-[187px] max-w-none -translate-y-1/2 transition-all duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isExpanded ? '-left-1' : '-left-5'}`} />}
+            </> : <img src="/images/logo.png" alt="PeerPrep" className={`absolute -left-5 top-1/2 h-auto w-[187px] max-w-none -translate-y-1/2 transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${isExpanded ? 'translate-x-4' : 'translate-x-0'}`} />}
             </div>
           </Link>
           {isStudent && isExpanded && (
@@ -902,7 +908,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
           {isProfileOpen && createPortal(
             <div
               id={accountMenuId}
-              className={`pointer-events-auto fixed bottom-3 z-[9999] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50 ${isStudent ? 'duration-300' : 'duration-[800ms]'}`}
+              className={`pointer-events-auto fixed bottom-3 z-[9999] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50 duration-300`}
               style={{ left: `calc(${resolvedSidebarWidth} + 0.75rem)` }}
               role="dialog"
               aria-label="Account menu"

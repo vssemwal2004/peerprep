@@ -4,6 +4,7 @@ import { EvaluationChip, formatDateTime, formatDuration } from './ReportComponen
 import { DonutChart, HorizontalProgress } from './ReportCharts';
 import AIProctoringReportPanel from '../../features/assessment/admin/components/AIProctoringReportPanel';
 import { assessmentEvaluationLabel } from '../../utils/assessmentEvaluation';
+import AnswerReview from './AnswerReview';
 
 function SectionBreakdown({ sections }) {
   const [open, setOpen] = useState({});
@@ -64,7 +65,10 @@ function QuestionPerformance({ questions }) {
   const isCoding = selected?.type === 'coding';
   const isPending = selected?.status === 'pending';
   const testSummary = selected?.testSummary || {};
-  const verdict = selected?.executionVerdict || (selected?.isCorrect ? 'AC' : isPending ? 'PENDING' : selected?.isSkipped ? 'SKIPPED' : 'WA');
+  // Coding keeps judge verdicts (AC / WA ...); other questions read in plain words.
+  const verdict = isCoding
+    ? selected?.executionVerdict || (selected?.isCorrect ? 'AC' : isPending ? 'PENDING' : selected?.isSkipped ? 'SKIPPED' : 'WA')
+    : selected?.isCorrect ? 'Correct' : isPending ? 'Pending review' : selected?.isSkipped ? 'Not answered' : selected?.status === 'partial' ? 'Partly correct' : 'Wrong';
   const verdictStyle = selected?.isCorrect
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300'
     : isPending
@@ -72,12 +76,6 @@ function QuestionPerformance({ questions }) {
       : selected?.isSkipped
         ? 'border-slate-200 bg-slate-50 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'
         : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300';
-
-  const answerText = selected?.studentAnswer === undefined || selected?.studentAnswer === null || selected?.studentAnswer === ''
-    ? 'No answer submitted'
-    : typeof selected.studentAnswer === 'string'
-      ? selected.studentAnswer
-      : JSON.stringify(selected.studentAnswer, null, 2);
 
   return (
     <div className="grid min-h-[520px] overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900 sm:grid-cols-[220px_minmax(0,1fr)]">
@@ -155,10 +153,7 @@ function QuestionPerformance({ questions }) {
               )}
             </>
           ) : (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800">
-              <div className="text-[10px] font-semibold uppercase text-slate-400">Student answer</div>
-              <pre className="mt-2 whitespace-pre-wrap text-sm text-slate-800 dark:text-gray-100">{answerText}</pre>
-            </div>
+            <AnswerReview question={selected} />
           )}
 
           <div className="flex items-center justify-between border-t border-slate-200 pt-3 text-xs dark:border-gray-700">

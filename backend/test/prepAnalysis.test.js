@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import ExcelJS from 'exceljs';
-import { boxStats, buildKpiGroups, buildKpis, CHARTS, codingKpiSeries, pageItems, practising, seriesPoints, submissionSplit, topicTier } from '../src/modules/prepAnalysis/charts.js';
+import { boxStats, buildKpiGroups, buildKpis, CHARTS, codingKpiSeries, pageItems, practising, seriesPoints, submissionSplit, topicTier, topicTierRanges, topicTiers } from '../src/modules/prepAnalysis/charts.js';
 import { drillDetail, drillStudents } from '../src/modules/prepAnalysis/drill.js';
 import { chartSummary } from '../src/modules/prepAnalysis/summaries.js';
-import { buildChartBook, renderChartCsv, renderChartXlsx } from '../src/modules/prepAnalysis/prepAnalysis.export.js';
+import { buildChartBook, renderChartCsv, renderChartPdf, renderChartXlsx, validateChartExportOptions } from '../src/modules/prepAnalysis/prepAnalysis.export.js';
 import { buildStudentReport, renderStudentReportPdf, renderStudentReportXlsx } from '../src/modules/prepAnalysis/studentReport.js';
 import { publicFieldCatalog } from '../src/modules/prepAnalysis/fields.js';
 import {
@@ -536,7 +536,7 @@ test('a retired chart is not offered and every layout gets its replacement', asy
   assert.ok(body.charts.some((chart) => chart.id === 'submission-trend'));
   assert.deepEqual(body.replacedCharts, { 'difficulty-split': 'submission-trend' });
   assert.ok(!body.defaultLayout.coding.includes('difficulty-split'));
-  assert.equal(body.defaultLayout.coding[2], 'submission-trend', 'the new chart takes the old one’s place');
+  assert.ok(body.defaultLayout.coding.includes('submission-trend'), 'the new chart is on the default page');
 });
 
 test('Prep Coding default layout: heat map first, then rows that each fill the 12 columns', async () => {
@@ -545,9 +545,13 @@ test('Prep Coding default layout: heat map first, then rows that each fill the 1
   const res = { set: () => res, json: (value) => { body = value; return res; } };
   await getPrepAnalysisCatalog({ platformPermissions: undefined }, res);
   const coding = body.defaultLayout.coding;
-  assert.deepEqual(coding.slice(0, 11), ['activity-calendar', 'top-students', 'submission-trend', 'practice-trend', 'practice-funnel', 'topic-strength',
-    'needs-attention', 'tough-problems', 'student-profile', 'failure-reasons', 'language-usage']);
-  assert.ok(body.defaultLayoutVersion.coding >= 2, 'saved layouts move to the new default once');
+  // Top students runs full width; the skill profile left the page and the submissions donut took
+  // its place in the row of three.
+  assert.deepEqual(coding.slice(0, 10), ['activity-calendar', 'top-students', 'practice-trend', 'practice-funnel', 'topic-strength',
+    'needs-attention', 'tough-problems', 'submission-trend', 'failure-reasons', 'language-usage']);
+  assert.ok(!coding.includes('student-profile'));
+  assert.equal(body.defaultSizes.coding['top-students'], 'full');
+  assert.ok(body.defaultLayoutVersion.coding >= 3, 'saved layouts move to the new default once');
 });
 
 test('every feature page: heat map first, and every row of every block fills the 12 columns', async () => {
@@ -582,12 +586,19 @@ test('every feature page: heat map first, and every row of every block fills the
 });
 
 test('topic bubbles: priority by students compared with the most-solved topic', () => {
-  assert.equal(topicTier(9, 9), 'strong');
-  assert.equal(topicTier(6, 9), 'strong', 'two-thirds of the top topic');
-  assert.equal(topicTier(5, 9), 'growing');
-  assert.equal(topicTier(3, 9), 'growing', 'one-third of the top topic');
-  assert.equal(topicTier(2, 9), 'focus');
-  assert.equal(topicTier(1, 0), 'focus');
+  // Few different counts (9, 8, 2, 1): one group each, spread over the size/colour levels.
+  const few = topicTiers([9, 8, 2, 1, 1, 1, 2]);
+  assert.deepEqual(few.map((tier) => [tier.key, tier.label]), [['t0', '9 students'], ['t2', '8 students'], ['t5', '2 students'], ['t7', '1 student']]);
+  assert.deepEqual([9, 8, 2, 1].map((students) => topicTier(few, students)), ['t0', 't2', 't5', 't7']);
+  assert.deepEqual(topicTierRanges(few, [{ tier: 't7' }, { tier: 't7' }, { tier: 't0' }]).map((tier) => tier.topics), [1, 0, 0, 2]);
+  // Many different counts: eight runs, every count in exactly one group.
+  const many = topicTiers(Array.from({ length: 40 }, (_, index) => index + 1));
+  assert.equal(many.length, 8);
+  assert.deepEqual(many.map((tier) => tier.key), ['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7']);
+  assert.deepEqual([many[0].high, many[0].low, many[7].high, many[7].low], [40, 36, 5, 1]);
+  assert.equal(many[0].label, '36–40 students');
+  assert.deepEqual(topicTiers([5]).map((tier) => tier.key), ['t0'], 'a single count is the top group');
+  assert.deepEqual(topicTiers([]), []);
   const chart = CHARTS.find((entry) => entry.id === 'topic-strength');
   assert.equal(chart.type, 'bubble');
   assert.equal(chart.options, undefined, 'no top-N limit: every topic someone solves is a bubble');
@@ -719,7 +730,7 @@ test('Quick Prep rows: activity, open sheets started, and dated starts and finis
   assert.deepEqual([...recent[0].quickprep.days], [['2026-10-08', [0, 1]]]);
 });
 
-test('Quick Prep question-level charts: sheet health, solve rate by difficulty, where students get stuck, pace', () => {
+test('Quick Prep question-level charts: sheet health, solve rate by difficulty, where students get stuck, pace', async () => {
   const { rows, sheets } = learningAndQuickPrep();
   const build = (id) => CHARTS.find((chart) => chart.id === id).build({ rows, options: { limit: 10 }, range: {}, sheets });
 
@@ -745,6 +756,30 @@ test('Quick Prep question-level charts: sheet health, solve rate by difficulty, 
   const pace = build('quickprep-pace');
   assert.equal(pace.bins.reduce((sum, bin) => sum + bin.count, 0), 1, 'only Asha finished a sheet');
   assert.equal(pace.bins[3].count, 1, '28 Sep to 8 Oct: 10 days, the 1–2 weeks band');
+  const { FEATURE_DRILLS } = await import('../src/modules/prepAnalysis/featureDrills.js');
+
+  // The rings carry the same solve rates as the old difficulty bars.
+  const rings = build('quickprep-difficulty-rings');
+  const hard = rings.items.find((item) => item.key === 'Hard');
+  assert.deepEqual([hard.value, hard.solved, hard.total], [37.5, 3, 8]);
+  assert.deepEqual(rings.items.find((item) => item.key === 'Easy').solved, 6);
+
+  // Sheet bubbles: one per started sheet, sized/grouped by starters, with finish details.
+  const bubbles = build('quickprep-sheet-bubbles');
+  const placement = bubbles.items.find((item) => item.name === 'Placement essentials');
+  assert.equal(placement.value, 2);
+  assert.match(placement.detail, /^1 finished · 50% finish rate$/);
+  assert.equal(bubbles.tiers[0].key, 't0');
+  assert.match(bubbles.tiers[0].label, /started$/);
+
+  // The Sheet journey has plain gap names, and each gap lists exactly its students.
+  const journey = build('quickprep-funnel');
+  assert.deepEqual(journey.stages.map((stage) => stage.name), ['All students', 'Opened a sheet', 'Solved a question', 'Half of a sheet', 'Finished a sheet']);
+  for (const drop of journey.drops) {
+    const listed = FEATURE_DRILLS['quickprep-funnel'].students(rows, drop.key, {}, { sheets }).items.length;
+    assert.equal(listed, drop.students, `${drop.key}: the list matches the count`);
+  }
+  assert.equal(FEATURE_DRILLS['quickprep-funnel'].label(journey.drops[0].key), 'Never opened a sheet');
 });
 
 test('Quick Prep "only these sheets": every figure is rebuilt from the chosen sheets', async () => {
@@ -905,6 +940,11 @@ test('a chart download has a summary, the chart\'s numbers, its students and the
   const csv = renderChartCsv(book).toString('utf8');
   assert.match(csv, /Branch is CSE/);
   assert.match(csv, /Easy solved/);
+  // PDF: the same students, as a real PDF document.
+  const pdf = await renderChartPdf(book);
+  assert.equal(pdf.subarray(0, 5).toString('latin1'), '%PDF-');
+  assert.ok(pdf.length > 1500);
+  assert.deepEqual(validateChartExportOptions({ format: 'pdf' }).format, 'pdf');
 });
 
 function interviewsAndTests() {

@@ -146,6 +146,8 @@ const BY_ID = {
     if (!categories?.length) return null;
     return categories.map((category, index) => `${category.label} ${rates[index]}%`).join(" · ").replace(/^/, "Solve rate in started sheets: ") + ".";
   },
+  "quickprep-difficulty-rings": ({ items }) => (items?.length ? `Solve rate in started sheets: ${items.map((item) => `${item.label} ${item.value}%`).join(" · ")}.` : null),
+  "quickprep-sheet-bubbles": ({ items }) => (items?.[0] ? `${items[0].name} is the most worked-on sheet: ${plural(items[0].value, "student")} started it (${items[0].detail}).` : null),
   "quickprep-hardest-questions": ({ items }) => (items?.[0] ? `“${items[0].name}” is the hardest: ${items[0].value}% of starters solved it, ${plural(items[0].students, "student")} stuck.` : null),
   "quickprep-pace": ({ bins }) => largestBand(bins, "Time to finish"),
   "quickprep-own-work": ({ items }) => {

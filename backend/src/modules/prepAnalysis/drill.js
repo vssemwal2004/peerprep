@@ -92,7 +92,7 @@ const lostStep = (key) => {
   const index = match ? Number(match[1]) : null;
   return index !== null && index >= 1 && index < FUNNEL_STAGES.length ? index : null;
 };
-const furthestStage = (row) => FUNNEL_STAGES[FUNNEL_STAGES.findLastIndex((stage) => stage.test(row))].name;
+const furthestStage = (row) => FUNNEL_STAGES[FUNNEL_STAGES.findLastIndex((stage) => stage.test(row))].furthest;
 const lastPracticeText = (row) => (row.coding.daysSinceActive === null ? 'Never' : row.coding.daysSinceActive === 0 ? 'Today' : `${row.coding.daysSinceActive} days ago`);
 
 const solvedColumns = [count('easy', 'Easy solved'), count('medium', 'Medium solved'), count('hard', 'Hard solved'), count('solvedTotal', 'Problems solved')];
@@ -394,7 +394,7 @@ const DRILLS = {
   'practice-funnel': {
     label: (key) => {
       const lost = lostStep(key);
-      if (lost !== null) return `Reached “${FUNNEL_STAGES[lost - 1].name}”, not “${FUNNEL_STAGES[lost].name}”`;
+      if (lost !== null) return FUNNEL_STAGES[lost].gap;
       return FUNNEL_STAGES[Number(key)]?.name || 'Every step';
     },
     students(rows, key) {

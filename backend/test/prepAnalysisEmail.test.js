@@ -63,13 +63,23 @@ test('student id lists are validated, de-duplicated and capped', () => {
 test('only the admin\'s own enabled templates are offered', async (t) => {
   if (guard(t)) return;
   const { templates, variables } = await listStudentMailTemplates();
-  // The ready-made "next step reminder" is added once, as an ordinary editable template.
-  assert.deepEqual(templates.map((template) => template.name), ['Practice reminder', 'Prep Coding: next step reminder']);
+  // The ready-made "next step reminder" and one email per Practice journey gap are added once, as
+  // ordinary editable templates.
+  assert.deepEqual(templates.map((template) => template.name), [
+    'Practice journey 1: never tried a problem', 'Practice journey 2: tried, nothing solved yet', 'Practice journey 3: ready for Medium',
+    'Practice journey 4: take on a Hard', 'Practice reminder', 'Prep Coding: next step reminder',
+  ]);
   assert.equal(templates.find((template) => template.suggested)?.name, 'Prep Coding: next step reminder');
-  assert.match(templates[0].html, /Dear \{\{name\}\}/, 'the dialog gets the HTML to edit');
+  assert.match(templates.find((template) => template.name === 'Practice reminder').html, /Dear \{\{name\}\}/, 'the dialog gets the HTML to edit');
   assert.ok(variables.some((variable) => variable.key === 'firstName'));
+  // Emailing a gap suggests that gap's own template.
+  const forGap = await listStudentMailTemplates({ stage: 'lost:3' });
+  assert.equal(forGap.templates.find((template) => template.suggested)?.name, 'Practice journey 3: ready for Medium');
+  assert.equal(forGap.templates.find((template) => template.suggested)?.stage, 'lost:3');
+  assert.match(forGap.templates.find((template) => template.stage === 'lost:1').html, /data-pp="title"[^>]*>Start with one problem today</, 'marked up for the text editor');
   await listStudentMailTemplates();
   assert.equal(await EmailTemplate.countDocuments({ type: 'PREP_PRACTICE_NUDGE' }), 1, 'never added twice');
+  assert.equal(await EmailTemplate.countDocuments({ type: /^PREP_JOURNEY_/ }), 4, 'four gap templates, never added twice');
   const nudge = await EmailTemplate.findOne({ type: 'PREP_PRACTICE_NUDGE' }).lean();
   assert.equal(nudge.isSystem, false, 'editable in Settings → Email Templates');
 });

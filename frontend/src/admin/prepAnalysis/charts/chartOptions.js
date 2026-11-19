@@ -27,6 +27,7 @@ export const CHART_VIEWS = Object.freeze({
   rankedStackedBar: [{ value: "chart", label: "Bars" }, { value: "mix", label: "Difficulty mix" }, { value: "table", label: "Table" }],
   barList: [{ value: "chart", label: "Bars" }, { value: "lollipop", label: "Lollipop" }, { value: "treemap", label: "Treemap" }, { value: "table", label: "Table" }],
   bubble: [{ value: "chart", label: "Bubbles" }, { value: "bars", label: "Bars" }, { value: "table", label: "Table" }],
+  rings: [{ value: "chart", label: "Rings" }, { value: "bars", label: "Bars" }, { value: "table", label: "Table" }],
   donut: [{ value: "chart", label: "Donut" }, { value: "rose", label: "Rose" }, { value: "treemap", label: "Treemap" }, { value: "bars", label: "Bars" }, { value: "table", label: "Table" }],
   trend: [{ value: "chart", label: "Line" }, { value: "bars", label: "Bars" }, { value: "combo", label: "Bars and line" }, { value: "table", label: "Table" }],
   funnel: [{ value: "chart", label: "Steps" }, { value: "funnel", label: "Funnel" }, { value: "drop", label: "Drop-off" }, { value: "table", label: "Table" }],
@@ -188,8 +189,10 @@ function horizontalBars(theme, items, { color, unit = "", max, valueLabel = "", 
   });
 }
 
-// Topic bubbles: priority colours (see TOPIC_TIERS on the server).
-export const TIER_COLORS = Object.freeze({ strong: "#10b981", growing: "#0ea5e9", focus: "#f59e0b" });
+// Topic bubbles: up to eight groups by students solving (topicTiers on the server), level t0 (most)
+// … t7 (fewest). Order chosen so neighbouring groups differ strongly (validated: normal-vision ΔE ≥ 24;
+// colour-blind ΔE ≥ 6, legal because every group also has its own size and a count on each bubble).
+export const TIER_COLORS = Object.freeze({ t0: "#059669", t1: "#2563eb", t2: "#d97706", t3: "#7c3aed", t4: "#0891b2", t5: "#e11d48", t6: "#65a30d", t7: "#c026d3" });
 
 const builders = {
   /**
@@ -262,14 +265,35 @@ const builders = {
     if (!items.length) return null;
     const inset = 8;
     const scoreColumn = 82;
-    const desktopLeft = 156;
-    const mobileLeft = 112;
-    const studentAxis = rowAxis(theme, items.map((item) => `${item.position}. ${item.name}`), Infinity);
+    const desktopLeft = 200;
+    const mobileLeft = 128;
+    const studentAxis = rowAxis(theme, items.map((item) => item.name), Infinity);
     const scoreAxis = rowAxis(theme, items.map((item) => formatScore(item.score)));
+    // Rank badge (gold, silver, bronze for the top three) then the name.
+    const MEDALS = [["#f59e0b", "#ffffff"], ["#94a3b8", "#ffffff"], ["#c2703d", "#ffffff"]];
+    const badge = (background, color) => ({ backgroundColor: background, color, borderRadius: 9, width: 22, height: 18, align: "center", fontSize: 10.5, fontWeight: 800, lineHeight: 18 });
     const studentLabel = (left) => ({
       ...studentAxis.axisLabel,
-      align: "left", margin: left - inset, width: left - inset - 12, overflow: "truncate",
+      // Left-aligned from the card edge; names are shortened by the formatter, so no width box
+      // (a width box centres rich text).
+      align: "left", margin: left - inset, width: undefined, overflow: "none",
+      formatter: (value) => {
+        const item = items[Number(value)];
+        if (!item) return "";
+        const medal = item.position <= 3 ? `m${item.position}` : "r";
+        return `{${medal}|${item.position}}  {n|${truncate(item.name, Math.floor((left - 52) / 6.4))}}`;
+      },
+      rich: {
+        m1: badge(...MEDALS[0]), m2: badge(...MEDALS[1]), m3: badge(...MEDALS[2]),
+        r: badge(theme.empty, theme.text),
+        n: { color: theme.strong, fontSize: 12, fontWeight: 600 },
+      },
     });
+    // Round only the outer ends of each student's stacked bar.
+    const lastKey = (item) => [...DIFFICULTIES].reverse().find((key) => (item.segments?.[key] || 0) > 0);
+    const firstKey = (item) => DIFFICULTIES.find((key) => (item.segments?.[key] || 0) > 0);
+    const cap = (item, key) => [firstKey(item) === key ? 7 : 0, lastKey(item) === key ? 7 : 0, lastKey(item) === key ? 7 : 0, firstKey(item) === key ? 7 : 0];
+    const shade = (color) => ({ type: "linear", x: 0, y: 0, x2: 1, y2: 0, colorStops: [{ offset: 0, color: `${color}cc` }, { offset: 1, color }] });
     const columnLayout = (left) => ({ grid: { left }, yAxis: [{ axisLabel: studentLabel(left) }, {}] });
     const headings = [
       { text: "Student", left: inset },
@@ -285,7 +309,9 @@ const builders = {
         ...base(theme).tooltip, trigger: "item",
         formatter: ({ dataIndex }) => {
           const item = items[dataIndex];
-          return item ? `<b>${escapeHtml(item.name)}</b><br/>Prep Score <b>${formatScore(item.score)}</b><br/>Click to see student details` : "";
+          if (!item) return "";
+          const solved = DIFFICULTIES.map((key) => `${dot(DIFFICULTY_COLORS[key])}${key} <b>${plain(item.solved?.[key] ?? item.counts?.[key] ?? 0)}</b> solved · ${formatScore(item.segments?.[key] || 0)} pts`).join("<br/>");
+          return `<b>#${item.position} ${escapeHtml(item.name)}</b><br/>Prep Score <b>${formatScore(item.score)}</b><br/>${solved}<br/><span style="opacity:.7">Click to see student details</span>`;
         },
       },
       xAxis: valueAxis(theme, { splitNumber: 4, axisLabel: { color: theme.muted, fontSize: 10, hideOverlap: true } }),
@@ -298,10 +324,11 @@ const builders = {
         },
       ],
       series: DIFFICULTIES.map((key, index) => ({
-        name: key, type: "bar", stack: "score", barWidth: 14, cursor: "pointer",
-        showBackground: index === 0, backgroundStyle: { color: theme.empty, borderRadius: 5 },
-        itemStyle: { color: DIFFICULTY_COLORS[key], borderColor: theme.surface, borderWidth: 1 },
-        data: items.map((item) => item.segments[key]),
+        name: key, type: "bar", stack: "score", barWidth: 16, cursor: "pointer",
+        showBackground: index === 0, backgroundStyle: { color: theme.empty, borderRadius: 8 },
+        itemStyle: { color: shade(DIFFICULTY_COLORS[key]), borderColor: theme.surface, borderWidth: 1 },
+        emphasis: { focus: "none", itemStyle: { shadowBlur: 10, shadowColor: "rgba(15,23,42,0.25)" } },
+        data: items.map((item) => ({ value: item.segments[key], itemStyle: { borderRadius: cap(item, key) } })),
       })),
     });
   },
@@ -344,12 +371,15 @@ const builders = {
     const colors = data.series.map((series) => (series.axis === "right" ? "#64748b" : TREND_NAME_COLORS[series.name] || SERIES_COLORS[left.indexOf(series) % SERIES_COLORS.length] || accent));
     const hasRight = data.series.some((series) => series.axis === "right");
     return base(theme, {
+      // EChart.jsx: the tooltip follows the nearest week wherever the pointer is on the chart,
+      // so points on the plot's edges (a 0 or the latest week) are easy to hover, in Safari too.
+      peerprepHover: "nearest-x",
       legend: legend(theme),
       grid: grid({ right: hasRight ? 38 : 22 }),
       // Smooth hover: the guide line snaps to the nearest week (or day) and glides there, and one
       // tooltip lists every line for that point; no series dimming while the pointer moves.
       tooltip: {
-        ...base(theme).tooltip, trigger: "axis",
+        ...base(theme).tooltip, trigger: "axis", triggerOn: "none",
         axisPointer: { type: "line", snap: true, animation: true, animationDurationUpdate: 140, lineStyle: { color: alpha(colors[0] || accent, 0.55), width: 1.5, type: "dashed" } },
         formatter: (params) => {
           const index = params[0]?.dataIndex ?? 0;
@@ -365,7 +395,8 @@ const builders = {
       xAxis: categoryAxis(theme, data.labels.map(weekLabel), { boundaryGap: false }),
       yAxis: [valueAxis(theme, { minInterval: 1 }), ...(hasRight ? [valueAxis(theme, { splitLine: { show: false }, minInterval: 1 })] : [])],
       series: data.series.map((series, index) => ({
-        name: series.name, type: "line", smooth: 0.35, yAxisIndex: series.axis === "right" ? 1 : 0,
+        // Smooth, but never overshooting a point (no dip below 0 between two low weeks).
+        name: series.name, type: "line", smooth: 0.5, smoothMonotone: "x", yAxisIndex: series.axis === "right" ? 1 : 0,
         // Parts of one whole (accepted + not accepted = submissions) stack.
         ...(series.stack ? { stack: series.stack } : {}),
         symbol: "circle", symbolSize: 6, showSymbol: data.labels.length <= 12,
@@ -551,47 +582,71 @@ const builders = {
     if (!bins.some((bin) => bin.count)) return null;
     const label = data.label || "Prep Score";
     const counted = bins.reduce((sum, bin) => sum + bin.count, 0);
-    // Running share of students up to and including each band (the line), and the band where it
-    // passes half: that is where the middle student sits.
+    // Running share of students up to and including each band, and the band where it passes half:
+    // that is where the middle student sits. With only a few students the running line and the
+    // middle mark say nothing, so they appear from 8 (line) and 3 (mark) students.
     let running = 0;
     const cumulative = bins.map((bin) => { running += bin.count; return percentOf(running, counted); });
     const medianBand = cumulative.findIndex((share) => share >= 50);
+    // Bars only: no running-share line (2026-11-19, admins found it noise); the tooltip still
+    // says what share of students is at or below each band.
+    const showMiddle = counted >= 3 && medianBand >= 0;
+    const peak = Math.max(...bins.map((bin) => bin.count));
     return base(theme, {
-      legend: legend(theme),
-      grid: grid({ top: 44, right: 40, bottom: 20 }),
+      // Where the middle student sits, as a caption in the top-left corner.
+      ...(showMiddle ? { title: { text: `{line|┆} Middle student: ${bins[medianBand].label}`, left: 0, top: 2, padding: 0, textStyle: { fontSize: 10.5, fontWeight: 600, color: theme.text, rich: { line: { color: accent, fontWeight: 800 } } } } } : {}),
+      grid: grid({ top: showMiddle ? 36 : 26, right: 14, bottom: 22 }),
       tooltip: {
-        ...base(theme).tooltip, trigger: "axis", axisPointer: { type: "shadow", shadowStyle: { color: alpha(accent, 0.06) } },
+        ...base(theme).tooltip, trigger: "axis", axisPointer: { type: "shadow", shadowStyle: { color: alpha(accent, 0.07) } },
         formatter: (points) => {
           const index = points[0].dataIndex;
-          return `<b>${escapeHtml(label)} ${escapeHtml(bins[index].label)}</b><br/>${dot(accent)}<b>${plain(bins[index].count)}</b> students · ${percentOf(bins[index].count, counted)}%`
+          return `<b>${escapeHtml(label)} ${escapeHtml(bins[index].label)}</b><br/>${dot(accent)}<b>${plain(bins[index].count)}</b> student${bins[index].count === 1 ? "" : "s"} · ${percentOf(bins[index].count, counted)}%`
             + `<br/><span style="opacity:.75">${cumulative[index]}% of students are at or below this band</span>`;
         },
       },
-      xAxis: categoryAxis(theme, bins.map((bin) => bin.label), { name: label, nameLocation: "middle", nameGap: 24, nameTextStyle: { color: theme.muted, fontSize: 10 } }),
-      yAxis: [valueAxis(theme, { minInterval: 1 }), valueAxis(theme, { min: 0, max: 100, splitLine: { show: false }, axisLabel: { color: theme.muted, fontSize: 10, formatter: "{value}%" } })],
+      xAxis: (() => {
+        const axis = categoryAxis(theme, bins.map((bin) => bin.label), { name: label, nameLocation: "middle", nameGap: 26, nameTextStyle: { color: theme.muted, fontSize: 10, fontWeight: 600 } });
+        // A few bands: every band's name shows (two lines when long) instead of every other one.
+        return bins.length <= 6 ? { ...axis, axisLabel: { ...axis.axisLabel, interval: 0, fontSize: 9.5, lineHeight: 11, formatter: (value) => String(value).replace(/^(\S+)\s(\S+.*)$/, (match, first, rest) => (match.length > 9 ? `${first}\n${rest}` : match)) } } : axis;
+      })(),
+      yAxis: valueAxis(theme, { minInterval: 1 }),
       series: [
         {
-          name: "Students", type: "bar", barCategoryGap: "16%", cursor: "pointer",
-          itemStyle: { borderRadius: [7, 7, 0, 0] },
-          label: { show: true, position: "top", color: theme.muted, fontSize: 10, fontWeight: 600, formatter: ({ value }) => (value ? `${plain(value)}` : "") },
-          // Low bands in amber, strong bands in the section colour, so weak clusters stand out.
-          data: bins.map((bin, index) => ({ value: bin.count, itemStyle: { color: gradient(index < 3 ? "#f59e0b" : index < 6 ? alpha(accent, 0.7) : accent) } })),
-          ...(medianBand >= 0 ? {
+          name: "Students", type: "bar", barCategoryGap: "26%", barMaxWidth: 42, cursor: "pointer",
+          showBackground: true, backgroundStyle: { color: alpha(accent, 0.05), borderRadius: [8, 8, 0, 0] },
+          label: { show: true, position: "top", distance: 4, color: theme.strong, fontSize: 10.5, fontWeight: 700, formatter: ({ value }) => (value ? `${plain(value)}` : "") },
+          // One colour family: the busiest band (and the middle student's band) strongest, the rest lighter.
+          data: bins.map((bin, index) => ({
+            value: bin.count,
+            itemStyle: { borderRadius: [8, 8, 2, 2], color: gradient(bin.count === peak || (showMiddle && index === medianBand) ? accent : alpha(accent, 0.55)) },
+          })),
+          ...(showMiddle ? {
             markLine: {
               silent: true, symbol: "none", animation: false,
-              lineStyle: { color: theme.muted, type: "dashed", width: 1 },
-              label: { position: "end", formatter: "Middle student", color: theme.muted, fontSize: 9.5, fontWeight: 600 },
+              lineStyle: { color: alpha(accent, 0.7), type: "dashed", width: 1.2 },
+              label: { show: false },
               data: [{ xAxis: medianBand }],
             },
           } : {}),
         },
-        {
-          name: "Cumulative share", type: "line", yAxisIndex: 1, smooth: 0.3, symbol: "circle", symbolSize: 5, cursor: "pointer",
-          lineStyle: { width: 2, color: "#8b5cf6" }, itemStyle: { color: "#8b5cf6", borderColor: theme.surface, borderWidth: 1.5 },
-          emphasis: { focus: "series" },
-          data: cumulative,
-        },
       ],
+    });
+  },
+
+  // Bars view (and data check) of the difficulty rings: one bar per difficulty, its solve rate.
+  rings(data, theme) {
+    const items = data.items || [];
+    if (!items.length) return null;
+    return base(theme, {
+      grid: grid({ top: 10, left: 70, right: 56, bottom: 8, containLabel: false }),
+      tooltip: { ...base(theme).tooltip, trigger: "item", formatter: ({ dataIndex }) => { const item = items[dataIndex]; return `<b>${escapeHtml(item.label)}</b><br/>${item.value}% solved · ${plain(item.solved)} of ${plain(item.total)} questions<br/>${plain(item.students)} students solved one`; } },
+      xAxis: valueAxis(theme, { max: 100, axisLabel: { color: theme.muted, fontSize: 10, formatter: "{value}%" } }),
+      yAxis: { ...categoryAxis(theme, items.map((item) => item.label)), inverse: true, axisLine: { show: false } },
+      series: [{
+        type: "bar", barWidth: 16, cursor: "pointer", showBackground: true, backgroundStyle: { color: theme.empty, borderRadius: 8 },
+        label: { show: true, position: "right", color: theme.strong, fontWeight: 700, fontSize: 11, formatter: ({ value }) => `${value}%` },
+        data: items.map((item) => ({ value: item.value, itemStyle: { color: gradient(DIFFICULTY_COLORS[item.key] || "#0ea5e9"), borderRadius: 8 } })),
+      }],
     });
   },
 
@@ -799,7 +854,7 @@ const viewBuilders = {
     const items = data.items || [];
     // Each bar is 100%: how much of that student's Prep Score comes from Easy, Medium and Hard.
     option.xAxis = { ...option.xAxis, max: 100, axisLabel: { ...option.xAxis.axisLabel, formatter: "{value}%" } };
-    option.series = option.series.map((series) => ({ ...series, data: items.map((item) => percentOf(item.segments?.[series.name] || 0, item.score)) }));
+    option.series = option.series.map((series) => ({ ...series, data: items.map((item, index) => ({ ...series.data[index], value: percentOf(item.segments?.[series.name] || 0, item.score) })) }));
     return option;
   },
   "barList:lollipop": (data, theme, { accent }) => {
@@ -1085,6 +1140,7 @@ export function chartHeight(chart) {
   if (chart.type === "bubble") return Math.max(320, Math.min(460, 280 + (chart.data?.items?.length || 0) * 3));
   if (chart.type === "stackedBar" && chart.data?.horizontal) return Math.max(220, Math.min(460, 60 + (chart.data?.groups?.length || 0) * 28));
   if (chart.type === "calendar") return 170;
+  if (chart.type === "rings") return 250;
   if (chart.type === "scatter") return { sm: 280, md: 320, lg: 340, full: 380 }[chart.size] || 340;
   return { sm: 240, md: 270, lg: 280, full: 300 }[chart.size] || 270;
 }
@@ -1112,9 +1168,12 @@ export function chartTable(chart) {
     case "bubble": {
       const items = data.items || [];
       const tierLabel = new Map((data.tiers || []).map((tier) => [tier.key, tier.label]));
+      // Topics have an accepted %, sheets a finish detail.
+      const accurate = items.some((item) => item.accuracy !== undefined);
       return {
-        columns: [text(data.itemLabel || "Name"), number(capitalize(data.valueLabel || "Value")), number("% of students"), number("Accepted %"), text("Priority")],
-        rows: items.map((item) => [item.name, item.value, item.pct ?? 0, item.accuracy ?? 0, tierLabel.get(item.tier) || ""]),
+        columns: [text(data.itemLabel || "Name"), number(capitalize(data.valueLabel || "Value")), number(data.pctLabel ? `% ${data.pctLabel}` : "% of students"),
+          accurate ? number("Accepted %") : text("Details"), text("Group")],
+        rows: items.map((item) => [item.name, item.value, item.pct ?? 0, accurate ? item.accuracy ?? 0 : item.detail || "", tierLabel.get(item.tier) || ""]),
       };
     }
     case "barList": {
@@ -1143,6 +1202,11 @@ export function chartTable(chart) {
     }
     case "histogram":
       return { columns: [text(data.label || "Band"), number("Students")], rows: (data.bins || []).map((bin) => [bin.label, bin.count]) };
+    case "rings":
+      return {
+        columns: [text("Difficulty"), number("Solved (%)"), number("Solved"), number("Questions"), number("Students who solved one")],
+        rows: (data.items || []).map((item) => [item.label, item.value, item.solved, item.total, item.students]),
+      };
     case "combo":
       return {
         columns: [text(data.categoryLabel || "Group"), ...(data.bars || []).map((bar) => number(bar.name)), ...(data.lines || []).map((line) => number(`${line.name}${line.unit ? ` (${line.unit})` : ""}`))],

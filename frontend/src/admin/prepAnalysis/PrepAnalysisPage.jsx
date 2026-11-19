@@ -26,6 +26,10 @@ import { sectionStyle } from "./components/sectionStyles";
 import { Button, IconButton } from "./components/ui";
 import { featureFields, isKpiActive, kpiRule, studentFields, toggleKpi, toQueryRequest } from "./filterModel";
 import { compareRequest, usePrepAnalysis } from "./usePrepAnalysis";
+import TourProvider from "./guide/TourProvider";
+import GettingStarted from "./guide/GettingStarted";
+import HelpMenu from "./guide/HelpMenu";
+import { emitMilestone } from "./guide/tourContext";
 
 /** "Only: Hard problems · Solved problems by difficulty (12)" with a clear button. */
 function FocusChip({ label, count, onClear }) {
@@ -104,7 +108,9 @@ function PrepAnalysisView({ scope, embedded }) {
   }, []);
   // The part popup: { chart, part } for the students behind a bar, slice or row.
   const [openPart, setOpenPart] = useState(null);
-  const showPart = useCallback((chart, part) => setOpenPart({ chart, part }), []);
+  const showPart = useCallback((chart, part) => { setOpenPart({ chart, part }); emitMilestone("studentList"); }, []);
+  // Filters changed by the admin (not by opening a view) tick the getting-started step.
+  const applyFilters = useCallback((next) => { update(next); emitMilestone("filter"); }, [update]);
   // ?chart=<id> opens a chart on its own page; Back returns to every chart.
   const [searchParams, setSearchParams] = useSearchParams();
   const [memoryChartId, setMemoryChartId] = useState(null);
@@ -192,10 +198,11 @@ function PrepAnalysisView({ scope, embedded }) {
     <ToastProvider>
     <main className={`font-sans text-slate-900 dark:text-gray-100 ${embedded ? "overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-gray-800 dark:bg-gray-950" : "min-h-full bg-slate-50 dark:bg-gray-950"}`}>
       <AnalysisHeader embedded={embedded} areas={areas} area={area} onArea={chooseArea} period={state.range} onPeriod={(range) => update({ ...state, range })}>
-        <CompareControl compare={compare} classCompare={classCompare} catalog={catalog} area={area} fieldMap={fieldMap} onApply={setCompare} onApplyClasses={setClassCompare} openRequest={compareOpenTick} />
-        {!embedded && <ViewsMenu area={area} state={state} layout={layout} onApply={applyView} />}
-        <Button onClick={() => setCustomizeOpen(true)} title="Choose charts" aria-label="Choose charts"><LayoutGrid className="h-3.5 w-3.5" /><span className="hidden 2xl:inline">Charts</span></Button>
-        <DownloadMenu catalog={catalog} area={area} areaLabel={areaLabel} state={state} fieldMap={fieldMap} matched={meta?.matched} table={table} focus={focus} />
+        <span className="inline-flex" data-tour="compare"><CompareControl compare={compare} classCompare={classCompare} catalog={catalog} area={area} fieldMap={fieldMap} onApply={setCompare} onApplyClasses={setClassCompare} openRequest={compareOpenTick} /></span>
+        {!embedded && <span className="inline-flex" data-tour="views-menu"><ViewsMenu area={area} state={state} layout={layout} onApply={applyView} /></span>}
+        <span className="inline-flex" data-tour="charts-button"><Button onClick={() => setCustomizeOpen(true)} title="Choose charts" aria-label="Choose charts"><LayoutGrid className="h-3.5 w-3.5" /><span className="hidden 2xl:inline">Charts</span></Button></span>
+        <span className="inline-flex" data-tour="page-download"><DownloadMenu catalog={catalog} area={area} areaLabel={areaLabel} state={state} fieldMap={fieldMap} matched={meta?.matched} table={table} focus={focus} /></span>
+        {!embedded && <HelpMenu charts={charts.filter((chart) => !emptyIds.has(chart.id)).map((chart) => ({ id: chart.id, title: chart.title }))} onScoreHelp={() => setHelpOpen(true)} onOpenFilters={() => setFiltersOpen(true)} />}
         <IconButton label="How Prep Score works" onClick={() => setHelpOpen(true)}><HelpCircle className="h-4 w-4" /></IconButton>
         <IconButton label="Refresh data" onClick={refresh} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></IconButton>
       </AnalysisHeader>
@@ -215,7 +222,7 @@ function PrepAnalysisView({ scope, embedded }) {
         </div>
       ) : (
       <div className="mx-auto max-w-[1680px] space-y-3 px-4 py-3">
-        <FilterToolbar state={state} catalog={catalog} fieldMap={fieldMap} meta={meta} loading={loading} onOpen={() => setFiltersOpen(true)} onChange={update} extra={filterChips} lead={sectionLead} scope={sheetScope} />
+        <div data-tour="filters"><FilterToolbar state={state} catalog={catalog} fieldMap={fieldMap} meta={meta} loading={loading} onOpen={() => setFiltersOpen(true)} onChange={applyFilters} extra={filterChips} lead={sectionLead} scope={sheetScope} /></div>
 
         {error && (
           <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
@@ -273,11 +280,12 @@ function PrepAnalysisView({ scope, embedded }) {
           <PageMessage icon={LayoutGrid} title="No charts on the page" action={<Button tone="primary" onClick={() => setCustomizeOpen(true)}>Add charts</Button>}>Pick the charts you want to see.</PageMessage>
         )}
 
-        {!activeKpi && studentList("Students")}
+        {!activeKpi && <div data-tour="student-table">{studentList("Students")}</div>}
       </div>
       )}
 
-      <FilterDrawer open={filtersOpen} state={state} catalog={catalog} fieldMap={fieldMap} matched={meta?.matched} onApply={update} onClose={() => setFiltersOpen(false)} />
+      <FilterDrawer open={filtersOpen} state={state} catalog={catalog} fieldMap={fieldMap} matched={meta?.matched} onApply={applyFilters} onClose={() => setFiltersOpen(false)} />
+      {!embedded && !fullChart && <GettingStarted onOpenFilters={() => setFiltersOpen(true)} />}
       <CustomizeDrawer open={customizeOpen} charts={areaCharts} sections={catalog.sections || []} layout={layout} areaLabel={areaLabel} onClose={() => setCustomizeOpen(false)} onChange={setLayout} onReset={resetLayout} />
       <ChartSettingsDialog open={Boolean(settingsEntry)} entry={settingsEntry} definition={chartById.get(settingsId)} catalog={catalog} fields={chartFields}
         onClose={() => setSettingsId(null)}
@@ -298,7 +306,10 @@ export default function PrepAnalysisPage({ scope = null, embedded = false }) {
   // A new scope is a new analysis: start clean instead of carrying filters over.
   return (
     <AnalysisScopeContext.Provider value={scope}>
-      <PrepAnalysisView key={scope?.assessmentIds?.join(",") || "all"} scope={scope} embedded={embedded} />
+      {/* Guides (page tour, chart guides, checklist) on the Prep Analysis page itself, not inside a report. */}
+      {embedded
+        ? <PrepAnalysisView key={scope?.assessmentIds?.join(",") || "all"} scope={scope} embedded={embedded} />
+        : <TourProvider><PrepAnalysisView key={scope?.assessmentIds?.join(",") || "all"} scope={scope} embedded={embedded} /></TourProvider>}
     </AnalysisScopeContext.Provider>
   );
 }

@@ -1292,6 +1292,14 @@ function buildQuestionWiseReport(assessment = {}, submission = {}, permissions =
       const correctIndex = question?.correctOptionIndex !== undefined && question?.correctOptionIndex !== null
         ? Number(question.correctOptionIndex)
         : null;
+      const isMcq = (question?.type || section?.type || 'mcq') === 'mcq';
+      // Every option the student picked and every official answer, as sorted index lists, so
+      // single- and multiple-answer MCQs render the same way (same rule as evaluateQuestionResponse).
+      const optionIndexes = (value) => [...new Set((Array.isArray(value) ? value : [value])
+        .filter((entry) => entry !== null && entry !== undefined && entry !== '')
+        .map(Number)
+        .filter(Number.isInteger))].sort((a, b) => a - b);
+      const correctIndexes = isMcq ? optionIndexes(question?.allowMultipleAnswers ? question?.correctOptionIndexes : question?.correctOptionIndex) : [];
       const row = {
         sectionIndex,
         questionIndex,
@@ -1311,10 +1319,12 @@ function buildQuestionWiseReport(assessment = {}, submission = {}, permissions =
         maxMarks: permissions.canViewScore ? marks : null,
         negativeMarks: permissions.canViewScore && negativeMarks > 0 ? negativeMarks : null,
         options: Array.isArray(question?.options) ? question.options : [],
+        allowMultipleAnswers: isMcq && Boolean(question?.allowMultipleAnswers),
       };
       if (permissions.canViewStudentAnswers) {
         row.studentAnswer = answer?.answer ?? answer?.code ?? '';
         row.selectedOptionIndex = Number.isFinite(selectedIndex) ? selectedIndex : null;
+        row.selectedOptionIndexes = isMcq ? optionIndexes(answer?.answer) : [];
         if ((question?.type || section?.type) === 'coding') {
           // Admin reports pass revealHiddenTests; student permissions never do.
           // adminExecutionResult keeps the hidden failing case and raw stderr.
@@ -1341,8 +1351,10 @@ function buildQuestionWiseReport(assessment = {}, submission = {}, permissions =
         }
       }
       if (permissions.canViewCorrectAnswers) {
-        row.correctAnswer = question?.expectedAnswer || (Number.isFinite(correctIndex) ? question.options?.[correctIndex] : '');
-        row.correctOptionIndex = Number.isFinite(correctIndex) ? correctIndex : null;
+        row.correctAnswer = question?.expectedAnswer
+          || (correctIndexes.length ? correctIndexes.map((index) => question.options?.[index]).filter(Boolean).join(', ') : '');
+        row.correctOptionIndex = Number.isFinite(correctIndex) ? correctIndex : (correctIndexes[0] ?? null);
+        row.correctOptionIndexes = correctIndexes;
       }
       if (permissions.canViewExplanations) {
         row.explanation = getQuestionExplanation(question);

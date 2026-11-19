@@ -1,13 +1,12 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import GlobalSidebar from '../components/GlobalSidebar';
-import { getSidebarWidth } from '../components/sidebarLayout';
+import { useOverlaySidebar } from '../components/useOverlaySidebar';
 
 export default function AdminLayout({ children }) {
   const location = useLocation();
   const mainRef = useRef(null);
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
-  const sidebarWidth = getSidebarWidth(isSidebarExpanded);
+  const sidebar = useOverlaySidebar('adminSidebarPinned');
   const isCompilerPreview = location.pathname.includes('/admin/compiler') && location.pathname.includes('/preview');
 
   // The layout stays mounted between pages, so start each page at the top.
@@ -17,14 +16,17 @@ export default function AdminLayout({ children }) {
     <div
       data-app-shell
       className={`h-screen overflow-hidden bg-slate-50 dark:bg-gray-900${isCompilerPreview ? ' overflow-x-hidden' : ''}`}
-      style={{ '--admin-sidebar-width': sidebarWidth, '--app-navbar-height': '0rem' }}
+      style={{ '--admin-sidebar-width': sidebar.reservedWidth, '--app-navbar-height': '0rem' }}
     >
       <GlobalSidebar
-        isExpanded={isSidebarExpanded}
-        onExpand={() => setIsSidebarExpanded(true)}
-        onCollapse={() => setIsSidebarExpanded(false)}
+        isExpanded={sidebar.isExpanded}
+        isPinned={sidebar.isPinned}
+        onTogglePin={sidebar.togglePin}
+        onExpand={sidebar.onExpand}
+        onCollapse={sidebar.onCollapse}
       />
-      <main ref={mainRef} data-app-scroll-container className="h-screen min-h-0 overflow-y-auto overscroll-contain transition-[padding] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)]" style={{ paddingLeft: 'var(--admin-sidebar-width)' }}>
+      {/* Hover never changes this padding (the sidebar floats over the page); only pinning does. */}
+      <main ref={mainRef} data-app-scroll-container className="h-screen min-h-0 overflow-y-auto overscroll-contain" style={{ paddingLeft: 'var(--admin-sidebar-width)' }}>
         {children}
       </main>
     </div>

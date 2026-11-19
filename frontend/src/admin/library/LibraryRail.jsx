@@ -50,7 +50,7 @@ export default function LibraryRail({
         <div
           {...railProps}
           style={{ width: open ? RAIL_PANEL_WIDTH : RAIL_WIDTH }}
-          className={`absolute inset-y-0 left-0 z-50 overflow-hidden border-r border-sky-100 bg-[#f3f8fd] transition-[width,box-shadow] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-sky-950 dark:bg-slate-950 ${
+          className={`absolute inset-y-0 left-0 z-50 overflow-hidden border-r border-sky-100 bg-[#f3f8fd] transition-[width,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-sky-950 dark:bg-slate-950 ${
             open ? 'shadow-[10px_0_32px_rgba(14,165,233,0.12)] dark:shadow-black/40' : 'shadow-[4px_0_20px_rgba(14,165,233,0.06)]'
           }`}
         >
@@ -88,7 +88,7 @@ export default function LibraryRail({
               </section>
             )}
 
-            <div className={`relative mt-auto rounded-xl border p-2 transition-colors duration-[800ms] ${open ? 'border-sky-100 bg-white dark:border-sky-950 dark:bg-slate-900' : 'border-transparent'}`}>
+            <div className={`relative mt-auto rounded-xl border p-2 transition-colors duration-300 ${open ? 'border-sky-100 bg-white dark:border-sky-950 dark:bg-slate-900' : 'border-transparent'}`}>
               <span className={`${TILE} left-[1px] top-1.5 bg-white/70 text-sky-600 dark:bg-slate-800`} title={open ? undefined : 'Library tip: use tags and difficulty filters to find reusable questions faster.'}>
                 <HelpCircle className="h-4 w-4" strokeWidth={1.9} />
               </span>

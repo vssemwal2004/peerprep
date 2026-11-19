@@ -69,13 +69,19 @@ export function createPrepAnalysisApi(scope = null) {
     update: (id, body) => request(`/views/${encodeURIComponent(id)}`, { method: "PATCH", body }),
     remove: (id) => request(`/views/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
+  /** The admin's progress through the guides (finished guides, getting-started steps, closed cards). */
+  guides: {
+    progress: (signal) => request("/guides/progress", { signal }),
+    update: (body) => request("/guides/progress", { method: "PATCH", body }),
+  },
   /** The students behind a chart or one part of it: body is a /query body plus `drill`. */
   drill: (body, signal) => request("/drill", { method: "POST", body: withScope(body, scope), signal }),
   /** "Select all N matching": every student id behind the table (body.table.search) or a chart part (body.drill). */
   studentIds: (body, signal) => request("/student-ids", { method: "POST", body: withScope(body, scope), signal }),
   /** Send email: the admin's own templates, a preview for one student, and the send itself. */
   email: {
-    templates: (signal) => request("/email/templates", { signal }),
+    // `stage`: a Practice journey gap (lost:1 …) being emailed; its own template is suggested.
+    templates: (signal, stage) => request(`/email/templates${stage ? `?stage=${encodeURIComponent(stage)}` : ""}`, { signal }),
     preview: (body, signal) => request("/email/preview", { method: "POST", body: withScope(body, scope), signal }),
     /** "Send test to me": the first student's version, to the signed-in admin's own address only. */
     test: (body) => request("/email/test", { method: "POST", body: withScope(body, scope) }),

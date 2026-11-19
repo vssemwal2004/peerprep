@@ -4,6 +4,7 @@ import { useAnalysisApi } from "../analysisScope";
 import { rangeLabel } from "../../../components/dateRange/dateRangeModel";
 import { optionLookup, summaryLines, toQueryRequest } from "../filterModel";
 import { Button, Dialog, Popover, focusRing } from "./ui";
+import { emitMilestone } from "../guide/tourContext";
 
 const FORMATS = [
   { value: "pdf", label: "PDF", hint: "Ready to print or share", Icon: FileText },
@@ -47,6 +48,7 @@ function ExportDialog({ open, initialFormat, onClose, catalog, area, areaLabel, 
       const body = { ...toQueryRequest({ state, layout: [], table }, fieldMap), ...(focus ? { focus } : {}), format, columns: ordered, summary: focus ? [...lines, `Only: ${focus.label}`] : lines };
       const result = await api.download(body);
       setStatus({ busy: false, error: "", done: `${result.filename} downloaded${result.rowCount != null ? ` · ${result.rowCount.toLocaleString()} students` : ""}` });
+      emitMilestone("download");
     } catch (error) {
       setStatus({ busy: false, error: error.message, done: "" });
     }
