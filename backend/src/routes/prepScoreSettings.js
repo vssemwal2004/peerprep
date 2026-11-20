@@ -45,7 +45,7 @@ router.put('/draft', asyncRoute(async (req, res) => {
   res.json({ draft });
 }));
 
-/** Simulator: Easy/Medium/Hard counts per module in, module scores and the overall score out. */
+/** Simulator: Easy/Medium/Hard counts per module in, independent activity points and coding Prep Score out. */
 router.post('/simulate', asyncRoute(async (req, res) => {
   const config = normalizePrepScoreConfig(req.body?.config);
   const input = req.body?.counts && typeof req.body.counts === 'object' ? req.body.counts : {};

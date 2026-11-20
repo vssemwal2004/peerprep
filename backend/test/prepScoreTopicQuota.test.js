@@ -120,5 +120,5 @@ test('the stored Prep Score leaves out over-limit solves but keeps older solves'
   const expected = calculateModule({ Easy: 4 }, DEFAULT_PREP_SCORE_CONFIG.modules.coding.points, DEFAULT_PREP_SCORE_CONFIG.formula).score;
   assert.equal(ranking.prepScore.features.coding.score, expected);
   assert.equal(ranking.prepScore.features.coding.counts.Easy, 4);
-  assert.equal(ranking.score, ranking.prepScore.total, 'the overall Prep Score averages the modules, coding included');
+  assert.equal(ranking.score, expected, 'Prep Score equals the counted coding score');
 });

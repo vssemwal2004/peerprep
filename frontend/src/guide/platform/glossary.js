@@ -6,7 +6,7 @@
 import { makeGlossary } from "../engine/glossaryEngine.js";
 
 export const PLATFORM_GLOSSARY = Object.freeze([
-  { key: "prepScore", term: "Prep Score", aliases: ["Prep Scores"], text: "A student's overall score from verified work in coding, tests, interviews and learning, with harder work counting more. Coding solves count up to a daily limit per topic." },
+  { key: "prepScore", term: "Prep Score", aliases: ["Prep Scores"], text: "A student's score from verified Prep Coding solves, with harder problems counting more. Coding solves count up to a daily limit per topic." },
   { key: "prepCoins", term: "Prep Coins", aliases: ["Prep Coin", "coins"], text: "PeerPrep's reward points. Students earn them for regular practice and achievements; admins can also issue them. Every change is recorded in the wallet history." },
   { key: "prepCoding", term: "Prep Coding", aliases: [], text: "The coding practice area: problems by topic and difficulty, solved in the built-in code editor." },
   { key: "quickPrep", term: "Quick Prep", aliases: [], text: "Short, curated practice sheets (sets of questions on one goal or topic) that students work through at their own pace." },

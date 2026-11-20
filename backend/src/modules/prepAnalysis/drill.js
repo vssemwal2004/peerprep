@@ -484,11 +484,10 @@ export const DRILL_CHART_IDS = Object.freeze(Object.keys(DRILLS));
 
 const MODULE_SCORE = {
   coding: { label: 'Prep Score', get: (row) => row.coding.prepScore },
-  // Quick Prep has no Prep Score of its own: show the overall one.
-  quickprep: { label: 'Prep Score (overall)', get: (row) => row.scores?.total ?? 0 },
-  learning: { label: 'Prep Learning score', get: (row) => row.scores?.features.learning?.score ?? 0 },
-  interview: { label: 'Prep Interview score', get: (row) => row.scores?.features.interview?.score ?? 0 },
-  assessment: { label: 'Prep Assessment score', get: (row) => row.scores?.features.assessment?.score ?? 0 },
+  quickprep: { label: 'Prep Score', get: (row) => row.scores?.total ?? 0 },
+  learning: { label: 'Learning activity points', get: (row) => row.scores?.features.learning?.score ?? 0 },
+  interview: { label: 'Interview activity points', get: (row) => row.scores?.features.interview?.score ?? 0 },
+  assessment: { label: 'Assessment activity points', get: (row) => row.scores?.features.assessment?.score ?? 0 },
 };
 const STUDENT_COLUMNS = [
   { ...text('name', 'Student name', 24), get: (row) => row.name },

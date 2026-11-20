@@ -83,7 +83,7 @@ export function featureFields(catalog, area) {
 }
 
 export const studentFields = (catalog) => catalog.fields.filter((field) => field.module === "student");
-/** Measures a top / bottom rule can rank by: the overall Prep Score, then the feature's own measures. */
+/** Measures a top / bottom rule can rank by: Prep Score from coding, then each feature's own measures. */
 export const rankMetrics = (catalog, area) => [
   ...catalog.fields.filter((field) => field.key === "student.prepScore"),
   ...featureFields(catalog, area).filter((field) => field.rankable),

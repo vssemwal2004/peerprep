@@ -2,7 +2,7 @@
 // and the Master Admin simulator all produce identical numbers for identical work.
 //
 // Per module:  N = E + M + H,  Q = (e·E + m·M + h·H) / N,  Score = S · N^α · Q^β  (0 when N = 0)
-// Overall:     Σ W·Score / Σ W over the modules the university licenses.
+// Prep Score is the Prep Coding score. Other module scores remain independent activity metrics.
 // Prep Coding counts solves only up to the daily per-topic limit (topicQuota.js).
 import { ACTIVITY_KEYS, DEFAULT_PREP_SCORE_CONFIG, LEVELS, MODULE_KEYS, normalizePrepScoreConfig } from './policy.js';
 
@@ -76,7 +76,7 @@ const activityAllowed = (activityKey, features) => {
 /**
  * evidence: { [activityKey]: [{ level?, topicLevel?, percent?, count? }] } from the progress loader.
  * Returns Easy/Medium/Hard counts per module after levels, gates, toggles and "counts as" units,
- * plus whether the student did any scoreable work at all (even work that earned nothing yet).
+ * plus whether the student has any coding solves (even solves that earn no points yet).
  */
 export function levelCounts(evidence = {}, config = DEFAULT_PREP_SCORE_CONFIG, features = scoreFeatures(null)) {
   const counts = Object.fromEntries(MODULE_KEYS.map((key) => [key, emptyCounts()]));
@@ -88,7 +88,7 @@ export function levelCounts(evidence = {}, config = DEFAULT_PREP_SCORE_CONFIG, f
     for (const activityKey of ACTIVITY_KEYS[moduleKey]) {
       if (!activityAllowed(activityKey, features)) continue;
       const items = Array.isArray(evidence[activityKey]) ? evidence[activityKey] : [];
-      if (items.some((item) => count(item.count ?? 1) > 0)) attempted = true;
+      if (moduleKey === 'coding' && items.some((item) => count(item.count ?? 1) > 0)) attempted = true;
       const activity = module.activities[activityKey];
       if (!activity?.enabled) continue;
       for (const item of items) {
@@ -116,16 +116,12 @@ export function calculateModule(counts = {}, points = DEFAULT_PREP_SCORE_CONFIG.
 export function scoreFromLevelCounts(counts = {}, features = scoreFeatures(null), config = DEFAULT_PREP_SCORE_CONFIG) {
   const normalized = normalizePrepScoreConfig(config);
   const modules = {};
-  let weightedTotal = 0;
-  let totalWeight = 0;
   for (const key of MODULE_KEYS) {
     if (!features[key]) continue;
     const module = normalized.modules[key];
     modules[key] = calculateModule(counts[key], module.points, normalized.formula);
-    weightedTotal += modules[key].exact * module.weight;
-    totalWeight += module.weight;
   }
-  return { total: totalWeight ? roundScore(weightedTotal / totalWeight, normalized.formula.decimalPlaces) : 0, features: modules };
+  return { total: modules.coding?.score ?? 0, features: modules };
 }
 
 /** Internal score object. Student responses must expose only `total`, never modules or policy. */

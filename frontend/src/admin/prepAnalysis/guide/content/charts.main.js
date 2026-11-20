@@ -21,7 +21,7 @@ const histogramNew = [{ title: "Cleaner bars", body: "The running-share line is 
 export const MAIN_CHART_GUIDES = {
   // ---------------------------------------------------------------- Prep Coding
   "top-students": {
-    counted: "Students who practised, ranked by their Prep Coding score (the coding part of the overall Prep Score). Each bar splits that score into the points from Easy, Medium and Hard problems.",
+    counted: "Students who practised, ranked by Prep Score from verified coding solves. Each bar splits that score into the points from Easy, Medium and Hard problems.",
     meaning: [
       { quick: true, title: "Who is setting the pace", target: "@body", body: (ctx) => {
         const items = ctx.data?.items || [];

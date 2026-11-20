@@ -35,14 +35,14 @@ function assertProfileProgressContract(ranking) {
 
 const times = (count, item) => Array.from({ length: count }, () => ({ ...item }));
 
-test('progress scores each module from its own evidence and averages the licensed modules', () => {
+test('progress scores each module separately and uses coding for Prep Score', () => {
   const idle = scoreStudentProgress({}, now);
   assert.equal(idle.score, 0);
   assert.equal(idle.hasProgress, false);
   assert.equal(idle.level.level, 1);
   assert.deepEqual(idle.badgeMetrics, { solved: 0, hardSolved: 0, bestStreak: 0, activeDays: 0, languages: 0, assessments: 0, interviews: 0 });
   assert.deepEqual(idle.levelMetrics, { solvedCount: 0, streak: 0, assessmentScore: null, interviewScore: 0, challengePoints: 0 });
-  // Each module: N^0.4 × (average points)^1.5 with Easy 1, Medium 2, Hard 4; overall is their average.
+  // Each module: N^0.4 × (average points)^1.5 with Easy 1, Medium 2, Hard 4; Prep Score is coding only.
   const scored = scoreStudentProgress({
     easySolved: 10, mediumSolved: 4, hardSolved: 2,
     scoreEvidence: {
@@ -53,15 +53,15 @@ test('progress scores each module from its own evidence and averages the license
     },
   }, now);
   assert.deepEqual(scored.scoreBreakdown, { coding: 6.28, learning: 5.79, interview: 4.39, assessment: 4.39 });
-  assert.equal(scored.score, 5.21);
+  assert.equal(scored.score, 6.28);
   // Harder content earns more than the same amount of easier content.
   const hardTests = scoreStudentProgress({ scoreEvidence: { assessmentCompleted: times(2, { level: 'Hard', percent: 80 }) } }, now);
   const easyTests = scoreStudentProgress({ scoreEvidence: { assessmentCompleted: times(2, { level: 'Easy', percent: 80 }) } }, now);
   assert.ok(hardTests.scoreBreakdown.assessment > easyTests.scoreBreakdown.assessment);
-  // Below the pass mark nothing is earned, but the student is still ranked (at the bottom), not "not started".
+  // Assessment activity alone does not make the student rankable in Prep Coding.
   const lowButWorking = scoreStudentProgress({ scoreEvidence: { assessmentCompleted: times(2, { level: null, percent: 30 }) } }, now);
   assert.equal(lowButWorking.score, 0);
-  assert.equal(lowButWorking.hasProgress, true);
+  assert.equal(lowButWorking.hasProgress, false);
   const huge = scoreStudentProgress({ scoreEvidence: { videoCompleted: times(1e6, { topicLevel: 'medium' }) } }, now);
   assert.equal(huge.scoreBreakdown.learning, 710.47, 'the formula has no fixed ceiling');
   const codingOnly = scoreStudentProgress({ scoreEvidence: { problemSolved: [{ level: 'Easy', count: 3 }], videoCompleted: times(9, {}) }, scoreFeatures: { coding: true, learning: false, interview: false, assessment: false } }, now);
@@ -273,7 +273,7 @@ test('profile and dashboard refresh the current score within cohort cache TTL; m
   const profileRank = await getStudentUniversityRanking(ownStudent, null, now);
   const dashboard = await getStudentDashboardData(ownStudent, now);
   assert.equal(profileRank.rank, 2);
-  assert.equal(profileRank.score, profileRank.prepScore.total, 'the rank score is the overall Prep Score');
+  assert.equal(profileRank.score, profileRank.prepScore.total, 'the rank score is the coding Prep Score');
   assert.ok(profileRank.prepScore.features.coding.score > 0 && profileRank.score <= 100);
   assert.deepEqual(profileRank, dashboard.ranking);
   const unscoped = await getStudentUniversityRanking({ ...ownStudent, college: '' }, null, now);
@@ -494,8 +494,8 @@ test('Prep Interview score uses the student\'s own mock scores (both feedback sc
   const rank = await getStudentUniversityRanking(learner, null, now);
   assert.equal(rank.scoreBreakdown.interview, 4.39, 'two mocks and one verified AI completion count; unfinished and other-tenant AI interviews do not');
   assert.equal(rank.score, rank.prepScore.total);
-  assert.ok(Math.abs(rank.score - 4.39 / 4) < 0.01, 'the overall score averages all four features');
-  assert.equal(rank.rank, 1);
+  assert.equal(rank.score, 0, 'interview activity does not change Prep Score');
+  assert.equal(rank.rank, null, 'students without coding work are unranked');
   const interview = rank.prepScore.features.interview;
   assert.deepEqual(interview.counts, { Easy: 0, Medium: 3, Hard: 0 });
   assert.equal(interview.volume, 3);

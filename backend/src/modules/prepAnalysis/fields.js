@@ -77,12 +77,11 @@ const FIELD_LIST = [
   { key: 'student.status', module: 'student', group: 'Account', label: 'Account', kind: 'enum', options: 'statuses', get: (row) => row.student.status },
   { key: 'student.search', module: 'student', group: 'Account', label: 'Name, email or student ID', kind: 'text', get: (row) => `${row.name} ${row.email} ${row.studentId}` },
 
-  // ---- Prep Score: the stored score each student sees and ranks on (overall = weighted average of licensed modules).
-  // Prep Coding's score is coding.prepScore.
-  { key: 'student.prepScore', module: 'student', group: 'Prep Score', label: 'Prep Score (overall)', kind: 'number', unit: 'points', rankable: true, get: (row) => row.scores?.total ?? 0 },
-  { key: 'interview.prepScore', module: 'interview', group: 'Prep Score', label: 'Prep Interview score', kind: 'number', unit: 'points', rankable: true, get: (row) => row.scores?.features.interview?.score ?? 0 },
-  { key: 'learning.prepScore', module: 'learning', group: 'Prep Score', label: 'Prep Learning score', kind: 'number', unit: 'points', rankable: true, get: (row) => row.scores?.features.learning?.score ?? 0 },
-  { key: 'assessment.prepScore', module: 'assessment', group: 'Prep Score', label: 'Prep Assessment score', kind: 'number', unit: 'points', rankable: true, get: (row) => row.scores?.features.assessment?.score ?? 0 },
+  // Saved filters can still use student.prepScore; it now has the same value as coding.prepScore.
+  { key: 'student.prepScore', module: 'student', group: 'Prep Coding', label: 'Prep Score', kind: 'number', unit: 'points', rankable: true, get: (row) => row.scores?.total ?? 0 },
+  { key: 'interview.prepScore', module: 'interview', group: 'Results', label: 'Interview activity points', kind: 'number', unit: 'points', rankable: true, get: (row) => row.scores?.features.interview?.score ?? 0 },
+  { key: 'learning.prepScore', module: 'learning', group: 'Results', label: 'Learning activity points', kind: 'number', unit: 'points', rankable: true, get: (row) => row.scores?.features.learning?.score ?? 0 },
+  { key: 'assessment.prepScore', module: 'assessment', group: 'Results', label: 'Assessment activity points', kind: 'number', unit: 'points', rankable: true, get: (row) => row.scores?.features.assessment?.score ?? 0 },
 
   // ---- Prep Coding: activity
   { key: 'coding.practiceStatus', module: 'coding', group: 'Practice', label: 'Practice status', kind: 'enum', options: 'practiceStatuses', quick: true, get: (row) => row.coding.practiceStatus },

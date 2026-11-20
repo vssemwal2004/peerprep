@@ -62,7 +62,8 @@ test('the Master Admin sees the formula with named variables and every value is 
   await mount();
   const text = document.body.textContent;
   assert.match(text, /Prep Score Adjustment/);
-  assert.match(text, /Module score = S × Nα × Qβ/);
+  assert.match(text, /Prep Score = S × Nα × Qβ/);
+  assert.doesNotMatch(text, /Weight/);
   for (const label of ['Volume exponent', 'Difficulty exponent', 'Scale', 'Decimal places', 'Pass mark', 'Video completion', 'Topic difficulty → level']) assert.ok(text.includes(label), label);
   assert.equal(document.querySelectorAll('section[aria-labelledby^="module-"]').length, 4, 'one card per module');
   assert.match(text, /Live: version 5/);

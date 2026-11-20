@@ -10,7 +10,7 @@ function finite(value) {
 
 /**
  * The signed-in student's own Prep Score, shown prominently on their profile. Students see only the
- * overall number and their university rank, never how the score is calculated.
+ * Prep Coding score and their university rank, never how the score is calculated.
  */
 export default function PrepScoreSummary({ ranking, loading = false, className = '' }) {
   const total = Math.floor(finite(ranking?.totalStudents));
@@ -21,7 +21,7 @@ export default function PrepScoreSummary({ ranking, loading = false, className =
   const hint = !ranking ? 'Your Prep Score is unavailable right now.'
     : rank ? `${ranking.universityName || 'Your university'}`
       : ranking.hasProgress ? 'Your rank appears once your university ranking updates.'
-        : 'Solve problems, take tests and practise interviews to grow it.';
+        : 'Solve coding problems to grow your Prep Score.';
 
   return (
     <section

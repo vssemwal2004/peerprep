@@ -17,7 +17,6 @@ const STATUS = {
   interview: { active: 'Interviewing', inactive: 'Stopped', never: 'Never interviewed' },
   assessment: { active: 'Taking tests', inactive: 'Stopped', never: 'Never took a test' },
 };
-const MODULE_LABELS = { coding: 'Prep Coding', learning: 'Prep Learning', interview: 'Prep Interview', assessment: 'Prep Assessment' };
 const day = (value) => (value ? new Date(value).toISOString().slice(0, 10) : null);
 const percent = (part, whole) => (whole ? Math.round((part / whole) * 1000) / 10 : 0);
 const language = (key) => LANGUAGE_NAMES[key] || key;
@@ -45,8 +44,7 @@ function allTopics(row) {
 /**
  * The report model: { title, details, sections: [{ title, columns, rows }] }. `profile` is
  * buildStudentProfile's output for the same row and period; `times` comes from loadProblemTimes.
- * `forStudent`: the student's own copy, which shows their overall Prep Score only (students never
- * see how the score is made up) and leaves out admin-only details such as uploaded lists.
+ * `forStudent`: the student's own copy, which leaves out admin-only details such as uploaded lists.
  */
 export function buildStudentReport({ row, profile, times = new Map(), range, generatedAt = new Date(), forStudent = false }) {
   const { student } = profile;
@@ -59,11 +57,10 @@ export function buildStudentReport({ row, profile, times = new Map(), range, gen
     ['Period', periodText(range)], ['Generated', generatedAt.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })],
   ]));
 
-  const features = forStudent ? {} : profile.prepScore?.features || {};
   sections.push({
     title: 'Prep Score', columns: [col('Part', 'text', 22), col('Score', 'decimal', 12)],
-    rows: [['Overall', profile.prepScore?.total ?? 0], ...Object.entries(features).map(([key, feature]) => [MODULE_LABELS[key] || key, feature?.score ?? 0])],
-    note: 'Prep Score is all-time and does not change with the period.',
+    rows: [['Prep Coding', profile.prepScore?.total ?? 0]],
+    note: 'Prep Score comes from verified coding solves, is all-time and does not change with the period.',
   });
 
   if (profile.coding) {

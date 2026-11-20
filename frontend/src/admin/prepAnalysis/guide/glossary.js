@@ -5,7 +5,7 @@
 import { makeGlossary } from "../../../guide/engine/glossaryEngine.js";
 
 export const GLOSSARY = Object.freeze([
-  { key: "prepScore", term: "Prep Score", aliases: ["Prep Scores"], text: "A student's overall score: the weighted average of their module scores (Prep Coding, Assessment, Interview, Learning) from verified work, harder work counting more. Coding solves count up to the daily topic limit." },
+  { key: "prepScore", term: "Prep Score", aliases: ["Prep Scores"], text: "A student's score from verified Prep Coding solves. Harder problems count more, and solves count up to the daily topic limit. Assessment, Interview and Learning have independent activity points." },
   { key: "solved", term: "solved", aliases: ["solve", "solves"], text: "A problem counts as solved the first time the student's submission is accepted. Solving it again does not count twice." },
   { key: "accepted", term: "accepted", aliases: ["acceptance rate"], text: "A submission is accepted when it passes every test case. The acceptance rate is accepted submissions out of all submissions." },
   { key: "submission", term: "submission", aliases: ["submissions"], text: "Each time a student submits code for a problem. Runs (testing without submitting) are not counted." },

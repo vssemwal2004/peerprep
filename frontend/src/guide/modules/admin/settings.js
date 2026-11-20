@@ -102,14 +102,14 @@ export default [
     ],
     terms: [
       { term: "draft", text: "Saved values that are not live yet. Students keep the published version until you publish the draft." },
-      { term: "module weight", text: "How much one module counts in the overall Prep Score average. A weight of 0 leaves that module out." },
+      { term: "Prep Coding", text: "Verified coding solves are the only activity that changes Prep Score and rank." },
       { term: "daily topic limit", text: "How many new solves per topic count each day (IST). Later solves that day add nothing to the score." },
     ],
     steps: [
       {
         id: "psa-header", target: "psa-header", chapter: "overview",
         title: "One formula for every university",
-        body: "The Prep Score is the weighted average of four module scores: Prep Coding, Assessment, Interview and Learning. Students see their score and rank, never these settings. Prep Coins are separate and not affected.",
+        body: "Prep Score comes from verified Prep Coding solves. Assessment, Interview and Learning keep independent activity points. Students see their Prep Score and rank. Prep Coins are separate and not affected.",
       },
       {
         id: "psa-status", target: "psa-status", chapter: "parts", quick: true,
@@ -119,17 +119,17 @@ export default [
       {
         id: "psa-formula", target: "psa-formula", chapter: "parts", quick: true,
         title: "The formula",
-        body: "Each module score = S × N^α × Q^β, where N is the Easy, Medium and Hard work done and Q the average points per item. The Prep Score is Σ(W × module score) ÷ ΣW over the modules a university licenses. The table explains every variable.",
+        body: "Prep Score = S × N^α × Q^β for Prep Coding, where N is the Easy, Medium and Hard solves counted and Q is the average points per solve. The table explains every variable.",
       },
       {
         id: "psa-module", target: "psa-module", chapter: "parts",
         title: "Module cards",
-        body: "One card per module: its weight W in the overall average, points for Easy, Medium and Hard work, pass marks or video completion, and the rules for each counted activity. Prep Coding also has the daily solves per topic that count (0 means no limit; applies to solves after publishing).",
+        body: "The Prep Coding card controls Prep Score points and the daily solves per topic that count (0 means no limit; applies to solves after publishing). Other cards control independent activity points, pass marks, video completion and their counting rules.",
       },
       {
         id: "psa-simulator", target: "psa-simulator", chapter: "actions",
         title: "Try it on a student",
-        body: "Type a student's Easy, Medium and Hard work per module to see each module score and the overall Prep Score these values would give, including unsaved changes. Reset sample brings back the example numbers.",
+        body: "Type a student's Easy, Medium and Hard coding solves to see the Prep Score these values would give, including unsaved changes. Reset sample brings back the example numbers.",
       },
       {
         id: "psa-impact", target: "psa-impact", chapter: "actions", quick: true,

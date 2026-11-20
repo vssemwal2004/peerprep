@@ -48,7 +48,7 @@ const aggregate = (model, pipeline) => model.aggregate(pipeline).option({ maxTim
 const QUESTION_LEVEL_FIELDS = ['marksPerQuestion', 'questions.type', 'questions.difficulty', 'questions.coding.difficulty', 'questions.marks', 'questions.points'];
 const ASSESSMENT_LEVEL_FIELDS = [...QUESTION_LEVEL_FIELDS.map((field) => `sections.${field}`), ...QUESTION_LEVEL_FIELDS.map((field) => `questionSets.sections.${field}`)].join(' ');
 
-/** Map(id -> Easy/Medium/Hard) for the tests or AI interviews behind a cohort's Prep Score evidence. */
+/** Map(id -> Easy/Medium/Hard) for independent assessment and interview activity metrics. */
 async function contentLevels(model, rawIds, fields, levelOf) {
   const ids = [...new Set(rawIds.filter((id) => id && mongoose.isValidObjectId(id)).map(String))];
   if (!ids.length) return new Map();
@@ -142,7 +142,7 @@ export function scoreStudentProgress(metrics = {}, now = new Date(), policy = {}
     challengeBadges: count(metrics.challengeBadges),
     badgeMetrics, levelMetrics,
     level: metrics.adaptiveLevel || learnerLevel({ solved: levelMetrics.solvedCount, streak: levelMetrics.streak, assessmentScore: levelMetrics.assessmentScore ?? 0, interviewScore: levelMetrics.interviewScore, challengePoints: levelMetrics.challengePoints }),
-    // Work counts even when low marks earn no points yet: the student is ranked, at the bottom, not "not started".
+    // Coding solves count as progress even when a quota or rule awards no points yet.
     hasProgress: score.hasProgress,
   };
 }

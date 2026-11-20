@@ -123,7 +123,6 @@ export function normalizePrepScoreConfig(value = {}) {
     modules: {},
   };
   MODULE_KEYS.forEach((key) => { normalized.modules[key] = normalizeModule(key, object(input.modules)[key]); });
-  if (!MODULE_KEYS.some((key) => normalized.modules[key].weight > 0)) throw new HttpError(400, 'At least one module weight must be greater than zero.');
   return normalized;
 }
 

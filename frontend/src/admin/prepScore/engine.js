@@ -25,20 +25,16 @@ export function moduleScore(counts = {}, points = {}, formula = {}) {
   return count(formula.scale) * (volume ** count(formula.volumeExponent)) * (averagePoints ** count(formula.qualityExponent));
 }
 
-/** { total, modules: { key: score } } for per-module Easy/Medium/Hard counts. */
+/** Prep Score is Prep Coding. Other module values remain independent activity metrics. */
 export function simulate(config, counts = {}) {
   const places = config.formula.decimalPlaces;
   const modules = {};
-  let weighted = 0;
-  let weights = 0;
   for (const { key } of MODULES) {
     const module = config.modules[key];
     const exact = moduleScore(counts[key], module.points, config.formula);
     modules[key] = roundScore(exact, places);
-    weighted += exact * count(module.weight);
-    weights += count(module.weight);
   }
-  return { total: weights ? roundScore(weighted / weights, places) : 0, modules };
+  return { total: modules.coding ?? 0, modules };
 }
 
 /** The first problem with a config, phrased for the admin, or '' when it can be saved. */
@@ -52,7 +48,6 @@ export function configProblem(config) {
     if (LEVELS.some((level) => !(Number(points[level]) > 0))) return `${label}: every difficulty needs points above 0.`;
     if (!(points.Easy <= points.Medium && points.Medium <= points.Hard)) return `${label}: points must rise from Easy to Medium to Hard.`;
   }
-  if (!MODULES.some(({ key }) => Number(config.modules[key].weight) > 0)) return 'At least one module needs a weight above 0.';
   const limit = Number(config.modules.coding.dailyTopicLimit ?? 0);
   if (!Number.isInteger(limit) || limit < 0 || limit > 100) return 'Daily solves per topic must be a whole number from 0 to 100.';
   return '';

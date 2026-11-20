@@ -83,7 +83,7 @@ test('snapshots replace a campus, never add duplicates, reject rollback and scop
   await assert.rejects(saveRankSnapshot(a, { ...first, policyKey: 'a'.repeat(64) }, now), /policy changed/);
 });
 
-test('university service syncs verified server scores without identities or restricted students', async () => {
+test('university service syncs coding-only scores without identities or restricted students', async () => {
   const names = ['PEERPREP_DEPLOYMENT_ROLE', 'PEERPREP_CONTROL_URL', 'PEERPREP_UNIVERSITY_ID', 'PEERPREP_SHARED_API_KEY'];
   const saved = names.map((name) => process.env[name]);
   const originalFetch = globalThis.fetch;
@@ -96,8 +96,7 @@ test('university service syncs verified server scores without identities or rest
       { role: 'student', isActive: true, accessScope: 'assessment_only' },
       { role: 'student', isActive: false, accessScope: 'full' },
     ]);
-    // Challenge XP does not count toward rank. One completed assessment is one
-    // Medium activity under the default configurable policy.
+    // Challenge XP and assessment activity do not count toward Prep Score.
     await StudentChallenge.collection.insertOne({ studentId: own, kind: 'daily', earnedAt: new Date(), rewardPoints: 20 });
     await AssessmentSubmission.collection.insertOne({ studentId: own, assessmentId: new mongoose.Types.ObjectId(), status: 'submitted', evaluationStatus: 'completed', score: 50, maxMarks: 100, submittedAt: new Date() });
     const campus = await University.create({ universityId: 'campus-a', name: 'Campus', apiKeyHash: 'test-only', permissions: {}, sources: policy.sources });
@@ -117,7 +116,8 @@ test('university service syncs verified server scores without identities or rest
     campus.permissions.assessments = true;
     await campus.save();
     const rank = await getStudentGlobalRanking({ _id: own, score: 99999 });
-    assert.equal(rank.status, 'ready'); assert.equal(rank.score, 2.83, 'Prep Score comes from verified assessment completion; challenge XP is not added'); assert.equal(rank.rank, 1); assert.equal(rank.totalStudents, 2);
+    assert.equal(rank.status, 'unranked'); assert.equal(rank.score, 0); assert.equal(rank.rank, null); assert.equal(rank.totalStudents, 2);
+    assert.deepEqual(transmitted.buckets, [{ score: 0, count: 2 }]);
     assert.doesNotMatch(JSON.stringify(transmitted), /Private|private@|studentId|99999/);
     assert.equal((await getStudentGlobalRanking({ _id: other })).status, 'unranked');
   } finally {

@@ -452,11 +452,11 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Prep Score (overall)</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Prep Score · Prep Coding</p>
                     <p className="mt-1"><ScoreValue value={profile.prepScore.total} size="lg" /></p>
                   </div>
                 </div>
-                <p className="max-w-[220px] text-right text-[11px] text-slate-500">Calculated from verified activity using the active Master Admin policy.</p>
+                <p className="max-w-[220px] text-right text-[11px] text-slate-500">Calculated from verified coding solves using the active Master Admin policy.</p>
               </div>
               <ModuleScores prepScore={profile.prepScore} className="mt-3" />
             </section>

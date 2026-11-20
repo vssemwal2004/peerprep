@@ -1,5 +1,4 @@
 import { Sigma } from 'lucide-react';
-import { MODULES } from './engine';
 import { card, helperText, NumberField, sectionTitle } from './fields';
 import GuideInfo from '../../guide/platform/GuideInfo';
 
@@ -9,11 +8,10 @@ const V = ({ children }) => <var className="font-semibold not-italic text-sky-70
 export default function FormulaCard({ config, update }) {
   const { formula } = config;
   const rows = [
-    ['E, M, H', 'Easy, Medium and Hard activities a student has completed in the module', 'Counted from their work'],
-    ['e, m, h', 'Points for one Easy, Medium and Hard activity', 'Set per module below'],
-    ['N', 'Activity volume: E + M + H', 'Calculated'],
-    ['Q', 'Average points per activity: (e·E + m·M + h·H) ÷ N', 'Calculated'],
-    ['W', 'Module weight in the overall average', 'Set per module below'],
+    ['E, M, H', 'Easy, Medium and Hard coding problems solved', 'Counted from verified coding solves'],
+    ['e, m, h', 'Points for one Easy, Medium and Hard coding solve', 'Set in Prep Coding below'],
+    ['N', 'Coding solve volume: E + M + H', 'Calculated'],
+    ['Q', 'Average points per coding solve: (e·E + m·M + h·H) ÷ N', 'Calculated'],
     ['T', 'Prep Coding: new solves per topic per day that count; later ones that day add nothing', 'Set in Prep Coding below'],
   ];
   return (
@@ -21,14 +19,14 @@ export default function FormulaCard({ config, update }) {
       <div className="flex items-center gap-2"><Sigma className="h-5 w-5 text-sky-600" aria-hidden="true" /><h2 id="formula-title" className={sectionTitle}>Formula</h2><GuideInfo step="psa-formula" /></div>
       <div className="mt-4 grid gap-3 rounded-xl bg-slate-50 p-4 font-mono text-sm text-slate-800 dark:bg-slate-800/60 dark:text-slate-100 lg:grid-cols-2">
         <div>
-          <p className={`mb-1 font-sans ${helperText}`}>Each module ({MODULES.map((module) => module.label.replace('Prep ', '')).join(', ')})</p>
-          <p>Module score = <V>S</V> × <V>N</V><sup><V>α</V></sup> × <V>Q</V><sup><V>β</V></sup></p>
+          <p className={`mb-1 font-sans ${helperText}`}>Prep Coding</p>
+          <p>Prep Score = <V>S</V> × <V>N</V><sup><V>α</V></sup> × <V>Q</V><sup><V>β</V></sup></p>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400"><V>N</V> = E + M + H &nbsp;·&nbsp; <V>Q</V> = (<V>e</V>·E + <V>m</V>·M + <V>h</V>·H) ÷ <V>N</V></p>
         </div>
         <div>
-          <p className={`mb-1 font-sans ${helperText}`}>Overall, over the modules a university licenses</p>
-          <p>Prep Score = Σ(<V>W</V> × module score) ÷ Σ<V>W</V></p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Shown to <V>d</V> decimal places · no upper limit</p>
+          <p className={`mb-1 font-sans ${helperText}`}>How the result is used</p>
+          <p>Prep Score = Prep Coding score</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Assessment, Interview and Learning activity points do not change it. Shown to <V>d</V> decimal places.</p>
         </div>
       </div>
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

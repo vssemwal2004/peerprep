@@ -298,6 +298,6 @@ test('a peer\'s new verified work reaches stored cohort standing on the next syn
   assert.equal(after.score, before.score);
   const recipient = await getStudentUniversityRanking(peer, null, now);
   assert.equal(recipient.levelMetrics.challengePoints, 150);
-  assert.equal(recipient.score, recipient.prepScore.total, 'the rank score is exactly the overall Prep Score');
+  assert.equal(recipient.score, recipient.prepScore.total, 'the rank score is exactly the coding Prep Score');
   assert.ok(recipient.score > after.score);
 });

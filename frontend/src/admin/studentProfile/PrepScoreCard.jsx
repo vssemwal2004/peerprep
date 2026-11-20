@@ -1,16 +1,15 @@
-import { BookOpen, ClipboardCheck, Code2, Gauge, MessagesSquare } from 'lucide-react';
+import { BookOpen, ClipboardCheck, Gauge, MessagesSquare } from 'lucide-react';
 import { formatScore } from '../../student/prepScore/formatScore';
 
 // Module key in the stored score -> university module that must be enabled to show it.
 const MODULES = [
-  { key: 'coding', module: 'questions', label: 'Prep Coding', Icon: Code2 },
-  { key: 'assessment', module: 'assessments', label: 'Prep Assessment', Icon: ClipboardCheck },
-  { key: 'interview', module: 'interviews', label: 'Prep Interview', Icon: MessagesSquare },
-  { key: 'learning', module: 'learning', label: 'Prep Learning', Icon: BookOpen },
+  { key: 'assessment', module: 'assessments', label: 'Assessment activity', Icon: ClipboardCheck },
+  { key: 'interview', module: 'interviews', label: 'Interview activity', Icon: MessagesSquare },
+  { key: 'learning', module: 'learning', label: 'Learning activity', Icon: BookOpen },
 ];
 
 /**
- * Staff view of a student's Prep Score: the overall number plus the module scores behind it.
+ * Staff view of a student's coding Prep Score and independent activity points.
  * Reads the same stored score that ranks and Prep Analysis use. Hidden when it could not be read.
  */
 export default function PrepScoreCard({ prepScore, visible = {} }) {
@@ -38,13 +37,13 @@ export default function PrepScoreCard({ prepScore, visible = {} }) {
               {formatScore(prepScore.total)}
             </p>
             <p className="mt-1.5 text-[11.5px] text-sky-100">
-              {prepScore.hasProgress ? 'Overall · from verified activity' : 'No scored activity yet'}
+              {prepScore.hasProgress ? 'From verified coding solves' : 'No scored coding solves yet'}
             </p>
           </div>
         </div>
 
         <div className="p-4">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Module scores</p>
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Other activity points</p>
           {modules.length ? (
             <ul className="grid gap-2 sm:grid-cols-2">
               {modules.map(({ key, label, Icon, score }) => (
@@ -60,7 +59,7 @@ export default function PrepScoreCard({ prepScore, visible = {} }) {
               ))}
             </ul>
           ) : (
-            <p className="text-[12.5px] text-slate-500 dark:text-zinc-400">Module scores appear once the student is active in an enabled module.</p>
+            <p className="text-[12.5px] text-slate-500 dark:text-zinc-400">Other activity metrics appear when those areas are enabled.</p>
           )}
         </div>
       </div>

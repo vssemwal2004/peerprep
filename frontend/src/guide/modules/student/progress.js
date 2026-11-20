@@ -8,10 +8,10 @@ export default [
     title: "Ranking",
     icon: "trophy",
     summary: "Your Prep Score and where you stand at your university and across connected universities.",
-    intro: "This page shows where your preparation puts you. Your rank comes from your Prep Score, built from your verified work in coding, tests, interviews and learning.\nHarder work counts more, so steady practice is the way to climb.",
+    intro: "This page shows where your preparation puts you. Your rank comes from your Prep Score, built from verified Prep Coding solves.\nHarder problems count more, so steady coding practice is the way to climb.",
     next: "student.wallet",
     tips: [
-      "Harder problems, tests and interviews add the most to your Prep Score.",
+      "Harder coding problems add more to your Prep Score.",
       "Equal scores share the same rank.",
       "Other students never see your name in the global ranking, and you never see theirs.",
     ],
@@ -39,7 +39,7 @@ export default [
       {
         id: "rk-climb", chapter: "tips",
         title: "How to climb",
-        body: "Your Prep Score grows with verified work: problems solved for the first time, tests passed, interviews and learning topics completed. Harder work counts more, so a steady daily habit is the surest way up.",
+        body: "Your Prep Score grows with coding problems solved for the first time, subject to the daily topic limit. Harder problems count more, so steady coding practice is the surest way up.",
       },
     ],
   },
@@ -133,7 +133,7 @@ export default [
       {
         id: "pf-score", target: "pf-score", chapter: "parts", quick: true,
         title: "Your Prep Score",
-        body: "Your Prep Score and your rank at your university. It comes from your verified work across PeerPrep. View rankings opens the full ranking page.",
+        body: "Your Prep Score and your rank at your university. It comes from verified Prep Coding solves. View rankings opens the full ranking page.",
       },
       {
         id: "pf-summary", target: "pf-summary", chapter: "parts",

@@ -75,7 +75,7 @@ export default function PrepScoreAdjustment() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-600">Master Admin settings</p>
           <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold text-slate-950 dark:text-white">Prep Score Adjustment<PageGuideButton /></h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">Every value in the Prep Score formula, for all universities. Students see only their score and rank, never these settings. Prep Coin is separate and unaffected.</p>
+          <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">Prep Score comes from Prep Coding solves. These settings apply across universities; other areas keep their own activity metrics. Prep Coin is separate.</p>
         </div>
         <div data-guide="psa-status" className="flex flex-wrap gap-2 text-xs font-semibold">
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">Live: version {workspace.active.version}</span>
@@ -87,8 +87,13 @@ export default function PrepScoreAdjustment() {
       {notice && <p role="status" className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">{notice}</p>}
 
       <FormulaCard config={config} update={update} />
-      <div className="grid gap-5 xl:grid-cols-2">
-        {MODULES.map(({ key, label, symbol }) => <ModuleCard key={key} moduleKey={key} label={label} symbol={symbol} module={config.modules[key]} update={update} />)}
+      <ModuleCard moduleKey="coding" label="Prep Coding" symbol="C" module={config.modules.coding} update={update} />
+      <div className="space-y-3">
+        <h2 className="text-lg font-bold text-slate-900 dark:text-white">Other activity metrics</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400">These settings affect their own activity points. They do not change Prep Score or coding rank.</p>
+        <div className="grid gap-5 xl:grid-cols-2">
+          {MODULES.filter(({ key }) => key !== 'coding').map(({ key, label, symbol }) => <ModuleCard key={key} moduleKey={key} label={label} symbol={symbol} module={config.modules[key]} update={update} />)}
+        </div>
       </div>
       <div className="grid gap-5 xl:grid-cols-2">
         <Simulator config={config} />

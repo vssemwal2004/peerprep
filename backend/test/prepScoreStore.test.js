@@ -93,8 +93,8 @@ test('publishing a policy rebuilds stored scores, then serves the new version; d
   await savePrepScorePolicyDraft(config, admin, 'Reward hard work more');
   const impact = await previewPolicyImpact(config);
   assert.equal(impact.studentsCompared, 2);
-  // One Hard solve is 1^0.4 × 9^1.5 = 27 in Prep Coding; the overall score averages all four modules.
-  assert.equal(impact.top[0].after.score, 6.75);
+  // One Hard solve is 1^0.4 × 9^1.5 = 27 in Prep Coding and Prep Score.
+  assert.equal(impact.top[0].after.score, 27);
   assert.equal(await StudentPrepScore.countDocuments({ policyVersion: { $ne: before.policyVersion } }), 0, 'a preview never writes scores');
 
   const active = await publishPrepScorePolicy(admin, 'Reward hard work more');
@@ -105,7 +105,7 @@ test('publishing a policy rebuilds stored scores, then serves the new version; d
   assert.equal(await StudentPrepScore.countDocuments({ studentId: gone._id }), 0, 'a deleted student is no longer ranked');
   const rank = await getStudentUniversityRanking(hardSolver);
   assert.equal(rank.prepScore.features.coding.score, 27);
-  assert.equal(rank.score, 6.75);
+  assert.equal(rank.score, 27);
   assert.equal(rank.policyVersion, active.version);
   assert.equal((await syncPrepScores()).status, 'current', 'nothing left to do');
 });

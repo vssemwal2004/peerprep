@@ -7,7 +7,7 @@ import { upgradeToDefaults } from "./layoutDefaults";
 const STORAGE_KEY = "peerprep.prepAnalysis.v5";
 const OLD_STORAGE_KEYS = ["peerprep.prepAnalysis.v4", "peerprep.prepAnalysis.v3"];
 const DEFAULT_TABLE = { sort: "", direction: "desc", page: 1, limit: 25 };
-// One assessment's page ranks students by their score on it: the stored Prep Score covers all tests.
+// One assessment's page ranks students by their score on that test.
 const SCOPED_TABLE = { ...DEFAULT_TABLE, sort: "testScore" };
 // Filters apply as the admin ticks; a short pause lets several quick ticks become one request.
 const QUERY_DELAY_MS = 180;

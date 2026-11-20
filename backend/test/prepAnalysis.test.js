@@ -207,9 +207,9 @@ test('a university without the questions module gets no Prep Coding or Quick Pre
   assert.deepEqual(catalog.areas.map((area) => area.key), ['learning'], 'one area only, so no "All"');
   assert.ok(catalog.fields.every((field) => field.module === 'student' || field.module === 'learning'));
   assert.deepEqual(Object.keys(catalog.qualifiers), ['learning']);
-  assert.deepEqual(publicFieldCatalog(undefined).areas.map((area) => area.key), ['all', 'coding', 'quickprep', 'learning', 'interview', 'assessment'], 'Quick Prep is its own area');
+  assert.deepEqual(publicFieldCatalog(undefined).areas.map((area) => area.key), ['all', 'coding', 'quickprep', 'learning', 'interview', 'assessment', 'prepmock'], 'Quick Prep and PrepMock are their own areas');
   assert.deepEqual(publicFieldCatalog({ events: true }).areas.map((area) => area.key), ['interview'], 'mock interviews alone turn on Prep Interview');
-  assert.deepEqual(publicFieldCatalog({ interviews: true, assessments: true }).areas.map((area) => area.key), ['all', 'interview', 'assessment']);
+  assert.deepEqual(publicFieldCatalog({ interviews: true, assessments: true }).areas.map((area) => area.key), ['all', 'interview', 'assessment', 'prepmock']);
   assert.ok(publicFieldCatalog(undefined).fields.filter((field) => field.key.startsWith('quickprep.')).every((field) => field.module === 'quickprep'));
   assert.throws(() => validatePrepAnalysisQuery({ module: 'quickprep' }, { questions: false, learning: true }), /not enabled/, 'Quick Prep is licensed with coding');
   assert.throws(() => validatePrepAnalysisQuery({ module: 'coding' }, { questions: false, learning: true }), /not enabled/);
@@ -581,7 +581,7 @@ test('every feature page: heat map first, and every row of every block fills the
       }
       assert.equal(filled, 0, `${area}/${section}: the last row is full too`);
     }
-    assert.ok(body.defaultLayoutVersion[area] >= 2, `${area}: saved layouts move to the new default once`);
+    assert.ok(body.defaultLayoutVersion[area] >= (area === 'prepmock' ? 1 : 2), `${area}: saved layouts move to the new default once`);
   }
 });
 
@@ -1027,13 +1027,14 @@ test('stored module scores drive Prep Score filters and rank cuts on analysis ro
   const { rows } = interviewsAndTests();
   const stored = new Map([[rows.find((row) => row.name === 'Asha').id, {
     total: 2.71,
-    modules: { interview: { score: 4.39, counts: { Easy: 0, Medium: 3, Hard: 0 } }, assessment: { score: 3.73, counts: { Easy: 0, Medium: 2, Hard: 0 } }, learning: { score: 1, counts: {} } },
+    modules: { coding: { score: 2.71, counts: { Easy: 0, Medium: 1, Hard: 0 } }, interview: { score: 4.39, counts: { Easy: 0, Medium: 3, Hard: 0 } }, assessment: { score: 3.73, counts: { Easy: 0, Medium: 2, Hard: 0 } }, learning: { score: 1, counts: {} } },
   }]]);
   attachStoredScores(rows, stored, { features: { coding: true, interview: true, assessment: true, learning: false } });
   const asha = rows.find((row) => row.name === 'Asha');
   assert.equal(asha.scores.features.interview.score, 4.39);
   assert.equal(asha.scores.features.learning, undefined, 'a module that is not licensed is not shown');
-  assert.equal(asha.scores.total, 2.71, 'the overall score is the stored one, exactly what the student sees');
+  assert.equal(asha.scores.total, 2.71, 'Prep Score is the stored coding score, exactly what the student sees');
+  assert.equal(asha.scores.total, asha.coding.prepScore);
   const { rows: codingRows } = cohort();
   const coder = codingRows.find((row) => row.name === 'Asha');
   assert.equal(coder.scores.features.coding.score, coder.coding.prepScore, 'Prep Coding uses the same formula on both sides');

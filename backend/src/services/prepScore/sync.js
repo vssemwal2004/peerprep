@@ -31,10 +31,8 @@ const FULL_REBUILD_MS = 6 * 60 * 60_000;
 const REBUILD_BUDGET_MS = 5_000;
 
 const PERMISSION_KEYS = ['questions', 'learning', 'assessments', 'interviews', 'events'];
-// Bumped when the engine's arithmetic changes without a policy change: a different key makes every
-// university rebuild its stored scores once. coding-only-1 (2026-11-19) made the Prep Score the
-// Prep Coding score; overall-2 (2026-11-20) restored the weighted overall average of modules.
-const ENGINE_KEY = 'overall-2';
+// A changed key makes every university rebuild stored scores without requiring a policy edit.
+const ENGINE_KEY = 'coding-only-3';
 const STUDENT_FIELDS = '_id role semester college isActive accessScope';
 // [model, student field, extra filter]. Runs and live-test heartbeats never change a score.
 const ACTIVITY_SOURCES = [
@@ -150,7 +148,7 @@ export async function servingRows(state) {
     .select('studentId total hasProgress').maxTimeMS(QUERY_TIMEOUT_MS).lean();
 }
 
-/** Stored rows for admin analysis (overall and per-module), keyed by student id. */
+/** Stored rows for admin analysis (Prep Coding and other activity metrics), keyed by student id. */
 export async function storedScoresFor(studentIds) {
   const state = await ensurePrepScoreStore();
   const rows = await StudentPrepScore.find({ policyVersion: state.servingVersion, studentId: { $in: studentIds.map((id) => new mongoose.Types.ObjectId(String(id))) } })

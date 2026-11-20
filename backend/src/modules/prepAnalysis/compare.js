@@ -80,7 +80,7 @@ const METRICS = [
   { key: 'students', label: 'Students', module: 'student', format: 'count', better: null, get: (rows) => rows.length },
   { key: 'active', label: 'Active in period', module: 'student', format: 'count', better: 'high', get: (rows, modules) => count(rows, (row) => activeInPeriod(row, modules)) },
   { key: 'activeShare', label: 'Active in period (%)', module: 'student', format: 'percent', better: 'high', get: (rows, modules) => percent(count(rows, (row) => activeInPeriod(row, modules)), rows.length) },
-  { key: 'prepScore', label: 'Avg Prep Score (overall)', module: 'student', format: 'decimal', better: 'high', get: (rows) => average(rows.map((row) => row.scores?.total ?? 0)) },
+  { key: 'prepScore', label: 'Avg Prep Score', module: 'student', format: 'decimal', better: 'high', get: (rows) => average(rows.map((row) => row.scores?.total ?? 0)) },
 
   { key: 'codingPractising', label: 'Practised coding', module: 'coding', format: 'count', better: 'high', get: (rows) => count(rows, (row) => row.coding.submissions > 0) },
   { key: 'solved', label: 'Problems solved', module: 'coding', format: 'count', better: 'high', get: (rows) => sum(rows, (row) => row.coding.solved.total) },
@@ -88,7 +88,6 @@ const METRICS = [
   { key: 'solvedMedium', label: 'Medium solved', module: 'coding', format: 'count', better: 'high', get: (rows) => sum(rows, (row) => row.coding.solved.Medium) },
   { key: 'solvedHard', label: 'Hard solved', module: 'coding', format: 'count', better: 'high', get: (rows) => sum(rows, (row) => row.coding.solved.Hard) },
   { key: 'solvedPerStudent', label: 'Solved per student', module: 'coding', format: 'decimal', better: 'high', get: (rows) => (rows.length ? round1(sum(rows, (row) => row.coding.solved.total) / rows.length) : null) },
-  { key: 'codingScore', label: 'Avg Prep Coding score', module: 'coding', format: 'decimal', better: 'high', get: (rows) => average(rows.map((row) => row.coding.prepScore)) },
   { key: 'accuracy', label: 'Accuracy (%)', module: 'coding', format: 'percent', better: 'high', get: (rows) => percent(sum(rows, (row) => row.coding.accepted), sum(rows, (row) => row.coding.submissions)) },
 
   { key: 'sheetStarters', label: 'Started a sheet', module: 'quickprep', format: 'count', better: 'high', get: (rows) => count(rows, (row) => row.quickprep?.started > 0) },
@@ -123,7 +122,7 @@ const MODULE_LABELS = { student: 'Students', coding: 'Prep Coding', quickprep: '
 // Grouped bar charts: one group of bars per compared value, one bar per measure.
 const CHARTS = [
   { id: 'students', title: 'Students and active students', metrics: ['students', 'active'] },
-  { id: 'scores', title: 'Average Prep Score', metrics: ['prepScore', 'codingScore'] },
+  { id: 'scores', title: 'Average Prep Score', metrics: ['prepScore'] },
   { id: 'solved', title: 'Problems solved by difficulty', metrics: ['solvedEasy', 'solvedMedium', 'solvedHard'], stack: true },
   { id: 'rates', title: 'Rates and averages (%)', metrics: ['activeShare', 'accuracy', 'sheetProgress', 'learningProgress', 'mockScore', 'testAverage', 'passRate', 'mockTestAverage', 'mockPassRate'] },
   { id: 'quickprep', title: 'Quick Prep sheets', metrics: ['sheetStarters', 'sheetFinishers'] },

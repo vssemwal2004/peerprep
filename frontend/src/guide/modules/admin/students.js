@@ -171,7 +171,7 @@ export const studentProfileSteps = [
   {
     id: "sp-prep-score", target: "sp-prep-score", chapter: "parts", quick: true,
     title: "Prep Score",
-    body: "The student's overall Prep Score, the same number used in rankings and Prep Analysis, with the module scores behind it: Prep Coding, Assessment, Interview and Learning (only modules your university uses).",
+    body: "The student's Prep Score from verified Prep Coding solves, the same number used in rankings and Prep Analysis. Assessment, Interview and Learning show independent activity points.",
   },
   {
     id: "sp-snapshot", target: "sp-snapshot", chapter: "parts", quick: true,

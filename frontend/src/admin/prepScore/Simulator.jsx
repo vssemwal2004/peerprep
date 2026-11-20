@@ -11,7 +11,7 @@ const SAMPLE = {
 };
 const format = (value, places) => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: places });
 
-/** Type a student's Easy/Medium/Hard work per module and see the result under the values on screen. */
+/** Type a student's coding solves and see the Prep Score under the values on screen. */
 export default function Simulator({ config }) {
   const [counts, setCounts] = useState(SAMPLE);
   const result = useMemo(() => simulate(config, counts), [config, counts]);
@@ -25,13 +25,13 @@ export default function Simulator({ config }) {
         <div className="flex items-center gap-2"><Calculator className="h-5 w-5 text-sky-600" aria-hidden="true" /><h2 id="simulator-title" className={sectionTitle}>Try it on a student</h2></div>
         <button type="button" onClick={() => setCounts(SAMPLE)} className="text-xs font-semibold text-sky-700 hover:underline dark:text-sky-300">Reset sample</button>
       </div>
-      <p className={`mt-1 ${helperText}`}>Completed activities per module. Results use the values on this page, including unsaved changes.</p>
+      <p className={`mt-1 ${helperText}`}>Verified coding solves by difficulty. The result uses the values on this page, including unsaved changes.</p>
       <div className="mt-4 overflow-x-auto">
         <table className="w-full min-w-[480px] text-sm" data-no-serial>
           <thead className="text-xs uppercase tracking-wide text-slate-500"><tr><th className="py-2 text-left font-semibold">Module</th>{LEVELS.map((level) => <th key={level} className="px-2 py-2 text-left font-semibold">{level}</th>)}<th className="py-2 text-right font-semibold">Score</th></tr></thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {MODULES.map(({ key, label }) => (
-              <tr key={key} className={Number(config.modules[key].weight) > 0 ? '' : 'opacity-50'}>
+            {MODULES.filter(({ key }) => key === 'coding').map(({ key, label }) => (
+              <tr key={key}>
                 <td className="py-2 pr-2 font-medium text-slate-800 dark:text-slate-200">{label}</td>
                 {LEVELS.map((level) => (
                   <td key={level} className="px-2 py-2"><input aria-label={`${label} ${level}`} className={`${inputClass} w-20 py-1.5`} type="number" min={0} value={counts[key][level]} onChange={(event) => setCount(key, level, event.target.value)} /></td>

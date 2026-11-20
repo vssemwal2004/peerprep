@@ -686,7 +686,7 @@ export async function comparePrepAnalysisStudents({ user, query, compareBy, valu
   const { selected } = selectStudents(context, query);
   const bucket = compareBuckets(selected, { ...compareBy, values: [value] })[0];
   const generic = genericColumns(query.module).filter((column) => query.modules.has(column.module));
-  // "All features" lists the overall Prep Score (the Quick Prep drill column), one area its own score.
+  // "All features" lists Prep Score from coding (the Quick Prep drill column), one area its own score.
   const scoreModule = query.module === 'all' ? 'quickprep' : query.module;
   const students = drillStudents({ id: 'compare', module: scoreModule }, bucket.rows, ALL_STUDENTS, {}, generic, { sheets: context.sheets, tests: context.tests, mocks: context.mocks });
   sortItems(students.items, students.columns, students.sort, students.direction);

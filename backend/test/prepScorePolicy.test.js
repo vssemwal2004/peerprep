@@ -26,7 +26,7 @@ test('15 activity mixes match Score = (E+M+H)^0.4 × ((E + 2M + 4H)/(E+M+H))^1.5
   assert.equal(calculateModule({}, points, DEFAULT_PREP_SCORE_CONFIG.formula).score, 0);
 });
 
-test('every formula constant is a Master Admin variable (points 1/3.5/9, α, β, S, weights)', () => {
+test('Prep Score uses only coding points and formula, independent of other module weights', () => {
   const config = normalizePrepScoreConfig({
     formula: { volumeExponent: 1, qualityExponent: 1, scale: 2 },
     modules: {
@@ -39,7 +39,8 @@ test('every formula constant is a Master Admin variable (points 1/3.5/9, α, β,
   // With α = β = 1 each module is S × (weighted points).
   assert.equal(result.features.coding.score, 27);
   assert.equal(result.features.assessment.score, 40);
-  assert.equal(result.total, round((27 * 3 + 40) / 4));
+  assert.equal(result.total, 27);
+  assert.equal(scoreFromLevelCounts({ coding: { Easy: 1, Medium: 1, Hard: 1 }, assessment: { Hard: 20 } }, ALL, config).total, 27);
 });
 
 test('each activity takes its content level, falls back to the configured level, and honours pass marks', () => {
@@ -68,10 +69,10 @@ test('fixed levels, disabled activities, "counts as" units and unlicensed featur
   const { counts } = levelCounts(evidence, config, ALL);
   assert.deepEqual(counts.coding, { Easy: 0, Medium: 0, Hard: 6 });
   assert.deepEqual(counts.interview, { Easy: 0, Medium: 0, Hard: 0 });
-  // Low marks still count as work: the student is ranked, at the bottom.
+  // Interview activity does not make a student rankable without coding practice.
   const score = prepScore({ mockCompleted: [{ percent: 10 }] }, { ...ALL, coding: false, assessment: false, learning: false }, { version: 7 });
   assert.equal(score.total, 0);
-  assert.equal(score.hasProgress, true);
+  assert.equal(score.hasProgress, false);
   assert.equal(score.policyVersion, 7);
   assert.deepEqual(Object.keys(score.features), ['interview']);
   // Solves past the daily topic limit earn nothing but still make the student rankable.
@@ -91,7 +92,7 @@ test('test and AI interview levels come from their own content', () => {
 
 test('invalid policy changes fail closed; pre-v5 drafts upgrade', () => {
   assert.throws(() => normalizePrepScoreConfig({ modules: { coding: { points: { Easy: 5, Medium: 2, Hard: 4 } } } }), /ordered/);
-  assert.throws(() => normalizePrepScoreConfig({ modules: Object.fromEntries(['coding', 'assessment', 'interview', 'learning'].map((key) => [key, { weight: 0 }])) }), /At least one/);
+  assert.equal(normalizePrepScoreConfig({ modules: Object.fromEntries(['coding', 'assessment', 'interview', 'learning'].map((key) => [key, { weight: 0 }])) }).modules.coding.weight, 0);
   assert.equal(normalizePrepScoreConfig({}).modules.coding.dailyTopicLimit, 3);
   assert.equal(normalizePrepScoreConfig({ modules: { coding: { dailyTopicLimit: 0 } } }).modules.coding.dailyTopicLimit, 0);
   assert.throws(() => normalizePrepScoreConfig({ modules: { coding: { dailyTopicLimit: -1 } } }), /Daily solves per topic/);
