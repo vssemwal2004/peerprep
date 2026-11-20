@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { requireAuth, requireAdmin, requireCoordinatorPermission } from '../middleware/auth.js';
 import { isUniversity } from '../platform/deployment.js';
-import { listMockProblemCompanies } from '../controllers/problemController.js';
+import { practiceCompanyCounts } from '../platform/questionPractice.js';
 import { universityPolicy } from '../platform/client.js';
 import { bulkOperationLimiter, uploadLimiter, compilerExecutionLimiter } from '../middleware/rateLimiter.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
@@ -76,7 +76,18 @@ const questionAssetUpload = multer({
 });
 
 router.post('/assessment/students/preview', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), previewAssessmentStudents);
-router.get('/assessment/mock-companies', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), listMockProblemCompanies);
+// A company mock's Company list = exactly the companies students see on Prep Coding (with counts).
+router.get('/assessment/mock-companies', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), async (req, res, next) => {
+  try {
+    const search = String(req.query.search || '').trim().toLowerCase().slice(0, 80);
+    const requested = Number.parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 2000) : 2000;
+    const companies = (await practiceCompanyCounts())
+      .filter((row) => !search || row.company.toLowerCase().includes(search))
+      .slice(0, limit);
+    res.set('Cache-Control', 'private, no-store').json({ companies });
+  } catch (error) { next(error); }
+});
 router.post('/assessment/create', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), invalidateResponseCache('assessments'), createAssessment);
 router.post('/assessment/test-email', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), sendAssessmentTestEmail);
 router.get('/assessment/list', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), cacheJsonResponse({ namespace: 'assessments', ttlSeconds: Number(process.env.RESPONSE_CACHE_ASSESSMENTS_TTL_SECONDS || 30) }), listAssessments);

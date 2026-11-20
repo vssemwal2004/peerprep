@@ -199,6 +199,50 @@ async function localFacetRows() {
 const scopeFor = (source) => isUniversity() && source === 'university'
   ? `university:${currentTenant()?.universityId || process.env.PEERPREP_UNIVERSITY_ID}` : 'control';
 
+/** item ({ question, source }) -> its verified interview-report companies. */
+function reportLookup(summaries) {
+  const reportMap = new Map();
+  for (const row of summaries) {
+    const reportKey = `${row.scopeKey}:${row.questionId}`;
+    if (!reportMap.has(reportKey)) reportMap.set(reportKey, []);
+    reportMap.get(reportKey).push({ company: row.company, companyKey: row.companyKey,
+      latestDate: row.latestDate, reports: row.reports });
+  }
+  return ({ question, source }) => reportMap.get(`${scopeFor(source)}:${question._id}`) || [];
+}
+
+/** [{ company, count }] over practice questions: their company tags plus verified interview reports. */
+export function countPracticeCompanies(available, reportsFor) {
+  return Object.values(available.reduce((acc, item) => {
+    const names = [...companyNames(item.question), ...reportsFor(item).map((row) => row.company)];
+    for (const name of new Map(names.map((value) => [String(value).trim().toLowerCase(), value])).values()) {
+      const companyKey = String(name).trim().toLowerCase();
+      if (!companyKey) continue;
+      if (!acc[companyKey]) acc[companyKey] = { company: String(name).trim(), count: 0 };
+      acc[companyKey].count += 1;
+    }
+    return acc;
+  }, {})).sort((a, b) => b.count - a.count || a.company.localeCompare(b.company));
+}
+
+/**
+ * The companies students see on Prep Coding (same questions, same counts, same order), for staff
+ * pickers such as a company mock assessment's Company. Shared questions or interview history that
+ * cannot be reached right now are left out, as on the student page.
+ */
+export async function practiceCompanyCounts() {
+  const [centralResult, summariesResult, facetRows] = await Promise.all([
+    Promise.allSettled([sharedQuestions()]).then(([result]) => result),
+    Promise.allSettled([reportSummaries()]).then(([result]) => result),
+    localFacetRows(),
+  ]);
+  const central = centralResult.status === 'fulfilled' ? centralResult.value || [] : [];
+  const reportsFor = reportLookup(summariesResult.status === 'fulfilled' ? summariesResult.value : []);
+  const available = [...facetRows.map((question) => ({ question, source: 'university' })),
+    ...central.map((question) => ({ question, source: 'shared' }))];
+  return countPracticeCompanies(available, reportsFor);
+}
+
 async function reportSummaries(questionId = null) {
   if (isUniversity()) {
     const query = questionId ? `?questionId=${encodeURIComponent(String(questionId))}` : '';
@@ -295,14 +339,7 @@ router.get('/', asyncRoute(async (req, res) => {
   if (centralResult.status === 'rejected' && !facetRows.length) throw centralResult.reason;
   const central = centralResult.status === 'fulfilled' ? centralResult.value || [] : [];
   const summaries = summariesResult.status === 'fulfilled' ? summariesResult.value : [];
-  const reportMap = new Map();
-  for (const row of summaries) {
-    const reportKey = `${row.scopeKey}:${row.questionId}`;
-    if (!reportMap.has(reportKey)) reportMap.set(reportKey, []);
-    reportMap.get(reportKey).push({ company: row.company, companyKey: row.companyKey,
-      latestDate: row.latestDate, reports: row.reports });
-  }
-  const reportsFor = ({ question, source }) => reportMap.get(`${scopeFor(source)}:${question._id}`) || [];
+  const reportsFor = reportLookup(summaries);
   const localScope = `${scopeFor('university')}:`;
   const reportedIds = (test) => [...new Set(summaries
     .filter((row) => `${row.scopeKey}:` === localScope && test(String(row.company || '').toLowerCase()))
@@ -361,16 +398,7 @@ router.get('/', asyncRoute(async (req, res) => {
       tagCounts: Object.entries(available.flatMap(({ question }) => question.tags || []).reduce((acc, value) => {
         acc[value] = (acc[value] || 0) + 1; return acc;
       }, {})).map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count),
-      companyCounts: Object.values(available.reduce((acc, item) => {
-        const names = [...companyNames(item.question), ...reportsFor(item).map((row) => row.company)];
-        for (const name of new Map(names.map((value) => [String(value).trim().toLowerCase(), value])).values()) {
-          const companyKey = String(name).trim().toLowerCase();
-          if (!companyKey) continue;
-          if (!acc[companyKey]) acc[companyKey] = { company: String(name), count: 0 };
-          acc[companyKey].count += 1;
-        }
-        return acc;
-      }, {})).sort((a, b) => b.count - a.count),
+      companyCounts: countPracticeCompanies(available, reportsFor),
     } });
 }));
 

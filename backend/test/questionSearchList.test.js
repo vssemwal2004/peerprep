@@ -8,7 +8,8 @@ import Assessment from '../src/models/Assessment.js';
 import { createLibraryQuestion, getLibraryQuestion, listLibraryQuestions, resolveLibraryQuestions } from '../src/controllers/questionLibraryController.js';
 import { createAssessment, getAssessmentReports, listAssessments, resetMock, updateAssessment } from '../src/controllers/assessmentController.js';
 import { Publication, University } from '../src/platform/models.js';
-import { listMockProblemCompanies, listProblems } from '../src/controllers/problemController.js';
+import { listProblems } from '../src/controllers/problemController.js';
+import { practiceCompanyCounts } from '../src/platform/questionPractice.js';
 import { applyNumberKind } from '../src/utils/problemSerial.js';
 import {
   buildLibrarySearchMatch,
@@ -250,12 +251,25 @@ test('creating a mock draft persists its kind and syncs authored questions into 
   assert.equal(regularQuestions.questions.length, 0);
 });
 
-test('mock company choices include company tags from draft Problems', async () => {
-  await Problem.create({ title: 'Amazon draft problem', companyTags: ['Amazon'], difficulty: 'Easy', status: 'draft', supportedLanguages: ['python'], createdBy: adminId });
-  const response = capture();
-  await listMockProblemCompanies({ query: {}, user: admin }, response);
-  assert.equal(response.state.statusCode, 200);
-  assert.ok(response.state.body.companies.some((item) => item.company === 'Amazon'));
+test('mock company choices are exactly the companies students see on Prep Coding', async () => {
+  // Students see published practice questions' company tags; a draft problem's tags stay hidden.
+  await Problem.create({ title: 'Hidden draft problem', companyTags: ['Draftonly Labs'], difficulty: 'Easy', status: 'draft', supportedLanguages: ['python'], createdBy: adminId });
+  for (const [index, keywords] of [['Zenith Corp', 'Orbit Inc'], ['zenith corp'], ['Orbit Inc']].entries()) {
+    await QuestionLibrary.create({
+      sourceKey: `company-check:${index}`, sourceType: 'manual', questionType: 'mcq', questionText: `Company check ${index}`,
+      status: 'published', visibility: 'public', tags: ['Array'], keywords, questionData: { type: 'mcq', options: ['A', 'B'], correctOptionIndex: 0 }, createdBy: adminId,
+    });
+  }
+  await QuestionLibrary.create({
+    sourceKey: 'company-check:draft', sourceType: 'manual', questionType: 'mcq', questionText: 'Draft company check',
+    status: 'draft', visibility: 'public', keywords: ['Draftonly Labs'], questionData: { type: 'mcq', options: ['A', 'B'], correctOptionIndex: 0 }, createdBy: adminId,
+  });
+  const companies = await practiceCompanyCounts();
+  const counts = Object.fromEntries(companies.map((row) => [row.company.toLowerCase(), row.count]));
+  assert.equal(counts['zenith corp'], 2, 'one entry per company, counted per question, case-insensitive');
+  assert.equal(counts['orbit inc'], 2);
+  assert.equal(counts['draftonly labs'], undefined, 'drafts are not offered');
+  assert.ok(companies.findIndex((row) => row.company.toLowerCase() === 'orbit inc') < companies.findIndex((row) => row.company.toLowerCase() === 'zenith corp'), 'ties sort by name');
 });
 
 test('publishing a university mock assigns the university and reset removes access', async () => {

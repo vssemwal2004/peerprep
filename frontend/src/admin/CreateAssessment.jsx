@@ -12,6 +12,7 @@ import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Sh
 import { SectionCard } from './compiler/CompilerUi';
 import PageGuideButton from '../guide/platform/PageGuideButton';
 import GuideInfo from '../guide/platform/GuideInfo';
+import CompanyPicker from './assessment/components/CompanyPicker';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem, toAssessmentProblemSnapshot } from './compiler/compilerUtils';
 import AssessmentCard from './assessment/components/AssessmentCard';
@@ -432,7 +433,8 @@ export default function CreateAssessment({ viewOnly = false }) {
     }));
   };
   const [selectedStudents, setSelectedStudents] = useState([]);
-  const [mockCompanies, setMockCompanies] = useState([]);
+  // The companies students see on Prep Coding: [{ company, count }].
+  const [mockCompanies, setMockCompanies] = useState({ loading: true, rows: [], error: '' });
   const [universities, setUniversities] = useState([]);
   const [universityLoadError, setUniversityLoadError] = useState('');
   const [studentEntryMode, setStudentEntryMode] = useState('');
@@ -469,8 +471,12 @@ export default function CreateAssessment({ viewOnly = false }) {
     if (!isMock) return undefined;
     let active = true;
     api.listMockCompanies().then((result) => {
-      if (active) setMockCompanies((result.companies || []).map((row) => row.company).filter(Boolean));
-    }).catch((error) => { if (active) toast.error(error.message || 'Could not load problem companies.'); });
+      if (active) setMockCompanies({ loading: false, error: '', rows: (result.companies || []).filter((row) => row?.company).map((row) => ({ company: row.company, count: Number(row.count) || 0 })) });
+    }).catch((error) => {
+      if (!active) return;
+      setMockCompanies({ loading: false, rows: [], error: error.message || 'Could not load companies.' });
+      toast.error(error.message || 'Could not load companies.');
+    });
     return () => { active = false; };
   }, [isMock, toast]);
 
@@ -1728,11 +1734,9 @@ export default function CreateAssessment({ viewOnly = false }) {
           <div className="grid gap-4 md:grid-cols-2">
             {isMock && <div className="md:col-span-2">
               <label htmlFor="mock-company" className="text-xs font-semibold text-slate-700 dark:text-gray-300">Company <span className="text-rose-500">*</span></label>
-              <select id="mock-company" required value={form.company} onChange={(event) => updateForm({ company: event.target.value })} className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                <option value="">Select company</option>
-                {form.company && !mockCompanies.includes(form.company) && <option value={form.company}>{form.company}</option>}
-                {mockCompanies.map((company) => <option key={company} value={company}>{company}</option>)}
-              </select>
+              <CompanyPicker id="mock-company" value={form.company} companies={mockCompanies.rows} loading={mockCompanies.loading} error={mockCompanies.error}
+                onChange={(company) => updateForm({ company })} />
+              <p className="mt-1 text-[11.5px] text-slate-500 dark:text-gray-400">Students see this company on the mock.</p>
             </div>}
             <div>
               <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">{isMock ? 'Mock name' : 'Assessment name'} <span className="text-rose-500">*</span></label>

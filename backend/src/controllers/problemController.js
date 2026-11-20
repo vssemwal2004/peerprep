@@ -1630,17 +1630,16 @@ export async function listProblems(req, res) {
   });
 }
 
-async function listProblemCompanies(req, res, { allProblems = false } = {}) {
+async function listProblemCompanies(req, res) {
   const search = sanitizeSearchQuery(String(req.query.search || '').trim());
   const requestedLimit = Number.parseInt(req.query.limit, 10);
-  const maxLimit = allProblems ? 1000 : 100;
-  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), maxLimit) : (allProblems ? maxLimit : 50);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
   const publicProblemQuery = {
     status: { $in: ['published', 'Active', 'active'] },
     $or: [{ visibility: 'public' }, { visibility: { $exists: false } }],
   };
   const pipeline = [
-    { $match: allProblems ? { companyTags: { $exists: true, $ne: [] } } : publicProblemQuery },
+    { $match: publicProblemQuery },
     { $unwind: '$companyTags' },
     { $set: { normalizedCompany: { $trim: { input: '$companyTags' } } } },
     { $match: { normalizedCompany: { $ne: '' } } },
@@ -1661,10 +1660,6 @@ async function listProblemCompanies(req, res, { allProblems = false } = {}) {
 
 export async function listStudentProblemCompanies(req, res) {
   return listProblemCompanies(req, res);
-}
-
-export async function listMockProblemCompanies(req, res) {
-  return listProblemCompanies(req, res, { allProblems: true });
 }
 
 export async function getProblemDetail(req, res) {
