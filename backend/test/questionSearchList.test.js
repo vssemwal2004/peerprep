@@ -238,13 +238,18 @@ test('PrepMock records and questions stay out of regular assessment and library 
 test('creating a mock draft persists its kind and syncs authored questions into Mock Library', async () => {
   const response = capture();
   await createAssessment({ user: admin, ip: '127.0.0.1', get: () => 'test', body: {
-    kind: 'mock', company: 'Amazon', title: 'Created through mock flow', lifecycleStatus: 'draft',
+    kind: 'mock', company: 'Amazon', role: 'SDE 1', title: 'Created through mock flow', lifecycleStatus: 'draft',
     sections: [{ sectionName: 'MCQ', type: 'mcq', questions: [{ questionId: 'created-mock-q', type: 'mcq', questionText: 'Created mock question?', options: ['A', 'B'], correctOptionIndex: 0 }] }],
   } }, response);
   assert.equal(response.state.statusCode, 201, JSON.stringify(response.state.body));
   const saved = await Assessment.findById(response.state.body.assessmentId).lean();
   assert.equal(saved.kind, 'mock');
   assert.equal(saved.company, 'Amazon');
+  assert.equal(saved.role, 'SDE 1');
+  const noRole = capture();
+  await createAssessment({ user: admin, ip: '127.0.0.1', get: () => 'test', body: { kind: 'mock', company: 'Amazon', title: 'No role', lifecycleStatus: 'draft', sections: [] } }, noRole);
+  assert.equal(noRole.state.statusCode, 400);
+  assert.match(noRole.state.body.error, /role/);
   const mockQuestions = await library({ type: 'mcq', status: 'draft', scope: 'mock', search: 'Created mock question', includeMeta: 'false' });
   assert.deepEqual(mockQuestions.questions.map((item) => item.questionText), ['Created mock question?']);
   const regularQuestions = await library({ type: 'mcq', status: 'draft', search: 'Created mock question', includeMeta: 'false' });
@@ -278,7 +283,7 @@ test('publishing a university mock assigns the university and reset removes acce
   try {
     await University.create({ universityId: 'mock-test-uni', name: 'Mock Test University' });
     const mock = await Assessment.create({
-      kind: 'mock', company: 'Amazon', title: 'University mock', createdBy: adminId,
+      kind: 'mock', company: 'Amazon', role: 'SDE 1', title: 'University mock', createdBy: adminId,
       lifecycleStatus: 'draft', sections: [{ sectionName: 'Questions', type: 'mcq', questions: [
         { questionId: 'uni-mock-q', type: 'mcq', questionText: 'University question?', options: ['Yes', 'No'], correctOptionIndex: 0 },
       ] }],

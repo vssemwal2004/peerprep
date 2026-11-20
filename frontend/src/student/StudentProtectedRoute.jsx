@@ -31,7 +31,11 @@ export default function StudentProtectedRoute({ children }) {
   }
 
   const requestedFeature = featureForStudentPath(location.pathname);
-  if (requestedFeature && !hasStudentFeature(user, requestedFeature)) {
+  // A test attempt or its feedback page can be a Prep Assessment test or a company mock (Prep Mock);
+  // the server checks which one this test needs.
+  const allowed = requestedFeature === 'assessments' && location.pathname.startsWith('/student/assessment/')
+    ? ['assessments', 'prep_mock'] : [requestedFeature];
+  if (requestedFeature && !allowed.some((feature) => hasStudentFeature(user, feature))) {
     return <Navigate to={firstStudentFeaturePath(user)} replace state={{ accessDenied: requestedFeature }} />;
   }
 

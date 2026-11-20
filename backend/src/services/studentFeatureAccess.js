@@ -11,6 +11,7 @@ export const STUDENT_FEATURES = Object.freeze([
   'resume',
   'prep_coins',
   'peers',
+  'prep_mock',
 ]);
 
 export const STUDENT_FEATURE_SET = new Set(STUDENT_FEATURES);
@@ -18,9 +19,10 @@ export const STUDENT_FEATURE_SET = new Set(STUDENT_FEATURES);
 /**
  * Features a student has only when an admin turns them on for that student (or in the default for
  * new students). "All access" never includes them. Prep Mates: universities decide who may find
- * and contact classmates, so it is never on for everyone by default.
+ * and contact classmates, so it is never on for everyone by default. Prep Mock: company mock tests
+ * are given to the students an admin chooses.
  */
-export const OPT_IN_STUDENT_FEATURES = Object.freeze(['peers']);
+export const OPT_IN_STUDENT_FEATURES = Object.freeze(['peers', 'prep_mock']);
 const OPT_IN_SET = new Set(OPT_IN_STUDENT_FEATURES);
 /** What "All access" means: every feature except the opt-in ones. */
 export const STANDARD_STUDENT_FEATURES = Object.freeze(STUDENT_FEATURES.filter((feature) => !OPT_IN_SET.has(feature)));

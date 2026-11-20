@@ -51,6 +51,7 @@ import {
   Trophy,
   Inbox,
   Handshake,
+  Briefcase,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { canManageInterviewCompanies, isControlDeployment, isUniversityDeployment, PREP_COIN_PRICING_PATH, QUICKPREP_ANALYSIS_PATH, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
@@ -100,6 +101,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
           { label: 'History', to: '/student/assessment-history', icon: History },
         ],
       },
+      { type: 'link', label: 'Prep Mock', to: '/student/prep-mock', icon: Briefcase, featureKey: 'prep_mock' },
       { type: 'link', label: 'Resume', to: '/student/resume', icon: UserCog, featureKey: 'resume' },
       { type: 'link', label: 'Ranking', to: '/student/rankings', icon: Trophy, featureKey: 'rankings' },
       { type: 'link', label: 'Prep Coin', to: '/student/wallet', icon: Wallet, featureKey: 'prep_coins' },
@@ -315,6 +317,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       { label: 'Analysis', to: '/admin/analysis?area=prepmock', icon: BarChart3,
         match: (loc) => loc.pathname === '/admin/analysis' && new URLSearchParams(loc.search).get('area') === 'prepmock' },
       { label: 'Mock Library', to: '/admin/prepmock/library', icon: Library, match: (loc) => loc.pathname.startsWith('/admin/prepmock/library') },
+      { label: 'Companies & roles', to: '/admin/prepmock/companies', icon: Building2, match: (loc) => loc.pathname.startsWith('/admin/prepmock/companies') },
     ],
   };
   const coordinator = {

@@ -119,6 +119,40 @@ export async function uploadUniversityLogo(fileBuffer, { universityId, publicId 
   });
 }
 
+/**
+ * Uploads a validated company logo (Prep Mock cards, company pickers). One image per company key in
+ * one shared folder; a new version replaces the old one at the same public ID.
+ */
+export async function uploadCompanyLogo(fileBuffer, { publicId }) {
+  if (!isCloudinaryConfigured()) throw new Error('Cloudinary not configured');
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'peerprep/companies',
+        public_id: publicId,
+        resource_type: 'image',
+        overwrite: true,
+        invalidate: true,
+        unique_filename: false,
+        use_filename: false,
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve({
+          url: result.secure_url,
+          publicId: result.public_id,
+          width: result.width,
+          height: result.height,
+          format: result.format,
+          bytes: result.bytes,
+        });
+      },
+    );
+    uploadStream.end(fileBuffer);
+  });
+}
+
 /** Removes one image by its Cloudinary public ID. Callers treat failures as best-effort. */
 export async function destroyCloudinaryImage(publicId) {
   if (!publicId || !isCloudinaryConfigured()) return;

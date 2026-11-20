@@ -258,16 +258,16 @@ test('AI Interviews label opens its submenu and each option navigates with an ex
   assert.equal(liveToggle.getAttribute('aria-expanded'), 'false');
 });
 
-test('PrepMock is its own sidebar section with all four destinations', async () => {
+test('PrepMock is its own sidebar section with all five destinations', async () => {
   await mount();
   const section = document.querySelector('nav > div > button[title="PrepMock"]');
   assert.ok(section, 'PrepMock must be a top-level sidebar section');
   await click(section);
   const panel = document.getElementById(section.getAttribute('aria-controls'));
   assert.equal(section.getAttribute('aria-expanded'), 'true');
-  assert.deepEqual([...panel.querySelectorAll('a')].map((link) => link.textContent), ['All Mocks', 'Create Mock', 'Analysis', 'Mock Library']);
+  assert.deepEqual([...panel.querySelectorAll('a')].map((link) => link.textContent), ['All Mocks', 'Create Mock', 'Analysis', 'Mock Library', 'Companies & roles']);
   assert.deepEqual([...panel.querySelectorAll('a')].map((link) => link.getAttribute('href')), [
-    '/admin/prepmock', '/admin/prepmock/create', '/admin/analysis?area=prepmock', '/admin/prepmock/library',
+    '/admin/prepmock', '/admin/prepmock/create', '/admin/analysis?area=prepmock', '/admin/prepmock/library', '/admin/prepmock/companies',
   ]);
 });
 

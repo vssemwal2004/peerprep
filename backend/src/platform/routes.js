@@ -16,7 +16,7 @@ import { signInspection, verifyInspection } from './inspectionAuth.js';
 import { inspectionStudentPath, inspectionStudentQuery } from './inspectionStudents.js';
 import User from '../models/User.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
-import { interviewReportOptions, interviewReportSummaries, saveInterviewReport } from './interviewQuestionReports.js';
+import { companyJobTitles, interviewReportOptions, interviewReportSummaries, saveInterviewReport } from './interviewQuestionReports.js';
 import { CENTRAL_QUESTION_FILTER } from './centralQuestions.js';
 import { publishedQuestDefinitions } from '../services/questService.js';
 import { acceptLogoUpload, logoStorage, removeStoredLogo, validateLogoFile } from './universityLogo.js';
@@ -774,6 +774,10 @@ router.get('/tenant/question-interviews/summaries', requireModule('questions'), 
 }));
 router.get('/tenant/question-interviews/options', requireModule('questions'), asyncRoute(async (req, res) => {
   res.json(await interviewReportOptions());
+}));
+// Job titles reported for one company (Prep Mock role suggestions).
+router.get('/tenant/question-interviews/job-titles', requireModule('assessments'), asyncRoute(async (req, res) => {
+  res.json({ jobTitles: await companyJobTitles(String(req.query.company || '')) });
 }));
 router.post('/tenant/question-interviews', requireModule('questions'), asyncRoute(async (req, res) => {
   const scopeKey = String(req.body?.scopeKey || '');

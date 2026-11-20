@@ -83,6 +83,10 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
   }, [open]);
 
   const requiresPassword = Boolean(assessment?.passwordEnabled && !assessment?.passwordUnlocked);
+  // Prep Mock cards (kind 'mock'): same flow, mock wording; always-open mocks have no real end date.
+  const isMock = assessment?.kind === 'mock';
+  const alwaysOpen = isMock && assessment?.availabilityMode === 'always';
+  const mockContext = isMock ? [assessment?.company, assessment?.role].map((part) => String(part || '').trim()).filter(Boolean).join(' · ') : '';
   const sections = Array.isArray(assessment?.sections) ? assessment.sections : [];
 
   const sectionSummary = useMemo(() => {
@@ -112,7 +116,7 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
   const handleUnlock = async () => {
     if (!assessment) return;
     if (requiresPassword && !password.trim()) {
-      setError('Enter the assessment password.');
+      setError(isMock ? 'Enter the mock password.' : 'Enter the assessment password.');
       return;
     }
     setSubmitting(true);
@@ -149,6 +153,7 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
             <button
               type="button"
               onClick={onClose}
+              aria-label="Close"
               className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
             >
               <X className="h-3.5 w-3.5" />
@@ -160,9 +165,10 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
                   <div className="flex h-6 w-6 items-center justify-center rounded bg-sky-100 text-sky-600">
                     <Sparkles className="h-3.5 w-3.5" />
                   </div>
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Assessment Details</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{isMock ? 'Mock Details' : 'Assessment Details'}</span>
                 </div>
                 <h2 className="text-base font-bold text-slate-900 dark:text-white">{assessment.title}</h2>
+                {mockContext && <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-gray-400">{mockContext}</p>}
               </div>
 
               <div className="flex-1 overflow-y-auto px-4 py-3">
@@ -175,7 +181,7 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
                   <DetailItem
                     icon={Calendar}
                     label="End Date"
-                    value={formatDateTime(assessment.endTime) || 'Not specified'}
+                    value={alwaysOpen ? 'Always open' : formatDateTime(assessment.endTime) || 'Not specified'}
                   />
                   <DetailItem
                     icon={Clock}
@@ -227,7 +233,7 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
                   <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3 dark:border-sky-800 dark:bg-sky-900/20">
                     <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-sky-700 mb-1.5">
                       <Lock className="h-3.5 w-3.5" />
-                      Assessment Password
+                      {isMock ? 'Mock Password' : 'Assessment Password'}
                     </label>
                     <input
                       type="password"

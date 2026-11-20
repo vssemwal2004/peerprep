@@ -76,6 +76,24 @@ export async function interviewReportSummaries(scopeKeys, questionId = null) {
   }));
 }
 
+/**
+ * Job titles students reported for one company (any question), most reporters first:
+ * [{ jobTitle, reporters }]. Feeds the Prep Mock role list for that company.
+ */
+export async function companyJobTitles(company) {
+  const companyKey = companyKeyOf(clean(company, 120));
+  if (!companyKey) return [];
+  const rows = await InterviewQuestionReport.aggregate([
+    { $match: { companyKey } },
+    { $sort: { createdAt: -1 } },
+    { $group: { _id: { jobTitleKey: '$jobTitleKey', reporterKey: '$reporterKey' }, jobTitle: { $first: '$jobTitle' } } },
+    { $group: { _id: '$_id.jobTitleKey', jobTitle: { $first: '$jobTitle' }, reporters: { $sum: 1 } } },
+    { $sort: { reporters: -1, jobTitle: 1 } },
+    { $limit: 50 },
+  ]).allowDiskUse(true);
+  return rows.map(({ jobTitle, reporters }) => ({ jobTitle, reporters }));
+}
+
 export async function interviewReportOptions() {
   const [catalog, reported] = await Promise.all([companyCatalog(), InterviewQuestionReport.aggregate([
     { $sort: { createdAt: -1 } },

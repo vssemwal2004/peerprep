@@ -13,6 +13,9 @@ import { SectionCard } from './compiler/CompilerUi';
 import PageGuideButton from '../guide/platform/PageGuideButton';
 import GuideInfo from '../guide/platform/GuideInfo';
 import CompanyPicker from './assessment/components/CompanyPicker';
+import RolePicker from './assessment/components/RolePicker';
+import CompanyLogo from './prepMock/CompanyLogo';
+import CompanyLogoEditor from './prepMock/CompanyLogoEditor';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem, toAssessmentProblemSnapshot } from './compiler/compilerUtils';
 import AssessmentCard from './assessment/components/AssessmentCard';
@@ -408,6 +411,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     lifecycleStatus: 'draft',
     testType: '',
     company: '',
+    role: '',
     mockAudienceMode: 'students',
     mockUniversityIds: [],
     assessmentId: generateUniqueAssessmentId(),
@@ -433,8 +437,10 @@ export default function CreateAssessment({ viewOnly = false }) {
     }));
   };
   const [selectedStudents, setSelectedStudents] = useState([]);
-  // The companies students see on Prep Coding: [{ company, count }].
+  // The companies students see on Prep Coding: [{ company, count, logo, domain }].
   const [mockCompanies, setMockCompanies] = useState({ loading: true, rows: [], error: '' });
+  const [mockCompaniesVersion, setMockCompaniesVersion] = useState(0);
+  const [logoEditorOpen, setLogoEditorOpen] = useState(false);
   const [universities, setUniversities] = useState([]);
   const [universityLoadError, setUniversityLoadError] = useState('');
   const [studentEntryMode, setStudentEntryMode] = useState('');
@@ -471,14 +477,14 @@ export default function CreateAssessment({ viewOnly = false }) {
     if (!isMock) return undefined;
     let active = true;
     api.listMockCompanies().then((result) => {
-      if (active) setMockCompanies({ loading: false, error: '', rows: (result.companies || []).filter((row) => row?.company).map((row) => ({ company: row.company, count: Number(row.count) || 0 })) });
+      if (active) setMockCompanies({ loading: false, error: '', rows: (result.companies || []).filter((row) => row?.company).map((row) => ({ company: row.company, count: Number(row.count) || 0, logo: row.logo || null, domain: row.domain || '' })) });
     }).catch((error) => {
       if (!active) return;
-      setMockCompanies({ loading: false, rows: [], error: error.message || 'Could not load companies.' });
+      setMockCompanies((previous) => ({ loading: false, rows: previous.rows, error: error.message || 'Could not load companies.' }));
       toast.error(error.message || 'Could not load companies.');
     });
     return () => { active = false; };
-  }, [isMock, toast]);
+  }, [isMock, toast, mockCompaniesVersion]);
 
   useEffect(() => {
     if (!isMock || !isMockPublishing) return undefined;
@@ -904,6 +910,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           audienceType: assessment.audienceType || 'platform_students',
           testType: assessment.testType || '',
           company: assessment.company || '',
+          role: assessment.role || '',
           mockAudienceMode: assessment.mockAudienceMode || 'students',
           mockUniversityIds: Array.isArray(assessment.mockUniversityIds) ? assessment.mockUniversityIds : [],
           assessmentId: assessment.assessmentId || '',
@@ -1259,6 +1266,7 @@ export default function CreateAssessment({ viewOnly = false }) {
       audienceType: form.audienceType || 'platform_students',
       testType: form.testType || '',
       company: isMock ? form.company : undefined,
+      role: isMock ? String(form.role || '').trim() : undefined,
       mockAudienceMode: isMock ? form.mockAudienceMode : undefined,
       mockUniversityIds: isMock ? form.mockUniversityIds : undefined,
       assessmentId: form.assessmentId || '',
@@ -1322,6 +1330,10 @@ export default function CreateAssessment({ viewOnly = false }) {
     if (isSavingRef.current) return;
     if (!form.title || (!(isMock && form.availabilityMode === 'always') && (!form.startTime || !form.endTime)) || !form.duration) {
       toast.error(isMock && form.availabilityMode === 'always' ? 'Please complete the mock title and attempt duration before publishing.' : 'Please complete title, start/end time, and duration before publishing.');
+      return false;
+    }
+    if (isMock && (!String(form.company || '').trim() || !String(form.role || '').trim())) {
+      toast.error(form.company ? 'Choose a role for this mock.' : 'Choose a company and a role for this mock.');
       return false;
     }
     if (form.passwordEnabled && !currentId && !String(form.passwordValue || '').trim()) {
@@ -1458,8 +1470,8 @@ export default function CreateAssessment({ viewOnly = false }) {
   };
 
   const saveMock = async () => {
-    if (!form.title.trim() || !form.testType || !form.company.trim() || !phaseCompletion.sections) {
-      toast.error('Choose a company, complete basic details, and add at least one valid question before saving.');
+    if (!form.title.trim() || !form.testType || !form.company.trim() || !String(form.role || '').trim() || !phaseCompletion.sections) {
+      toast.error('Choose a company and a role, complete basic details, and add at least one valid question before saving.');
       return;
     }
     const saved = await saveDraft(false);
@@ -1529,7 +1541,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     return totals.length > 1 && totals.every((total) => total > 0 && total === totals[0]);
   })();
   const phaseCompletion = {
-    basic: Boolean(form.title.trim() && form.testType && (!isMock || form.company.trim())),
+    basic: Boolean(form.title.trim() && form.testType && (!isMock || (form.company.trim() && String(form.role || '').trim()))),
     sections: assessmentValidation.totalQuestions > 0 && !assessmentValidation.emptySection && questionDeliveryValid && multiSetParityValid,
     schedule: singleScheduleValid,
     target: candidateSelectionValid,
@@ -1719,6 +1731,18 @@ export default function CreateAssessment({ viewOnly = false }) {
     updateForm({ customInstructions: next });
   };
 
+  const selectedMockCompany = isMock && form.company
+    ? mockCompanies.rows.find((row) => row.company.toLowerCase() === String(form.company).toLowerCase())
+    : null;
+  const mockIdentity = isMock && form.company ? (
+    <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-white py-0.5 pl-0.5 pr-2.5 text-[11.5px] font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+      <CompanyLogo name={form.company} logo={selectedMockCompany?.logo} size="xs" round />
+      <span className="truncate">{form.company}</span>
+      <span aria-hidden="true" className="text-slate-300 dark:text-gray-600">·</span>
+      {form.role ? <span className="truncate text-sky-700 dark:text-sky-300">{form.role}</span> : <span className="text-amber-600 dark:text-amber-400">No role</span>}
+    </span>
+  ) : null;
+
   const stepContent = {
     basic: (
       <div className="space-y-4">
@@ -1732,11 +1756,26 @@ export default function CreateAssessment({ viewOnly = false }) {
 
         <div data-guide="ae-details"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">Assessment details<GuideInfo step="ae-details" /></span>} subtitle="Fields marked with * are required before you can continue.">
           <div className="grid gap-4 md:grid-cols-2">
-            {isMock && <div className="md:col-span-2">
+            {isMock && <div>
               <label htmlFor="mock-company" className="text-xs font-semibold text-slate-700 dark:text-gray-300">Company <span className="text-rose-500">*</span></label>
               <CompanyPicker id="mock-company" value={form.company} companies={mockCompanies.rows} loading={mockCompanies.loading} error={mockCompanies.error}
-                onChange={(company) => updateForm({ company })} />
-              <p className="mt-1 text-[11.5px] text-slate-500 dark:text-gray-400">Students see this company on the mock.</p>
+                onChange={(company) => { setLogoEditorOpen(false); updateForm({ company }); }} />
+              {form.company && !mockCompanies.loading && !selectedMockCompany?.logo ? <div className="mt-1.5">
+                <p className="flex flex-wrap items-center gap-x-1.5 text-[11.5px] text-slate-500 dark:text-gray-400">
+                  No logo for {form.company} yet; students see its initial.
+                  <button type="button" onClick={() => setLogoEditorOpen((value) => !value)} aria-expanded={logoEditorOpen}
+                    className="rounded font-semibold text-sky-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300">{logoEditorOpen ? 'Close' : 'Add logo'}</button>
+                </p>
+                {logoEditorOpen && <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-gray-700 dark:bg-white/[0.03]">
+                  <CompanyLogoEditor compact autoFocus company={form.company} domain={selectedMockCompany?.domain || ''}
+                    onSaved={() => { setLogoEditorOpen(false); setMockCompaniesVersion((value) => value + 1); toast.success(`Logo saved for ${form.company}.`); }} />
+                </div>}
+              </div> : <p className="mt-1 text-[11.5px] text-slate-500 dark:text-gray-400">Students see this company and its logo on the mock.</p>}
+            </div>}
+            {isMock && <div data-guide="ae-role">
+              <label htmlFor="mock-role" className="text-xs font-semibold text-slate-700 dark:text-gray-300">Role <span className="text-rose-500">*</span></label>
+              <RolePicker id="mock-role" company={form.company} value={form.role || ''} onChange={(role) => updateForm({ role })} />
+              <p className="mt-1 text-[11.5px] text-slate-500 dark:text-gray-400">Students pick a company, then a role, then its mocks.</p>
             </div>}
             <div>
               <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">{isMock ? 'Mock name' : 'Assessment name'} <span className="text-rose-500">*</span></label>
@@ -1907,6 +1946,21 @@ export default function CreateAssessment({ viewOnly = false }) {
       </div>
     ),
     schedule: (
+      <div className="space-y-4">
+      {isMockPublishing && <section aria-label="Mock company and role" className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <CompanyLogo name={form.company || '?'} logo={selectedMockCompany?.logo} size="xl" />
+          <div className="min-w-0">
+            <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-slate-400">Mock for</p>
+            <p className="truncate text-base font-semibold text-slate-900 dark:text-white">{form.company || 'No company'}</p>
+            <p className={`truncate text-[13px] font-medium ${form.role ? 'text-sky-700 dark:text-sky-300' : 'text-amber-600 dark:text-amber-400'}`}>{form.role || 'No role yet: choose one before publishing'}</p>
+          </div>
+        </div>
+        {!String(form.role || '').trim() && <div className="w-full sm:w-72">
+          <label htmlFor="mock-publish-role" className="text-xs font-semibold text-slate-700 dark:text-gray-300">Role <span className="text-rose-500">*</span></label>
+          <RolePicker id="mock-publish-role" company={form.company} value={form.role || ''} invalid onChange={(role) => updateForm({ role })} />
+        </div>}
+      </section>}
       <div data-guide="ae-schedule"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">{isMock ? 'Mock availability' : 'Assessment schedule'}{!isMock && <GuideInfo step="ae-schedule" />}</span>} subtitle={isMock ? 'Choose when the selected audience can access this mock.' : 'Define the duration and availability window. Fields marked with * are required.'}>
         {isMock && <div className="mb-4 flex flex-wrap gap-3" role="group" aria-label="Mock availability">
           <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-gray-700"><input type="radio" name="mockAvailability" checked={form.availabilityMode !== 'always'} onChange={() => updateForm({ availabilityMode: 'scheduled' })} /> Start and end time</label>
@@ -1976,6 +2030,7 @@ export default function CreateAssessment({ viewOnly = false }) {
         </div>}
 
       </SectionCard></div>
+      </div>
     ),
     sections: (
       <div className="space-y-4">
@@ -2606,7 +2661,9 @@ export default function CreateAssessment({ viewOnly = false }) {
     }
     if (!phaseCompletion[activeStep]) {
       const messages = {
-        basic: 'Complete the required assessment name and type.',
+        basic: isMock
+          ? (!form.company.trim() ? 'Choose the company for this mock.' : !String(form.role || '').trim() ? 'Choose a role for this mock.' : 'Complete the required mock name and type.')
+          : 'Complete the required assessment name and type.',
         sections: 'Add at least one valid question and check the delivery rules.',
         schedule: 'Complete the required assessment schedule.',
         target: isMock ? 'Select students or universities for this mock.' : 'Select who can take this assessment.',
@@ -2648,6 +2705,7 @@ export default function CreateAssessment({ viewOnly = false }) {
                 <span aria-hidden="true">&middot;</span>
                 <span className="font-semibold text-sky-600 dark:text-sky-300">{isMock && !isMockPublishing ? 'Questions' : 'Students'}</span>
               </p>
+              {mockIdentity && <div className="mt-1.5">{mockIdentity}</div>}
             </div>
           </div>
           <div data-guide="ae-actions" className="flex flex-wrap items-center gap-2">

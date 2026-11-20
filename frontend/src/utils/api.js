@@ -1195,7 +1195,20 @@ export const api = {
   // Assessments (Admin)
   previewAssessmentStudents: (students) =>
     request("/admin/assessment/students/preview", { method: "POST", body: { students } }),
-  listMockCompanies: ({ search = '', limit = 1000 } = {}) => request(`/admin/assessment/mock-companies?${new URLSearchParams({ search, limit: String(limit) })}`, { skipCache: true }),
+  /** Prep Mock companies: [{ company, key, count (questions), questions, mocks, published, logo: { url, width, height, source } | null, domain }]. */
+  listMockCompanies: ({ search = '', limit = 2000 } = {}) => request(`/admin/assessment/mock-companies?${new URLSearchParams({ search, limit: String(limit) })}`, { skipCache: true }),
+  /** Roles for a company's mock: { company: [{ name, mocks, reporters, added }], shared: [...] }. */
+  listMockRoles: (company = '') => request(`/admin/assessment/mock-roles?${new URLSearchParams({ company })}`, { skipCache: true }),
+  addMockRole: ({ name, company }) => request('/admin/assessment/mock-roles', { method: 'POST', body: { name, company } }),
+  setCompanyLogoFromWebsite: ({ company, website }) => request('/admin/assessment/mock-companies/logo/website', { method: 'POST', body: { company, website }, timeoutMs: 60 * 1000 }),
+  uploadCompanyLogo: (company, file) => {
+    const formData = new FormData();
+    formData.append('logo', file);
+    return request(`/admin/assessment/mock-companies/logo/upload?${new URLSearchParams({ company })}`, { method: 'POST', formData, timeoutMs: 60 * 1000 });
+  },
+  removeCompanyLogo: (company) => request(`/admin/assessment/mock-companies/logo?${new URLSearchParams({ company })}`, { method: 'DELETE' }),
+  /** Finds logos for companies with a known website and no logo: { saved, missed, remaining, withoutWebsite }. */
+  fetchMissingCompanyLogos: ({ limit = 12, skip = [] } = {}) => request('/admin/assessment/mock-companies/logos/fetch-missing', { method: 'POST', body: { limit, skip }, timeoutMs: 3 * 60 * 1000 }),
   createAssessment: (body) =>
     request("/admin/assessment/create", { method: "POST", body }),
   sendAssessmentTestEmail: (assessment) =>
@@ -1436,6 +1449,8 @@ export const api = {
   // Assessments (Student)
   listStudentAssessments: () => request("/student/assessments"),
   getStudentAssessmentDashboard: () => request("/student/assessment-dashboard"),
+  /** Prep Mock: the company mocks given to this student (same card shape + company, role, companyLogo). */
+  getStudentPrepMocks: () => request("/student/assessment-dashboard?kind=mock", { skipCache: true }),
   startStudentAssessment: (id, password = "") =>
     request(`/student/assessment/${id}/start`, {
       method: "POST",

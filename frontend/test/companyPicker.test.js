@@ -48,3 +48,20 @@ test('the mock Company is picked from the student companies, searchable, with qu
   await render('Old Company Ltd');
   assert.match(document.getElementById('mock-company').textContent, /Old Company Ltd/, 'a saved company no longer in the list still shows');
 });
+
+test('a company with a logo shows it (lazy, on a fixed tile); a broken logo falls back to the initial', async () => {
+  const companies = [{ company: 'Google', count: 1782, logo: { url: 'https://img.example/google.png', width: 128, height: 128 } }, { company: 'Amazon', count: 1561, logo: null }];
+  await act(async () => root.render(h(CompanyPicker, { id: 'mock-company', value: 'Google', companies, onChange: () => {} })));
+  const trigger = document.getElementById('mock-company');
+  assert.equal(trigger.querySelector('img')?.getAttribute('src'), 'https://img.example/google.png', 'the selected company shows its logo');
+  await act(async () => trigger.click());
+  const [google, amazon] = document.querySelectorAll('[role="option"]');
+  const image = google.querySelector('img');
+  assert.equal(image.getAttribute('loading'), 'lazy');
+  assert.equal(google.textContent, 'Google1,782', 'no initial when the logo shows');
+  assert.equal(amazon.querySelector('img'), null);
+  assert.equal(amazon.textContent, 'AAmazon1,561', 'the initial when there is no logo');
+  await act(async () => image.dispatchEvent(new dom.window.Event('error')));
+  assert.equal(google.querySelector('img'), null);
+  assert.equal(google.textContent, 'GGoogle1,782', 'a logo that fails to load falls back to the initial');
+});

@@ -65,6 +65,8 @@ const AssessmentFeedbackPage = lazy(() => import("./student/AssessmentFeedbackPa
 const StudentAnalytics = lazy(() => import("./student/StudentAnalytics"));
 const StudentResume = lazy(() => import("./student/StudentResume"));
 const PeerNetworkPage = lazy(() => import("./student/peers/PeerNetworkPage"));
+const PrepMockPage = lazy(() => import("./student/prepMock/PrepMockPage"));
+const MockCompaniesPage = lazy(() => import("./admin/prepMock/MockCompaniesPage"));
 const PeerProfilePage = lazy(() => import("./student/peers/PeerProfilePage"));
 const PeerComparePage = lazy(() => import("./student/peers/PeerComparePage"));
 const PeerRealtimeBridge = lazy(() => import("./student/peers/PeerRealtimeBridge"));
@@ -368,7 +370,7 @@ function AppContent() {
     && !isFeedbackForm
     && !isAssessmentAttempt
     && !isProblemSolver;
-  const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges|analysis(\/[^/]+)?|peers(\/[^/]+(\/compare)?)?)\/?$/.test(location.pathname);
+  const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges|analysis(\/[^/]+)?|peers(\/[^/]+(\/compare)?)?|prep-mock(\/[^/]+)?)\/?$/.test(location.pathname);
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
   // Admin and coordinator shells key their own page area (see ShellPage); keying this
   // boundary per navigation remounted the whole shell and hid the sidebar on every click.
@@ -445,6 +447,8 @@ function AppContent() {
         {/* Student Routes - Protected */}
         <Route path="/student/change-password" element={<StudentProtectedRoute><ChangePassword /></StudentProtectedRoute>} />
         <Route path="/student/profile" element={<StudentProtectedRoute><StudentProfile /></StudentProtectedRoute>} />
+        <Route path="/student/prep-mock" element={<StudentProtectedRoute><PrepMockPage /></StudentProtectedRoute>} />
+        <Route path="/student/prep-mock/:company" element={<StudentProtectedRoute><PrepMockPage /></StudentProtectedRoute>} />
         <Route path="/student/peers" element={<StudentProtectedRoute><PeerNetworkPage /></StudentProtectedRoute>} />
         <Route path="/student/peers/:id" element={<StudentProtectedRoute><PeerProfilePage /></StudentProtectedRoute>} />
         <Route path="/student/peers/:id/compare" element={<StudentProtectedRoute><PeerComparePage /></StudentProtectedRoute>} />
@@ -555,6 +559,7 @@ function AppContent() {
         <Route path="/admin/assessment-feedback" element={<AdminShell><AssessmentFeedback /></AdminShell>} />
         <Route path="/admin/prepmock" element={<AdminShell><AssessmentDashboard /></AdminShell>} />
         <Route path="/admin/prepmock/create" element={<AdminShell><CreateAssessment /></AdminShell>} />
+        <Route path="/admin/prepmock/companies" element={<AdminShell><MockCompaniesPage /></AdminShell>} />
         <Route path="/admin/prepmock/analysis" element={<Navigate to="/admin/analysis?area=prepmock" replace />} />
         <Route path="/admin/prepmock/reports" element={<AdminShell><AssessmentReports /></AdminShell>} />
         <Route path="/admin/prepmock/preview/:id" element={<AdminShell layout={false}><AdminAssessmentPreview /></AdminShell>} />

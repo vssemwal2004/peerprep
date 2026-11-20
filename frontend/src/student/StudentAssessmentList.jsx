@@ -1,11 +1,10 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart3, CalendarClock, CheckCircle2, ClipboardList } from 'lucide-react';
 import AssessmentModuleLayout from './assessment-dashboard/AssessmentModuleLayout';
 import AssessmentCard from './assessment-dashboard/AssessmentCard';
 import AssessmentLaunchModal from './assessment-dashboard/AssessmentLaunchModal';
 import { useStudentAssessmentDashboardData } from './assessment-dashboard/useStudentAssessmentDashboardData';
-import { api } from '../utils/api';
+import { useAssessmentLauncher } from './assessment-dashboard/useAssessmentLauncher';
 import GuideInfo from '../guide/platform/GuideInfo';
 import { isResultAnnounced } from '../utils/assessmentEvaluation';
 
@@ -29,7 +28,8 @@ function Section({ title, count, guide, info, children }) {
 export default function StudentAssessmentList() {
   const navigate = useNavigate();
   const { dashboard, loading, error } = useStudentAssessmentDashboardData();
-  const [launchAssessment, setLaunchAssessment] = useState(null);
+  const launcher = useAssessmentLauncher();
+  const setLaunchAssessment = launcher.launch;
   // Average percentage over announced results only; held or unevaluated results never count.
   const announcedPercentages = (dashboard.reports || [])
     .filter((report) => isResultAnnounced(report) && Number.isFinite(Number(report.accuracy)) && report.accuracy !== null)
@@ -100,21 +100,7 @@ export default function StudentAssessmentList() {
         </div>
       )}
 
-      <AssessmentLaunchModal
-        assessment={launchAssessment}
-        open={Boolean(launchAssessment)}
-        onClose={() => setLaunchAssessment(null)}
-        onUnlock={async (password) => {
-          if (!launchAssessment) return;
-          await api.startStudentAssessment(launchAssessment._id, password);
-        }}
-        onStart={() => {
-          if (!launchAssessment) return;
-          const assessmentId = launchAssessment._id;
-          setLaunchAssessment(null);
-          navigate(`/student/assessment/${assessmentId}`);
-        }}
-      />
+      <AssessmentLaunchModal {...launcher.modalProps} />
     </AssessmentModuleLayout>
   );
 }

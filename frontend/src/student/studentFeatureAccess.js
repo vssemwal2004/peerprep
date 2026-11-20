@@ -1,5 +1,5 @@
 import {
-  BarChart3, BookOpen, Bot, CalendarDays, ClipboardList, Coins,
+  BarChart3, BookOpen, Bot, Briefcase, CalendarDays, ClipboardList, Coins,
   LayoutDashboard, ListChecks, Trophy, UserCog, Users, Zap,
 } from 'lucide-react';
 
@@ -18,6 +18,7 @@ export const STUDENT_FEATURE_CATALOG = Object.freeze([
   { key: 'learning', label: 'Learning Modules', description: 'Semester learning content, lessons and topic progress.', icon: BookOpen, path: '/student/learning' },
   // Opt-in: never part of "All access"; only students an admin turns it on for (same rule on the server).
   { key: 'peers', label: 'Prep Mates', description: 'Find classmates, view their profiles and become Prep Mates (same university only).', icon: Users, path: '/student/peers', optIn: true },
+  { key: 'prep_mock', label: 'Prep Mock', description: 'Company mock tests by role: pick a company, choose a role and take its mocks.', icon: Briefcase, path: '/student/prep-mock', optIn: true },
 ]);
 
 export const ALL_STUDENT_FEATURES = STUDENT_FEATURE_CATALOG.map((feature) => feature.key);
@@ -55,6 +56,7 @@ export function featureForStudentPath(pathname = '') {
   if (pathname.startsWith('/student/resume')) return 'resume';
   if (pathname.startsWith('/student/wallet')) return 'prep_coins';
   if (pathname.startsWith('/student/peers')) return 'peers';
+  if (pathname.startsWith('/student/prep-mock')) return 'prep_mock';
   if (pathname.startsWith('/student/dashboard') || pathname.startsWith('/student/challenges')) return 'dashboard';
   return null;
 }

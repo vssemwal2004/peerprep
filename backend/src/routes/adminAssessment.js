@@ -2,7 +2,10 @@ import { Router } from 'express';
 import multer from 'multer';
 import { requireAuth, requireAdmin, requireCoordinatorPermission } from '../middleware/auth.js';
 import { isUniversity } from '../platform/deployment.js';
-import { practiceCompanyCounts } from '../platform/questionPractice.js';
+import { acceptLogoUpload } from '../platform/universityLogo.js';
+import {
+  addMockRole, fetchMissingLogos, listMockCatalogCompanies, mockRolesFor, removeCompanyLogo, setLogoFromUpload, setLogoFromWebsite,
+} from '../services/prepMockCatalog.js';
 import { universityPolicy } from '../platform/client.js';
 import { bulkOperationLimiter, uploadLimiter, compilerExecutionLimiter } from '../middleware/rateLimiter.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
@@ -76,18 +79,39 @@ const questionAssetUpload = multer({
 });
 
 router.post('/assessment/students/preview', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), previewAssessmentStudents);
-// A company mock's Company list = exactly the companies students see on Prep Coding (with counts).
-router.get('/assessment/mock-companies', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), async (req, res, next) => {
-  try {
-    const search = String(req.query.search || '').trim().toLowerCase().slice(0, 80);
-    const requested = Number.parseInt(req.query.limit, 10);
-    const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 2000) : 2000;
-    const companies = (await practiceCompanyCounts())
-      .filter((row) => !search || row.company.toLowerCase().includes(search))
-      .slice(0, limit);
-    res.set('Cache-Control', 'private, no-store').json({ companies });
-  } catch (error) { next(error); }
-});
+// ---- Prep Mock catalogue: companies (= the companies students see on Prep Coding, plus companies
+// that already have mocks) with logos, job roles, and logo upload/fetch. Anyone who creates mocks.
+const mockAuthor = [requireAuth, requireCoordinatorPermission('coordinator.assessment.create')];
+const noStore = (res) => res.set('Cache-Control', 'private, no-store');
+const route = (handler) => async (req, res, next) => { try { await handler(req, res); } catch (error) { next(error); } };
+router.get('/assessment/mock-companies', ...mockAuthor, route(async (req, res) => {
+  const search = String(req.query.search || '').trim().toLowerCase().slice(0, 80);
+  const requested = Number.parseInt(req.query.limit, 10);
+  const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 2000) : 2000;
+  const companies = (await listMockCatalogCompanies())
+    .filter((row) => !search || row.company.toLowerCase().includes(search))
+    .slice(0, limit)
+    .map((row) => ({ ...row, count: row.questions }));
+  noStore(res).json({ companies });
+}));
+router.get('/assessment/mock-roles', ...mockAuthor, route(async (req, res) => {
+  noStore(res).json(await mockRolesFor(String(req.query.company || '')));
+}));
+router.post('/assessment/mock-roles', ...mockAuthor, route(async (req, res) => {
+  noStore(res).status(201).json(await addMockRole({ name: req.body?.name, company: req.body?.company, userId: req.user?._id }));
+}));
+router.post('/assessment/mock-companies/logo/website', ...mockAuthor, route(async (req, res) => {
+  noStore(res).json(await setLogoFromWebsite({ company: req.body?.company, website: req.body?.website, userId: req.user?._id }));
+}));
+router.post('/assessment/mock-companies/logo/upload', ...mockAuthor, acceptLogoUpload, route(async (req, res) => {
+  noStore(res).json(await setLogoFromUpload({ company: req.query.company, file: req.file, userId: req.user?._id }));
+}));
+router.delete('/assessment/mock-companies/logo', ...mockAuthor, route(async (req, res) => {
+  noStore(res).json(await removeCompanyLogo({ company: req.query.company }));
+}));
+router.post('/assessment/mock-companies/logos/fetch-missing', ...mockAuthor, route(async (req, res) => {
+  noStore(res).json(await fetchMissingLogos({ limit: req.body?.limit, skip: req.body?.skip, userId: req.user?._id }));
+}));
 router.post('/assessment/create', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), invalidateResponseCache('assessments'), createAssessment);
 router.post('/assessment/test-email', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), sendAssessmentTestEmail);
 router.get('/assessment/list', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), cacheJsonResponse({ namespace: 'assessments', ttlSeconds: Number(process.env.RESPONSE_CACHE_ASSESSMENTS_TTL_SECONDS || 30) }), listAssessments);

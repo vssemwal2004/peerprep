@@ -1,21 +1,10 @@
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Building2, Check, ChevronDown, Search, X } from 'lucide-react';
-
-const TONES = [
-  'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
-  'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
-  'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300',
-  'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
-  'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
-];
-const toneOf = (name) => TONES[[...String(name)].reduce((sum, char) => sum + char.charCodeAt(0), 0) % TONES.length];
-const Initial = ({ name }) => (
-  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${toneOf(name)}`} aria-hidden="true">{String(name).trim().charAt(0).toUpperCase()}</span>
-);
+import CompanyLogo from '../../prepMock/CompanyLogo';
 
 /**
  * A company mock's Company: picked from the companies students see on Prep Coding (same names and
- * question counts), searchable, most-asked first. companies: [{ company, count }].
+ * question counts), searchable, most-asked first. companies: [{ company, count, logo? }].
  */
 export default function CompanyPicker({ id, value, companies = [], loading = false, error = '', onChange }) {
   const listId = useId();
@@ -43,9 +32,12 @@ export default function CompanyPicker({ id, value, companies = [], loading = fal
   return (
     <div ref={rootRef} className="relative mt-1.5">
       <button id={id} type="button" onClick={() => setOpen((current) => !current)} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId}
-        className={`flex h-10 w-full items-center gap-2.5 rounded-lg border bg-white px-3 text-left text-sm outline-none transition focus-visible:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-100 dark:bg-gray-900 dark:focus-visible:ring-sky-950 ${open ? 'border-sky-400' : 'border-slate-200 dark:border-gray-700'}`}>
-        {value ? <Initial name={value} /> : <Building2 className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />}
-        <span className={`min-w-0 flex-1 truncate ${value ? 'font-medium text-slate-900 dark:text-white' : 'text-slate-500 dark:text-gray-400'}`}>{value || 'Select company'}</span>
+        onKeyDown={(event) => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false); } }}
+        className={`flex h-11 w-full items-center gap-2.5 rounded-lg border bg-white px-2.5 text-left text-sm outline-none transition focus-visible:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-100 dark:bg-gray-900 dark:focus-visible:ring-sky-950 ${open ? 'border-sky-400' : 'border-slate-200 hover:border-slate-300 dark:border-gray-700 dark:hover:border-gray-600'}`}>
+        {value
+          ? <CompanyLogo name={value} logo={selected?.logo} size="md" />
+          : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400 dark:bg-white/[0.06]" aria-hidden="true"><Building2 className="h-4 w-4" /></span>}
+        <span className={`min-w-0 flex-1 truncate ${value ? 'font-semibold text-slate-900 dark:text-white' : 'text-slate-500 dark:text-gray-400'}`}>{value || 'Select company'}</span>
         {selected && <span className="shrink-0 text-xs tabular-nums text-slate-400">{selected.count.toLocaleString()} questions</span>}
         <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
       </button>
@@ -56,7 +48,7 @@ export default function CompanyPicker({ id, value, companies = [], loading = fal
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${companies.length.toLocaleString()} companies`}
               onKeyDown={(event) => {
-                if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); }
+                if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); document.getElementById(id)?.focus(); }
                 if (event.key === 'Enter') { event.preventDefault(); if (matches[0]) choose(matches[0].company); }
               }}
               className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-9 text-sm text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:ring-sky-950" />
@@ -65,7 +57,7 @@ export default function CompanyPicker({ id, value, companies = [], loading = fal
           <p className="mt-2 text-[11.5px] text-slate-500 dark:text-gray-400">The same companies students see on Prep Coding, with the number of practice questions tagged for each.</p>
           <ul id={listId} role="listbox" aria-label="Companies" className="mt-2 flex max-h-72 flex-wrap content-start gap-2 overflow-y-auto overscroll-contain pr-1">
             {loading && !companies.length && Array.from({ length: 12 }, (_, index) => <li key={index} className="h-8 w-28 animate-pulse rounded-full bg-slate-100 dark:bg-white/[0.06]" />)}
-            {matches.map(({ company, count }) => {
+            {matches.map(({ company, count, logo }) => {
               const active = company.toLowerCase() === String(value || '').toLowerCase();
               return (
                 <li key={company} role="option" aria-selected={active}>
@@ -73,7 +65,7 @@ export default function CompanyPicker({ id, value, companies = [], loading = fal
                     className={`inline-flex h-8 items-center gap-2 rounded-full border pl-1 pr-3 text-[13px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${active
                       ? 'border-sky-500 bg-sky-50 font-semibold text-sky-800 dark:bg-sky-500/15 dark:text-sky-200'
                       : 'border-slate-200 bg-white text-slate-800 hover:border-sky-300 hover:bg-sky-50/60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-white/[0.05]'}`}>
-                    <Initial name={company} />{company}<span className="tabular-nums text-slate-400">{count.toLocaleString()}</span>
+                    <CompanyLogo name={company} logo={logo} size="sm" round />{company}<span className="tabular-nums text-slate-400">{count.toLocaleString()}</span>
                     {active && <Check className="h-3.5 w-3.5 text-sky-600" aria-hidden="true" />}
                   </button>
                 </li>

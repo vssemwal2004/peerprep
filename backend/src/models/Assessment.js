@@ -118,6 +118,10 @@ const assessmentSettingsSchema = new mongoose.Schema({
 const assessmentSchema = new mongoose.Schema({
   kind: { type: String, enum: ['assessment', 'mock'], default: 'assessment', index: true },
   company: { type: String, trim: true, maxlength: 120, default: '' },
+  // Prep Mock only: the job role inside the company (e.g. "SDE 1") and a copy of the company's logo
+  // at save time, so shared mocks show it in every university.
+  role: { type: String, trim: true, maxlength: 80, default: '' },
+  companyLogo: { type: new mongoose.Schema({ url: String, width: Number, height: Number }, { _id: false }), default: null },
   mockAudienceMode: { type: String, enum: ['students', 'universities'], default: 'students' },
   mockUniversityIds: { type: [String], default: [] },
   title: { type: String },

@@ -39,7 +39,8 @@ import { getAssessmentInvitationTemplate, renderAssessmentInvitationEmail, sendA
 import { validateAssessmentInvitationTemplate } from '../services/assessmentInvitationTemplate.js';
 import { reconcileExpiredAssessmentSubmissions } from '../services/assessmentExpiryService.js';
 import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js';
-import { studentFeatureQuery } from '../services/studentFeatureAccess.js';
+import { studentFeatureQuery, studentHasFeature } from '../services/studentFeatureAccess.js';
+import { companyLogoSnapshot, logosForCompanies } from '../services/prepMockCatalog.js';
 import { isStudentAssignedToAssessment } from '../utils/assessmentAssignment.js';
 import { claimAssessmentDraftProblems } from '../services/assessmentProblemCloneService.js';
 import {
@@ -2371,6 +2372,9 @@ export async function sendAssessmentTestEmail(req, res) {
   }
 }
 
+/** A Prep Mock's job role: trimmed, single spaces, at most 80 characters. */
+const cleanMockRole = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').slice(0, 80);
+
 async function validateMockAudience({ kind, mode, universityIds, user, requireSelection = false }) {
   if (kind !== 'mock' || mode !== 'universities') return { mode: 'students', universityIds: [] };
   if (user?.role !== 'admin') throw new AssessmentWriteError(403, 'MOCK_UNIVERSITY_FORBIDDEN', 'Only an administrator can publish a university-wide mock.');
@@ -2437,6 +2441,8 @@ export async function createAssessment(req, res) {
 
     const mockKind = req.body?.kind === 'mock';
     if (mockKind && !String(company || '').trim()) return res.status(400).json({ error: 'Choose a company for this mock.' });
+    const mockRole = mockKind ? cleanMockRole(req.body?.role) : '';
+    if (mockKind && !mockRole) return res.status(400).json({ error: 'Choose a role for this mock.' });
     const mockAudience = await validateMockAudience({ kind: mockKind ? 'mock' : 'assessment', mode: mockAudienceMode, universityIds: mockUniversityIds, user: req.user, requireSelection: lifecycleStatus !== 'draft' });
 
     if (req.user?.role === 'coordinator'
@@ -2550,6 +2556,8 @@ export async function createAssessment(req, res) {
       _id: newAssessmentId,
       kind: mockKind ? 'mock' : 'assessment',
       company: mockKind ? String(company).trim() : '',
+      role: mockRole,
+      companyLogo: mockKind ? await companyLogoSnapshot(company) : null,
       mockAudienceMode: mockAudience.mode,
       mockUniversityIds: mockAudience.universityIds,
       title: title || '',
@@ -2913,6 +2921,8 @@ export async function updateAssessment(req, res) {
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
     const nextCompany = company === undefined ? assessment.company : String(company || '').trim();
     if (assessment.kind === 'mock' && lifecycleStatus === 'published' && !nextCompany) return res.status(400).json({ error: 'Choose a company for this mock.' });
+    const nextRole = req.body?.role === undefined ? assessment.role || '' : cleanMockRole(req.body.role);
+    if (assessment.kind === 'mock' && lifecycleStatus === 'published' && !nextRole) return res.status(400).json({ error: 'Choose a role for this mock.' });
     const mockAudience = await validateMockAudience({
       kind: assessment.kind,
       mode: mockAudienceMode === undefined ? assessment.mockAudienceMode : mockAudienceMode,
@@ -2947,7 +2957,11 @@ export async function updateAssessment(req, res) {
 
     if (title !== undefined) assessment.title = title;
     if (assessment.kind === 'mock') {
+      if (String(assessment.company || '').toLowerCase() !== String(nextCompany || '').toLowerCase() || !assessment.companyLogo) {
+        assessment.companyLogo = nextCompany ? await companyLogoSnapshot(nextCompany) : null;
+      }
       assessment.company = nextCompany || '';
+      assessment.role = nextRole;
       assessment.mockAudienceMode = mockAudience.mode;
       assessment.mockUniversityIds = mockAudience.universityIds;
     }
@@ -3947,8 +3961,9 @@ export async function listStudentAssessments(req, res) {
         { assignedStudents: studentId },
       ],
     }).sort({ startTime: 1 }).lean();
-    const assessments = [...localAssessments, ...await sharedAssessments(), ...await sharedAssessments('mock')]
-      .filter((a) => a.lifecycleStatus !== 'draft' && a.isVisible !== false && a.startTime && a.endTime)
+    // Prep Assessment only: company mocks live on the Prep Mock page (getStudentAssessmentDashboard ?kind=mock).
+    const assessments = [...localAssessments, ...await sharedAssessments()]
+      .filter((a) => a.kind !== 'mock' && a.lifecycleStatus !== 'draft' && a.isVisible !== false && a.startTime && a.endTime)
       .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
 
     const submissions = await AssessmentSubmission.find({ studentId }).lean();
@@ -3999,10 +4014,14 @@ export async function getStudentAssessmentDashboard(req, res) {
   try {
     const studentId = String(req.user?._id || '');
     const now = new Date();
+    // ?kind=mock: Prep Mock (company mocks only, an opt-in feature); otherwise Prep Assessment (no mocks).
+    const mockOnly = req.query?.kind === 'mock';
+    if (mockOnly && !studentHasFeature(req.user, 'prep_mock')) return res.status(403).json({ error: 'Prep Mock is not turned on for your account. Ask your admin.', code: 'PREP_MOCK_DISABLED' });
+    if (!mockOnly && !studentHasFeature(req.user, 'assessments')) return res.status(403).json({ error: 'This feature is not enabled for your account.', code: 'STUDENT_FEATURE_DISABLED' });
 
     await reconcileExpiredAssessmentSubmissions({ studentId: req.user._id });
 
-    const [assessments, studentSubmissions] = await Promise.all([
+    const [loadedAssessments, studentSubmissions] = await Promise.all([
       Assessment.find({
         lifecycleStatus: { $ne: 'draft' },
         isVisible: { $ne: false },
@@ -4012,10 +4031,12 @@ export async function getStudentAssessmentDashboard(req, res) {
           { targetType: 'all' },
           { assignedStudents: req.user._id },
         ],
-      }).sort({ startTime: -1, createdAt: -1 }).lean().then(async (local) => [...local, ...await sharedAssessments(), ...await sharedAssessments('mock')]
+      }).sort({ startTime: -1, createdAt: -1 }).lean().then(async (local) => [...local, ...(mockOnly ? await sharedAssessments('mock') : await sharedAssessments())]
         .filter((a) => a.lifecycleStatus !== 'draft' && a.isVisible !== false && a.startTime && a.endTime)),
       AssessmentSubmission.find({ studentId: req.user._id }).sort({ updatedAt: -1 }).lean(),
     ]);
+    const assessments = loadedAssessments.filter((a) => (mockOnly ? a.kind === 'mock' : a.kind !== 'mock'));
+    const logoFor = mockOnly ? await logosForCompanies(assessments.map((a) => a.company || '')) : null;
 
     const submissionsByAssessment = new Map(
       studentSubmissions.map((submission) => [String(submission.assessmentId), submission]),
@@ -4071,6 +4092,13 @@ export async function getStudentAssessmentDashboard(req, res) {
           hasSubmissionInProgress: !isCompletedWindow && submission?.status === 'in_progress',
           submittedAt: submission?.submittedAt || null,
           manuallyCompletedAt: assessment.manuallyCompletedAt || null,
+          ...(mockOnly ? {
+            kind: 'mock',
+            company: assessment.company || '',
+            role: assessment.role || '',
+            companyLogo: logoFor(assessment.company || '', assessment.companyLogo),
+            availabilityMode: assessment.availabilityMode || 'scheduled',
+          } : {}),
         };
 
         if (isLive) ongoingAssessments.push(card);
@@ -4127,6 +4155,19 @@ export async function getStudentAssessmentDashboard(req, res) {
   }
 }
 
+/**
+ * Student test routes accept either feature (routes/studentAssessment.js); the test decides which one
+ * counts: a company mock needs Prep Mock (opt-in), every other test needs Prep Assessment.
+ */
+export function assertStudentFeatureForAssessment(assessment, student) {
+  if (!student || student.role !== 'student') return;
+  if (assessment?.kind === 'mock') {
+    if (!studentHasFeature(student, 'prep_mock')) throw new AssessmentWriteError(403, 'PREP_MOCK_DISABLED', 'Prep Mock is not turned on for your account. Ask your admin.');
+  } else if (!studentHasFeature(student, 'assessments')) {
+    throw new AssessmentWriteError(403, 'STUDENT_FEATURE_DISABLED', 'This feature is not enabled for your account.');
+  }
+}
+
 async function requireStudentAssessment(id, student, { metadataOnly = false } = {}) {
   const assessment = await findAssessmentForStudentRoute(id, { lean: true,
     ...(metadataOnly ? { select: 'kind isVisible settings duration startTime endTime lifecycleStatus targetType assignedStudents passwordEnabled passwordHash manuallyCompletedAt' } : {}),
@@ -4135,6 +4176,7 @@ async function requireStudentAssessment(id, student, { metadataOnly = false } = 
   if (assessment.kind === 'mock' && (assessment.lifecycleStatus === 'draft' || assessment.isVisible === false)) {
     throw new AssessmentWriteError(403, 'ASSESSMENT_UNAVAILABLE', 'Mock is no longer available.');
   }
+  assertStudentFeatureForAssessment(assessment, student);
   if (assessment.platformPublished === false || assessment.lifecycleStatus === 'draft') {
     const existing = await AssessmentSubmission.exists({ assessmentId: assessment._id, studentId: student._id, status: { $in: ['not_started', 'in_progress'] } });
     if (!existing) throw new AssessmentWriteError(403, 'ASSESSMENT_UNAVAILABLE', 'Assessment is no longer available.');
@@ -4203,6 +4245,8 @@ async function studentAttemptResponse(assessment, submission, student, now, mess
   const { resultReleased } = buildStudentResultPermissions(assessment, submission, now);
   return {
     ...(message ? { message } : {}),
+    // Where the student goes back to afterwards: Prep Mock for a company mock, else Prep Assessment.
+    kind: assessment.kind === 'mock' ? 'mock' : 'assessment',
     assessment: studentAssessment,
     submission: withheldUnreleasedResult(sanitizeStudentSubmissionForResponse(submission), resultReleased),
     resultReleased,
@@ -4382,6 +4426,8 @@ async function persistStudentAnswers(req, res, { autosave = false } = {}) {
     if (!assessmentId) return res.status(400).json({ error: 'assessmentId is required.' });
     const assessment = await loadAssessmentDefinition({ _id: assessmentId });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    try { assertStudentFeatureForAssessment(assessment, req.user); }
+    catch (error) { return res.status(403).json({ error: error.message, code: error.code }); }
     if (assessment.kind === 'mock' && (assessment.lifecycleStatus === 'draft' || assessment.isVisible === false)) {
       return res.status(403).json({ error: 'Mock is no longer available.' });
     }
@@ -6184,6 +6230,8 @@ export async function logStudentHeartbeat(req, res) {
     }
     const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'kind isVisible settings duration startTime endTime targetType assignedStudents lifecycleStatus manuallyCompletedAt' });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    try { assertStudentFeatureForAssessment(assessment, req.user); }
+    catch (error) { return res.status(403).json({ error: error.message, code: error.code }); }
     if (assessment.kind === 'mock' && (assessment.lifecycleStatus === 'draft' || assessment.isVisible === false)) return res.status(403).json({ error: 'Mock is no longer available.' });
     if (!isStudentAssignedToAssessment(assessment, req.user)) return res.status(403).json({ error: 'Not assigned to this assessment.' });
     const settings = assessment.settings || {};

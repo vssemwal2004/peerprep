@@ -70,6 +70,99 @@ export default [
     ],
   },
   {
+    id: "student.prep-mock",
+    paths: ["/student/prep-mock", "/student/prep-mock/:company"],
+    area: "Assessments",
+    title: "Prep Mock",
+    icon: "briefcase",
+    feature: "prep_mock",
+    summary: "Company mock tests, role by role: pick a company, choose a role and take its mocks under real test conditions.",
+    intro: "Prep Mock lets you practise the kind of test a company sets, before the real drive.\nStart with a company, choose the role you are aiming for, then take that role's mocks. They follow the same rules as your assessments.",
+    terms: [
+      { term: "Role", text: "The job a mock is written for, such as SDE 1 or Data Analyst. One role can have several mocks." },
+      { term: "Always open", text: "A mock with no closing date. You can start it whenever you are ready." },
+      { term: "Open now", text: "Mocks you can start or continue right now." },
+    ],
+    tips: [
+      "Mocks open on a laptop or desktop only, just like assessments.",
+      "Each mock can be submitted once, so pick a quiet slot as long as its duration.",
+      "If you leave a mock midway, its button says Continue while it is still open.",
+      "Your score shows only after the result is announced.",
+    ],
+    steps: [
+      {
+        id: "pmock-header", target: "pmock-header", chapter: "overview", quick: true,
+        title: "Welcome to Prep Mock",
+        body: "Practise real company tests, role by role. Every mock here was set up by your admin for a specific company and job role. The ring shows how many of your mocks you have completed.",
+      },
+      {
+        id: "pmock-stats", target: "pmock-stats", chapter: "layout",
+        title: "Your progress",
+        body: "Mocks open now, how many companies you have tried, and your best and latest result. Results show only once they are announced.",
+      },
+      {
+        id: "pmock-spotlight", target: "pmock-spotlight", chapter: "parts", quick: true,
+        title: "Right now",
+        body: "Mocks you started but did not submit (Continue takes you straight back in), then companies with a mock open now. Scroll sideways to see them all.",
+      },
+      {
+        id: "pmock-search", target: "pmock-search", chapter: "parts",
+        title: "Find a company",
+        body: "Type a company name, or a role such as SDE or Analyst. Matches are marked, and a company found by its role shows that role on its tile.",
+      },
+      {
+        id: "pmock-filters", target: "pmock-filters", chapter: "parts",
+        title: "Filter the list",
+        body: "Open now keeps companies with a mock you can start today. Upcoming keeps mocks that open later. Completed keeps companies where you finished or missed a mock.",
+      },
+      {
+        id: "pmock-sort", target: "pmock-sort", chapter: "parts",
+        title: "Sort and layout",
+        body: "Sort by open now, most mocks or A–Z, and switch between tiles and a list. Your layout choice is remembered on this device.",
+      },
+      {
+        id: "pmock-az", target: "pmock-az", chapter: "parts",
+        title: "Jump by letter",
+        body: "With many companies, pick a letter to jump straight to companies starting with it. Letters with no company are greyed out.",
+      },
+      {
+        id: "pmock-companies", target: "pmock-companies", chapter: "actions", quick: true, tryIt: "Open a company",
+        title: "Pick a company",
+        body: "Each tile shows the logo, roles and mocks, and a ring for how many you have completed. A green dot means a mock is open now. Click a company to see its roles.",
+      },
+      {
+        id: "pmock-journey", target: "pmock-journey", chapter: "parts",
+        title: "Your mock journey",
+        body: "Where all your mocks stand, your recently completed mocks with their result (click one to open the report), and the mocks opening next.",
+      },
+      {
+        id: "pmock-banner", target: "pmock-banner", chapter: "layout",
+        title: "The company",
+        body: "The company you opened, its roles and mocks, and how many you have completed. Use All companies above it to go back.",
+      },
+      {
+        id: "pmock-rules", target: "pmock-rules", chapter: "tips",
+        title: "Same rules as assessments",
+        body: "A mock runs exactly like a Prep Assessment: laptop or desktop only, the same instructions, timer and proctoring checks, a password when your admin set one, and one attempt.",
+      },
+      {
+        id: "pmock-roles", target: "pmock-roles", chapter: "parts", quick: true,
+        title: "Choose a role",
+        body: "Pick the job you are preparing for. Each role shows its number of mocks, and a green dot when one is open now. Mocks saved without a role are under General. Arrow keys move between roles.",
+      },
+      {
+        id: "pmock-mocks", target: "pmock-mocks", chapter: "parts",
+        title: "The role's mocks",
+        body: "Open mocks come first, then upcoming, then finished ones. Each row shows status, question types, duration, questions, sections, marks and when it is open. Always open means no closing date.",
+      },
+      {
+        id: "pmock-start", target: "pmock-start", chapter: "actions", quick: true,
+        title: "Start, continue or see your result",
+        body: "Start opens a details window with the duration, sections and marks; enter the password there if asked, then Start Test.\nAfter you submit, the button shows your result once it is announced, and Feedback lets you rate the mock.",
+      },
+    ],
+  },
+  {
     id: "student.assessment-reports",
     paths: ["/student/assessment-reports", "/assessment-reports"],
     area: "Assessments",

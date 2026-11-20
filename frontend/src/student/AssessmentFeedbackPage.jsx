@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -63,6 +63,10 @@ function FeedbackError({ message, onBack }) {
 export default function AssessmentFeedbackPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  // Opened from Prep Mock (?from=prep-mock): go back there instead of Prep Assessment.
+  const [searchParams] = useSearchParams();
+  const fromMock = searchParams.get('from') === 'prep-mock';
+  const backPath = fromMock ? '/student/prep-mock' : '/student/assessments';
   const [data, setData] = useState(null);
   const [rating, setRating] = useState(0);
   const [previewRating, setPreviewRating] = useState(0);
@@ -135,8 +139,8 @@ export default function AssessmentFeedbackPage() {
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gray-950"><Loader2 className="h-8 w-8 animate-spin text-sky-600" /></div>;
   }
-  if (error && !data) return <FeedbackError message={error} onBack={() => navigate('/student/assessments')} />;
-  if (!data) return <FeedbackError message="No assessment feedback data was returned." onBack={() => navigate('/student/assessments')} />;
+  if (error && !data) return <FeedbackError message={error} onBack={() => navigate(backPath)} />;
+  if (!data) return <FeedbackError message="No assessment feedback data was returned." onBack={() => navigate(backPath)} />;
 
   const assessment = data.assessment || {};
   const submission = data.submission || {};
@@ -172,7 +176,7 @@ export default function AssessmentFeedbackPage() {
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300"><CheckCircle2 className="h-6 w-6" /></div>
                 <h2 className="mt-4 text-lg font-bold text-emerald-900 dark:text-emerald-200">Feedback submitted</h2>
                 <p className="mt-2 text-sm leading-6 text-emerald-800/80 dark:text-emerald-200/80">Thank you for helping us make the platform better.</p>
-                <button type="button" onClick={() => navigate('/student/assessments')} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-emerald-700"><ArrowLeft className="h-4 w-4" /> Return to assessments</button>
+                <button type="button" onClick={() => navigate(backPath)} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-emerald-700"><ArrowLeft className="h-4 w-4" /> {fromMock ? 'Return to Prep Mock' : 'Return to assessments'}</button>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="mt-8">

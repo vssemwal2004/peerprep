@@ -667,6 +667,8 @@ export default function AssessmentAttempt() {
   const toast = useToast();
 
   const [assessment, setAssessment] = useState(null);
+  // Where "back" goes: Prep Mock for a company mock (the server says which), else Prep Assessment.
+  const exitPathRef = useRef('/student/assessments');
   const [submission, setSubmission] = useState(null);
   const [candidate, setCandidate] = useState(null);
   const [answersMap, setAnswersMap] = useState({});
@@ -1788,6 +1790,7 @@ export default function AssessmentAttempt() {
       setTimeLeft(allowedEnd - serverTime);
       setAllowedEndTime(allowedEnd);
       const attemptAssessment = data.assessment;
+      exitPathRef.current = data.kind === 'mock' ? '/student/prep-mock' : '/student/assessments';
       setAssessment(attemptAssessment);
       setSubmission(data.submission);
       setCandidate(data.candidate || null);
@@ -3389,7 +3392,7 @@ export default function AssessmentAttempt() {
     }
 
     setSecurityNotice('Secure assessment tab opened. Continue the fullscreen check in that window.');
-    setTimeout(() => navigate('/student/assessments', { replace: true }), 250);
+    setTimeout(() => navigate(exitPathRef.current, { replace: true }), 250);
   };
 
   const handleEnvironmentCheck = async () => {
@@ -3607,7 +3610,7 @@ export default function AssessmentAttempt() {
       }
       if (err?.response?.status === 409) {
         toast.error(err.message || 'Security recheck time expired. Assessment was auto-submitted.');
-        navigate('/student/assessments');
+        navigate(exitPathRef.current);
         return;
       }
       toast.error(err.message || 'Unable to start assessment.');
@@ -5086,7 +5089,7 @@ export default function AssessmentAttempt() {
               This account is currently taking the assessment in another tab, browser, or device. Close the other assessment and wait up to 30 seconds before trying again.
             </p>
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => navigate('/student/assessments')} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:border-gray-700 dark:text-gray-200">
+              <button type="button" onClick={() => navigate(exitPathRef.current)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:border-gray-700 dark:text-gray-200">
                 Back to assessments
               </button>
               <button type="button" onClick={() => window.location.reload()} className="rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-500">

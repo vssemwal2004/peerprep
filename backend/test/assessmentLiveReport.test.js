@@ -274,3 +274,26 @@ test('violation report projects the assessment and validates identifiers', async
   assert.equal(String(report.body.assessment._id), String(assessment._id));
   assert.equal((await call(coordinator(['coordinator.assessment.reports'], 'own', new mongoose.Types.ObjectId()), `/admin/assessment/submissions/${graded._id}/violations`)).status, 403);
 });
+
+test('Prep Mock: company mocks only for students given the feature, and never in the Prep Assessment list', async () => {
+  const window = { lifecycleStatus: 'published', targetType: 'all', startTime: new Date(Date.now() - 600000), endTime: new Date(Date.now() + 3600000), duration: 30, createdBy: ownerId };
+  const [mock, test] = await Assessment.create([
+    { ...window, kind: 'mock', title: 'Acme SDE mock', company: 'Acme', role: 'SDE 1', companyLogo: { url: 'https://img.example/acme.png', width: 128, height: 128 } },
+    { ...window, title: 'Weekly test' },
+  ]);
+  const plain = { _id: new mongoose.Types.ObjectId(), role: 'student', accessScope: 'platform' };
+  const given = { ...plain, _id: new mongoose.Types.ObjectId(), featureAccess: { mode: 'custom', features: ['assessments', 'prep_mock'] } };
+  const ids = (body) => body.ongoingAssessments.map((card) => String(card._id));
+
+  const normal = await call(plain, '/student/assessment-dashboard');
+  assert.ok(ids(normal.body).includes(String(test._id)));
+  assert.ok(!ids(normal.body).includes(String(mock._id)), 'mocks are not in Prep Assessment');
+  assert.equal((await call(plain, '/student/assessment-dashboard?kind=mock')).status, 403, 'Prep Mock is opt-in');
+
+  const mocks = await call(given, '/student/assessment-dashboard?kind=mock');
+  assert.equal(mocks.status, 200);
+  assert.deepEqual(ids(mocks.body), [String(mock._id)], 'only mocks on the Prep Mock page');
+  const card = mocks.body.ongoingAssessments[0];
+  assert.deepEqual([card.kind, card.company, card.role, card.companyLogo?.url], ['mock', 'Acme', 'SDE 1', 'https://img.example/acme.png']);
+  assert.ok(!ids((await call(given, '/student/assessment-dashboard')).body).includes(String(mock._id)));
+});

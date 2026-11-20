@@ -1,12 +1,15 @@
 import { Router } from 'express';
-import { requireAuth, requireStudent, requireStudentFeature } from '../middleware/auth.js';
+import { requireAnyStudentFeature, requireAuth, requireStudent, requireStudentFeature } from '../middleware/auth.js';
 import { assessmentAdmission } from '../middleware/assessmentAdmission.js';
 import { beginStudentAssessment, listStudentAssessments, getStudentAssessment, getStudentAssessmentDashboard, logStudentHeartbeat, logStudentMonitoring, logStudentViolation, markStudentAssessmentSetupStep, saveAssessmentProgress, startStudentAssessment, submitAssessment, createStudentEvidenceUpload } from '../controllers/assessmentController.js';
 
 const router = Router();
-const requireAssessments = requireStudentFeature('assessments');
+const requireAssessmentList = requireStudentFeature('assessments');
+// Taking a test: Prep Assessment or Prep Mock. The controller then checks the test itself
+// (assertStudentFeatureForAssessment): a company mock needs Prep Mock, any other test Prep Assessment.
+const requireAssessments = requireAnyStudentFeature('assessments', 'prep_mock');
 
-router.get('/assessments', requireAuth, requireStudent, requireAssessments, listStudentAssessments);
+router.get('/assessments', requireAuth, requireStudent, requireAssessmentList, listStudentAssessments);
 router.get('/assessment-dashboard', requireAuth, requireStudent, requireAssessments, getStudentAssessmentDashboard);
 router.post('/assessment/:id/start', assessmentAdmission([requireAuth, requireStudent, requireAssessments, startStudentAssessment]));
 router.post('/assessment/:id/setup-step', assessmentAdmission([requireAuth, requireStudent, requireAssessments, markStudentAssessmentSetupStep]));

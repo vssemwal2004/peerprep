@@ -11,8 +11,11 @@ import {
   ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
   Pencil, Copy, X, MoreVertical, Lock, Unlock, Globe, ShieldOff,
   RotateCcw, CheckCircle2, AlertTriangle, FileCheck2, Mail, Send, Loader2,
-  Users, UserMinus, UserPlus, BarChart3, ArrowDown, ArrowUp, ArrowUpDown, FolderClosed, ChevronRight, ArrowLeft,
+  Users, UserMinus, UserPlus, BarChart3, ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, ArrowLeft, BriefcaseBusiness, Building2,
 } from 'lucide-react';
+import CompanyLogo from './prepMock/CompanyLogo';
+
+const NO_ROLE = '__no_role__';
 import AssessmentLifecycleSidebar from './assessment/components/AssessmentLifecycleSidebar';
 import PageGuideButton from '../guide/platform/PageGuideButton';
 import GuideInfo from '../guide/platform/GuideInfo';
@@ -1229,7 +1232,12 @@ export default function AssessmentDashboard() {
   const [eligibleTarget, setEligibleTarget] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
-  const [selectedCompanyFolder, setSelectedCompanyFolder] = useState('');
+  const [selectedCompanyFolder, setSelectedCompanyFolderState] = useState('');
+  // Prep Mock: '' = every role, NO_ROLE = mocks without a role, otherwise the role name (lower case).
+  const [selectedRole, setSelectedRole] = useState('');
+  const setSelectedCompanyFolder = (name) => { setSelectedCompanyFolderState(name); setSelectedRole(''); };
+  // Prep Mock company catalogue (logos), by lower-case company name.
+  const [mockCompanyInfo, setMockCompanyInfo] = useState(() => new Map());
   const [filters, setFilters] = useState({
     search: '',
     creationWindow: 'any',
@@ -1253,6 +1261,14 @@ export default function AssessmentDashboard() {
   };
 
   useEffect(() => { loadAssessments(); }, []);
+  useEffect(() => {
+    if (!isMock) return undefined;
+    let active = true;
+    api.listMockCompanies().then((result) => {
+      if (active) setMockCompanyInfo(new Map((result.companies || []).filter((row) => row?.company).map((row) => [row.company.toLowerCase(), row])));
+    }).catch(() => { /* logos are optional: initials show instead */ });
+    return () => { active = false; };
+  }, [isMock]);
 
   const summary = useMemo(() => {
     const total = assessments.length;
@@ -1284,7 +1300,7 @@ export default function AssessmentDashboard() {
             : 'ongoing';
       const matchesTab = activeTab === 'all' || bucket === activeTab;
 
-      const searchable = [assessment.title, assessment.company, assessment.testType, assessment.assessmentType, assessment.assessmentId]
+      const searchable = [assessment.title, assessment.company, assessment.role, assessment.testType, assessment.assessmentType, assessment.assessmentId]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
@@ -1323,21 +1339,52 @@ export default function AssessmentDashboard() {
     });
   }, [assessments, filters, activeTab]);
   // Column headers sort on top of the "Sort" menu's order; picking a menu order clears the column sort.
+  const logoOf = useCallback((company, fallback = null) => (
+    mockCompanyInfo.get(String(company || '').toLowerCase())?.logo || fallback || null
+  ), [mockCompanyInfo]);
   const companyFolders = useMemo(() => {
     const map = new Map();
     filtered.forEach((assessment) => {
       const name = String(assessment.company || 'Uncategorized').trim() || 'Uncategorized';
       const key = name.toLocaleLowerCase();
-      const folder = map.get(key) || { name, count: 0 };
+      const folder = map.get(key) || { name, count: 0, published: 0, noRole: 0, roles: new Set(), logo: null };
       folder.count += 1;
+      if (assessment.lifecycleStatus === 'published') folder.published += 1;
+      const role = String(assessment.role || '').trim();
+      if (role) folder.roles.add(role.toLocaleLowerCase()); else folder.noRole += 1;
+      folder.logo = folder.logo || assessment.companyLogo || null;
       map.set(key, folder);
     });
-    return [...map.values()].sort((left, right) => left.name.localeCompare(right.name));
-  }, [filtered]);
-  const visibleAssessments = isMock && selectedCompanyFolder
+    return [...map.values()]
+      .map((folder) => ({ ...folder, roleCount: folder.roles.size, logo: logoOf(folder.name, folder.logo) }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [filtered, logoOf]);
+  const folderAssessments = isMock && selectedCompanyFolder
     ? filtered.filter((assessment) => (assessment.company || 'Uncategorized').toLocaleLowerCase() === selectedCompanyFolder.toLocaleLowerCase())
     : filtered;
-  const assessmentTable = useClientTable(visibleAssessments, { getValue: assessmentValue, resetKey: `${activeTab}|${selectedCompanyFolder}|${JSON.stringify(filters)}` });
+  // Role chips inside a company folder: each role with its number of mocks, then "No role".
+  const folderRoles = useMemo(() => {
+    if (!isMock || !selectedCompanyFolder) return [];
+    const map = new Map();
+    folderAssessments.forEach((assessment) => {
+      const role = String(assessment.role || '').trim();
+      const key = role ? role.toLocaleLowerCase() : NO_ROLE;
+      const entry = map.get(key) || { key, label: role || 'No role', count: 0 };
+      entry.count += 1;
+      map.set(key, entry);
+    });
+    return [...map.values()].sort((left, right) => (left.key === NO_ROLE) - (right.key === NO_ROLE) || right.count - left.count || left.label.localeCompare(right.label));
+  }, [folderAssessments, isMock, selectedCompanyFolder]);
+  const visibleAssessments = isMock && selectedCompanyFolder && selectedRole
+    ? folderAssessments.filter((assessment) => {
+      const role = String(assessment.role || '').trim().toLocaleLowerCase();
+      return selectedRole === NO_ROLE ? !role : role === selectedRole;
+    })
+    : folderAssessments;
+  const selectedFolderInfo = isMock && selectedCompanyFolder
+    ? companyFolders.find((folder) => folder.name.toLocaleLowerCase() === selectedCompanyFolder.toLocaleLowerCase())
+    : null;
+  const assessmentTable = useClientTable(visibleAssessments, { getValue: assessmentValue, resetKey: `${activeTab}|${selectedCompanyFolder}|${selectedRole}|${JSON.stringify(filters)}` });
 
   const handleDelete = async (id) => {
     if (!confirm(`Delete this ${isMock ? 'mock' : 'assessment'} and all submissions?`)) return;
@@ -1454,9 +1501,14 @@ export default function AssessmentDashboard() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{isMock ? 'PrepMock' : 'Assessments'}</p>
               <h1 className="mt-0.5 flex items-center gap-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white">All {isMock ? 'Mocks' : 'Assessments'} {!isMock && <PageGuideButton />}</h1>
             </div>
-            {canCreateAssessments && <button type="button" data-guide="as-create" onClick={() => navigate(`${assessmentRoot}/create`)} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500">
-              <Plus className="h-4 w-4" /> Create {isMock ? 'Mock' : 'Assessment'}
-            </button>}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {isMock && <button type="button" onClick={() => navigate('/admin/prepmock/companies')} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+                <Building2 className="h-4 w-4" /> <span className="hidden sm:inline">Companies &amp; roles</span><span className="sm:hidden">Companies</span>
+              </button>}
+              {canCreateAssessments && <button type="button" data-guide="as-create" onClick={() => navigate(`${assessmentRoot}/create`)} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500">
+                <Plus className="h-4 w-4" /> Create {isMock ? 'Mock' : 'Assessment'}
+              </button>}
+            </div>
           </div>
         </header>
 
@@ -1482,7 +1534,7 @@ export default function AssessmentDashboard() {
                 <input
                   value={filters.search}
                   onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
-                  placeholder={isMock ? 'Search company, mock name, ID or type' : 'Search by assessment name, ID or type'}
+                  placeholder={isMock ? 'Search company, role, mock name, ID or type' : 'Search by assessment name, ID or type'}
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/30"
                 />
               </div>
@@ -1501,7 +1553,37 @@ export default function AssessmentDashboard() {
             </div>
 
           <section data-guide="as-list" className="pt-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pb-4" aria-label="Assessment list">
-            {isMock && selectedCompanyFolder && <button type="button" onClick={() => setSelectedCompanyFolder('')} className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300"><ArrowLeft className="h-4 w-4" /> All companies <ChevronRight className="h-3 w-3 text-slate-400" /> {selectedCompanyFolder}</button>}
+            {isMock && selectedCompanyFolder && <div className="mb-3 space-y-3">
+              <button type="button" onClick={() => setSelectedCompanyFolder('')} className="inline-flex items-center gap-2 rounded text-sm font-semibold text-sky-700 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300"><ArrowLeft className="h-4 w-4" /> All companies <ChevronRight className="h-3 w-3 text-slate-400" /> {selectedCompanyFolder}</button>
+              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center dark:border-gray-800 dark:bg-gray-900">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <CompanyLogo name={selectedCompanyFolder} logo={selectedFolderInfo?.logo || logoOf(selectedCompanyFolder)} size="xl" />
+                  <div className="min-w-0">
+                    <h2 className="truncate text-base font-semibold text-slate-950 dark:text-white">{selectedCompanyFolder}</h2>
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">
+                      {folderAssessments.length} mock{folderAssessments.length === 1 ? '' : 's'} · {selectedFolderInfo?.published || 0} published · {selectedFolderInfo?.roleCount || 0} role{selectedFolderInfo?.roleCount === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                </div>
+                {selectedFolderInfo?.noRole > 0 && <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200 sm:max-w-xs dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-400/20">
+                  {selectedFolderInfo.noRole} mock{selectedFolderInfo.noRole === 1 ? ' has' : 's have'} no role. Edit {selectedFolderInfo.noRole === 1 ? 'it' : 'them'} and choose a role before publishing.
+                </p>}
+              </div>
+              {folderRoles.length > 0 && <div role="group" aria-label="Filter by role" className="flex flex-wrap gap-2">
+                {[{ key: '', label: 'All roles', count: folderAssessments.length }, ...folderRoles].map((entry) => {
+                  const active = selectedRole === entry.key;
+                  const noRole = entry.key === NO_ROLE;
+                  return <button key={entry.key || 'all'} type="button" aria-pressed={active} onClick={() => setSelectedRole(entry.key)}
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${active
+                      ? 'border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200'
+                      : noRole ? 'border-amber-200 bg-white text-amber-700 hover:bg-amber-50 dark:border-amber-500/30 dark:bg-gray-900 dark:text-amber-300'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50/60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-white/[0.05]'}`}>
+                    {entry.key && !noRole && <BriefcaseBusiness className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />}
+                    {entry.label}<span className="tabular-nums opacity-60">{entry.count}</span>
+                  </button>;
+                })}
+              </div>}
+            </div>}
             {loading ? (
               <div className="flex min-h-56 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm text-slate-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading assessments...</div>
             ) : error ? (
@@ -1515,14 +1597,23 @@ export default function AssessmentDashboard() {
               </div>
             ) : isMock && !selectedCompanyFolder ? (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Company folders">
-                {companyFolders.map((folder) => <button key={folder.name} type="button" onClick={() => setSelectedCompanyFolder(folder.name)} className="group flex min-h-28 items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-sky-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-950/40"><FolderClosed className="h-6 w-6" /></span>
-                  <span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900 dark:text-white">{folder.name}</strong><span className="mt-1 block text-xs text-slate-500">{folder.count} mock{folder.count === 1 ? '' : 's'}</span></span>
-                  <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-sky-600" />
+                {companyFolders.map((folder) => <button key={folder.name} type="button" onClick={() => setSelectedCompanyFolder(folder.name)} aria-label={`${folder.name}: ${folder.count} mock${folder.count === 1 ? '' : 's'}`}
+                  className="group flex min-h-28 items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:-translate-y-px hover:border-sky-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800">
+                  <CompanyLogo name={folder.name} logo={folder.logo} size="2xl" />
+                  <span className="min-w-0 flex-1">
+                    <strong className="block truncate text-sm text-slate-900 dark:text-white">{folder.name}</strong>
+                    <span className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600 dark:bg-gray-800 dark:text-gray-300">{folder.count} mock{folder.count === 1 ? '' : 's'}</span>
+                      <span className={`rounded-full px-2 py-0.5 ${folder.published ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'}`}>{folder.published} published</span>
+                      <span className="rounded-full bg-sky-50 px-2 py-0.5 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">{folder.roleCount} role{folder.roleCount === 1 ? '' : 's'}</span>
+                      {folder.noRole > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">{folder.noRole} without role</span>}
+                    </span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-sky-600" />
                 </button>)}
               </div>
             ) : visibleAssessments.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500 dark:border-gray-700 dark:bg-gray-900">No mocks in this company match the filters.</div>
+              <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500 dark:border-gray-700 dark:bg-gray-900">No mocks {selectedRole ? 'for this role ' : ''}in this company match the filters.</div>
             ) : (
               <div role="list" className="space-y-2.5">
                 <div data-guide="as-columns" className="sticky top-0 z-20 -mx-1 isolate hidden grid-cols-[minmax(190px,1.5fr)_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px] items-center gap-x-3 bg-slate-50 px-5 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 shadow-[0_1px_0_0_rgb(226,232,240)] xl:grid dark:bg-gray-950 dark:text-gray-500 dark:shadow-[0_1px_0_0_rgb(31,41,55)]">
@@ -1561,7 +1652,9 @@ export default function AssessmentDashboard() {
                       }}
                       className="group grid cursor-pointer grid-cols-1 items-center gap-x-3 gap-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-all hover:-translate-y-px hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800 md:grid-cols-2 xl:grid-cols-[minmax(190px,1.5fr)_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px]"
                     >
-                      <div className="min-w-0 md:col-span-2 xl:col-span-1">
+                      <div className="flex min-w-0 items-center gap-3 md:col-span-2 xl:col-span-1">
+                      {isMock && <CompanyLogo name={assessment.company || 'Uncategorized'} logo={logoOf(assessment.company, assessment.companyLogo)} size="lg" />}
+                      <div className="min-w-0 flex-1">
                         <div className="flex min-w-0 items-center gap-1.5">
                           <div className="truncate text-sm font-semibold text-slate-900 transition-colors group-hover:text-sky-700 dark:text-white dark:group-hover:text-sky-300">{assessment.title || 'Untitled assessment'}</div>
                           {assessment.passwordEnabled && (
@@ -1575,10 +1668,14 @@ export default function AssessmentDashboard() {
                           )}
                         </div>
                         <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-slate-400 dark:text-gray-500">
+                          {isMock && (assessment.role
+                            ? <span className="inline-flex min-w-0 max-w-[11rem] shrink items-center gap-1 rounded-full bg-sky-50 px-1.5 py-px font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300" title={`Role: ${assessment.role}`}><BriefcaseBusiness className="h-3 w-3 shrink-0" aria-hidden="true" /><span className="truncate">{assessment.role}</span></span>
+                            : <span className="shrink-0 rounded-full bg-amber-50 px-1.5 py-px font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" title="Choose a role before publishing">No role</span>)}
                           <span className="truncate">{assessment.testType || assessment.assessmentType || 'General'}</span>
                           <span className="h-1 w-1 shrink-0 rounded-full bg-slate-300" aria-hidden="true" />
                           <span className="shrink-0">ID {assessment.assessmentId || '—'}</span>
                         </div>
+                      </div>
                       </div>
 
                       <div className="min-w-0 text-xs">

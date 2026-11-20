@@ -66,6 +66,11 @@ export const assessmentEditorSteps = [
     body: "The name and type (required) and an optional short internal description. The assessment ID above is created for you.",
   },
   {
+    id: "ae-role", target: "ae-role", chapter: "parts",
+    title: "Mock role",
+    body: "Prep Mocks only: the job role this mock is for, such as SDE 1 or Data Analyst. Roles students reported for the chosen company come first. Type a new role and choose Add to save it for next time. A mock needs a role before it can be published.",
+  },
+  {
     id: "ae-instructions", target: "ae-instructions", chapter: "parts",
     title: "Candidate instructions",
     body: "The platform's standard instructions are always included; open them to read what students see. Add your own instructions below; they are listed after the standard ones.",
@@ -301,7 +306,69 @@ export const selectProblemSteps = [
   },
 ];
 
+export const mockCompaniesSteps = [
+  {
+    id: "pmc-header", target: "pmc-header", chapter: "overview", quick: true,
+    title: "Companies and roles",
+    body: "Every company a Prep Mock can be for: the companies students see on Prep Coding plus any company that already has mocks. Here you manage each company's logo and the job roles its mocks can be for.",
+  },
+  {
+    id: "pmc-stats", target: "pmc-stats", chapter: "parts", quick: true,
+    title: "Logo coverage",
+    body: "How many companies there are, how many have a logo, how many still show only their initial (and how many of those have a known website), and how many companies already have mocks.",
+  },
+  {
+    id: "pmc-find-logos", target: "pmc-find-logos", chapter: "actions", quick: true,
+    title: "Find missing logos",
+    body: "Looks up the logo on the website of every company that has none yet but whose website is known. It works in small batches and shows its progress; you can stop it at any time.",
+  },
+  {
+    id: "pmc-run", target: "pmc-run", chapter: "parts",
+    title: "Logo search result",
+    body: "How many logos were saved, how many websites offered no usable logo, and how many companies have no known website. For those, type the website or upload a logo on the company card.",
+  },
+  {
+    id: "pmc-toolbar", target: "pmc-toolbar", chapter: "parts",
+    title: "Search, filter and sort",
+    body: "Search by company name or website. Show all companies, only those with or without a logo, or only those with mocks, and sort by mocks, questions, name or missing logo first.",
+  },
+  {
+    id: "pmc-list", target: "pmc-list", chapter: "parts", quick: true,
+    title: "Company cards",
+    body: "Each card shows the logo students see, the website, where the logo came from (built-in, from website or uploaded), the practice questions tagged with the company and its mocks.",
+  },
+  {
+    id: "pmc-logo-actions", target: "pmc-logo-actions", chapter: "actions",
+    title: "Logo actions",
+    body: "The three-dot menu finds the logo from a website you type, uploads an image (PNG, JPEG or WebP, at least 64×64, up to 2 MB), opens the website or removes the logo. A change also updates the company's existing mocks.",
+  },
+  {
+    id: "pmc-roles-open", target: "pmc-roles-open", chapter: "actions",
+    title: "Roles of a company",
+    body: "Opens the company's roles: the ones students reported after interviews there, the roles of its mocks and roles added by admins, each with its counts. Add a role to offer it when creating a mock.",
+  },
+];
+
 export default [
+  {
+    id: "admin.prep-mock-companies",
+    paths: ["/admin/prepmock/companies"],
+    area: "Assessments",
+    title: "Prep Mock companies & roles",
+    icon: "building",
+    summary: "The companies a Prep Mock can be for, their logos, and the job roles each mock can be for.",
+    intro: "Students choose a company, then a role, then its mocks.\nUse this page to give every company a clean logo and to check or add the roles admins can pick when creating a mock.",
+    tips: [
+      "Run Find missing logos after new companies appear on Prep Coding.",
+      "If a website offers no usable logo, upload a square image instead.",
+      "Roles you add here appear first for that company in the mock's Role list.",
+    ],
+    terms: [
+      { term: "Built-in logo", text: "A logo shipped with PeerPrep for well-known companies. You can replace or remove it." },
+      { term: "Reported role", text: "A job title students entered when they shared an interview with this company." },
+    ],
+    steps: mockCompaniesSteps,
+  },
   {
     id: "admin.assessments",
     paths: ["/admin/assessment"],
