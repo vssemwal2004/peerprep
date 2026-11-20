@@ -4,6 +4,7 @@ import QuestsSection from './quests/QuestsSection';
 import useQuests from './quests/useQuests';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import './engagement/challengeStudio.css';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 /** Admin-published preparation sheets only. Daily challenges live outside QuickPrep. */
 export default function StudentQuests() {
@@ -16,12 +17,12 @@ export default function StudentQuests() {
 
   return <div className="challenge-studio">
     <div className="challenge-studio__inner">
-      <header className="challenge-page-heading"><h1><Zap size={20} />QuickPrep</h1><button type="button" onClick={sheets.reload} disabled={sheets.loading || !enabled} className="challenge-refresh"><RefreshCw size={14} className={sheets.loading ? 'animate-spin motion-reduce:animate-none' : ''} />Refresh sheets</button></header>
-      <section className="challenge-hero" aria-label="Your preparation sheets">
+      <header className="challenge-page-heading"><div className="flex items-center gap-2"><h1><Zap size={20} />QuickPrep</h1><PageGuideButton /></div><button type="button" onClick={sheets.reload} disabled={sheets.loading || !enabled} className="challenge-refresh" data-guide="qp-refresh"><RefreshCw size={14} className={sheets.loading ? 'animate-spin motion-reduce:animate-none' : ''} />Refresh sheets</button></header>
+      <section className="challenge-hero" aria-label="Your preparation sheets" data-guide="qp-hero">
         <svg className="challenge-hero__curves" viewBox="0 0 1200 270" preserveAspectRatio="none" aria-hidden="true"><path d="M480-70C640 190 1000-120 1280 120v180H420C580 200 340 30 480-70Z" fill="white" opacity=".035" /><path d="M720-50C500 130 1100 260 1290 100" stroke="white" strokeWidth="1" opacity=".16" fill="none" /><path d="M-90 230C260 30 400 420 780 190S1090 150 1270 210" fill="none" stroke="#67e8f9" strokeWidth="60" opacity=".06" /></svg>
         <div className="challenge-hero__copy"><span className="challenge-hero__eyebrow"><span />CURATED BY YOUR ADMIN</span><h2>Focused sheets.<br /><span>Confident preparation.</span></h2><p>Explore question sheets prepared by your university. Pick a sheet and learn at your own pace.</p></div>
         <ChallengeArtwork className="challenge-hero__art" />
-        {enabled && <div className="challenge-hero__stats">
+        {enabled && <div className="challenge-hero__stats" data-guide="qp-stats">
           <div><Layers size={16} /><span><small>Available sheets</small><strong>{count(sheets.quests.length)}</strong></span></div>
           <div><Zap size={16} /><span><small>In progress</small><strong>{count(inProgress)}</strong></span></div>
           <div><Check size={16} /><span><small>Completed sheets</small><strong>{count(completed)}</strong></span></div>

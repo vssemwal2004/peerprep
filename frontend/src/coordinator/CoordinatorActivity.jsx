@@ -6,6 +6,7 @@ import { api } from '../utils/api';
 import { getApiBase } from '../utils/apiBase';
 import { useToast } from '../components/CustomToast';
 import { SortHeader, TablePager, nextSort } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 const PAGE_SIZE = 20;
 // Keys match the server sort whitelist in adminActivityController (ACTIVITY_SORT_FIELDS).
@@ -235,13 +236,13 @@ export default function CoordinatorActivity() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-gray-500">Coordinator Module</p>
-              <h1 className="mt-1 text-2xl font-bold text-slate-900 dark:text-gray-100">Activity Log</h1>
+              <h1 data-guide="ca-title" className="mt-1 flex items-center gap-2 text-2xl font-bold text-slate-900 dark:text-gray-100">Activity Log<PageGuideButton /></h1>
               <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-gray-400">
                 Track and monitor all your activities across the platform — assessments, library, compiler, announcements, and more.
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 dark:border-sky-800 dark:bg-sky-900/20">
+              <div data-guide="ca-total" className="flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 dark:border-sky-800 dark:bg-sky-900/20">
                 <Activity className="h-4 w-4 text-sky-600 dark:text-sky-400" />
                 <span className="text-xs font-semibold text-sky-700 dark:text-sky-300">{totalActivities} Total</span>
               </div>
@@ -253,7 +254,7 @@ export default function CoordinatorActivity() {
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 p-4 mb-4">
           <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
             {/* Search Bar */}
-            <form onSubmit={handleSearch} className="flex-1 w-full sm:w-auto">
+            <form data-guide="ca-search" onSubmit={handleSearch} className="flex-1 w-full sm:w-auto">
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
                 <input
@@ -269,6 +270,7 @@ export default function CoordinatorActivity() {
             {/* Action Buttons */}
             <div className="flex gap-2">
               <button
+                data-guide="ca-filters"
                 onClick={() => setShowFilters(!showFilters)}
                 className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl transition-colors ${
                   hasActiveFilters 
@@ -285,6 +287,7 @@ export default function CoordinatorActivity() {
                 )}
               </button>
               <button
+                data-guide="ca-refresh"
                 onClick={handleRefresh}
                 disabled={refreshing}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-gray-800 text-slate-700 dark:text-gray-100 rounded-xl hover:bg-slate-200 dark:hover:bg-gray-800/80 transition-colors disabled:opacity-50"
@@ -293,6 +296,7 @@ export default function CoordinatorActivity() {
                 <span className="hidden sm:inline">Refresh</span>
               </button>
               <button
+                data-guide="ca-export"
                 onClick={handleExport}
                 disabled={exporting}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-sky-600 text-white rounded-xl hover:bg-sky-700 transition-colors disabled:opacity-50"
@@ -313,7 +317,7 @@ export default function CoordinatorActivity() {
                 transition={{ duration: 0.2 }}
                 className="overflow-hidden"
               >
-                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-gray-700">
+                <div data-guide="ca-filter-panel" className="mt-4 pt-4 border-t border-slate-200 dark:border-gray-700">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* Action Type Filter */}
                     <div>
@@ -418,7 +422,7 @@ export default function CoordinatorActivity() {
 
           {/* Results Info */}
           {!loading && (
-            <div className="mt-3 text-sm text-slate-600 dark:text-gray-400">
+            <div data-guide="ca-count" className="mt-3 text-sm text-slate-600 dark:text-gray-400">
               Showing {activities.length} of {totalActivities} activities
               {hasActiveFilters && <span className="ml-1 text-sky-600 dark:text-sky-400">(filtered)</span>}
             </div>
@@ -426,7 +430,7 @@ export default function CoordinatorActivity() {
         </div>
 
         {/* Table */}
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 overflow-hidden">
+        <div data-guide="ca-table" className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600"></div>
@@ -443,7 +447,7 @@ export default function CoordinatorActivity() {
             <>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-gray-700" style={{ '--serial-start': (page - 1) * pageSize }}>
-                  <thead className="bg-slate-50 dark:bg-gray-800">
+                  <thead data-guide="ca-columns" className="bg-slate-50 dark:bg-gray-800">
                     <tr>
                       {COLUMNS.map(([key, label]) => (
                         <SortHeader key={key} sortKey={key} sort={sort} onSort={toggleSort} className={HEADER_CLASS}>{label}</SortHeader>

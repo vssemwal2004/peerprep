@@ -6,6 +6,7 @@ import { daysAgoText, formatNumber, formatPercent, shortDate } from "../insightM
 import { LanguageCard } from "./ExtraCards";
 import { Card, CardTitle, Chart, Delta, Empty, Figure, focusRing, ProgressBar, Section } from "./ui";
 import { DIFFICULTY_COLORS } from "../insightCharts";
+import GuideInfo from "../../../guide/platform/GuideInfo";
 
 const compare = (value, previous, unit = "") => (previous === null || previous === undefined ? null : { change: Math.round((value - previous) * 10) / 10, unit });
 
@@ -16,7 +17,7 @@ export function CodingSection({ coding, range, previousLabel }) {
   const levelMax = Math.max(1, ...solvedByLevel.map((item) => item.value));
 
   return (
-    <Section id="coding" icon={Code2} title="Coding practice" subtitle={`Last practice: ${daysAgoText(coding.daysSinceActive)}`}
+    <Section id="coding" data-guide="an-coding" info={<GuideInfo step="an-coding" />} icon={Code2} title="Coding practice" subtitle={`Last practice: ${daysAgoText(coding.daysSinceActive)}`}
       actions={<Link to="/problems" className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10 ${focusRing}`}>Open PrepCoding<ArrowRight className="h-3.5 w-3.5" /></Link>}>
       <Card className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
         <Figure label="Problems accepted" value={formatNumber(coding.solved.total)} sub={`${coding.attempted} tried`}><Delta kpi={compare(coding.solved.total, coding.previous?.solved)} label={previousLabel} /></Figure>
@@ -56,7 +57,7 @@ export function CodingSection({ coding, range, previousLabel }) {
             </div>
           </Card>
           <LanguageCard languages={coding.breakdown?.languages || []} />
-          <Card className="p-4">
+          <Card className="p-4" data-guide="an-retry">
             <CardTitle title="Started, not solved" hint={`${coding.retry.count} question${coding.retry.count === 1 ? "" : "s"} waiting`} right={<RotateCcw className="h-4 w-4 text-slate-400" aria-hidden="true" />} />
             {coding.retry.items.length ? (
               <ul className="-mx-2 space-y-0.5">
@@ -81,7 +82,7 @@ export function CodingSection({ coding, range, previousLabel }) {
 export function QuickPrepSection({ quickprep }) {
   const sheets = quickprep.sheets;
   return (
-    <Section id="quickprep" icon={ListChecks} title="QuickPrep sheets" subtitle={`${quickprep.finished} finished · ${quickprep.started} started · ${quickprep.available} available`}
+    <Section id="quickprep" data-guide="an-quickprep" info={<GuideInfo step="an-quickprep" />} icon={ListChecks} title="QuickPrep sheets" subtitle={`${quickprep.finished} finished · ${quickprep.started} started · ${quickprep.available} available`}
       actions={<Link to="/student/quickprep" className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10 ${focusRing}`}>All sheets<ArrowRight className="h-3.5 w-3.5" /></Link>}>
       <div className="grid gap-3 lg:grid-cols-3">
         <Card className="p-4">

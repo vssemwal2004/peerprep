@@ -9,6 +9,7 @@ import InterviewWorkspaceNav from '../components/interviews/InterviewWorkspaceNa
 import InterviewStudentEditor from '../components/interviews/InterviewStudentEditor';
 import StudentSelector from './assessment/components/StudentSelector';
 import { studentCsvFile, validateInterviewSetup } from '../components/interviews/interviewSetup';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 const inputClass = 'w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-950 dark:text-white';
 const secondaryButton = 'inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800';
@@ -130,7 +131,7 @@ export default function EventManagement() {
   return (
     <InterviewWorkspaceNav>
       <div className="mx-auto max-w-6xl p-4 sm:p-6">
-        <nav aria-label="Interview creation steps" className="mb-5 rounded-xl border border-slate-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900 sm:p-4">
+        <nav aria-label="Interview creation steps" data-guide="ev-steps" className="mb-5 rounded-xl border border-slate-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900 sm:p-4">
           <ol className="grid grid-cols-3 gap-2 sm:gap-4">
             {steps.map((label, index) => <li key={label}><button type="button" disabled={index > step || !canEdit} onClick={() => index < step && goTo(index)} aria-current={step === index ? 'step' : undefined} className="flex w-full items-center gap-2 rounded-lg text-left focus-visible:outline-sky-500 disabled:cursor-default sm:gap-3">
               <span className={'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ' + (index <= step ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-400 dark:bg-gray-800')}>{index < step ? <Check className="h-4 w-4" /> : index + 1}</span>
@@ -146,30 +147,30 @@ export default function EventManagement() {
 
         <fieldset disabled={!canEdit} className="min-w-0 space-y-5">
           {step === 0 && <>
-            <section className={panelClass}>
-              <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-white">Interview type</h3>
+            <section className={panelClass} data-guide="ev-type">
+              <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-white">Interview type <GuideInfo step="ev-type" /></h3>
               <div className="grid gap-3 md:grid-cols-2">
                 <Choice active={!special} disabled={pendingImport} onClick={() => { setSpecial(false); setSpecialCsv(null); setError(''); }} icon={Users} title="Regular interview" description="Open to all eligible students or a selected audience." />
                 <Choice active={special} disabled={pendingImport} onClick={() => { setSpecial(true); setSpecialCsv(null); setError(''); }} icon={CalendarDays} title="Special interview" description="A dedicated round for a verified, selected student roster." />
               </div>
               {pendingImport && <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">Finish or discard the student import in step 2 before changing interview type.</p>}
             </section>
-            <section className={panelClass}>
+            <section className={panelClass} data-guide="ev-details">
               <h3 className="mb-4 text-sm font-semibold text-slate-800 dark:text-white">Details & instructions</h3>
               <div className="space-y-4">
                 <div><label htmlFor="interview-name" className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-gray-300">Interview name <span className="text-rose-500">*</span></label><input id="interview-name" className={inputClass} value={setup.title} onChange={(e) => updateSetup('title', e.target.value)} placeholder="e.g. Semester 5 · Technical mock interview" required /></div>
                 <div><label htmlFor="interview-instructions" className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-gray-300">Student instructions <span className="text-rose-500">*</span></label><textarea id="interview-instructions" className={inputClass} rows={4} value={setup.description} onChange={(e) => updateSetup('description', e.target.value)} placeholder="Describe the focus, preparation requirements, and expectations for this round." required /></div>
               </div>
             </section>
-            <section className={panelClass}>
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold text-slate-800 dark:text-white">Interview window</h3><span className="text-xs text-slate-500">{timezone}</span></div>
+            <section className={panelClass} data-guide="ev-window">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-white">Interview window <GuideInfo step="ev-window" /></h3><span className="text-xs text-slate-500">{timezone}</span></div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div><span className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-gray-300">Starts <span className="text-rose-500">*</span></span><DateTimePicker value={setup.startDate} onChange={(value) => updateSetup('startDate', value)} placeholder="Interview start date and time" /></div>
                 <div><span className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-gray-300">Ends <span className="text-rose-500">*</span></span><DateTimePicker value={setup.endDate} min={setup.startDate} onChange={(value) => updateSetup('endDate', value)} placeholder="Interview end date and time" /></div>
               </div>
               <p className="mt-3 text-xs text-slate-500">This is the round's availability window, not the duration of each student pair's interview.</p>
             </section>
-            <section className={panelClass}>
+            <section className={panelClass} data-guide="ev-template">
               <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-semibold text-slate-800 dark:text-white">Interview template <span className="font-normal text-slate-400">· Optional</span></h3><p className="mt-1 text-xs text-slate-500">Attach shared questions or preparation material. Maximum 10 MB.</p></div><button type="button" onClick={() => templateRef.current?.click()} className={secondaryButton}><Upload className="h-4 w-4" />{setup.template ? 'Replace file' : 'Attach file'}</button></div>
               <input type="file" ref={templateRef} aria-label="Upload interview template" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file?.size > 10 * 1024 * 1024) setError('The template must be 10 MB or smaller.'); else if (file) updateSetup('template', file); e.target.value = ''; }} />
               {setup.template && <div className="mt-4 flex items-center gap-2 rounded-lg bg-slate-50 p-3 text-xs dark:bg-gray-800"><FileText className="h-4 w-4 shrink-0 text-sky-600" /><span className="min-w-0 flex-1 break-all text-slate-700 dark:text-gray-200">{setup.template.name} · {(setup.template.size / 1024).toFixed(0)} KB</span><button type="button" aria-label="Remove template" className={secondaryButton} onClick={() => updateSetup('template', null)}><X className="h-4 w-4" /></button></div>}
@@ -177,8 +178,8 @@ export default function EventManagement() {
           </>}
 
           {visitedStudents && <div hidden={step !== 1} className="space-y-5">
-            <section className={panelClass}>
-              <div className="mb-3 flex items-center justify-between gap-2"><h3 className="text-sm font-semibold text-slate-800 dark:text-white">Who can participate?</h3><span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600 dark:bg-gray-800 dark:text-gray-300">{special ? 'Special' : 'Regular'}</span></div>
+            <section className={panelClass} data-guide="ev-audience">
+              <div className="mb-3 flex items-center justify-between gap-2"><h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-white">Who can participate? <GuideInfo step="ev-audience" /></h3><span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600 dark:bg-gray-800 dark:text-gray-300">{special ? 'Special' : 'Regular'}</span></div>
               {!special ? <div className="grid gap-3 md:grid-cols-2">
                 <Choice active={audience === 'all'} disabled={pendingImport} onClick={() => { setAudience('all'); setError(''); }} icon={Users} title="All eligible students" description={root === '/coordinator' ? 'Use the existing interview eligibility rules for your coordinator scope.' : 'Use the existing eligibility rules for an open interview round.'} />
                 <Choice active={audience === 'selected'} onClick={() => { setAudience('selected'); setError(''); }} icon={Check} title="Selected students" description="Choose a fixed roster using individual entry, CSV, or saved lists." />
@@ -186,13 +187,13 @@ export default function EventManagement() {
               {!requiresSelection && <p className="mt-3 text-xs text-slate-500">No manual roster is required. Any selections made below are kept if you switch back, but will not restrict this round.</p>}
             </section>
             <div hidden={!requiresSelection} className="space-y-4">
-              <div className="grid gap-3 xl:grid-cols-3">
+              <div className="grid gap-3 xl:grid-cols-3" data-guide="ev-entry">
                 {[{ id: 'individual', title: 'Add individual student', description: 'Find a registered email or ID.', icon: Plus }, { id: 'bulk', title: 'Add bulk students', description: 'Upload, review, and correct a CSV.', icon: Upload }, { id: 'existing', title: 'Add existing students', description: 'Browse students, filters, and saved lists.', icon: Users }].map((item) => <Choice key={item.id} active={entryMode === item.id} disabled={pendingImport} onClick={() => { setEntryMode(item.id); setError(''); }} {...item} />)}
               </div>
               {entryMode === 'existing'
                 ? <div className={panelClass}><StudentSelector selected={selected} onChange={changeStudents} onBusyChange={setSelectingStudents} /></div>
                 : <InterviewStudentEditor key={special ? 'special' : 'regular'} mode={entryMode} special={special} selected={selected} onChange={changeStudents} onPendingChange={setPendingImport} />}
-              <div className={panelClass}>
+              <div className={panelClass} data-guide="ev-selected">
                 <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold text-slate-800 dark:text-white">Selected students <span className="ml-1 rounded-full bg-sky-50 px-2 py-0.5 text-xs text-sky-700 dark:bg-sky-950 dark:text-sky-300">{selected.length}</span></h3><button type="button" disabled={!selected.length || pendingImport} className={secondaryButton} onClick={() => changeStudents([])}>Clear selection</button></div>
                 {selected.length ? <ul className="mt-3 max-h-60 divide-y divide-slate-100 overflow-auto dark:divide-gray-800">{selected.map((student) => <li key={student._id} className="flex items-center gap-3 py-2.5"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500 dark:bg-gray-800">{student.name?.slice(0, 1) || 'S'}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-slate-700 dark:text-gray-200">{student.name}</p><p className="break-all text-xs text-slate-500">{student.studentId || student.studentid} · {student.email}</p></div><button type="button" disabled={pendingImport} className={secondaryButton} aria-label={'Remove ' + student.name} onClick={() => changeStudents(selected.filter((entry) => entry._id !== student._id))}><X className="h-3.5 w-3.5" /></button></li>)}</ul> : <p className="mt-3 text-xs text-slate-500">No students selected. Choose an option above to build the roster.</p>}
                 <p className="mt-3 text-xs text-slate-500">Maximum 1,000 selected students. Duplicate selections are not added twice.</p>
@@ -202,7 +203,7 @@ export default function EventManagement() {
           </div>}
 
           {step === 2 && <>
-            <section className={panelClass}>
+            <section className={panelClass} data-guide="ev-review">
               <div className="mb-4 flex items-center justify-between gap-2"><h3 className="text-sm font-semibold text-slate-800 dark:text-white">Interview details</h3><button type="button" onClick={() => goTo(0)} className={secondaryButton}><Pencil className="h-3.5 w-3.5" />Edit setup</button></div>
               <dl className="grid gap-5 sm:grid-cols-2"><SummaryItem label="Name">{setup.title}</SummaryItem><SummaryItem label="Type">{special ? 'Special interview' : 'Regular interview'}</SummaryItem><SummaryItem label={'Starts · ' + timezone}>{formatDate(setup.startDate)}</SummaryItem><SummaryItem label={'Ends · ' + timezone}>{formatDate(setup.endDate)}</SummaryItem><div className="sm:col-span-2"><SummaryItem label="Student instructions"><span className="whitespace-pre-wrap font-normal leading-relaxed">{setup.description}</span></SummaryItem></div><SummaryItem label="Template">{setup.template?.name || 'No attachment'}</SummaryItem></dl>
             </section>
@@ -211,12 +212,12 @@ export default function EventManagement() {
               <div className="flex items-center gap-3"><span className="rounded-xl bg-sky-50 p-3 text-sky-600 dark:bg-sky-950"><Users className="h-5 w-5" /></span><div><p className="text-sm font-semibold text-slate-800 dark:text-white">{audienceLabel}</p><p className="mt-1 text-xs text-slate-500">{requiresSelection ? 'Only students in this roster can participate.' : 'Student access follows the existing round eligibility rules.'}</p></div></div>
               {requiresSelection && <details className="mt-4 rounded-lg border border-slate-200 dark:border-gray-700"><summary className="cursor-pointer p-3 text-xs font-semibold text-slate-600 dark:text-gray-300">View selected students ({selected.length})</summary><ul className="max-h-64 space-y-2 overflow-auto border-t border-slate-100 p-3 text-xs text-slate-500 dark:border-gray-800">{selected.map((student) => <li key={student._id} className="break-words">{student.name} · {student.studentId || student.studentid} · {student.email}</li>)}</ul></details>}
             </section>
-            <section className="rounded-xl border border-sky-100 bg-sky-50/60 p-4 dark:border-sky-900 dark:bg-sky-950/20"><h3 className="text-sm font-semibold text-slate-800 dark:text-white">After you create</h3><ul className="mt-2 list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-slate-600 dark:text-gray-400"><li>The interview is published and invitation emails are queued automatically.</li><li>{special ? 'The verified roster is enrolled using the existing Special interview pairing workflow.' : 'Students join through the existing Regular interview workflow.'}</li><li>Manage participants, pairs, scheduling, and feedback from interview details.</li></ul></section>
+            <section data-guide="ev-after" className="rounded-xl border border-sky-100 bg-sky-50/60 p-4 dark:border-sky-900 dark:bg-sky-950/20"><h3 className="text-sm font-semibold text-slate-800 dark:text-white">After you create</h3><ul className="mt-2 list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-slate-600 dark:text-gray-400"><li>The interview is published and invitation emails are queued automatically.</li><li>{special ? 'The verified roster is enrolled using the existing Special interview pairing workflow.' : 'Students join through the existing Regular interview workflow.'}</li><li>Manage participants, pairs, scheduling, and feedback from interview details.</li></ul></section>
           </>}
         </fieldset>
 
         {error && <div role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300">{error}</div>}
-        <footer className="sticky bottom-0 z-20 -mx-4 mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-950 sm:-mx-6 sm:px-6">
+        <footer data-guide="ev-footer" className="sticky bottom-0 z-20 -mx-4 mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-950 sm:-mx-6 sm:px-6">
           <span className="text-xs text-slate-500">{step === 0 ? 'Nothing is published until the final step.' : audienceLabel}</span>
           <div className="ml-auto flex items-center gap-2">{step > 0 && <button type="button" disabled={!canEdit} onClick={() => goTo(step - 1)} className={secondaryButton}><ArrowLeft className="h-4 w-4" />Back</button>}{step < 2 ? <button type="button" disabled={!canEdit} onClick={next} className={primaryButton}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{busy ? 'Checking students…' : step === 0 ? 'Continue to students' : 'Review interview'}{!busy && <ArrowRight className="h-4 w-4" />}</button> : <button type="button" disabled={!canEdit} onClick={submit} className={primaryButton}>{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{submitting ? 'Creating interview…' : 'Create interview'}</button>}</div>
         </footer>

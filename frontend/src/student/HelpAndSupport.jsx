@@ -5,6 +5,8 @@ import {
   User, Lock, Settings, BarChart, HelpCircle, Shield, LogIn, Home,
   FileText, Clock, Star, Award, Target, TrendingUp
 } from 'lucide-react';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 export default function HelpAndSupport() {
   const navigate = useNavigate();
@@ -15,6 +17,7 @@ export default function HelpAndSupport() {
         {/* Back Button */}
         <button
           onClick={() => navigate(-1)}
+          data-guide="help-back"
           className="flex items-center space-x-2 text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 mb-6 transition-colors duration-200"
         >
           <ArrowLeft size={20} />
@@ -26,7 +29,7 @@ export default function HelpAndSupport() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-sky-100 dark:bg-sky-900 rounded-full mb-4">
             <HelpCircle size={32} className="text-sky-600 dark:text-sky-400" />
           </div>
-          <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100 mb-2">Help & Support</h1>
+          <h1 className="flex items-center justify-center gap-2 text-4xl font-bold text-gray-800 dark:text-gray-100 mb-2">Help & Support<PageGuideButton /></h1>
           <p className="text-gray-600 dark:text-gray-400">Your complete guide to using the PeerPrep platform</p>
         </div>
 
@@ -34,7 +37,7 @@ export default function HelpAndSupport() {
         <div className="space-y-6">
           
           {/* Platform Overview */}
-          <section className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+          <section data-guide="help-overview" className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-sky-100 dark:bg-sky-900 rounded-lg">
                 <Home size={24} className="text-sky-600 dark:text-sky-400" />
@@ -56,7 +59,7 @@ export default function HelpAndSupport() {
           </section>
 
           {/* Getting Started */}
-          <section className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+          <section data-guide="help-start" className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-emerald-100 dark:bg-emerald-900 rounded-lg">
                 <LogIn size={24} className="text-emerald-600 dark:text-emerald-400" />
@@ -100,7 +103,7 @@ export default function HelpAndSupport() {
           </section>
 
           {/* Learning Workflow */}
-          <section className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+          <section data-guide="help-learning" className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
                 <BookOpen size={24} className="text-purple-600 dark:text-purple-400" />
@@ -180,7 +183,7 @@ export default function HelpAndSupport() {
           </section>
 
           {/* Interview Workflow */}
-          <section className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+          <section data-guide="help-interviews" className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-indigo-100 dark:bg-indigo-900 rounded-lg">
                 <Calendar size={24} className="text-indigo-600 dark:text-indigo-400" />
@@ -262,7 +265,7 @@ export default function HelpAndSupport() {
           </section>
 
           {/* Button & Feature Guide */}
-          <section className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+          <section data-guide="help-features" className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-pink-100 dark:bg-pink-900 rounded-lg">
                 <Target size={24} className="text-pink-600 dark:text-pink-400" />
@@ -334,12 +337,12 @@ export default function HelpAndSupport() {
           </section>
 
           {/* Data & Privacy */}
-          <section className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+          <section data-guide="help-privacy" className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-red-100 dark:bg-red-900 rounded-lg">
                 <Shield size={24} className="text-red-600 dark:text-red-400" />
               </div>
-              <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-100">Your Data & Privacy</h2>
+              <h2 className="flex items-center gap-2 text-2xl font-semibold text-gray-800 dark:text-gray-100">Your Data & Privacy<GuideInfo step="help-privacy" /></h2>
             </div>
 
             <div className="prose dark:prose-invert max-w-none">
@@ -377,12 +380,12 @@ export default function HelpAndSupport() {
           </section>
 
           {/* Support & Contact */}
-          <section className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+          <section data-guide="help-contact" className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
                 <HelpCircle size={24} className="text-green-600 dark:text-green-400" />
               </div>
-              <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-100">Need More Help?</h2>
+              <h2 className="flex items-center gap-2 text-2xl font-semibold text-gray-800 dark:text-gray-100">Need More Help?<GuideInfo step="help-contact" /></h2>
             </div>
 
             <div className="space-y-4">
@@ -423,7 +426,7 @@ export default function HelpAndSupport() {
           </section>
 
           {/* Success Tips */}
-          <section className="bg-gradient-to-r from-sky-50 to-blue-50 dark:from-sky-900/20 dark:to-blue-900/20 rounded-xl shadow-lg p-6 border-2 border-sky-200 dark:border-sky-800">
+          <section data-guide="help-tips" className="bg-gradient-to-r from-sky-50 to-blue-50 dark:from-sky-900/20 dark:to-blue-900/20 rounded-xl shadow-lg p-6 border-2 border-sky-200 dark:border-sky-800">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-sky-100 dark:bg-sky-900 rounded-lg">
                 <Award size={24} className="text-sky-600 dark:text-sky-400" />

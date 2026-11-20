@@ -4,6 +4,8 @@ import { Activity, AlertTriangle, BarChart3, BriefcaseBusiness, CalendarDays, Ch
 import { api } from '../utils/api';
 import { defaultCoordinatorPermissions } from './coordinatorPermissions';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 function formatDate(value) {
   if (!value) return 'Never';
@@ -235,17 +237,17 @@ export default function CoordinatorOverview() {
     <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
       <div className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
+          <div data-guide="cov-title">
             <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200">
               <BarChart3 className="h-3.5 w-3.5" />
               Coordinator Control
             </div>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">Coordinator Overview</h1>
+            <h1 className="mt-3 flex items-center gap-2 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">Coordinator Overview <PageGuideButton /></h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
               A clean operational view of coordinator readiness, workload, coding access, and access actions.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2" data-guide="cov-actions">
             <Link to="/admin/coordinators" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200">
               <UserPlus className="h-4 w-4" />
               Add Coordinator
@@ -263,16 +265,16 @@ export default function CoordinatorOverview() {
           </div>
         ) : (
           <>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-guide="cov-metrics">
               <Metric label="Total Coordinators" value={coordinators.length} helper="All coordinator accounts" Icon={Users} />
               <Metric label="Active" value={model.active.length} helper={`${model.disabled.length} disabled`} Icon={ShieldCheck} />
               <Metric label="Coding Access" value={model.codingEnabled.length} helper="Compiler module enabled" Icon={Code2} />
               <Metric label="Recently Added" value={model.recentlyAdded.length} helper="Latest coordinator accounts" Icon={CalendarDays} />
             </div>
 
-            <section className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
+            <section data-guide="cov-ops" className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
               <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
-                <h2 className="text-base font-bold text-slate-950 dark:text-white">Coordinator Operations Table</h2>
+                <h2 className="flex items-center gap-1.5 text-base font-bold text-slate-950 dark:text-white">Coordinator Operations Table <GuideInfo step="cov-ops" /></h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Individual coordinator status, load, access count, coding access, and last activity.</p>
               </div>
               <div className="overflow-x-auto">
@@ -313,11 +315,11 @@ export default function CoordinatorOverview() {
               <TablePager {...operationsTable.pager} noun="coordinators" />
             </section>
 
-            <section className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
+            <section data-guide="cov-readiness" className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
               <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h2 className="text-base font-bold text-slate-950 dark:text-white">Coordinator Readiness & Workload</h2>
+                    <h2 className="flex items-center gap-1.5 text-base font-bold text-slate-950 dark:text-white">Coordinator Readiness & Workload <GuideInfo step="cov-readiness" /></h2>
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Smart action queue based on account status, permissions, assigned students, events, coding access, and last activity.</p>
                   </div>
                   <Link to="/admin/coordinator-access" className="inline-flex w-fit items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:border-sky-200 hover:text-sky-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200">
@@ -327,7 +329,7 @@ export default function CoordinatorOverview() {
                 </div>
               </div>
 
-              <div className="grid gap-3 border-b border-slate-100 p-4 dark:border-white/10 md:grid-cols-2 xl:grid-cols-4">
+              <div data-guide="cov-signals" className="grid gap-3 border-b border-slate-100 p-4 dark:border-white/10 md:grid-cols-2 xl:grid-cols-4">
                 {[
                   { label: 'Need Review', value: model.needsReview.length, helper: 'Disabled, inactive, or limited access', Icon: AlertTriangle, tone: 'amber' },
                   { label: 'Ready to Operate', value: model.ready.length, helper: 'Healthy access and active workload', Icon: CheckCircle2, tone: 'emerald' },
@@ -358,7 +360,7 @@ export default function CoordinatorOverview() {
                 })}
               </div>
 
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto" data-guide="cov-queue">
                 <table className="min-w-[1040px] w-full divide-y divide-slate-100 dark:divide-white/10">
                   <SortableHead columns={READINESS_COLUMNS} table={readinessTable} trailing="Manage" />
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">

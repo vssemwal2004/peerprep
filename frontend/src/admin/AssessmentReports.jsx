@@ -20,6 +20,8 @@ import ReportOverview from './reports/ReportOverview';
 import RosterFilterSheet from './reports/RosterFilterSheet';
 import LiveRefreshControl from './reports/LiveRefreshControl';
 import PerformanceReportMenu from '../components/PerformanceReportMenu';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 import useLiveAssessmentRoster, { DEFAULT_REFRESH_INTERVAL_MS } from './reports/useLiveAssessmentRoster';
 import {
   ACADEMIC_DIMENSIONS, COLUMN_FILTERS, DEFAULT_ROSTER_FILTERS, ROSTER_EVALUATION_OPTIONS,
@@ -1032,7 +1034,7 @@ export default function AssessmentReports() {
   }, [openViolationReport, roster.rows]);
 
   const releaseControl = (
-    <div className="flex flex-col items-start gap-1.5 lg:items-end">
+    <div data-guide="ar-release" className="flex flex-col items-start gap-1.5 lg:items-end">
       <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-gray-500">Student results</span>
       {!releaseSettings ? (
         <div className="h-8 w-40 animate-pulse rounded-lg bg-slate-100 dark:bg-gray-800" />
@@ -1142,19 +1144,19 @@ export default function AssessmentReports() {
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <div className="flex min-w-0 items-center gap-2.5 py-2">
+          <div data-guide="ar-title" className="flex min-w-0 items-center gap-2.5 py-2">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white shadow-sm shadow-sky-200 dark:shadow-none">
               <BarChart3 className="h-4 w-4" />
             </span>
             <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold leading-tight text-slate-950 dark:text-white">Assessment Reports</h1>
+              <h1 className="flex min-w-0 items-center gap-1.5 text-sm font-semibold leading-tight text-slate-950 dark:text-white"><span className="truncate">Assessment Reports</span><PageGuideButton size="sm" /></h1>
               <p className="max-w-[16rem] truncate text-[11px] leading-tight text-slate-500 dark:text-gray-400" title={selectedAssessment?.title}>
                 {selectedAssessment ? `${selectedAssessment.title} · ${roster.rows.length} candidates` : 'Choose an assessment'}
               </p>
             </div>
           </div>
 
-          <nav aria-label="Report sections" className="order-last -mb-px flex w-full gap-0.5 overflow-x-auto self-stretch sm:order-none sm:ml-2 sm:w-auto">
+          <nav data-guide="ar-tabs" aria-label="Report sections" className="order-last -mb-px flex w-full gap-0.5 overflow-x-auto self-stretch sm:order-none sm:ml-2 sm:w-auto">
             {tabsConfig.map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -1178,7 +1180,7 @@ export default function AssessmentReports() {
             })}
           </nav>
 
-          <div className="ml-auto flex flex-wrap items-center gap-2 py-2">
+          <div data-guide="ar-tools" className="ml-auto flex flex-wrap items-center gap-2 py-2">
             <div className="relative lg:hidden">
               <select
                 value={selectedAssessmentId || ''}
@@ -1226,14 +1228,14 @@ export default function AssessmentReports() {
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[56px_minmax(0,1fr)]">
-        <aside className="relative hidden min-h-0 lg:block" aria-label="Assessments">
+        <aside data-guide="ar-rail" className="relative hidden min-h-0 lg:block" aria-label="Assessments">
           {assessmentRail}
         </aside>
 
         <main className={`min-h-0 px-3 py-3 sm:px-4 [&>*]:mx-auto [&>*]:w-full [&>*]:max-w-[1560px] ${activeTab === 'candidates' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`}>
         {activeTab === 'overview' && !selectedAssessment && (
           <div className="flex min-h-[500px] items-center justify-center">
-            <div className="max-w-md px-6 text-center">
+            <div data-guide="ar-pick" className="max-w-md px-6 text-center">
               <div className="relative mx-auto flex h-36 w-36 items-center justify-center" aria-hidden="true">
                 <div className="absolute inset-3 rounded-full bg-sky-200/70 blur-2xl dark:bg-sky-800/25" />
                 <div className="relative flex h-28 w-28 items-center justify-center rounded-[28px] border border-sky-100 bg-white/90 p-2 shadow-xl shadow-sky-200/60 dark:border-sky-900/60 dark:bg-gray-900 dark:shadow-black/20">
@@ -1284,7 +1286,7 @@ export default function AssessmentReports() {
 
         {/* ── Compact integrity summary ── */}
         {activeTab === 'violations' && (
-          <section className="mb-3 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <section data-guide="ar-integrity" className="mb-3 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
             <div className="grid divide-y divide-slate-200 lg:grid-cols-[220px_minmax(0,1fr)_260px] lg:divide-x lg:divide-y-0 dark:divide-gray-700">
               <div className="flex items-center gap-3 px-4 py-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-900/25 dark:text-sky-300">
@@ -1351,13 +1353,14 @@ export default function AssessmentReports() {
 
           {/* ── Data Table ── */}
           <div className={activeTab === 'candidates' ? 'min-h-0 flex-1' : 'space-y-4'}>
-            <div className={`rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900 ${activeTab === 'candidates' ? 'flex h-full min-h-0 flex-col overflow-hidden' : ''}`}>
+            <div data-guide="ar-table" className={`rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900 ${activeTab === 'candidates' ? 'flex h-full min-h-0 flex-col overflow-hidden' : ''}`}>
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-gray-700">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                   <GraduationCap className="h-4 w-4 text-sky-600" />
                   <span className="text-sm font-bold text-slate-900 dark:text-white">
                     {activeTab === 'violations' ? 'Flagged Sessions' : 'Candidate Performance'}
                   </span>
+                  <GuideInfo step="ar-table" />
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-600 dark:bg-gray-800 dark:text-gray-300">{visibleRows.length}</span>
                   {activeTab !== 'overview' && (
                     <div className="relative w-full sm:ml-2 sm:w-64 sm:max-w-[40vw]">
@@ -1373,7 +1376,7 @@ export default function AssessmentReports() {
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div data-guide="ar-table-tools" className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setShowFilterPanel(true)}
@@ -1411,7 +1414,7 @@ export default function AssessmentReports() {
                 </div>
               </div>
 
-              <div role="tablist" aria-label="Candidate views" className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200 px-3 dark:border-gray-800">
+              <div data-guide="ar-views" role="tablist" aria-label="Candidate views" className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200 px-3 dark:border-gray-800">
                 {QUICK_VIEWS.map((view) => {
                   const active = quickView === view.key;
                   return (

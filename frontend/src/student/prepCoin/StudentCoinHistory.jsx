@@ -5,6 +5,8 @@ import PrepCoinIcon from '../../components/prepCoin/PrepCoinIcon';
 import { api } from '../../utils/api';
 import { PREP_COIN_CHANGED } from './prepCoinEvents';
 import { COINS_EARNED } from '../rewards/rewardEvents';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const card = 'rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.05)] dark:border-zinc-800 dark:bg-[#242424]';
 const FILTERS = [
@@ -74,17 +76,17 @@ export default function StudentCoinHistory() {
     <main className="mx-auto max-w-4xl space-y-5 px-4 py-6 sm:px-6">
       {error && <p role="alert" className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">{error}</p>}
 
-      <section aria-label="Balance" className="relative overflow-hidden rounded-2xl border border-amber-200/70 bg-gradient-to-br from-amber-50 via-white to-sky-50 p-6 shadow-[0_12px_40px_-24px_rgba(180,83,9,0.45)] dark:border-amber-500/20 dark:from-amber-500/10 dark:via-[#242424] dark:to-sky-500/5 sm:p-8">
+      <section aria-label="Balance" data-guide="wl-balance" className="relative overflow-hidden rounded-2xl border border-amber-200/70 bg-gradient-to-br from-amber-50 via-white to-sky-50 p-6 shadow-[0_12px_40px_-24px_rgba(180,83,9,0.45)] dark:border-amber-500/20 dark:from-amber-500/10 dark:via-[#242424] dark:to-sky-500/5 sm:p-8">
         <span aria-hidden="true" className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-amber-300/30 blur-3xl" />
         <span aria-hidden="true" className="pointer-events-none absolute -bottom-20 left-1/3 h-48 w-48 rounded-full bg-sky-300/20 blur-3xl" />
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center">
           <PrepCoinIcon size={96} shine label="Prep Coin" />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300">Prep Coin balance</p>
+            <h1 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300">Prep Coin balance<PageGuideButton /></h1>
             <p className="mt-1 text-5xl font-bold tracking-tight tabular-nums text-amber-950 dark:text-amber-50">{wallet ? Number(wallet.balance).toLocaleString() : '—'}</p>
             <p className="mt-2 text-sm text-slate-600 dark:text-zinc-400">Credits for PeerPrep features, issued by your coordinator. They never change your Prep Score or rank.</p>
           </div>
-          <dl className="grid shrink-0 grid-cols-2 gap-2 sm:w-56 sm:grid-cols-1">
+          <dl data-guide="wl-month" className="grid shrink-0 grid-cols-2 gap-2 sm:w-56 sm:grid-cols-1">
             <div className="rounded-xl bg-white/70 px-3.5 py-2.5 ring-1 ring-amber-200/60 backdrop-blur dark:bg-white/5 dark:ring-white/10">
               <dt className="text-[11px] text-slate-500 dark:text-zinc-400">Received this month</dt>
               <dd className="text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">+{view.received.toLocaleString()}</dd>
@@ -97,8 +99,8 @@ export default function StudentCoinHistory() {
         </div>
       </section>
 
-      {pricing.length > 0 && <section className={card} aria-labelledby="coin-uses-title">
-        <h2 id="coin-uses-title" className="text-base font-semibold">What Prep Coins unlock</h2>
+      {pricing.length > 0 && <section className={card} aria-labelledby="coin-uses-title" data-guide="wl-pricing">
+        <h2 id="coin-uses-title" className="flex items-center gap-1.5 text-base font-semibold">What Prep Coins unlock<GuideInfo step="wl-pricing" /></h2>
         <ul className="mt-3 grid gap-3 sm:grid-cols-2">
           {pricing.map((feature) => {
             const freeShare = feature.freePerMonth ? Math.round((feature.freeLeft / feature.freePerMonth) * 100) : 0;
@@ -118,10 +120,10 @@ export default function StudentCoinHistory() {
         </ul>
       </section>}
 
-      <section className={card} aria-labelledby="coin-history-title">
+      <section className={card} aria-labelledby="coin-history-title" data-guide="wl-history">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="coin-history-title" className="text-base font-semibold">History</h2>
-          <div role="tablist" aria-label="Filter history" className="inline-flex rounded-xl bg-slate-100 p-0.5 dark:bg-white/5">
+          <h2 id="coin-history-title" className="flex items-center gap-1.5 text-base font-semibold">History<GuideInfo step="wl-history" /></h2>
+          <div role="tablist" aria-label="Filter history" data-guide="wl-filter" className="inline-flex rounded-xl bg-slate-100 p-0.5 dark:bg-white/5">
             {FILTERS.map((item) => <button key={item.value} type="button" role="tab" aria-selected={filter === item.value} onClick={() => setFilter(item.value)}
               className={`rounded-[10px] px-3 py-1 text-xs font-semibold transition ${filter === item.value ? 'bg-white text-slate-900 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:text-zinc-400'}`}>{item.label}</button>)}
           </div>

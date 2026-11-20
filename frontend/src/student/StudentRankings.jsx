@@ -5,6 +5,7 @@ import UniversityRankCard from './profile/UniversityRankCard';
 import GlobalRankCard from './profile/GlobalRankCard';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 export default function StudentRankings() {
   const { user } = useAuth();
@@ -22,17 +23,17 @@ export default function StudentRankings() {
   return <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#1a1a1a] dark:text-zinc-100">
     <StudentDashboardHeader />
     <main className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:px-6">
-      <header className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 to-blue-800 p-6 text-white sm:p-8">
+      <header data-guide="rk-hero" className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 to-blue-800 p-6 text-white sm:p-8">
         <Globe2 className="absolute -right-8 -top-8 h-52 w-52 opacity-10" aria-hidden="true" />
         <p className="text-xs font-semibold uppercase tracking-widest text-sky-100">Your progress, in perspective</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Your rankings</h1>
+        <h1 className="mt-2 flex items-center gap-2 text-3xl font-semibold tracking-tight">Your rankings<PageGuideButton /></h1>
         <p className="mt-2 max-w-md text-sm text-sky-100">Your Prep Score and your position at your university and across connected universities.</p>
       </header>
       <div className="grid items-start gap-5 md:grid-cols-2">
-        <div><UniversityRankCard ranking={current.data} loading={current.loading} />{current.error && <button type="button" onClick={() => setRetry((value) => value + 1)} className="mt-2 rounded text-sm font-semibold text-sky-600 focus-visible:outline focus-visible:outline-2">Retry university ranking</button>}</div>
-        <GlobalRankCard showLink={false} scoreRevision={current.data?.score} />
+        <div data-guide="rk-university"><UniversityRankCard ranking={current.data} loading={current.loading} />{current.error && <button type="button" onClick={() => setRetry((value) => value + 1)} className="mt-2 rounded text-sm font-semibold text-sky-600 focus-visible:outline focus-visible:outline-2">Retry university ranking</button>}</div>
+        <div data-guide="rk-global"><GlobalRankCard showLink={false} scoreRevision={current.data?.score} /></div>
       </div>
-      <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-500 dark:text-zinc-400"><ShieldCheck className="h-4 w-4 shrink-0" aria-hidden="true" />Private by design: no student names, contact details or profiles are shared in global rankings. Equal scores share a rank. Global results reflect the latest synced Prep Scores; universities with stale or disabled access are excluded.</p>
+      <p data-guide="rk-privacy" className="flex items-start gap-2 text-xs leading-relaxed text-slate-500 dark:text-zinc-400"><ShieldCheck className="h-4 w-4 shrink-0" aria-hidden="true" />Private by design: no student names, contact details or profiles are shared in global rankings. Equal scores share a rank. Global results reflect the latest synced Prep Scores; universities with stale or disabled access are excluded.</p>
     </main>
   </div>;
 }

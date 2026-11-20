@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
 
 const plannedCapabilities = [
   { Icon: Mic2, title: 'Voice-first conversation', detail: 'Natural turn-taking, pause handling, interruption, and reliable voice fallback.' },
@@ -37,7 +38,7 @@ export default function AIInterviewsPlaceholder() {
                   <Sparkles className="h-3.5 w-3.5" />
                   Planned capability
                 </div>
-                <h1 className="text-3xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-4xl">AI Interviews</h1>
+                <h1 data-guide="cai-title" className="flex items-center gap-2 text-3xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-4xl">AI Interviews<PageGuideButton /></h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-gray-300 sm:text-base">
                   Text AI interviews are available through the admin and student workspaces. Coordinator management and advanced voice features are planned for a later release.
                 </p>
@@ -48,7 +49,7 @@ export default function AIInterviewsPlaceholder() {
             </div>
           </div>
 
-          <div className="grid gap-5 p-6 sm:grid-cols-2 sm:p-9">
+          <div data-guide="cai-planned" className="grid gap-5 p-6 sm:grid-cols-2 sm:p-9">
             {plannedCapabilities.map(({ Icon, title, detail }) => (
               <article key={title} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 dark:border-gray-800 dark:bg-gray-950/40">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-sky-700 shadow-sm ring-1 ring-slate-200 dark:bg-gray-900 dark:text-sky-300 dark:ring-gray-800">
@@ -60,7 +61,7 @@ export default function AIInterviewsPlaceholder() {
             ))}
           </div>
 
-          <div className="mx-6 mb-6 grid gap-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-900/60 dark:bg-amber-950/20 sm:mx-9 sm:mb-9 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div data-guide="cai-notice" className="mx-6 mb-6 grid gap-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-900/60 dark:bg-amber-950/20 sm:mx-9 sm:mb-9 lg:grid-cols-[1fr_auto] lg:items-center">
             <div className="flex gap-3">
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" />
               <div>
@@ -70,13 +71,13 @@ export default function AIInterviewsPlaceholder() {
                 </p>
               </div>
             </div>
-            <Link to={oneToOnePath} className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-gray-200">
+            <Link data-guide="cai-open" to={oneToOnePath} className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-gray-200">
               Open one-to-one interviews
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
 
-          <div className="grid gap-3 border-t border-slate-200 bg-slate-50 px-6 py-5 text-xs text-slate-500 dark:border-gray-800 dark:bg-gray-950/50 dark:text-gray-400 sm:grid-cols-3 sm:px-9">
+          <div data-guide="cai-roadmap" className="grid gap-3 border-t border-slate-200 bg-slate-50 px-6 py-5 text-xs text-slate-500 dark:border-gray-800 dark:bg-gray-950/50 dark:text-gray-400 sm:grid-cols-3 sm:px-9">
             <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /> Voice-first rollout</span>
             <span className="flex items-center gap-2"><Gauge className="h-4 w-4 text-sky-500" /> Cost and capacity controls</span>
             <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-violet-500" /> Consent and human review</span>

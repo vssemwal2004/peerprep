@@ -17,6 +17,7 @@ import ScheduledRow from "./ScheduledRow";
 import { btn, focus, listSurface } from "./styles";
 import { Banner, EmptyState, RowSkeleton, SectionHeader } from "./ui";
 import useNow from "./useNow";
+import GuideInfo from "../../../guide/platform/GuideInfo";
 
 /**
  * The tabbed body of the AI Interviews page: Upcoming (scheduled + "Practice anytime"), Ongoing and
@@ -212,7 +213,7 @@ export default function InterviewBoard({
   return <div className="space-y-5">
     <div>
       {/* On narrow screens the tabs scroll sideways instead of clipping their count badges. */}
-      <div ref={tabListRef} role="tablist" aria-label="Interviews" onKeyDown={onTabKey}
+      <div ref={tabListRef} role="tablist" aria-label="Interviews" onKeyDown={onTabKey} data-guide="ai-tabs"
         className="relative flex max-w-full gap-0.5 overflow-x-auto rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 [scrollbar-width:none] dark:border-white/[0.06] dark:bg-white/[0.04] sm:inline-flex sm:w-auto sm:gap-1 [&::-webkit-scrollbar]:hidden">
         {TABS.map(({ id, label }) => {
           const active = tab === id;
@@ -249,15 +250,15 @@ export default function InterviewBoard({
               onOpen={openPractice} onReport={handlers.open} />)}
           </ul>} />
           : tab === "ongoing" ? (model.ongoing.length
-            ? <div className="space-y-3">
-              <SectionHeader id="anvi-ongoing-title" title="In progress" count={model.ongoing.length} />
+            ? <div className="space-y-3" data-guide="ai-ongoing">
+              <SectionHeader id="anvi-ongoing-title" title={<>In progress<GuideInfo step="ai-ongoing" /></>} count={model.ongoing.length} />
               <ul className={listSurface} aria-labelledby="anvi-ongoing-title">{model.ongoing.map(row)}</ul>
             </div>
             : <EmptyState icon={Radio} title="Nothing live right now" body="Interviews move here when their join window opens, and stay while you are answering one."
               action={<button type="button" className={btn.secondary} onClick={() => selectTab("upcoming")}><CalendarClock className="h-4 w-4" aria-hidden="true" />See upcoming</button>} />)
             : model.completed.length
-              ? <div className="space-y-3">
-                <SectionHeader id="anvi-completed-title" title="Interview history" count={model.completed.length} />
+              ? <div className="space-y-3" data-guide="ai-completed">
+                <SectionHeader id="anvi-completed-title" title={<>Interview history<GuideInfo step="ai-completed" /></>} count={model.completed.length} />
                 <ul className={listSurface} aria-labelledby="anvi-completed-title">{model.completed.map(row)}</ul>
               </div>
               : <EmptyState icon={ClipboardCheck} title="No completed interviews yet" body="Once you finish an interview, it is listed here with its report."
@@ -276,15 +277,15 @@ function UpcomingPanel({ model, scheduledRow, practicePanel, assignmentsLoading 
     return <EmptyState icon={CalendarClock} title="No interviews available" body="New interviews will appear here when they are assigned or published." />;
   }
   return <>
-    {scheduled.length > 0 ? <div className="space-y-3">
-      <SectionHeader id="anvi-scheduled-title" title="Scheduled interviews" count={scheduled.length} />
+    {scheduled.length > 0 ? <div className="space-y-3" data-guide="ai-scheduled">
+      <SectionHeader id="anvi-scheduled-title" title={<>Scheduled interviews<GuideInfo step="ai-scheduled" /></>} count={scheduled.length} />
       <ul className={listSurface} aria-labelledby="anvi-scheduled-title">{scheduled.map(scheduledRow)}</ul>
     </div> : assignmentsLoading ? <div className="space-y-3">
       <SectionHeader id="anvi-scheduled-title" title="Scheduled interviews" />
       <RowSkeleton rows={1} />
     </div> : null}
-    {practice.length > 0 && <div className="space-y-3">
-      <SectionHeader id="anvi-practice-title" title="Practice interviews" count={practice.length} />
+    {practice.length > 0 && <div className="space-y-3" data-guide="ai-practice">
+      <SectionHeader id="anvi-practice-title" title={<>Practice interviews<GuideInfo step="ai-practice" /></>} count={practice.length} />
       {practicePanel}
     </div>}
     <BlockedPracticeNote entries={blocked} />

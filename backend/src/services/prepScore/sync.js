@@ -32,8 +32,9 @@ const REBUILD_BUDGET_MS = 5_000;
 
 const PERMISSION_KEYS = ['questions', 'learning', 'assessments', 'interviews', 'events'];
 // Bumped when the engine's arithmetic changes without a policy change: a different key makes every
-// university rebuild its stored scores once (coding-only-1: Prep Score = Prep Coding score, 2026-11).
-const ENGINE_KEY = 'coding-only-1';
+// university rebuild its stored scores once. coding-only-1 (2026-11-19) made the Prep Score the
+// Prep Coding score; overall-2 (2026-11-20) restored the weighted overall average of modules.
+const ENGINE_KEY = 'overall-2';
 const STUDENT_FIELDS = '_id role semester college isActive accessScope';
 // [model, student field, extra filter]. Runs and live-test heartbeats never change a score.
 const ACTIVITY_SOURCES = [

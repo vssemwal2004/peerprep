@@ -3,6 +3,7 @@ import { CalendarDays, Flame, Trophy } from "lucide-react";
 import { activityCalendarOption, weekdayOption } from "../insightCharts";
 import { daysAgoText, formatNumber } from "../insightModel";
 import { Card, CardTitle, Chart, Figure, LatestFirstScroll, Section } from "./ui";
+import GuideInfo from "../../../guide/platform/GuideInfo";
 
 const FEATURE_LABELS = [["coding", "Practice", "#0284c7"], ["learning", "Lessons", "#14b8a6"], ["tests", "Tests", "#f59e0b"], ["interviews", "Interviews", "#8b5cf6"]];
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -16,7 +17,7 @@ export default function ActivitySection({ activity, access }) {
   const all = Math.max(1, totals.reduce((sum, item) => sum + item.value, 0));
 
   return (
-    <Section id="activity" icon={CalendarDays} title="Activity" subtitle="Your last 12 months, every feature together">
+    <Section id="activity" data-guide="an-activity" info={<GuideInfo step="an-activity" />} icon={CalendarDays} title="Activity" subtitle="Your last 12 months, every feature together">
       <div className="grid gap-3 lg:grid-cols-4">
         <Card className="grid grid-cols-2 gap-4 p-4 lg:col-span-1 lg:grid-cols-1">
           <Figure label="Current streak" value={<span className="inline-flex items-center gap-1.5">{formatNumber(activity.streak.current)}<Flame className={`h-5 w-5 ${activity.streak.current ? "text-orange-500" : "text-slate-300"}`} aria-hidden="true" /></span>} sub={activity.streak.current === 1 ? "day" : "days"} />

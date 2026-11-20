@@ -118,6 +118,7 @@ test('the stored Prep Score leaves out over-limit solves but keeps older solves'
   const ranking = await getStudentUniversityRanking(await User.findById(studentId).lean());
   // 1 old + 3 counted = 4 Easy solves; the 4th solve of the day earns nothing.
   const expected = calculateModule({ Easy: 4 }, DEFAULT_PREP_SCORE_CONFIG.modules.coding.points, DEFAULT_PREP_SCORE_CONFIG.formula).score;
-  assert.equal(ranking.score, expected);
+  assert.equal(ranking.prepScore.features.coding.score, expected);
   assert.equal(ranking.prepScore.features.coding.counts.Easy, 4);
+  assert.equal(ranking.score, ranking.prepScore.total, 'the overall Prep Score averages the modules, coding included');
 });

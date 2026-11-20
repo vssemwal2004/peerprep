@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Gauge, Medal } from 'lucide-react';
 import { formatScore } from '../prepScore/formatScore';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 function finite(value) {
   const number = Number(value);
@@ -34,7 +35,7 @@ export default function PrepScoreSummary({ ranking, loading = false, className =
             <Gauge className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h2 id="profile-prep-score-title" className="text-[12.5px] font-medium text-sky-100">Your Prep Score</h2>
+            <h2 id="profile-prep-score-title" className="flex items-center gap-1.5 text-[12.5px] font-medium text-sky-100">Your Prep Score<GuideInfo step="pf-score" /></h2>
             <p className="mt-1 text-[34px] font-bold leading-none tracking-[-0.04em] tabular-nums" aria-label={`Prep Score ${loading || !ranking ? 'loading' : formatScore(score)}`}>
               {loading ? <span className="inline-block h-8 w-20 animate-pulse rounded-md bg-white/20 align-middle" /> : ranking ? formatScore(score) : '—'}
             </p>

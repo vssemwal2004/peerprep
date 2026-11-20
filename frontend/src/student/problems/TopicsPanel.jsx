@@ -2,6 +2,7 @@ import { useCallback, useDeferredValue, useState } from 'react';
 import { Maximize2, Search, Shapes } from 'lucide-react';
 import TopicBrowser from './TopicBrowser';
 import { card, fieldBase, focusRing } from './problemsUi';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const INITIAL = 20;
 const SEARCH_LIMIT = 30;
@@ -20,11 +21,12 @@ export default function TopicsPanel({ topics, selected, onSelect, totalProblems 
   const visible = pinned && !top.includes(pinned) ? [pinned, ...top.slice(0, INITIAL - 1)] : top;
   const row = (active) => `group flex w-full flex-col gap-1.5 rounded-xl px-2.5 py-2 text-left transition-colors ${focusRing} ${active ? 'bg-sky-50 dark:bg-sky-500/10' : 'hover:bg-[#f6f7f9] dark:hover:bg-white/[0.04]'}`;
 
-  return <section aria-labelledby="topics-title" className={`p-4 ${card}`}>
+  return <section aria-labelledby="topics-title" data-guide="pc-topics" className={`p-4 ${card}`}>
     <header className="flex items-center justify-between gap-3">
       <h2 id="topics-title" className="flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.01em] text-slate-900 dark:text-zinc-50">
         <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-violet-50 text-violet-600 ring-1 ring-inset ring-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-400/15" aria-hidden="true"><Shapes className="h-4 w-4" /></span>
         Topics
+        <GuideInfo step="pc-topics" />
       </h2>
       <span className="text-[12px] tabular-nums text-slate-400 dark:text-zinc-500">{topics.length.toLocaleString()}</span>
     </header>

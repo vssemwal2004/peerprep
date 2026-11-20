@@ -12,6 +12,8 @@ import {
 import DateTimePicker from "../components/DateTimePicker";
 import { useAuth } from "../context/AuthContext";
 import { usePrepCoinCheckout } from "./prepCoin/usePrepCoinCheckout";
+import PageGuideButton from "../guide/platform/PageGuideButton";
+import GuideInfo from "../guide/platform/GuideInfo";
 
 export default function StudentInterview() {
   const navigate = useNavigate();
@@ -875,7 +877,7 @@ export default function StudentInterview() {
   };
 
   const EventList = () => (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-3 sm:p-4 h-[calc(100vh-5rem)] sm:h-[calc(100vh-4rem)] flex flex-col overflow-hidden">
+    <div data-guide="int-sidebar" className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-3 sm:p-4 h-[calc(100vh-5rem)] sm:h-[calc(100vh-4rem)] flex flex-col overflow-hidden">
       {/* Header with close button when event is selected */}
       {selectedEvent ? (
         <div className="flex items-center justify-between mb-3 sm:mb-4">
@@ -903,7 +905,7 @@ export default function StudentInterview() {
       {!selectedEvent && (
         <div className="mb-3 space-y-2">
           {/* Event Type Filter */}
-          <div className="flex gap-1.5">
+          <div className="flex gap-1.5" data-guide="int-types">
             {[
               { id: "regular", label: "Regular", color: "sky" },
               { id: "special", label: "Special", color: "purple" },
@@ -939,7 +941,7 @@ export default function StudentInterview() {
 
           {/* Status Filter - Only show for Regular/Special, not Past */}
           {currentType !== "past" && (
-            <div className="flex gap-1.5">
+            <div className="flex gap-1.5" data-guide="int-status">
               {[
                 { id: "all", label: "All", icon: "●" },
                 { id: "active", label: "Active", icon: "●" },
@@ -970,7 +972,7 @@ export default function StudentInterview() {
 
       {/* Search - Hide when event is selected */}
       {!selectedEvent && (
-        <div className="relative mb-3">
+        <div className="relative mb-3" data-guide="int-search">
           <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-slate-500 dark:text-gray-400" />
           <input
             type="text"
@@ -983,7 +985,7 @@ export default function StudentInterview() {
       )}
 
       {/* Event List */}
-      <div className="space-y-2 flex-1 overflow-y-auto pr-1">
+      <div className="space-y-2 flex-1 overflow-y-auto pr-1" data-guide="int-list">
         {selectedEvent ? (
           // Show only the selected event
           (() => {
@@ -1403,7 +1405,7 @@ export default function StudentInterview() {
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-slate-200 dark:border-gray-700 shadow-sm">
           
           {/* Header - Participant Info */}
-          <div className="px-6 py-5 border-b border-slate-200 dark:border-gray-700">
+          <div className="px-6 py-5 border-b border-slate-200 dark:border-gray-700" data-guide="int-pair-people">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4">
               {/* Interviewer */}
               <div className="flex items-center gap-3 flex-1">
@@ -1467,7 +1469,7 @@ export default function StudentInterview() {
           </div>
 
           {/* Main Content Area */}
-          <div className="px-6 py-6 space-y-5">
+          <div className="px-6 py-6 space-y-5" data-guide="int-schedule">
             {/* Scheduled Time - Primary Display */}
             {isLocked && selectedPair?.scheduledAt ? (
               isScheduledTimeExpired ? (
@@ -1575,7 +1577,7 @@ export default function StudentInterview() {
 
             {/* Past Time Slots Button */}
             <div className="flex justify-end">
-              <div className="relative" ref={pastDropdownRef}>
+              <div className="relative" ref={pastDropdownRef} data-guide="int-past-slots">
                 <button
                   type="button"
                   onClick={() => setShowPastDropdown(v => !v)}
@@ -2134,7 +2136,7 @@ export default function StudentInterview() {
 
       {/* Meeting Link Section - Outside the card */}
       {isLocked && selectedPair.meetingLink && (
-        <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg">
+        <div data-guide="int-meeting" className="mt-4 sm:mt-6 p-3 sm:p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
             <span className="font-semibold text-indigo-900 dark:text-indigo-300 text-sm">
               Meeting Details
@@ -2251,7 +2253,7 @@ export default function StudentInterview() {
             <h2 className="text-base sm:text-lg font-semibold text-slate-800 dark:text-gray-100 truncate">{selectedEvent.name}</h2>
           </div>
 
-      <div className="mx-auto mb-5 flex w-full max-w-6xl flex-col gap-6 overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7 lg:flex-row lg:items-start lg:justify-between dark:border-gray-700 dark:bg-gray-800">
+      <div data-guide="int-event-header" className="mx-auto mb-5 flex w-full max-w-6xl flex-col gap-6 overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7 lg:flex-row lg:items-start lg:justify-between dark:border-gray-700 dark:bg-gray-800">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             {selectedEvent.isSpecial && (
@@ -2304,7 +2306,7 @@ export default function StudentInterview() {
           </div>
         </div>
         
-        <div className="flex w-full flex-col gap-2 lg:w-auto lg:min-w-44 lg:items-end">
+        <div className="flex w-full flex-col gap-2 lg:w-auto lg:min-w-44 lg:items-end" data-guide="int-join">
           {!selectedEvent.joined && (() => {
             const now = new Date();
             const joinDisabled = selectedEvent.joinDisabled || (selectedEvent.joinDisableTime && now > new Date(selectedEvent.joinDisableTime));
@@ -2330,7 +2332,7 @@ export default function StudentInterview() {
 
       {/* Template Section */}
       {selectedEvent && (
-        <div className="mx-auto mb-5 w-full max-w-6xl rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 dark:border-gray-700 dark:bg-gray-800">
+        <div data-guide="int-template" className="mx-auto mb-5 w-full max-w-6xl rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300">
@@ -2597,8 +2599,9 @@ export default function StudentInterview() {
     return (
       <div className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 overflow-y-auto">
         <div className="mb-6">
-          <h1 className="text-2xl sm:text-3xl font-semibold text-slate-800 dark:text-gray-100 mb-1.5">
+          <h1 className="flex items-center gap-2 text-2xl sm:text-3xl font-semibold text-slate-800 dark:text-gray-100 mb-1.5">
             Interview Sessions
+            <PageGuideButton />
           </h1>
           <p className="text-slate-500 dark:text-gray-400 text-sm sm:text-base">
             Manage your interviews, schedule sessions, and track progress.
@@ -2606,10 +2609,10 @@ export default function StudentInterview() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          <div className="lg:col-span-2 rounded-xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
+          <div data-guide="int-active" className="lg:col-span-2 rounded-xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <div className="text-xs uppercase tracking-wider text-slate-400">Active Interview</div>
+                <div className="flex items-center gap-1 text-xs uppercase tracking-wider text-slate-400">Active Interview<GuideInfo step="int-active" /></div>
                 <h2 className="text-sm font-semibold text-slate-800 dark:text-gray-100 mt-1">
                   {nextInterview ? nextInterview.event?.name || "Upcoming Session" : "No upcoming session"}
                 </h2>
@@ -2643,8 +2646,8 @@ export default function StudentInterview() {
             </button>
           </div>
 
-          <div className="rounded-xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
-            <div className="text-xs uppercase tracking-wider text-slate-400 mb-3">Session Status</div>
+          <div data-guide="int-session-status" className="rounded-xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
+            <div className="flex items-center gap-1 text-xs uppercase tracking-wider text-slate-400 mb-3">Session Status<GuideInfo step="int-session-status" /></div>
             <div className="space-y-3 text-sm">
               <div className="flex items-center justify-between">
                 <span className="text-slate-500 dark:text-gray-400">Pair status</span>
@@ -2666,9 +2669,9 @@ export default function StudentInterview() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
+        <div data-guide="int-joined" className="rounded-xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-gray-100">Your Interviews</h3>
+            <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-gray-100">Your Interviews<GuideInfo step="int-joined" /></h3>
             <span className="text-xs text-slate-400">{joinedEvents.length} joined</span>
           </div>
           {joinedEvents.length === 0 ? (
@@ -2729,6 +2732,7 @@ export default function StudentInterview() {
               Expanded:  320px (on hover or when pinned)
           ─────────────────────────────────────────────────────────── */}
           <div
+            data-guide="int-sidebar"
             className={`hidden lg:flex flex-col flex-shrink-0 bg-white dark:bg-gray-900 border-r border-slate-200 dark:border-gray-800 h-screen sticky top-0 transition-all duration-300 ease-in-out overflow-hidden ${
               sidebarExpanded ? 'w-[300px]' : 'w-[68px]'
             }`}
@@ -2746,6 +2750,7 @@ export default function StudentInterview() {
                     </span>
                   </div>
                   <button
+                    data-guide="int-pin"
                     onClick={() => setSidebarPinned(!sidebarPinned)}
                     className={`p-1.5 rounded-lg transition-all flex-shrink-0 ${
                       sidebarPinned
@@ -2806,7 +2811,7 @@ export default function StudentInterview() {
                 {/* Filters */}
                 {!selectedEvent && (
                   <div className="space-y-2 mb-3">
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-1.5" data-guide="int-types">
                       {[
                         { id: "regular", label: "Regular", color: "sky" },
                         { id: "special", label: "Special", color: "purple" },
@@ -2842,7 +2847,7 @@ export default function StudentInterview() {
 
                     {/* Status Filter */}
                     {currentType !== "past" && (
-                      <div className="flex gap-1.5">
+                      <div className="flex gap-1.5" data-guide="int-status">
                         {[
                           { id: "all", label: "All" },
                           { id: "active", label: "Active" },
@@ -2873,7 +2878,7 @@ export default function StudentInterview() {
 
                 {/* Search */}
                 {!selectedEvent && (
-                  <div className="relative mb-3">
+                  <div className="relative mb-3" data-guide="int-search">
                     <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-slate-500 dark:text-gray-400" />
                     <input
                       type="text"
@@ -2900,7 +2905,7 @@ export default function StudentInterview() {
                 )}
 
                 {/* Event List */}
-                <div className="space-y-2 flex-1 overflow-y-auto pr-1 scrollbar-thin">
+                <div className="space-y-2 flex-1 overflow-y-auto pr-1 scrollbar-thin" data-guide="int-list">
                   {selectedEvent ? (
                     (() => {
                       const event = selectedEvent;

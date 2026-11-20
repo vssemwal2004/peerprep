@@ -22,12 +22,10 @@ test('the Master Admin simulator computes exactly what the server stores', () =>
       const server = scoreFromLevelCounts(counts, all, config);
       const client = simulate(config, counts);
       assert.equal(client.total, server.total);
-      // The Prep Score is the Prep Coding score alone, on both sides.
-      assert.equal(client.modules.coding, server.features.coding.score);
-      assert.equal(client.total, server.features.coding.score);
+      for (const key of Object.keys(server.features)) assert.equal(client.modules[key], server.features[key].score);
     }
   }
   assert.equal(configProblem(configs[0]), '');
-  assert.match(configProblem({ ...configs[0], modules: { ...configs[0].modules, coding: { ...configs[0].modules.coding, dailyTopicLimit: 2.5 } } }), /whole number/);
   assert.match(configProblem({ ...configs[0], modules: { ...configs[0].modules, coding: { ...configs[0].modules.coding, points: { Easy: 5, Medium: 2, Hard: 4 } } } }), /rise from Easy/);
+  assert.match(configProblem({ ...configs[0], modules: { ...configs[0].modules, coding: { ...configs[0].modules.coding, dailyTopicLimit: 2.5 } } }), /whole number/);
 });

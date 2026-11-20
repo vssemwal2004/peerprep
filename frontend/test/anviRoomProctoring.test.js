@@ -162,7 +162,7 @@ test("the live room follows the app theme: light surfaces by default, dark: vari
   assert.doesNotMatch(stage.className, /color-scheme:dark/, "no forced dark colour scheme");
   assert.equal(stage.closest(".dark"), null, "nothing wraps the room in a dark class");
   assert.match(stage.className, /(^|\s)bg-\[#f6f5fb\]/, "light backdrop by default");
-  assert.match(stage.className, /dark:bg-\[#0a0b10\]/, "dark backdrop under the dark theme");
+  assert.match(stage.className, /dark:bg-\[#121212\]/, "neutral dark backdrop under the dark theme");
   assert.match(stage.className, /(^|\s)text-slate-900/);
   const anvi = document.querySelector('[aria-label="ANVI, AI interviewer"]');
   assert.match(anvi.className, /bg-white\/75/);

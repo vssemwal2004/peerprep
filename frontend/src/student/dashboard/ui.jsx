@@ -30,9 +30,9 @@ export function IconTile({ icon: Icon, tone = 'ink', size = 'md' }) {
 }
 
 /** Section title with a trailing hairline, as on large learning platforms. */
-export function SectionHeader({ id, title, action }) {
+export function SectionHeader({ id, title, action, info = null }) {
   return <header className="mb-4 flex items-center gap-4">
-    <h2 id={id} className="shrink-0 text-[17px] font-medium tracking-[-0.015em] text-slate-900 dark:text-zinc-100">{title}</h2>
+    <h2 id={id} className="flex shrink-0 items-center gap-1.5 text-[17px] font-medium tracking-[-0.015em] text-slate-900 dark:text-zinc-100">{title}{info}</h2>
     <span className="h-px flex-1 bg-[#e6e7eb] dark:bg-white/[0.08]" aria-hidden="true" />
     {action}
   </header>;
@@ -54,11 +54,12 @@ export function TitleIcon({ icon: Icon, tone = 'sky' }) {
 }
 
 /** Card heading used inside the rail cards. */
-export function CardTitle({ id, title, icon, tone, action }) {
+export function CardTitle({ id, title, icon, tone, action, info = null }) {
   return <header className="flex items-center justify-between gap-3">
     <h2 id={id} className="flex min-w-0 items-center gap-2.5 text-[15.5px] font-semibold tracking-[-0.015em] text-slate-900 dark:text-zinc-50">
       {icon && <TitleIcon icon={icon} tone={tone} />}
       <span className="truncate">{title}</span>
+      {info}
     </h2>
     {action}
   </header>;

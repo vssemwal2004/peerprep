@@ -31,6 +31,7 @@ import LearningTab from './studentProfile/LearningTab';
 import ActivityTab from './studentProfile/ActivityTab';
 import useStickyTop from './studentProfile/useStickyTop';
 import { num, nullableNum, panelId, plural, readLearnerProgress, tabId, timeOf } from './studentProfile/utils';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 const MotionDiv = motion.div;
 
@@ -469,7 +470,7 @@ export default function AdminStudentProfile() {
         transition={{ duration: 0.2, ease: 'easeOut' }}
         className="mx-auto max-w-7xl px-4 pb-8 pt-4 sm:px-6"
       >
-        <nav aria-label="Breadcrumb" className="mb-4 flex min-w-0 items-center gap-1.5 text-[13px]">
+        <nav aria-label="Breadcrumb" data-guide="sp-breadcrumb" className="mb-4 flex min-w-0 items-center gap-1.5 text-[13px]">
           <button
             type="button"
             onClick={goBack}
@@ -480,6 +481,7 @@ export default function AdminStudentProfile() {
           </button>
           <span className="text-slate-300 dark:text-zinc-600" aria-hidden="true">/</span>
           <span className="truncate font-medium text-slate-800 dark:text-zinc-200" aria-current="page">{student.name || 'Student'}</span>
+          <PageGuideButton size="sm" className="ml-1" />
         </nav>
 
         <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
@@ -514,7 +516,7 @@ export default function AdminStudentProfile() {
 
             <ProfileTabs tabs={tabs} active={activeTab} onChange={setActiveTab} barRef={tabBarRef} />
 
-            <div ref={panelRef} role="tabpanel" id={panelId(activeTab)} aria-labelledby={tabId(activeTab)} tabIndex={0} className="min-w-0 scroll-mt-20 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60">
+            <div ref={panelRef} data-guide="sp-panel" role="tabpanel" id={panelId(activeTab)} aria-labelledby={tabId(activeTab)} tabIndex={0} className="min-w-0 scroll-mt-20 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60">
               {activeTab === 'overview' ? (
                 <OverviewTab
                   visible={visible}
@@ -564,7 +566,7 @@ export default function AdminStudentProfile() {
 function StickySidebar({ children }) {
   const sticky = useStickyTop(16);
   return (
-    <aside ref={sticky.ref} style={sticky.style} aria-label="Student identity" className="min-w-0 lg:sticky lg:self-start">
+    <aside ref={sticky.ref} style={sticky.style} aria-label="Student identity" data-guide="sp-identity" className="min-w-0 lg:sticky lg:self-start">
       {children}
     </aside>
   );

@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
 import { returnToLogin, SESSION_EXPIRED_MESSAGE } from '../auth/sessionNotice';
 import { firstStudentFeaturePath } from './studentFeatureAccess';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 export default function ChangePassword() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -124,19 +125,19 @@ export default function ChangePassword() {
                 <LockKeyhole className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Change password</h1>
+                <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-slate-900 dark:text-white">Change password<PageGuideButton size="sm" /></h1>
                 <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-400">Create a secure password for your PeerPrep account.</p>
               </div>
             </div>
           </header>
 
           <form onSubmit={handleSubmit} className="space-y-4 p-5 sm:p-6">
-            <div className="flex gap-3 rounded-xl border border-sky-100 bg-sky-50/80 p-3 text-sm text-slate-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-slate-300">
+            <div data-guide="pw-notice" className="flex gap-3 rounded-xl border border-sky-100 bg-sky-50/80 p-3 text-sm text-slate-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-slate-300">
               <ShieldCheck className="mt-0.5 h-[18px] w-[18px] shrink-0 text-sky-600 dark:text-sky-400" />
               <p>After your password is updated, you will be signed out. Sign in again with your new password.</p>
             </div>
 
-            <div>
+            <div data-guide="pw-current">
               <label htmlFor="current-password" className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Current password</label>
               <div className="relative">
                 <input id="current-password" type={showCurrentPassword ? 'text' : 'password'} value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 pr-11 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-sky-500 dark:focus:ring-sky-950" placeholder="Enter your current password" autoComplete="current-password" required />
@@ -144,7 +145,7 @@ export default function ChangePassword() {
               </div>
             </div>
 
-            <div>
+            <div data-guide="pw-new">
               <label htmlFor="new-password" className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">New password</label>
               <div className="relative">
                 <input id="new-password" type={showNewPassword ? 'text' : 'password'} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 pr-11 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-sky-500 dark:focus:ring-sky-950" placeholder="Enter a new password" autoComplete="new-password" required />
@@ -156,7 +157,7 @@ export default function ChangePassword() {
               </div>
             </div>
 
-            <div>
+            <div data-guide="pw-confirm">
               <label htmlFor="confirm-password" className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Confirm new password</label>
               <div className="relative">
                 <input
@@ -187,7 +188,7 @@ export default function ChangePassword() {
               </div>
             )}
 
-            <div className="flex flex-col-reverse gap-2.5 pt-1 sm:flex-row">
+            <div className="flex flex-col-reverse gap-2.5 pt-1 sm:flex-row" data-guide="pw-actions">
               <button type="button" onClick={() => navigate(homePath)} className="inline-flex h-10 flex-1 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">Cancel</button>
               <button type="submit" disabled={isLoading} className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-slate-900">
                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LockKeyhole className="h-4 w-4" />}

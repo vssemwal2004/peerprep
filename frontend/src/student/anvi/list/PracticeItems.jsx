@@ -37,7 +37,7 @@ export function PracticeCard({ entry, onOpen, onReport, busy, locked }) {
   const language = languageLabel(item.languageSetup || item.language);
   // An attempt that ended early is still scored; its report stays one click away.
   const earlierReport = item.lastAttempt?.id && ["ready", "evaluating"].includes(item.lastAttempt.status) ? item.lastAttempt.id : null;
-  return <li data-practice={item.id} className={`${cardSurface} flex h-full flex-col p-4 transition-colors hover:border-slate-300/80 dark:hover:border-white/[0.14] sm:p-5`}>
+  return <li data-practice={item.id} data-guide="ai-practice-card" className={`${cardSurface} flex h-full flex-col p-4 transition-colors hover:border-slate-300/80 dark:hover:border-white/[0.14] sm:p-5`}>
     <div className="flex items-start justify-between gap-3">
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-300" aria-hidden="true">
         {usesResume ? <FileText className="h-5 w-5" strokeWidth={1.75} /> : <Mic className="h-5 w-5" strokeWidth={1.75} />}
@@ -54,7 +54,7 @@ export function PracticeCard({ entry, onOpen, onReport, busy, locked }) {
       {item.estimatedMinutes > 0 && <Meta icon={Clock3}>{Math.round(item.estimatedMinutes)} min</Meta>}
     </div>
     <div className="mt-auto flex justify-end pt-4">
-      <button type="button" onClick={() => onOpen(item)} disabled={locked} className={`${btn.soft} w-full sm:w-auto`}>
+      <button type="button" onClick={() => onOpen(item)} disabled={locked} data-guide="ai-start-practice" className={`${btn.soft} w-full sm:w-auto`}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-3.5 w-3.5 fill-current" aria-hidden="true" />}Start practice
       </button>
     </div>
@@ -67,7 +67,7 @@ export function PracticeCard({ entry, onOpen, onReport, busy, locked }) {
  */
 export function BlockedPracticeNote({ entries }) {
   if (!entries?.length) return null;
-  return <div data-practice-blocked={entries.map((entry) => entry.id).join(" ")} className={`${cardSurface} flex items-start gap-3 px-4 py-4`} role="status">
+  return <div data-practice-blocked={entries.map((entry) => entry.id).join(" ")} data-guide="ai-blocked" className={`${cardSurface} flex items-start gap-3 px-4 py-4`} role="status">
     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-zinc-300">
       <CalendarClock className="h-4 w-4" aria-hidden="true" />
     </span>

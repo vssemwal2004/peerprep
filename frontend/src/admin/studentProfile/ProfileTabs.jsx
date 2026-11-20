@@ -28,7 +28,7 @@ export default function ProfileTabs({ tabs, active, onChange, barRef }) {
 
   // Sticks to the top of the scroll area with a solid backdrop so cards scroll cleanly beneath it.
   return (
-    <div ref={barRef} className="sticky top-0 z-20 -mx-1 bg-white/95 px-1 backdrop-blur dark:bg-[#1a1a1a]/95">
+    <div ref={barRef} data-guide="sp-tabs" className="sticky top-0 z-20 -mx-1 bg-white/95 px-1 backdrop-blur dark:bg-[#1a1a1a]/95">
       <div className="border-b border-slate-200 dark:border-zinc-800">
         <div
           role="tablist"

@@ -5,6 +5,7 @@ import QuestCard from '../quests/QuestCard';
 import { questState } from '../quests/questTheme';
 import { questWindowStatus } from '../quests/questWindow';
 import { SectionHeader, Skeleton, textLink, Unavailable } from './ui';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const SHOWN = 3;
 const STATE_ORDER = { active: 0, new: 1, completed: 2 };
@@ -20,7 +21,7 @@ export default function CodingSheets() {
   if (!loading && !error && !quests.length) return null;
 
   return <section aria-labelledby="dashboard-sheets-title">
-    <SectionHeader id="dashboard-sheets-title" title="Coding sheets"
+    <SectionHeader id="dashboard-sheets-title" title="Coding sheets" info={<GuideInfo step="dash-sheets" />}
       action={<Link className={textLink} to="/student/quickprep">View all{quests.length > SHOWN ? ` (${quests.length})` : ''}<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>} />
     {loading && !quests.length
       ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((value) => <Skeleton key={value} className="h-[330px] rounded-2xl" />)}</div>

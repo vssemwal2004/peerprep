@@ -6,7 +6,7 @@ import { api } from '../../utils/api';
 import { CardHeader, EmptyHint, Glass, Segmented, SkeletonRows } from '../../overview/ui';
 import { percent, relativeTime } from '../../overview/overviewModel';
 import UniversityBadge from '../universities/UniversityBadge';
-import { CoinAmount, CoinPage, LiveBadge } from './shared';
+import { CoinAmount, CoinPage, InfoTitle, LiveBadge } from './shared';
 import { buttonClass, formatCoins, inputClass, useLive } from './coinModel';
 
 const loadSummary = () => api.coinConsoleSummary();
@@ -26,11 +26,11 @@ function UniversityWallets() {
   const total = (data?.universities || []).reduce((sum, row) => sum + row.balance, 0);
 
   return (
-    <Glass className="p-5">
-      <CardHeader title="University wallets" subtitle={data ? `${formatCoins(total)} coins across ${data.universities.length} universities` : 'Loading…'} Icon={Building2}
+    <Glass data-guide="cw-universities" className="p-5">
+      <CardHeader title={<InfoTitle title="University wallets" step="cw-universities" />} subtitle={data ? `${formatCoins(total)} coins across ${data.universities.length} universities` : 'Loading…'} Icon={Building2}
         action={<LiveBadge updatedAt={updatedAt} loading={loading} />} />
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <label className="relative min-w-[220px] flex-1">
+        <label data-guide="cw-search" className="relative min-w-[220px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
           <input className={`${inputClass} pl-9`} value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Search universities" aria-label="Search universities" />
         </label>
@@ -39,7 +39,7 @@ function UniversityWallets() {
       {!data ? <SkeletonRows rows={4} /> : rows.length ? (
         <>
         <div className="-mx-2 overflow-x-auto">
-          <table className="w-full min-w-[640px] text-left text-xs">
+          <table data-guide="cw-rows" className="w-full min-w-[640px] text-left text-xs">
             <thead><tr className="text-[11px] text-slate-500 dark:text-slate-400">
               {UNIVERSITY_HEADERS.map(([key, label]) => <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort}>{label}</SortHeader>)}
               <th scope="col" className="px-2 pb-2"><span className="sr-only">Actions</span></th>
@@ -107,8 +107,8 @@ function AccountWallets() {
   const data = state.data;
   const changeSort = (key) => { setSort((current) => nextSort(current, key)); setPage(1); };
   return (
-    <Glass className="p-5">
-      <CardHeader title="PeerPrep accounts" subtitle="Coordinators and students in the main database" Icon={Users}
+    <Glass data-guide="cw-accounts" className="p-5">
+      <CardHeader title={<InfoTitle title="PeerPrep accounts" step="cw-accounts" />} subtitle="Coordinators and students in the main database" Icon={Users}
         action={<Segmented label="Account type" value={role} onChange={(value) => { setRole(value); setPage(1); }} options={[{ value: '', label: 'All' }, { value: 'student', label: 'Students' }, { value: 'coordinator', label: 'Coordinators' }]} />} />
       <label className="relative mb-4 block">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />

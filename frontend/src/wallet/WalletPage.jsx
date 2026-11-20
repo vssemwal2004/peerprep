@@ -4,7 +4,7 @@ import { api } from '../utils/api';
 import PrepCoinIcon from '../components/prepCoin/PrepCoinIcon';
 import { CardHeader, EmptyHint, Glass } from '../overview/ui';
 import { relativeTime } from '../overview/overviewModel';
-import { CoinAmount, CoinPage } from '../admin/prepCoins/shared';
+import { CoinAmount, CoinPage, InfoTitle } from '../admin/prepCoins/shared';
 import { buttonClass, formatCoins, inputClass } from '../admin/prepCoins/coinModel';
 
 /** University admin and coordinator wallet: balance, passing coins on, and recent movements. */
@@ -62,7 +62,7 @@ export default function WalletPage() {
 
       <div className="grid gap-4 xl:grid-cols-12">
         <div className="grid content-start gap-4 xl:col-span-5">
-          <Glass className="relative overflow-hidden p-6">
+          <Glass data-guide="wallet-balance" className="relative overflow-hidden p-6">
             <span aria-hidden="true" className="pointer-events-none absolute -right-14 -top-14 h-48 w-48 rounded-full bg-amber-300/30 blur-3xl" />
             <div className="relative flex items-center gap-5">
               <PrepCoinIcon size={84} shine label="Prep Coin" />
@@ -75,9 +75,9 @@ export default function WalletPage() {
           </Glass>
 
           {canAllocate ? (
-            <Glass as="form" onSubmit={allocate} className="p-5">
-              <CardHeader title={`Send to a ${recipientLabel}`} subtitle={wallet?.role === 'admin' ? 'Coordinators pass coins on to their students' : 'Only your assigned students are listed'} Icon={Send} />
-              <div className="flex gap-2">
+            <Glass as="form" data-guide="wallet-send" onSubmit={allocate} className="p-5">
+              <CardHeader title={<InfoTitle title={`Send to a ${recipientLabel}`} step="wallet-send" />} subtitle={wallet?.role === 'admin' ? 'Coordinators pass coins on to their students' : 'Only your assigned students are listed'} Icon={Send} />
+              <div data-guide="wallet-search" className="flex gap-2">
                 <label className="relative block flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
                   <input className={`${inputClass} pl-9`} value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') findRecipients(event); }}
@@ -96,7 +96,7 @@ export default function WalletPage() {
                   ))}
                 </div>
               ) : <div className="mt-3"><EmptyHint>No {recipientLabel}s match.</EmptyHint></div> : null}
-              <div className="mt-4 flex flex-wrap items-end gap-2">
+              <div data-guide="wallet-amount" className="mt-4 flex flex-wrap items-end gap-2">
                 <label className="relative w-40">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"><PrepCoinIcon size={18} /></span>
                   <input className={`${inputClass} pl-10 font-semibold tabular-nums`} type="number" min="1" step="1" inputMode="numeric" value={amount} aria-label="Prep Coins to send"
@@ -109,8 +109,8 @@ export default function WalletPage() {
           ) : null}
         </div>
 
-        <Glass className="p-5 xl:col-span-7">
-          <CardHeader title="Recent activity" subtitle="Coins received and sent" Icon={ArrowDownLeft} />
+        <Glass data-guide="wallet-activity" className="p-5 xl:col-span-7">
+          <CardHeader title={<InfoTitle title="Recent activity" step="wallet-activity" />} subtitle="Coins received and sent" Icon={ArrowDownLeft} />
           {wallet?.movements?.length ? (
             <ul className="divide-y divide-slate-100 dark:divide-white/5">
               {wallet.movements.map((row) => {

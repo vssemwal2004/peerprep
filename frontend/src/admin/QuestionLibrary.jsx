@@ -15,6 +15,8 @@ import CodingQuestionFilterDrawer from './library/CodingQuestionFilterDrawer';
 import { QUESTION_SEARCH_PLACEHOLDER, addFoundToSelection, isMultiTermSearch, unmatchedTermsLabel } from './library/searchTerms.js';
 import QuickPrepAddReviewDialog from './quickprep/QuickPrepAddReviewDialog';
 import { PAGE_SIZE_OPTIONS, TablePager } from '../components/table';
+import GuideInfo from '../guide/platform/GuideInfo';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 const TYPE_LABELS = {
   all: 'All Questions',
@@ -1151,7 +1153,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     <div className={embedded ? 'bg-white dark:bg-gray-900 md:flex md:h-[calc(100vh-5.5rem)] md:min-h-0 md:flex-col' : 'min-h-screen bg-white dark:bg-gray-900'}>
       <div className={embedded ? 'w-full md:flex md:min-h-0 md:flex-1 md:flex-col' : 'mx-auto max-w-7xl px-4 py-6'}>
         {!embedded && <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3" data-guide="sel-header">
             {selectionMode && (
               <button
                 type="button"
@@ -1165,8 +1167,9 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
               <Library className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
+              <h1 className="flex items-center gap-2 text-xl font-semibold text-slate-900 dark:text-white">
                 {selectionMode ? 'Add Questions from Library' : 'Question Library'}
+                <PageGuideButton />
               </h1>
               <p className="text-xs text-slate-500 dark:text-gray-400">
                 Fast search and live syncing for coding, MCQ, and written questions.
@@ -1278,7 +1281,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         </div>}
 
         {selectionMode && (
-          <div className="mt-1 rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-600 dark:border-sky-900/60 dark:bg-sky-900/15 dark:text-gray-300">
+          <div data-guide="lib-selection" className="mt-1 rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-600 dark:border-sky-900/60 dark:bg-sky-900/15 dark:text-gray-300">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div><span className="font-bold text-sky-800 dark:text-sky-200">Adding questions to:</span> <span className="font-semibold text-slate-900 dark:text-white">{assessmentTitle}</span></div>
               <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300">Selection mode</span>
@@ -1293,7 +1296,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         )}
 
         {quickprepMode && (
-          <div className="mt-1 rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-600 dark:border-sky-900/60 dark:bg-sky-900/15 dark:text-gray-300">
+          <div data-guide="lib-quickprep" className="mt-1 rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-600 dark:border-sky-900/60 dark:bg-sky-900/15 dark:text-gray-300">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div><span className="font-bold text-sky-800 dark:text-sky-200">Adding questions to QuickPrep:</span> <span className="font-semibold text-slate-900 dark:text-white">{quickprepName || quickprepTitle}</span></div>
               <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300">{quickprepKeys.size} in QuickPrep</span>
@@ -1343,7 +1346,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           </div>
         )}
 
-        {!embedded && <div className="mt-6 flex flex-wrap gap-2">
+        {!embedded && <div data-guide="sel-categories" className="mt-6 flex flex-wrap gap-2">
           {categoryTabs.map((category) => {
             const active = filters.type === category.type || (!filters.type && category.type === 'all');
             return (
@@ -1372,11 +1375,11 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         </div>}
 
         {embedded && filters.status === 'draft' && !selectionMode && !quickprepMode && (
-          <section className="mb-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/20">
+          <section data-guide="lib-drafts" className="mb-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/20">
             <div className="flex min-w-0 items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"><Edit3 className="h-4 w-4" /></span>
               <div>
-                <h2 className="text-sm font-bold text-slate-900 dark:text-white">Draft questions</h2>
+                <h2 className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white">Draft questions<GuideInfo step="lib-drafts" /></h2>
                 <p className="mt-0.5 text-xs leading-5 text-slate-600 dark:text-gray-300">{total} saved draft{total === 1 ? '' : 's'}. Preview, continue editing, publish, or delete them here.</p>
               </div>
             </div>
@@ -1386,7 +1389,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
         {/* Wraps instead of squeezing: the search keeps a usable width and the buttons move to the next line. */}
         <div className={`${embedded ? 'shrink-0' : 'mt-5'} flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3 dark:border-gray-800`}>
-          <div className="flex h-10 w-full min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 sm:w-auto sm:min-w-[26rem] sm:flex-1 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus-within:ring-sky-900/30">
+          <div data-guide="lib-search" className="flex h-10 w-full min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 sm:w-auto sm:min-w-[26rem] sm:flex-1 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus-within:ring-sky-900/30">
             <Search className="h-4 w-4 shrink-0 text-slate-400" />
             <input
               value={searchInput}
@@ -1398,7 +1401,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             {searchInput && <button type="button" aria-label="Clear search" onClick={() => setSearchInput('')} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-gray-800"><X className="h-3.5 w-3.5" /></button>}
           </div>
           {/* A number can be both a PeerPrep number and a LeetCode number: the toggle says which one is meant. */}
-          <div role="radiogroup" aria-label="Numbers in the search are" title="Which number a typed number means (“lc 2” / “pp 2” always work)"
+          <div data-guide="lib-number-kind" role="radiogroup" aria-label="Numbers in the search are" title="Which number a typed number means (“lc 2” / “pp 2” always work)"
             className="inline-flex h-10 shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-semibold dark:border-gray-700 dark:bg-gray-900">
             {[['peerprep', 'PrepCode'], ['leetcode', 'CodeLe']].map(([kind, text]) => {
               const active = (filters.numberKind || 'peerprep') === kind;
@@ -1415,7 +1418,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           <div className="flex flex-wrap items-center gap-2">
             {embedded && !selectionMode && !quickprepMode && (
               <>
-                <button type="button" onClick={toggleBulkSelecting} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold shadow-sm transition-colors ${bulkSelecting ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><CheckSquare className="h-3.5 w-3.5" />{bulkSelecting ? `${selectedIds.size} selected` : 'Select'}</button>
+                <button type="button" data-guide="lib-select" onClick={toggleBulkSelecting} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold shadow-sm transition-colors ${bulkSelecting ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><CheckSquare className="h-3.5 w-3.5" />{bulkSelecting ? `${selectedIds.size} selected` : 'Select'}</button>
                 {bulkSelecting && (
                   <div className="relative">
                     <button type="button" aria-label="Bulk actions" aria-expanded={bulkMenuOpen} onClick={() => setBulkMenuOpen((open) => !open)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><MoreVertical className="h-4 w-4" /></button>
@@ -1452,16 +1455,16 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                 <button type="button" onClick={handleAddToQuickprep} disabled={!selectedIds.size || addingToQuickprep} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-3.5 w-3.5" />{addingToQuickprep ? 'Adding...' : `Add to QuickPrep (${selectedIds.size})`}</button>
               </>
             )}
-            <button type="button" aria-expanded={filterPanelOpen} onClick={() => { setFilterPanelOpen(true); setColumnsPanelOpen(false); }} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold shadow-sm transition-colors ${filterPanelOpen || activeFilterCount ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+            <button type="button" data-guide="lib-filters" aria-expanded={filterPanelOpen} onClick={() => { setFilterPanelOpen(true); setColumnsPanelOpen(false); }} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold shadow-sm transition-colors ${filterPanelOpen || activeFilterCount ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
               <Filter className="h-3.5 w-3.5" /> Filters
               {activeFilterCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-600 px-1.5 text-[10px] text-white">{activeFilterCount}</span>}
             </button>
 
-            <div className="relative">
+            <div className="relative" data-guide="lib-columns">
               <button type="button" aria-expanded={columnsPanelOpen} onClick={() => { setColumnsPanelOpen((open) => !open); setFilterPanelOpen(false); }} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><Columns3 className="h-3.5 w-3.5" /> Columns</button>
               {columnsPanelOpen && (
                 <div className="absolute right-0 top-12 z-40 w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-                  <div className="px-1 pb-2"><p className="text-sm font-bold text-slate-900 dark:text-white">Visible columns</p><p className="mt-0.5 text-[11px] text-slate-500">Saved for this browser.</p></div>
+                  <div className="px-1 pb-2"><p className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white">Visible columns<GuideInfo step="lib-columns" /></p><p className="mt-0.5 text-[11px] text-slate-500">Saved for this browser.</p></div>
                   <div className="flex items-center gap-3 rounded-lg bg-slate-50 px-2 py-2 text-xs font-medium text-slate-700 dark:bg-gray-800 dark:text-gray-200"><input type="checkbox" checked disabled className="h-4 w-4 rounded border-slate-300 text-sky-600" /><span className="flex-1">Question type</span><span className="text-[10px] font-bold uppercase tracking-wide text-sky-600 dark:text-sky-400">Required</span></div>
                   {Object.entries({ difficulty: 'Difficulty', tags: 'Tags / topics', usedIn: 'Used in assessments', updated: 'Last updated' }).map(([key, label]) => (
                     <label key={key} className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800"><input type="checkbox" checked={visibleColumns[key]} onChange={() => setVisibleColumns((prev) => ({ ...prev, [key]: !prev[key] }))} className="h-4 w-4 rounded border-slate-300 text-sky-600" />{label}</label>
@@ -1471,7 +1474,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
               )}
             </div>
 
-            <select aria-label="Sort questions" value={sortValue} onChange={(event) => { const [sortBy, sortOrder] = event.target.value.split(':'); applySort(sortBy, sortOrder); }} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+            <select data-guide="lib-sort" aria-label="Sort questions" value={sortValue} onChange={(event) => { const [sortBy, sortOrder] = event.target.value.split(':'); applySort(sortBy, sortOrder); }} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
               {!SORT_PRESETS.includes(sortValue) && <option value={sortValue}>{SORT_COLUMN_LABELS[filters.sortBy] || 'Column'} {filters.sortOrder === 'asc' ? '(ascending)' : '(descending)'}</option>}
               {filters.type === 'coding' && <option value="displayOrder:asc">Question sequence</option>}
               <option value="updatedAt:desc">Recently updated</option>
@@ -1494,7 +1497,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         )}
 
         {activeFilterCount > 0 && (
-          <div className="mt-3 flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-2 dark:border-gray-700 dark:bg-gray-900/70">
+          <div data-guide="lib-active-filters" className="mt-3 flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-2 dark:border-gray-700 dark:bg-gray-900/70">
+            <GuideInfo step="lib-active-filters" />
             <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-0.5 [scrollbar-width:thin]">
               <span className="shrink-0 px-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Active filters</span>
               {[['search', filters.search ? `Search: ${filters.search}` : ''], ['difficulty', filters.difficulty], ['tag', filters.tag], ['status', filters.status], ['visibility', filters.visibility], ['sourceAssessmentId', availableAssessments.find((item) => item.id === filters.sourceAssessmentId)?.title]].filter(([, value]) => value).map(([key, value]) => <button key={key} type="button" onClick={() => { if (key === 'search') setSearchInput(''); setFilters((prev) => ({ ...prev, [key]: '' })); setPage(1); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">{value}<X className="h-3 w-3" /></button>)}
@@ -1510,7 +1514,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           </div>
         )}
 
-        <div className={`${embedded ? 'mt-3 min-h-0 flex-1 overflow-y-auto overflow-x-hidden' : 'mt-5 overflow-hidden'} rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900`}>
+        <div data-guide="lib-table" className={`${embedded ? 'mt-3 min-h-0 flex-1 overflow-y-auto overflow-x-hidden' : 'mt-5 overflow-hidden'} rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900`}>
           <div className="w-full min-w-0">
           <div className={`grid min-w-0 gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 ${embedded ? 'sticky top-0 z-20 shadow-[0_1px_0_rgba(148,163,184,0.18)]' : ''}`} style={{ gridTemplateColumns: columnTemplate }}>
             {rowSelectionActive ? <div className="flex items-center justify-center"><input type="checkbox" aria-label="Select all available questions on this page" checked={eligibleQuestions.length > 0 && eligibleQuestions.every((question) => selectedIds.has(question._id))} disabled={!eligibleQuestions.length} onChange={toggleSelectVisibleQuestions} className="h-4 w-4 rounded border-slate-300 text-sky-600 disabled:opacity-40" /></div> : null}
@@ -1706,7 +1710,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
         {actorModal && <div className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setActorModal(null); }}><div role="dialog" aria-modal="true" aria-label="Record creator" className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">Added by</p><h2 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">{actorModal.name || 'Administrator'}</h2></div><button type="button" onClick={() => setActorModal(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button></div><dl className="mt-4 space-y-3 text-sm"><div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Role</dt><dd className="mt-1 capitalize font-semibold text-slate-800 dark:text-slate-100">{actorModal.role || 'admin'}</dd></div>{actorModal.email && <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Email</dt><dd className="mt-1 break-all text-slate-700 dark:text-slate-200">{actorModal.email}</dd></div>}{actorModal.coordinatorId && <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Teacher ID</dt><dd className="mt-1 font-mono font-bold text-slate-700 dark:text-slate-200">{actorModal.coordinatorId}</dd></div>}</dl></div></div>}
 
-        {embedded && libraryPager}
+        {embedded && <div data-guide="lib-pager" className="shrink-0">{libraryPager}</div>}
       </div>
 
       {actionMenuId && actionMenuPopup && createPortal(

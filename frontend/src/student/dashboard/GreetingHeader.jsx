@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { CodingStartIllustration, LearningStartIllustration } from './DashboardIllustrations';
 import { focusRing, interactiveCard, Unavailable } from './ui';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
 
 function StartGuide({ canQuestions, canLearning }) {
   if (!canQuestions && !canLearning) return null;
@@ -36,13 +37,14 @@ function NameUnderline() {
 export default function GreetingHeader({ greeting, name, nudge, section, firstSession, canQuestions, canLearning, onRetry, aside }) {
   return <header className="dashboard-greeting pt-1">
     <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between lg:gap-8">
-      <div className="min-w-0">
+      <div className="min-w-0" data-guide="dash-greeting">
         <h1 className="text-[28px] font-medium leading-[1.2] tracking-[-0.03em] text-slate-900 dark:text-zinc-50 sm:text-[34px]">
           {greeting},{' '}
           <span className="relative inline-block break-words">
             <span className="font-bold text-sky-600 dark:text-sky-400">{name}</span>
             <NameUnderline />
           </span>
+          <PageGuideButton className="ml-3 -translate-y-1" />
         </h1>
         {nudge && <p className="mt-4 max-w-xl text-[14.5px] leading-relaxed text-slate-500 dark:text-zinc-400">{nudge}</p>}
       </div>

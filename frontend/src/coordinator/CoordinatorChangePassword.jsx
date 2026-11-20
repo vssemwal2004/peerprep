@@ -4,6 +4,7 @@ import { api } from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { returnToLogin, SESSION_EXPIRED_MESSAGE } from "../auth/sessionNotice";
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle } from "lucide-react";
+import PageGuideButton from "../guide/platform/PageGuideButton";
 
 export default function CoordinatorChangePassword() {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -89,8 +90,9 @@ export default function CoordinatorChangePassword() {
           <div className="mx-auto h-16 w-16 bg-emerald-100 dark:bg-emerald-900 rounded-full flex items-center justify-center">
             <Lock className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
           </div>
-          <h2 className="mt-6 text-3xl font-bold text-gray-900 dark:text-gray-100">
+          <h2 data-guide="pw-title" className="mt-6 flex items-center justify-center gap-2 text-3xl font-bold text-gray-900 dark:text-gray-100">
             Change Password
+            <PageGuideButton />
           </h2>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
             Coordinator Account - Please set a new password
@@ -115,7 +117,7 @@ export default function CoordinatorChangePassword() {
             </motion.div>
           )}
 
-          <div>
+          <div data-guide="pw-current">
             <label htmlFor="current" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Current Password
             </label>
@@ -138,7 +140,7 @@ export default function CoordinatorChangePassword() {
             </div>
           </div>
 
-          <div>
+          <div data-guide="pw-new">
             <label htmlFor="new" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               New Password
             </label>
@@ -175,7 +177,7 @@ export default function CoordinatorChangePassword() {
             )}
           </div>
 
-          <div>
+          <div data-guide="pw-confirm">
             <label htmlFor="confirm" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Confirm New Password
             </label>
@@ -226,6 +228,7 @@ export default function CoordinatorChangePassword() {
           </div>
 
           <button
+            data-guide="pw-submit"
             type="submit"
             disabled={loading}
             className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-emerald-600 dark:bg-emerald-700 hover:bg-emerald-700 dark:hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 dark:focus:ring-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"

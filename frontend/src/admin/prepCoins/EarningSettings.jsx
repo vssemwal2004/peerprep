@@ -4,6 +4,7 @@ import { api } from '../../utils/api';
 import { CardHeader, Glass } from '../../overview/ui';
 import PrepCoinIcon from '../../components/prepCoin/PrepCoinIcon';
 import { buttonClass, inputClass } from './coinModel';
+import { InfoTitle } from './shared';
 
 const TIERS = ['Bronze', 'Bronze', 'Silver', 'Silver', 'Gold', 'Gold', 'Platinum', 'Platinum', 'Diamond', 'Legend'];
 const whole = (value) => Number.isSafeInteger(value) && value >= 0 && value <= 1000;
@@ -42,8 +43,8 @@ export default function EarningSettings() {
   }
 
   return (
-    <Glass className="mb-4 p-5">
-      <CardHeader title="Coins students earn" subtitle="Minted by PeerPrep for a student's own work; university balances are never used" Icon={Sparkles} />
+    <Glass data-guide="pcp-earning" className="mb-4 p-5">
+      <CardHeader title={<InfoTitle title="Coins students earn" step="pcp-earning" />} subtitle="Minted by PeerPrep for a student's own work; university balances are never used" Icon={Sparkles} />
       {error && <p role="alert" className="mb-3 flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-400/10 dark:text-rose-200"><AlertCircle className="h-4 w-4" />{error}</p>}
       {notice && <p role="status" className="mb-3 flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200"><CheckCircle2 className="h-4 w-4" />{notice}</p>}
       {!earning ? <p className="text-sm text-slate-500">{error ? '' : 'Loading…'}</p> : <>
@@ -60,7 +61,7 @@ export default function EarningSettings() {
           ))}
         </div>
         <p className="mt-4 text-xs font-medium text-slate-600 dark:text-slate-300">Monthly badge levels (each level pays once per badge per month)</p>
-        <div className="mt-1 grid grid-cols-5 gap-2 sm:grid-cols-10">
+        <div data-guide="pcp-badge-levels" className="mt-1 grid grid-cols-5 gap-2 sm:grid-cols-10">
           {earning.badgeLevels.map((value, index) => (
             <label key={index} className="text-center text-[11px] text-slate-500 dark:text-slate-400">L{index + 1}
               <span className="block text-[10px]">{TIERS[index]}</span>
@@ -70,7 +71,7 @@ export default function EarningSettings() {
           ))}
         </div>
         {problem && <p role="alert" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">{problem}</p>}
-        <div className="mt-4 flex justify-end gap-2">
+        <div data-guide="pcp-earning-save" className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={() => setEarning(structuredClone(saved.earning))} disabled={busy || !unsaved} className={`${buttonClass.secondary} h-10`}><Undo2 className="h-4 w-4" />Discard</button>
           <button type="button" onClick={save} disabled={busy || !unsaved || Boolean(problem)} className={`${buttonClass.primary} h-10`}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save earning</button>
         </div>

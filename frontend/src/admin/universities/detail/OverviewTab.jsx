@@ -26,7 +26,7 @@ export default function OverviewTab({ university, tabLink, onDelete, busy }) {
   const service = university.serviceStartDate && university.serviceEndDate ? `${university.serviceStartDate} to ${university.serviceEndDate}` : 'Not set';
   return (
     <div className="space-y-5">
-      <Card id="setup-title" title={health.issues.length ? 'Finish setting up' : 'Setup complete'} icon={health.issues.length ? AlertTriangle : CheckCircle2}
+      <Card id="setup-title" data-guide="unid-setup" info="unid-setup" title={health.issues.length ? 'Finish setting up' : 'Setup complete'} icon={health.issues.length ? AlertTriangle : CheckCircle2}
         description={health.issues.length ? 'Students cannot use every feature until these are done.' : 'Database, code judge, service period and limits are all set.'}>
         {health.issues.length > 0 && (
           <ul className="space-y-2">
@@ -40,14 +40,14 @@ export default function OverviewTab({ university, tabLink, onDelete, busy }) {
         )}
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div data-guide="unid-facts" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Fact label="Status" value={<Pill tone={STATUS_META[health.status].tone}>{STATUS_META[health.status].label}</Pill>} />
         <Fact label="Service period" value={health.daysLeft !== null && health.daysLeft >= 0 ? `${service} · ${health.daysLeft} days left` : service} to={tabLink('plan')} />
         <Fact label="Account limits" value={`${university.coordinatorLimit ?? '—'} coordinators · ${university.studentLimit ?? '—'} students`} to={tabLink('plan')} />
         <Fact label="University wallet" value={`${Number(university.coinBalance || 0).toLocaleString()} Prep Coins`} to={tabLink('plan')} />
       </div>
 
-      <Card id="modules-summary-title" title="Modules" actions={<Link to={tabLink('modules')} className="text-sm font-semibold text-sky-700 hover:underline dark:text-sky-300">Manage modules</Link>}>
+      <Card id="modules-summary-title" data-guide="unid-modules" title="Modules" actions={<Link to={tabLink('modules')} className="text-sm font-semibold text-sky-700 hover:underline dark:text-sky-300">Manage modules</Link>}>
         <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {MODULES.map((module) => {
             const on = modules.some((item) => item.key === module.key);
@@ -61,7 +61,7 @@ export default function OverviewTab({ university, tabLink, onDelete, busy }) {
         </ul>
       </Card>
 
-      <Card id="danger-title" title="Remove university" description="Removes the registration from PeerPrep and revokes its shared assessments. The university's own database is not touched.">
+      <Card id="danger-title" data-guide="unid-remove" info="unid-remove" title="Remove university" description="Removes the registration from PeerPrep and revokes its shared assessments. The university's own database is not touched.">
         <Button variant="danger" icon={Trash2} busy={busy === 'delete'} onClick={onDelete}>Remove {university.name}</Button>
       </Card>
     </div>

@@ -26,6 +26,7 @@ import { loadCodingDraft, removeCodingDraft, saveCodingDraft } from '../assessme
 import { queueProblemSelection } from '../assessment/assessmentProblemSelectionStore';
 import AuthoringStepper from '../library/AuthoringStepper';
 import CodingClassificationPicker from '../library/CodingClassificationPicker';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const EDITOR_TABS = [
   { key: 'details', label: 'Description', shortLabel: 'Details', Icon: FileText },
@@ -1286,7 +1287,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
   return (
     <div ref={editorTopRef} className="mx-auto max-w-[1180px] pb-20">
       <div className="space-y-5">
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-5">
+        <section data-guide="ce-summary" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white">{isSqlProblem ? <Database className="h-5 w-5" /> : <Code2 className="h-5 w-5" />}</span>
@@ -1296,13 +1297,13 @@ if (!isValidated || publishedProblem.status !== 'published') {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={openPreview} disabled={isSaving || isApprovingPreview} title="Open solving preview" className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Opening...' : 'Solve preview'}</button>
+              <button type="button" data-guide="ce-solve-preview" onClick={openPreview} disabled={isSaving || isApprovingPreview} title="Open solving preview" className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Opening...' : 'Solve preview'}</button>
             </div>
           </div>
-          <div className="mx-auto mt-4 w-full max-w-4xl border-y border-slate-100 py-1 dark:border-gray-800">
+          <div data-guide="ce-steps" className="mx-auto mt-4 w-full max-w-4xl border-y border-slate-100 py-1 dark:border-gray-800">
             <AuthoringStepper steps={EDITOR_TABS} activeKey={activeTab} completed={tabCompletion} onChange={selectTab} />
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+          <div data-guide="ce-status" className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-gray-800 dark:text-gray-300">{visibleSampleCount} sample</span>
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-gray-800 dark:text-gray-300">{hiddenCount} hidden</span>
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-gray-800 dark:text-gray-300">{isSqlProblem ? 'SQL · SQLite' : `${form.supportedLanguages.length} languages`}</span>
@@ -1312,7 +1313,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
 
         {activeTab === 'details' ? (
           <>
-            <SectionCard compact title="Question type" subtitle="Choose the workspace and evaluation model before adding content.">
+            <div data-guide="ce-type"><SectionCard compact title="Question type" subtitle="Choose the workspace and evaluation model before adding content.">
               <div className="grid gap-2 sm:grid-cols-2">
                 <button type="button" onClick={() => switchProblemCategory('DSA')} className={`flex items-start gap-3 rounded-xl border p-3 text-left transition ${!isSqlProblem ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:ring-sky-900/40' : 'border-slate-200 hover:border-slate-300 dark:border-gray-700'}`}>
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-gray-700"><Code2 className="h-5 w-5" /></span>
@@ -1323,8 +1324,8 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   <span><span className="block text-sm font-bold text-slate-900 dark:text-white">SQL query</span><span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-gray-400">Function-focused SQLite schema, datasets and result-table evaluation.</span></span>
                 </button>
               </div>
-            </SectionCard>
-            <SectionCard compact title="Question Details" subtitle="Core metadata and public-facing problem statement.">
+            </SectionCard></div>
+            <div data-guide="ce-details"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">Question Details<GuideInfo step="ce-details" /></span>} subtitle="Core metadata and public-facing problem statement.">
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <RequiredFieldLabel>Problem name</RequiredFieldLabel>
@@ -1356,7 +1357,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   <input value={form.companyTags} onChange={(event) => updateField('companyTags', event.target.value)} placeholder="Amazon, Google, Microsoft" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
               </div>
-            </SectionCard>
+            </SectionCard></div>
 
             {isSqlProblem ? (
               <SectionCard compact title="Database environment" subtitle="This shared schema and sample data are loaded before every student query.">
@@ -1376,7 +1377,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
               </SectionCard>
             ) : null}
 
-            <SectionCard compact title={isSqlProblem ? 'Query specification' : 'Input / Output Specification'} subtitle={isSqlProblem ? 'Explain the available tables and the required result columns.' : 'Public contract shown to problem solvers.'}>
+            <div data-guide="ce-io"><SectionCard compact title={isSqlProblem ? 'Query specification' : 'Input / Output Specification'} subtitle={isSqlProblem ? 'Explain the available tables and the required result columns.' : 'Public contract shown to problem solvers.'}>
               <div className="grid gap-3 md:grid-cols-3">
                 {!isSqlProblem ? <div>
                   <RequiredFieldLabel>Input format</RequiredFieldLabel>
@@ -1394,9 +1395,9 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   <RichTextEditor value={form.constraints} onChange={(value) => updateField('constraints', value)} rows={5} placeholder={isSqlProblem ? 'Example: return one row per employee; sort by salary descending.' : 'Add one constraint per line, then format lines with headings, bold, lists, quotes, or code.'} />
                 </div>
               </div>
-            </SectionCard>
+            </SectionCard></div>
 
-            <SectionCard compact title="Execution Limits" subtitle="Judge limits for submissions.">
+            <div data-guide="ce-limits"><SectionCard compact title="Execution Limits" subtitle="Judge limits for submissions.">
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <RequiredFieldLabel>Time limit (seconds)</RequiredFieldLabel>
@@ -1407,16 +1408,16 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   <input type="number" min="64" step="64" value={form.memoryLimitMb} onChange={(event) => updateField('memoryLimitMb', event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
               </div>
-            </SectionCard>
+            </SectionCard></div>
           </>
         ) : null}
 
         {activeTab === 'editorial' ? (
           <>
-            <SectionCard title="Editorial" subtitle="Optional internal solution guide for reviewers and maintainers.">
+            <div data-guide="ce-editorial"><SectionCard title="Editorial" subtitle="Optional internal solution guide for reviewers and maintainers.">
               <RequiredFieldLabel optional>Editorial solution</RequiredFieldLabel>
               <RichTextEditor value={form.editorial || ''} onChange={(value) => updateField('editorial', value)} rows={12} placeholder="Explain the intended approach, complexity, edge cases and reference reasoning." />
-            </SectionCard>
+            </SectionCard></div>
             <SectionCard title="AnvI Approaches" subtitle="Add up to 10 approved approaches. AnvI reveals one at random after its guided analysis experience.">
               <AnviApproachEditor
                 hints={form.hints || []}
@@ -1439,7 +1440,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
 
         {activeTab === 'tests' ? (
           <>
-            <SectionCard title={isSqlProblem ? 'Sample datasets' : 'Sample Test Cases'} subtitle={isSqlProblem ? 'Visible database variations and the exact result produced by the reference query.' : 'Visible examples for the statement and admin run flow.'}>
+            <div data-guide="ce-samples"><SectionCard title={isSqlProblem ? 'Sample datasets' : 'Sample Test Cases'} subtitle={isSqlProblem ? 'Visible database variations and the exact result produced by the reference query.' : 'Visible examples for the statement and admin run flow.'}>
               <RequiredFieldLabel>At least one complete sample</RequiredFieldLabel>
               <TestCaseEditorCard
                 title="Sample"
@@ -1457,9 +1458,9 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 outputPlaceholder={isSqlProblem ? 'Asha|80000\nRavi|60000' : 'Output'}
                 requireInput={!isSqlProblem}
               />
-            </SectionCard>
+            </SectionCard></div>
 
-            <SectionCard title={isSqlProblem ? 'Hidden datasets' : 'Hidden Test Cases'} subtitle={isSqlProblem ? 'Private data variations used to validate the submitted query.' : 'Add private judge cases manually or import files when you have many cases.'}>
+            <div data-guide="ce-hidden"><SectionCard title={<span className="inline-flex items-center gap-1.5">{isSqlProblem ? 'Hidden datasets' : 'Hidden Test Cases'}<GuideInfo step="ce-hidden" /></span>} subtitle={isSqlProblem ? 'Private data variations used to validate the submitted query.' : 'Add private judge cases manually or import files when you have many cases.'}>
               <RequiredFieldLabel>At least one hidden judge case</RequiredFieldLabel>
               <div className="mb-5 overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/60 dark:bg-emerald-950/20">
                 <div className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center">
@@ -1629,9 +1630,9 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   </div>
                 </div>
               )}
-            </SectionCard>
+            </SectionCard></div>
 
-            <SectionCard title="Validation Preview" subtitle="Quick view of what will be parsed into the judge.">
+            <div data-guide="ce-validation"><SectionCard title="Validation Preview" subtitle="Quick view of what will be parsed into the judge.">
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Samples</p><p className="mt-2 text-2xl font-bold text-slate-900 dark:text-gray-100">{visibleSampleCount}</p></div>
                 <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Hidden</p><p className="mt-2 text-2xl font-bold text-slate-900 dark:text-gray-100">{hiddenCount}</p></div>
@@ -1705,13 +1706,13 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   </div>
                 </div>
               )}
-            </SectionCard>
+            </SectionCard></div>
           </>
         ) : null}
 
         {activeTab === 'templates' ? (
           <>
-            <SectionCard title={isSqlProblem ? 'SQL runtime' : 'Supported Languages'} subtitle={isSqlProblem ? 'SQL questions run in an isolated SQLite database.' : 'Choose runtimes for admin testing and submissions.'}>
+            <div data-guide="ce-languages"><SectionCard title={isSqlProblem ? 'SQL runtime' : 'Supported Languages'} subtitle={isSqlProblem ? 'SQL questions run in an isolated SQLite database.' : 'Choose runtimes for admin testing and submissions.'}>
               {isSqlProblem ? (
                 <div className="flex items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-800 dark:bg-sky-950/20">
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white"><Database className="h-5 w-5" /></span>
@@ -1729,7 +1730,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   );
                 })}
               </div></>}
-            </SectionCard>
+            </SectionCard></div>
 
             {!isSqlProblem && <SectionCard title="Execution style" subtitle="Choose what the student writes and what PeerPrep adds before sending code to Judge0.">
               <div className="grid gap-3 md:grid-cols-2">
@@ -1762,7 +1763,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
               </div>
             </SectionCard>}
 
-            <SectionCard title={isSqlProblem ? 'Starter query' : 'Code Templates'} subtitle={isSqlProblem ? 'Give students a focused starting point without exposing the reference query.' : (form.executionMode === 'full_program' ? 'Provide a basic full-program skeleton, or leave it minimal so the student writes the complete program.' : 'Provide only the class or function signature the student should complete.')}>
+            <div data-guide="ce-templates"><SectionCard title={isSqlProblem ? 'Starter query' : 'Code Templates'} subtitle={isSqlProblem ? 'Give students a focused starting point without exposing the reference query.' : (form.executionMode === 'full_program' ? 'Provide a basic full-program skeleton, or leave it minimal so the student writes the complete program.' : 'Provide only the class or function signature the student should complete.')}>
               <RequiredFieldLabel>{isSqlProblem ? 'Student query template' : 'Starter code'}</RequiredFieldLabel>
               {!isSqlProblem && <div className="mb-4 flex flex-wrap gap-2">
                 <div className="flex flex-wrap gap-2">{form.supportedLanguages.map((languageId) => <button key={languageId} type="button" onClick={() => setActiveLanguage(languageId)} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeLanguage === languageId ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{getLanguageLabel(languageId)}</button>)}</div>
@@ -1777,7 +1778,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 internalClipboardOnly={false}
                 contentKey={`problem-template:${activeLanguage}`}
               />
-            </SectionCard>
+            </SectionCard></div>
 
             {!isSqlProblem && form.executionMode !== 'full_program' && <SectionCard title="Execution runner" subtitle={`Private ${getLanguageLabel(activeLanguage)} wrapper used by Judge0 for every sample and hidden testcase.`}>
               <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
@@ -1832,7 +1833,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
 
 
 
-        {isFinalTab && <SectionCard
+        {isFinalTab && <div data-guide="ce-actions"><SectionCard
           title="Actions"
           subtitle={isAssessment ? 'Save drafts, validate, and add to the assessment.' : 'Save drafts, publish, or cleanly remove the problem from the judge workspace.'}
         >
@@ -1886,9 +1887,9 @@ if (!isValidated || publishedProblem.status !== 'published') {
             <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Preview validation and required testcases/templates must be completed before adding to the assessment.</p>
           ) : null}
           {!isAssessment && !previewValidated ? <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Publishing stays disabled until the preview IDE submits an Accepted solution and is approved.</p> : null}
-        </SectionCard>}
+        </SectionCard></div>}
 
-        <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-[0_-6px_18px_rgba(15,23,42,0.06)] dark:border-gray-700 dark:bg-gray-900 sm:px-4">
+        <div data-guide="ce-footer" className="sticky bottom-0 z-20 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-[0_-6px_18px_rgba(15,23,42,0.06)] dark:border-gray-700 dark:bg-gray-900 sm:px-4">
           <button type="button" onClick={() => goToTab(activeTabIndex - 1)} disabled={activeTabIndex === 0} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><ChevronLeft className="h-4 w-4" />Previous</button>
           <span className="hidden text-xs font-medium text-slate-500 dark:text-gray-400 sm:inline">Step {activeTabIndex + 1} of {EDITOR_TABS.length}</span>
           {isFinalTab ? (

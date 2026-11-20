@@ -6,6 +6,7 @@ import { PingButton, PracticeMeta, Pager, RankBadge, StatusAvatar } from './circ
 import { DuelGlyph, LadderGlyph, PanelTitle } from './peerGlyphs';
 import { PERIODS } from './circleMath';
 import { card, focusRing, Skeleton, Unavailable } from '../dashboard/ui';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const firstName = (name) => String(name || '').trim().split(/\s+/)[0] || 'Student';
 
@@ -59,9 +60,9 @@ export default function RaceBoard({ circle, onPinged }) {
   const max = Math.max(1, ...(data?.podium || []).map((row) => row.solved));
   const period = PERIODS.find((item) => item.key === circle.period) || PERIODS[0];
 
-  return <section className={card} aria-labelledby="race-title">
+  return <section className={card} aria-labelledby="race-title" data-guide="pm-leaderboard">
     <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-      <PanelTitle id="race-title" glyph={LadderGlyph} tone="amber" title="Leaderboard" subtitle={data ? `${compactCount(data.total)} people · problems solved ${period.phrase}` : `Problems solved ${period.phrase}`} />
+      <PanelTitle id="race-title" glyph={LadderGlyph} tone="amber" info={<GuideInfo step="pm-leaderboard" />} title="Leaderboard" subtitle={data ? `${compactCount(data.total)} people · problems solved ${period.phrase}` : `Problems solved ${period.phrase}`} />
       {data?.total > 1 && <div className="flex items-center gap-2">
         <label className="relative flex-1 sm:w-60 sm:flex-none">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />

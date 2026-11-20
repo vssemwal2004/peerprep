@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, CircleCheck, Layers, PlayCircle, RefreshCw, Search, Sparkles, Zap } from 'lucide-react';
 import QuestCard from './QuestCard';
+import GuideInfo from '../../guide/platform/GuideInfo';
 import { QUEST_CATEGORIES, questCategory, questPercent, questState, questTheme } from './questTheme';
 import { questWindowStatus, sortByWindow, windowNote } from './questWindow';
 
@@ -54,7 +55,7 @@ export default function QuestsSection({ quests, loading, error, onRetry }) {
         <h2 id="quests-title" className="flex items-center gap-2 text-[20px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-zinc-50"><Zap className="h-5 w-5 text-sky-600" aria-hidden="true" />QuickPrep</h2>
         <p className="mt-0.5 text-[13px] text-slate-500 dark:text-zinc-400">Curated question sets from your university. Finish one to earn its badge and XP.</p>
       </div>
-      {quests.length > 0 && <dl className="flex flex-wrap gap-2 text-[12px]">
+      {quests.length > 0 && <dl className="flex flex-wrap gap-2 text-[12px]" data-guide="qp-xp">
         <div className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 ring-1 ring-inset ring-slate-200 dark:bg-[#232325] dark:ring-white/10"><Layers className="h-3.5 w-3.5 text-sky-600" aria-hidden="true" /><dt className="text-slate-500 dark:text-zinc-400">Available</dt><dd className="font-semibold tabular-nums">{quests.length}</dd></div>
         <div className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 ring-1 ring-inset ring-slate-200 dark:bg-[#232325] dark:ring-white/10"><CircleCheck className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true" /><dt className="text-slate-500 dark:text-zinc-400">Completed</dt><dd className="font-semibold tabular-nums">{completed}</dd></div>
         <div className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 ring-1 ring-inset ring-slate-200 dark:bg-[#232325] dark:ring-white/10"><Sparkles className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" /><dt className="text-slate-500 dark:text-zinc-400">XP to earn</dt><dd className="font-semibold tabular-nums">{xpLeft}</dd></div>
@@ -71,27 +72,27 @@ export default function QuestsSection({ quests, loading, error, onRetry }) {
         <h3 className="mt-3 text-[15px] font-semibold">No QuickPrep yet</h3>
         <p className="mt-1 text-[13px] text-slate-500 dark:text-zinc-400">Your administrator has not published any question sheets for your semester yet. Check back soon.</p>
       </div> : <>
-        {active.length > 0 && <div className="mt-5">
-          <h3 className="text-[13px] font-semibold text-slate-500 dark:text-zinc-400">In progress</h3>
+        {active.length > 0 && <div className="mt-5" data-guide="qp-in-progress">
+          <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-500 dark:text-zinc-400">In progress<GuideInfo step="qp-in-progress" /></h3>
           <ul className="mt-2 space-y-2">{active.slice(0, 3).map((quest) => <ActiveQuest key={quest.id} quest={quest} />)}</ul>
         </div>}
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-[13px] font-semibold text-slate-500 dark:text-zinc-400">Explore</h3>
-            {filters.length > 1 && <div role="radiogroup" aria-label="QuickPrep type" className="flex flex-wrap gap-1.5">
+            <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-500 dark:text-zinc-400">Explore<GuideInfo step="qp-catalog" /></h3>
+            {filters.length > 1 && <div role="radiogroup" aria-label="QuickPrep type" data-guide="qp-types" className="flex flex-wrap gap-1.5">
               {[{ value: 'all', label: 'All' }, ...filters].map((entry) => <button key={entry.value} type="button" role="radio" aria-checked={category === entry.value} onClick={() => setCategory(entry.value)}
                 className={`rounded-full px-3 py-1.5 text-[12.5px] font-medium transition ${focusRing} ${category === entry.value ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-white text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-50 dark:bg-[#232325] dark:text-zinc-300 dark:ring-white/10'}`}>{entry.label}</button>)}
             </div>}
           </div>
-          {quests.length > 3 && <label className="relative w-full sm:w-64">
+          {quests.length > 3 && <label className="relative w-full sm:w-64" data-guide="qp-search">
             <span className="sr-only">Search QuickPrep</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search company or topic" className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-[#232325] dark:focus:ring-sky-500/15" />
           </label>}
         </div>
         {!visible.length ? <p className="mt-4 rounded-2xl border border-dashed border-slate-300 px-6 py-10 text-center text-[13px] text-slate-500 dark:border-white/10 dark:text-zinc-400">No QuickPrep matches. <button type="button" onClick={() => { setSearch(''); setCategory('all'); }} className="font-semibold text-sky-700 underline dark:text-sky-300">Show all</button></p>
-          : <ul className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{visible.map((quest) => <li key={quest.id} className="flex"><div className="flex w-full flex-col [&>a]:flex-1"><QuestCard quest={quest} /></div></li>)}</ul>}
-        <p className="mt-3 flex items-center gap-1 text-[12px] text-slate-400"><ArrowRight className="h-3 w-3" aria-hidden="true" />Questions you already solved count the moment you start a QuickPrep. A QuickPrep with a start and end time counts only solves made between them.</p>
+          : <ul className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-guide="qp-catalog">{visible.map((quest) => <li key={quest.id} className="flex"><div className="flex w-full flex-col [&>a]:flex-1"><QuestCard quest={quest} /></div></li>)}</ul>}
+        <p className="mt-3 flex items-center gap-1 text-[12px] text-slate-400" data-guide="qp-rules"><ArrowRight className="h-3 w-3" aria-hidden="true" />Questions you already solved count the moment you start a QuickPrep. A QuickPrep with a start and end time counts only solves made between them.</p>
       </>}
   </section>;
 }

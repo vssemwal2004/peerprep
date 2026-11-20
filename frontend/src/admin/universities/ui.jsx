@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Info, Loader2, XCircle } from 'lucide-react';
+import GuideInfo from '../../guide/platform/GuideInfo';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
 
 export const inputClass = 'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:ring-sky-900/40';
 export const helper = 'text-xs text-slate-500 dark:text-slate-400';
@@ -31,26 +33,27 @@ export function ButtonLink({ to, variant = 'primary', icon: Icon, children, clas
 
 export function PageHeader({ eyebrow = 'Universities', title, description, actions }) {
   return (
-    <header className="flex flex-wrap items-end justify-between gap-4">
+    <header data-guide="uni-header" className="flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
         <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-600">{eyebrow}</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{title}</h1>
+        <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{title}<PageGuideButton /></h1>
         {description && <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {actions && <div data-guide="uni-actions" className="flex flex-wrap gap-2">{actions}</div>}
     </header>
   );
 }
 
-export function Card({ title, description, icon: Icon, actions, children, className = '', id }) {
+/** `info` puts the page guide's ⓘ for that tour step beside the title; other props (data-guide) go on the section. */
+export function Card({ title, description, icon: Icon, actions, children, className = '', id, info, ...rest }) {
   return (
-    <section aria-labelledby={id} className={`rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}>
+    <section aria-labelledby={id} className={`rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`} {...rest}>
       {(title || actions) && (
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
             {Icon && <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"><Icon className="h-4 w-4" aria-hidden="true" /></span>}
             <div className="min-w-0">
-              {title && <h2 id={id} className="text-base font-bold text-slate-950 dark:text-white">{title}</h2>}
+              {title && <h2 id={id} className={`text-base font-bold text-slate-950 dark:text-white ${info ? 'flex items-center gap-1.5' : ''}`}>{title}{info ? <GuideInfo step={info} /> : null}</h2>}
               {description && <p className={`mt-0.5 ${helper}`}>{description}</p>}
             </div>
           </div>

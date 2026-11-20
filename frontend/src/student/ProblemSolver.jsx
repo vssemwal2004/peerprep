@@ -40,6 +40,8 @@ import FailedTestCasePanel from './problems/FailedTestCasePanel';
 import { pickPracticeLanguage, rememberPracticeLanguage } from './practiceLanguage';
 import { quotaAfterSolve, quotaChip, quotaToast } from './prepScore/topicQuota';
 import { announceCoinsEarned } from './rewards/rewardEvents';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 import { useOptionalAuth } from '../context/AuthContext';
 import { DifficultyBadge, EmptyState, LoadingPanel } from '../admin/compiler/CompilerUi';
 import {
@@ -83,7 +85,7 @@ function LeftPanelTabs({
     : (verdictTone === 'danger' ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500 dark:text-gray-400');
 
   return (
-    <div className="sticky top-0 z-20 flex flex-none items-center overflow-x-auto border-b border-zinc-200 bg-[#f7f7f7] px-4 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-zinc-700 dark:bg-[#282828]">
+    <div data-guide="ps-tabs" className="sticky top-0 z-20 flex flex-none items-center overflow-x-auto border-b border-zinc-200 bg-[#f7f7f7] px-4 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-zinc-700 dark:bg-[#282828]">
       <div className="flex min-w-max items-center gap-4">
         <button
           type="button"
@@ -379,8 +381,8 @@ function Histogram({ values, highlightValue, formatLabel, markerLabel = 'You' })
   );
 }
 
-function ReadingSectionTitle({ children, meta }) {
-  return <div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">{children}</h2>{meta ? <span className="text-xs text-slate-400 dark:text-gray-500">{meta}</span> : null}</div>;
+function ReadingSectionTitle({ children, meta, info = null }) {
+  return <div className="flex items-center justify-between gap-3"><h2 className="flex items-center gap-1.5 text-base font-semibold text-slate-900 dark:text-gray-100">{children}{info}</h2>{meta ? <span className="text-xs text-slate-400 dark:text-gray-500">{meta}</span> : null}</div>;
 }
 
 const QUOTA_CHIP_TONES = {
@@ -395,7 +397,7 @@ function PrepScoreQuotaChip({ quota, studentStatus }) {
   const chip = quotaChip(quota, studentStatus);
   if (!chip) return null;
   return (
-    <span title={chip.title} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${QUOTA_CHIP_TONES[chip.tone]}`}>
+    <span title={chip.title} data-guide="ps-quota" className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${QUOTA_CHIP_TONES[chip.tone]}`}>
       <Gauge className="h-3.5 w-3.5" aria-hidden="true" /> {chip.label}
     </span>
   );
@@ -432,9 +434,9 @@ function ProblemDescriptionPanel({ problem, language, verifiedCompanies, prepQuo
 
   return (
     <div className="space-y-7 px-5 py-6 sm:px-6">
-      <section>
+      <section data-guide="ps-problem-head">
         <h1 className="text-[22px] font-semibold leading-8 text-zinc-900 dark:text-white">{problem.title}</h1>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2" data-guide="ps-meta">
           <DifficultyBadge difficulty={problem.difficulty} />
           <StudentProgressBadge status={problem.studentStatus || 'Unsolved'} />
           <PrepScoreQuotaChip quota={prepQuota} studentStatus={problem.studentStatus} />
@@ -492,7 +494,7 @@ function ProblemDescriptionPanel({ problem, language, verifiedCompanies, prepQuo
         {activeMetaPanel === 'anvi' && <div className="mt-4"><AnviApproach approaches={approaches} requestKey={anviRequestKey} onRequest={askAnvi} /></div>}
       </section>
 
-      <section>
+      <section data-guide="ps-statement">
         <RichTextPreview content={getDisplayProblemStatement(problem.description, (problem.sampleTestCases || []).length > 0)} lead />
         <ProblemAssetImages images={descriptionImages} className="mt-4" label="Problem" />
       </section>
@@ -515,8 +517,8 @@ function ProblemDescriptionPanel({ problem, language, verifiedCompanies, prepQuo
       </details> : null}
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <ReadingSectionTitle>Examples</ReadingSectionTitle>
+        <div className="flex items-center justify-between gap-3" data-guide="ps-examples">
+          <ReadingSectionTitle info={<GuideInfo step="ps-examples" />}>Examples</ReadingSectionTitle>
           <span className="text-xs text-slate-500 dark:text-gray-400">
             {problem.sampleTestCases?.length || 0} sample cases
           </span>
@@ -566,8 +568,8 @@ function ProblemDescriptionPanel({ problem, language, verifiedCompanies, prepQuo
           </div>
         )}
 
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:border-gray-700 dark:bg-gray-900">
-          <ReadingSectionTitle meta={`${constraintItems.length} rule${constraintItems.length === 1 ? '' : 's'}`}>{isSql ? 'Query rules' : 'Constraints'}</ReadingSectionTitle>
+        <section data-guide="ps-constraints" className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:border-gray-700 dark:bg-gray-900">
+          <ReadingSectionTitle info={<GuideInfo step="ps-constraints" />} meta={`${constraintItems.length} rule${constraintItems.length === 1 ? '' : 's'}`}>{isSql ? 'Query rules' : 'Constraints'}</ReadingSectionTitle>
           {constraintItems.length > 0 ? (
             <ul className="list-disc space-y-2 pl-6 font-mono text-[13px] leading-6 text-slate-800 dark:text-gray-200">
               {constraintItems.map((constraint, index) => (
@@ -1795,12 +1797,14 @@ export default function ProblemSolver() {
             <button
               type="button"
               onClick={() => setProblemListOpen((previous) => !previous)}
+              data-guide="ps-navigator"
               className="inline-flex max-w-[220px] items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-200 dark:text-zinc-100 dark:hover:bg-zinc-700"
             >
               {problemListOpen ? <PanelRightOpen className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
               <span className="truncate">{problem.title}</span>
             </button>
-            {questContext && <button type="button" onClick={() => navigate(`/student/quickprep/${questContext.slug}`)} title={`Back to ${questContext.title}`}
+            <PageGuideButton />
+            {questContext && <button type="button" onClick={() => navigate(`/student/quickprep/${questContext.slug}`)} title={`Back to ${questContext.title}`} data-guide="ps-sheet"
               className="hidden max-w-[220px] items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-100 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-400/20 md:inline-flex">
               <span className="truncate">{questContext.title}</span>
               <span className="shrink-0 tabular-nums text-indigo-500 dark:text-indigo-400">{questContext.solved}/{questContext.total}</span>
@@ -1827,7 +1831,7 @@ export default function ProblemSolver() {
             </div>
           </div>
 
-          <div className="flex items-center justify-center">
+          <div className="flex items-center justify-center" data-guide="ps-timer">
             <WorkspaceTimer />
           </div>
 
@@ -1835,6 +1839,7 @@ export default function ProblemSolver() {
             <button
               type="button"
               onClick={() => window.dispatchEvent(new CustomEvent(ANVI_ASK_EVENT))}
+              data-guide="ps-anvi"
               className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50 to-fuchsia-50 px-2 text-xs font-semibold text-violet-700 shadow-sm transition hover:border-violet-300 hover:shadow-md dark:border-violet-800 dark:from-violet-950/50 dark:to-fuchsia-950/40 dark:text-violet-200 sm:px-2.5"
               title="Get an AnvI approach"
             >
@@ -1845,6 +1850,7 @@ export default function ProblemSolver() {
             <select
               value={language}
               onChange={(event) => changeLanguage(event.target.value)}
+              data-guide="ps-language"
               className="hidden rounded-lg border-0 bg-zinc-200/70 px-2.5 py-1.5 text-xs font-medium text-zinc-700 outline-none focus:ring-2 focus:ring-[#ffa116] dark:bg-[#333] dark:text-zinc-200 sm:block"
             >
               {(problem.supportedLanguages || []).map((supportedLanguage) => (
@@ -1858,6 +1864,7 @@ export default function ProblemSolver() {
               type="button"
               onClick={resetCode}
               disabled={isRunning || isSubmitting}
+              data-guide="ps-reset"
               className="hidden h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-200 disabled:opacity-40 dark:hover:bg-zinc-700 md:inline-flex"
               title="Reset code"
             >

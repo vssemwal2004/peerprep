@@ -10,7 +10,7 @@ const CAPABILITIES = [
 
 /** A single compact row: the Anvi wordmark, what it does, and where to find it. */
 export default function AnviHero() {
-  return <section aria-label="Anvi AI coding guide" className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#0c0b1d] text-white shadow-[0_14px_32px_-24px_rgba(76,29,149,0.65)]">
+  return <section aria-label="Anvi AI coding guide" data-guide="pc-anvi" className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#0c0b1d] text-white shadow-[0_14px_32px_-24px_rgba(76,29,149,0.65)]">
     <div aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(520px_160px_at_8%_-40%,rgba(139,92,246,0.42),transparent_70%),radial-gradient(480px_180px_at_94%_160%,rgba(34,211,238,0.26),transparent_70%)]" />
     <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.045)_1px,transparent_1px)] bg-[size:24px_24px] [mask-image:radial-gradient(60%_140%_at_25%_0%,black,transparent)]" />
     <span aria-hidden="true" className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/60 to-transparent" />

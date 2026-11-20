@@ -34,7 +34,7 @@ export function TopicsPage({ insights, onOpenTopic }) {
       <TopicsSection coverage={insights.coverage} filters={filters} onFilters={setFilters} onOpenTopic={onOpenTopic} periodLabel={periodLabel(insights.range)} />
       <Reveal className="grid gap-3 lg:grid-cols-2">
         <RevealItem><SkillRadarCard topics={insights.coverage.topics} /></RevealItem>
-        <RevealItem><StrengthsCard topics={insights.coverage.topics} onOpenTopic={onOpenTopic} /></RevealItem>
+        <RevealItem data-guide="an-strengths"><StrengthsCard topics={insights.coverage.topics} onOpenTopic={onOpenTopic} /></RevealItem>
         {coding?.growth?.length > 1 && <RevealItem className="lg:col-span-2"><CumulativeCard growth={coding.growth} /></RevealItem>}
       </Reveal>
     </div>

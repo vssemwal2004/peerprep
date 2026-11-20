@@ -774,6 +774,7 @@ function CodeEditor({
 
       <div
         ref={editorContainerRef}
+        data-guide="ps-editor"
         className="relative z-0 min-h-0 bg-transparent"
         style={{ height: editorHeight }}
       >
@@ -811,6 +812,7 @@ function CodeEditor({
 
       <div
         ref={consoleContainerRef}
+        data-guide="ps-console"
         className="relative z-20 flex min-h-0 flex-col overflow-hidden bg-white px-3 pb-2 pt-0.5 dark:bg-[#282828]"
         style={{ height: consoleHeight }}
       >
@@ -839,7 +841,7 @@ function CodeEditor({
             Test Result
           </button>
         </div>
-        {consoleActions && <div className="flex shrink-0 items-center gap-2 py-1.5" role="group" aria-label="Run and submit">
+        {consoleActions && <div className="flex shrink-0 items-center gap-2 py-1.5" role="group" aria-label="Run and submit" data-guide="ps-run-submit">
           <button
             type="button"
             onClick={handleRun}
@@ -910,6 +912,7 @@ function CodeEditor({
                     <button
                       type="button"
                       onClick={() => onAddCustomTestCase(activeTestCase?.id ?? null)}
+                      data-guide="ps-custom"
                       title="Add your own testcase (starts from the selected case's input)"
                       className="inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-dashed border-slate-300 px-2 text-xs font-medium text-slate-500 transition-colors hover:border-sky-400 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 dark:border-gray-600 dark:text-gray-400 dark:hover:border-sky-500 dark:hover:text-sky-300"
                     >

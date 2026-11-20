@@ -6,6 +6,7 @@ import { plural } from '../quickprep/format';
 import { ThresholdCard } from './companyUi';
 import CompanyRequests from './CompanyRequests';
 import QuestionTags from './QuestionTags';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
 
 const VIEWS = [{ value: 'requests', label: 'Requests' }, { value: 'tags', label: 'Question tags' }];
 
@@ -36,20 +37,20 @@ export default function SuggestedCompanies() {
   };
 
   return <Page>
-    <PageHeader icon={Building2} title="Suggested companies" crumbs={[{ label: 'Admin', to: '/admin/dashboard' }, { label: 'Settings' }, { label: 'Suggested companies' }]}
+    <PageHeader icon={Building2} title="Suggested companies" guide="sc-header" info={<PageGuideButton />} crumbs={[{ label: 'Admin', to: '/admin/dashboard' }, { label: 'Settings' }, { label: 'Suggested companies' }]}
       description="Companies students reported after solving questions. Approve or merge them before they can tag questions. A tag appears on a question only after enough different students confirm it." />
 
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div data-guide="sc-stats" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <StatCard icon={Inbox} label="Pending review" value={value(counts.pending)} hint="New names waiting for a decision" tone="amber" />
       <StatCard icon={CircleCheck} label="Approved" value={value(counts.approved)} hint={summary ? `${counts.merged ?? 0} merged · ${counts.rejected ?? 0} rejected` : undefined} tone="emerald" />
       <StatCard icon={BadgeCheck} label="Verified question tags" value={value(summary?.verifiedTags)} hint="Visible to students" tone="sky" />
-      <ThresholdCard threshold={summary?.threshold} onSave={saveThreshold} />
+      <div data-guide="sc-threshold" className="grid min-w-0"><ThresholdCard threshold={summary?.threshold} onSave={saveThreshold} /></div>
     </div>
 
     {message && <Notice tone={message.tone} onClose={() => setMessage(null)}>{message.text}</Notice>}
 
-    <Segmented label="View" value={view} onChange={show} options={VIEWS} />
-    <div hidden={view !== 'requests'}><CompanyRequests threshold={summary?.threshold} version={version} onLoaded={onLoaded} onChanged={refresh} notify={setMessage} /></div>
+    <div data-guide="sc-views" className="w-fit"><Segmented label="View" value={view} onChange={show} options={VIEWS} /></div>
+    <div data-guide="sc-requests" hidden={view !== 'requests'}><CompanyRequests threshold={summary?.threshold} version={version} onLoaded={onLoaded} onChanged={refresh} notify={setMessage} /></div>
     {opened.tags && <div hidden={view !== 'tags'}><QuestionTags threshold={summary?.threshold} version={version} /></div>}
   </Page>;
 }

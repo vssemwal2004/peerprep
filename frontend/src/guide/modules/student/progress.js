@@ -1,0 +1,481 @@
+// Student guides: rankings, Prep Coin wallet, profile, resume builder and Prep Mates.
+
+export default [
+  {
+    id: "student.rankings",
+    paths: ["/student/rankings"],
+    area: "Progress & rewards",
+    title: "Ranking",
+    icon: "trophy",
+    summary: "Your Prep Score and where you stand at your university and across connected universities.",
+    intro: "This page shows where your preparation puts you. Your rank comes from your Prep Score, built from your verified work in coding, tests, interviews and learning.\nHarder work counts more, so steady practice is the way to climb.",
+    next: "student.wallet",
+    tips: [
+      "Harder problems, tests and interviews add the most to your Prep Score.",
+      "Equal scores share the same rank.",
+      "Other students never see your name in the global ranking, and you never see theirs.",
+    ],
+    steps: [
+      {
+        id: "rk-hero", target: "rk-hero", chapter: "overview", quick: true,
+        title: "Your rankings",
+        body: "Two views of your progress: your position at your own university and across all connected universities. Both are based on your Prep Score.",
+      },
+      {
+        id: "rk-university", target: "rk-university", chapter: "parts", quick: true,
+        title: "University standing",
+        body: "Your rank among students of your university, how many students are ranked, and your top percentage. The bar shows how far you are from rank #1. Below it you see your Prep Score and earned badges.",
+      },
+      {
+        id: "rk-global", target: "rk-global", chapter: "parts", quick: true,
+        title: "Global standing",
+        body: "Your rank among students of every connected university, using the latest synced Prep Scores. Use the refresh icon to load the newest figure. Only your own rank is shown.",
+      },
+      {
+        id: "rk-privacy", target: "rk-privacy", chapter: "tips",
+        title: "Private by design",
+        body: "No names, contact details or profiles are shared in global rankings. Universities that are not synced right now are left out until they are.",
+      },
+      {
+        id: "rk-climb", chapter: "tips",
+        title: "How to climb",
+        body: "Your Prep Score grows with verified work: problems solved for the first time, tests passed, interviews and learning topics completed. Harder work counts more, so a steady daily habit is the surest way up.",
+      },
+    ],
+  },
+  {
+    id: "student.wallet",
+    paths: ["/student/wallet"],
+    area: "Progress & rewards",
+    title: "Prep Coins",
+    icon: "coins",
+    summary: "Your Prep Coin balance, what the coins unlock, and every coin you received or spent.",
+    intro: "Prep Coins are PeerPrep's reward points. You earn them for regular practice and achievements, and your coordinator can also issue them.\nSpend them on PeerPrep features. They never change your Prep Score or rank.",
+    next: "student.profile",
+    tips: [
+      "Prep Coins and Prep Score are separate: spending coins never lowers your score.",
+      "Some features include free uses each month; check them before spending coins.",
+    ],
+    steps: [
+      {
+        id: "wl-balance", target: "wl-balance", chapter: "overview", quick: true,
+        title: "Your balance",
+        body: "How many Prep Coins you have right now. It updates as soon as you earn or spend coins.",
+      },
+      {
+        id: "wl-month", target: "wl-month", chapter: "parts",
+        title: "This month",
+        body: "Coins you received (including refunds) and coins you spent in the current month.",
+      },
+      {
+        id: "wl-pricing", target: "wl-pricing", chapter: "parts", quick: true,
+        title: "What Prep Coins unlock",
+        body: "Features you can use with Prep Coins and what each costs. If a feature has free uses each month, you see how many are left before coins are needed.",
+      },
+      {
+        id: "wl-history", target: "wl-history", chapter: "parts", quick: true,
+        title: "History",
+        body: "Every coin movement, newest first and grouped by day: coins earned for practice, coins received, coins spent and refunds.",
+      },
+      {
+        id: "wl-filter", target: "wl-filter", chapter: "parts",
+        title: "Filter the history",
+        body: "Show All movements, or only Received, Spent or Refunds.",
+        tryIt: "Click Received to see only coins you got",
+      },
+      {
+        id: "wl-earn", chapter: "tips",
+        title: "How to earn coins",
+        body: "Practise regularly: signing in, solving problems and reaching badge levels can earn you Prep Coins. Each one appears in your history with the reason.",
+      },
+    ],
+  },
+  {
+    id: "student.profile",
+    paths: ["/student/profile"],
+    area: "Account",
+    title: "My profile",
+    icon: "user",
+    summary: "Your public identity, Prep Score, coding progress, activity, badges and recent practice on one page.",
+    intro: "This is your profile: who you are on PeerPrep and everything you have achieved so far.\nKeep it complete and up to date; classmates see parts of it when you are visible to peers.",
+    next: "student.resume",
+    tips: [
+      "Add a short bio and your LinkedIn and GitHub links so your profile looks complete.",
+      "Name, college, course and branch come from your institution and cannot be edited here.",
+      "Your Prep Score and Prep Coins are never shown to classmates.",
+    ],
+    steps: [
+      {
+        id: "pf-identity", target: "pf-identity", chapter: "overview", quick: true,
+        title: "Your identity",
+        body: "Your photo, name, username, level and bio. Click the camera to change your photo, and click your level to see all levels.",
+      },
+      {
+        id: "pf-edit", target: "pf-edit", chapter: "actions", quick: true,
+        title: "Edit Profile",
+        body: "Change your username, bio and LinkedIn, GitHub and portfolio links. Here you also choose whether classmates can find you and send Prep Mate requests (Visible to peers).",
+      },
+      {
+        id: "pf-mates", target: "pf-mates", chapter: "parts",
+        title: "Your Prep Mates",
+        body: "How many Prep Mates you have. Click to see the list. If someone sent you a request, a reminder appears here so you can review it.",
+      },
+      {
+        id: "pf-coins", target: "pf-coins", chapter: "parts",
+        title: "Prep Coin balance",
+        body: "Your current Prep Coins. Click to open your wallet with the full history.",
+      },
+      {
+        id: "pf-about", target: "pf-about", chapter: "parts",
+        title: "About and links",
+        body: "College, course, branch, student ID, semester and email from your institution's records. Your links are listed below them.",
+      },
+      {
+        id: "pf-score", target: "pf-score", chapter: "parts", quick: true,
+        title: "Your Prep Score",
+        body: "Your Prep Score and your rank at your university. It comes from your verified work across PeerPrep. View rankings opens the full ranking page.",
+      },
+      {
+        id: "pf-summary", target: "pf-summary", chapter: "parts",
+        title: "Your summary",
+        body: "A short summary of your practice with one suggested next step, for example trying your first Medium problem.",
+      },
+      {
+        id: "pf-coding", target: "pf-coding", chapter: "parts",
+        title: "Coding progress",
+        body: "Problems solved out of the total, split into Easy, Medium and Hard. Aim to grow all three, not only Easy.",
+      },
+      {
+        id: "pf-activity", target: "pf-activity", chapter: "parts",
+        title: "Activity",
+        body: "A calendar of the days you practised. Switch between the year and the last 30 days. Darker squares mean more activity that day.",
+      },
+      {
+        id: "pf-badges", target: "pf-badges", chapter: "parts",
+        title: "Badges and level",
+        body: "The badges you earned and how close you are to the next level. Open the gallery to see every badge and how to earn it.",
+      },
+      {
+        id: "pf-progress", target: "pf-progress", chapter: "parts",
+        title: "PeerPrep progress",
+        body: "Your results outside coding practice: assessments, interview feedback and learning modules, when your university uses them.",
+      },
+      {
+        id: "pf-daily", target: "pf-daily", chapter: "parts",
+        title: "Daily challenge and sheets",
+        body: "Today's challenge and your Quick Prep sheets, so you can jump straight into practice from your profile.",
+      },
+      {
+        id: "pf-history", target: "pf-history", chapter: "parts",
+        title: "Practice history",
+        body: "Your recently solved problems, recent submissions and runs, and the languages you use most.",
+      },
+    ],
+  },
+  {
+    id: "student.resume",
+    paths: ["/student/resume"],
+    area: "Account",
+    title: "Resume Builder",
+    icon: "file",
+    summary: "Build a clean, placement-ready A4 resume with a live preview, quality tips and PDF download.",
+    intro: "Build your placement resume here. Fill in the sections on the left and watch the A4 preview update on the right.\nEvery field is optional, and empty sections never appear in the final PDF.",
+    next: "student.peers",
+    tips: [
+      "Write bullets as action + work + result, and add numbers where you can.",
+      "Ctrl/⌘ + S saves and Ctrl/⌘ + P opens the preview.",
+      "Editing basic details here does not change your PeerPrep profile.",
+      "Hide a section instead of deleting it if you may need it later.",
+    ],
+    steps: [
+      {
+        id: "rs-toolbar", target: "rs-toolbar", chapter: "layout",
+        title: "The toolbar",
+        body: "Your main actions stay at the top while you scroll: save status, Sections, Save and Download PDF.",
+      },
+      {
+        id: "rs-save-state", target: "rs-save-state", chapter: "layout",
+        title: "Save status",
+        body: "Shows Saving, Saved (with the time) or Unsaved changes. Your resume also saves on its own shortly after you stop typing.",
+      },
+      {
+        id: "rs-template", target: "rs-template", chapter: "parts", quick: true,
+        title: "Resume template",
+        body: "Pick the layout for your resume. The preview and the downloaded PDF always use the same template, so what you see is what you get.",
+      },
+      {
+        id: "rs-quality", target: "rs-quality", chapter: "parts", quick: true,
+        title: "Resume quality",
+        body: "A score for how complete and strong your resume is, with bullet counts, how many bullets show measurable results, the page count and one tip to improve next.",
+      },
+      {
+        id: "rs-restore", target: "rs-restore", chapter: "actions",
+        title: "Restore",
+        body: "Brings back your previously saved version of the resume, in case you want to undo a set of changes.",
+      },
+      {
+        id: "rs-nav", target: "rs-nav", chapter: "parts",
+        title: "Jump to a section",
+        body: "Click a chip to jump to that section. Highlighted chips are sections that already have content.",
+      },
+      {
+        id: "rs-basics", target: "rs-basics", chapter: "parts", quick: true,
+        title: "Fill a section",
+        body: "Each section is a card: Basic Details, Academic Details, Experience, Projects, Achievements and Technical Skills. Open a card, add entries, and reorder or remove them. A section can be hidden from the preview without losing its content.",
+      },
+      {
+        id: "rs-custom", target: "rs-custom", chapter: "actions",
+        title: "Your own sections",
+        body: "Add sections such as Certifications, Research or Volunteering, with headings, paragraphs, dates, links and bullet points.",
+      },
+      {
+        id: "rs-sections-button", target: "rs-sections-button", chapter: "actions",
+        title: "Arrange sections",
+        body: "Sections opens the outline: reorder, hide, rename and add sections so the most important ones come first.",
+      },
+      {
+        id: "rs-preview", target: "rs-preview", chapter: "parts",
+        title: "Live A4 preview",
+        body: "Your resume exactly as it will be downloaded, updated as you type. Expand it to check every page before you download.",
+      },
+      {
+        id: "rs-save", target: "rs-save", chapter: "actions",
+        title: "Save",
+        body: "Saves your resume now. Use it before you leave the page if the status shows Unsaved changes.",
+      },
+      {
+        id: "rs-download", target: "rs-download", chapter: "actions", quick: true,
+        title: "Download PDF",
+        body: "Creates a professional A4 PDF of your resume, ready to upload to placement portals and send to companies.",
+      },
+    ],
+  },
+  {
+    id: "student.peers",
+    paths: ["/student/peers"],
+    area: "Community",
+    title: "Prep Mates",
+    icon: "users",
+    summary: "Connect with classmates from your college, see where you stand among your Prep Mates, and compare your practice.",
+    intro: "Prep Mates are classmates from your college who you connect with: one of you sends a request and the other accepts.\nPractising alongside friends keeps you motivated. Here you see how you compare and who to catch next.",
+    tips: [
+      "You can only find and connect with classmates when Visible to peers is on in Edit Profile.",
+      "Only practice is compared. Prep Score, Prep Coins, tests and interviews stay private.",
+      "A Prep Ping is a friendly reminder to a Prep Mate who has not practised today.",
+    ],
+    terms: [
+      { term: "Prep Ping", text: "A friendly reminder you can send to a Prep Mate who has not practised today, at most once a day." },
+    ],
+    steps: [
+      {
+        id: "pm-title", target: "pm-title", chapter: "overview",
+        title: "Your circle",
+        body: "Prep Mates is your study circle: classmates from your college you connected with. Everything here compares practice only.",
+      },
+      {
+        id: "pm-find", target: "pm-find", chapter: "actions", quick: true,
+        title: "Find classmates",
+        body: "Type at least two letters of a name to search classmates from your college. Send a request from the result; they become your Prep Mate when they accept.",
+      },
+      {
+        id: "pm-hidden", target: "pm-hidden", chapter: "tips",
+        title: "Your profile is hidden",
+        body: "While your profile is hidden you can browse but not connect. Turn on Visible to peers in Edit Profile to send and receive requests.",
+      },
+      {
+        id: "pm-welcome", target: "pm-welcome", chapter: "overview",
+        title: "Start your circle",
+        body: "No Prep Mates yet? Send a request, wait for them to accept, then compare week by week. Find classmates gets you started.",
+      },
+      {
+        id: "pm-standing", target: "pm-standing", chapter: "parts", quick: true,
+        title: "Your standing",
+        body: "Your rank among you and your Prep Mates by problems solved, your top percentage, and who is just ahead of you and just behind you.",
+      },
+      {
+        id: "pm-period", target: "pm-period", chapter: "parts",
+        title: "Pick a period",
+        body: "Compare this week, this month or all time. The standing and leaderboard follow your choice.",
+        tryIt: "Click This month to change the period",
+      },
+      {
+        id: "pm-around", target: "pm-around", chapter: "parts",
+        title: "Who is around you",
+        body: "The Prep Mate just above you shows how many problems you need to pass them; the one below shows your lead. Click Compare to see the details.",
+      },
+      {
+        id: "pm-distribution", target: "pm-distribution", chapter: "parts",
+        title: "Where everyone stands",
+        body: "Your Prep Mates grouped by problems solved in the chosen period, with your own group picked out.",
+      },
+      {
+        id: "pm-counts", target: "pm-counts", chapter: "parts",
+        title: "Quick counts",
+        body: "How many Prep Mates you have, how many practised today, and how many requests are waiting for you.",
+      },
+      {
+        id: "pm-leaderboard", target: "pm-leaderboard", chapter: "parts", quick: true,
+        title: "Leaderboard",
+        body: "Everyone in your circle ranked by problems solved, with streaks and who practised today. Search for a Prep Mate, use Jump to me, send a Prep Ping, or click Compare on any row.",
+      },
+      {
+        id: "pm-directory", target: "pm-directory", chapter: "parts",
+        title: "Your Prep Mates",
+        body: "All your Prep Mates as cards with this week's and all-time solves. Search them, sort them, and open a comparison.",
+      },
+      {
+        id: "pm-lists", target: "pm-lists", chapter: "actions", quick: true,
+        title: "Requests and Sent",
+        body: "Requests lists classmates who asked to be your Prep Mate: accept or decline. Sent lists the requests you are waiting on.",
+        tryIt: "Click Requests to see who asked you",
+      },
+      {
+        id: "pm-suggestions", target: "pm-suggestions", chapter: "parts",
+        title: "Grow your circle",
+        body: "Classmates from your college who are practising and are not your Prep Mates yet. Send a request to anyone you would like to practise with.",
+      },
+    ],
+  },
+  {
+    id: "student.peer-profile",
+    paths: ["/student/peers/:id"],
+    area: "Community",
+    title: "Classmate profile",
+    icon: "user",
+    openFrom: "student.peers",
+    summary: "A classmate's practice profile: level, coding progress, badges, activity and recent solves.",
+    intro: "This is a classmate's profile, shown the way your own profile looks to them.\nOnly practice is shared. Contact details, Prep Score, Prep Coins and test or interview results stay private.",
+    tips: [
+      "Become Prep Mates to unlock the side-by-side comparison.",
+      "Open your own profile from here to see how classmates see you.",
+    ],
+    steps: [
+      {
+        id: "pp-back", target: "pp-back", chapter: "layout",
+        title: "Back",
+        body: "Returns to the page you came from, usually Prep Mates.",
+      },
+      {
+        id: "pp-identity", target: "pp-identity", chapter: "overview", quick: true,
+        title: "Who they are",
+        body: "Their photo, name, course and branch, level and bio.",
+      },
+      {
+        id: "pp-mates", target: "pp-mates", chapter: "parts",
+        title: "Their Prep Mates",
+        body: "How many Prep Mates they have. Click to see the list.",
+      },
+      {
+        id: "pp-actions", target: "pp-actions", chapter: "actions", quick: true,
+        title: "Connect",
+        body: "Send a Prep Mate request, or accept one they sent you. Once you are Prep Mates, Compare with me opens a side-by-side comparison. Removing a Prep Mate or withdrawing a request needs a second click to confirm.",
+      },
+      {
+        id: "pp-about", target: "pp-about", chapter: "parts",
+        title: "About",
+        body: "Course, branch and semester, with their links below if they added any.",
+      },
+      {
+        id: "pp-highlights", target: "pp-highlights", chapter: "parts", quick: true,
+        title: "Highlights",
+        body: "Their level, badges earned, problems solved and best streak at a glance.",
+      },
+      {
+        id: "pp-coding", target: "pp-coding", chapter: "parts",
+        title: "Coding progress",
+        body: "Problems they solved by difficulty. A good way to see what a steady practice habit looks like.",
+      },
+      {
+        id: "pp-badges", target: "pp-badges", chapter: "parts",
+        title: "Badges",
+        body: "The badges they have earned so far. Badges reward regular practice and milestones.",
+      },
+      {
+        id: "pp-activity", target: "pp-activity", chapter: "parts",
+        title: "Practice activity",
+        body: "The days they practised. Only practice is shown: no logins, tests or interviews.",
+      },
+      {
+        id: "pp-recent", target: "pp-recent", chapter: "parts",
+        title: "Recent solves and sheets",
+        body: "Problems they solved recently, their Quick Prep sheets and learning modules. Open one to practise the same thing.",
+      },
+      {
+        id: "pp-privacy", target: "pp-privacy", chapter: "tips",
+        title: "What stays private",
+        body: "Contact details, scores and Prep Coins are never shown on a classmate's profile, and the same is true for yours.",
+      },
+    ],
+  },
+  {
+    id: "student.peer-compare",
+    paths: ["/student/peers/:id/compare"],
+    area: "Community",
+    title: "Compare with a Prep Mate",
+    icon: "chart",
+    openFrom: "student.peers",
+    summary: "You and one Prep Mate side by side: problems solved, streaks, weekly progress, difficulty, topics and badges.",
+    intro: "A head-to-head view of your practice and one Prep Mate's. Use it to spot what they do differently and what to work on next.\nOnly practice is compared; Prep Score, Prep Coins, tests and interviews stay private.",
+    tips: [
+      "Look at the Topics chart to find areas your Prep Mate practises that you have skipped.",
+      "Add circle leaders to the chart to see how the top of your circle trains.",
+    ],
+    steps: [
+      {
+        id: "cmp-back", target: "cmp-back", chapter: "layout",
+        title: "Back to Prep Mates",
+        body: "Returns to your Prep Mates page to pick someone else to compare with.",
+      },
+      {
+        id: "cmp-faceoff", target: "cmp-faceoff", chapter: "overview", quick: true,
+        title: "Face-off",
+        body: "You on the left, your Prep Mate on the right, each with level, rank, streak and badges. The middle shows how many measures each of you leads, and the line below says who is ahead on problems solved.",
+      },
+      {
+        id: "cmp-scores", target: "cmp-scores", chapter: "parts", quick: true,
+        title: "Head to head",
+        body: "Five measures side by side: problems solved, this week, current streak, practice days in the last 30 days and topics covered, with who leads and by how much.",
+      },
+      {
+        id: "cmp-performance", target: "cmp-performance", chapter: "parts", quick: true,
+        title: "Performance comparison",
+        body: "Problems solved week by week for the last eight weeks. Switch between Each week and Total so far, and add the leaders of your circle to the chart.",
+      },
+      {
+        id: "cmp-leaders", target: "cmp-leaders", chapter: "parts",
+        title: "Problems solved",
+        body: "The top of your Prep Mates by all-time problems solved, with you and this Prep Mate picked out. Full ranking opens Prep Mates.",
+      },
+      {
+        id: "cmp-difficulty", target: "cmp-difficulty", chapter: "parts",
+        title: "Difficulty mix",
+        body: "How many Easy, Medium and Hard problems each of you solved. If they solve more Medium and Hard problems, that is a good next goal for you.",
+      },
+      {
+        id: "cmp-topics", target: "cmp-topics", chapter: "parts",
+        title: "Topics",
+        body: "Your most practised topics side by side. Gaps on your side show topics worth practising next.",
+      },
+      {
+        id: "cmp-rhythm", target: "cmp-rhythm", chapter: "parts",
+        title: "Last 30 days",
+        body: "Each square is a day with practice. Regular practice beats long, rare sessions.",
+      },
+      {
+        id: "cmp-badges", target: "cmp-badges", chapter: "parts",
+        title: "Badges this month",
+        body: "The level each of you reached on this month's badges, side by side.",
+      },
+      {
+        id: "cmp-coach", target: "cmp-coach", chapter: "actions",
+        title: "What this means for you",
+        body: "Short takeaways from the comparison: where to focus, your practice rhythm and your edge. Practice now takes you straight to Prep Coding.",
+      },
+      {
+        id: "cmp-privacy", target: "cmp-privacy", chapter: "tips",
+        title: "Practice only",
+        body: "Only practice is compared here. Prep Score, Prep Coins, tests and interviews stay private for both of you.",
+      },
+    ],
+  },
+];

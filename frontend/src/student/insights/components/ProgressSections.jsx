@@ -4,6 +4,7 @@ import { ArrowRight, BookOpen, Bot, CalendarClock, ClipboardCheck, Mic } from "l
 import { lessonsTrendOption, mockTrendOption, ratingsRadarOption, testOutcomeOption, testTrendOption } from "../insightCharts";
 import { daysAgoText, formatNumber, formatPercent, fullDate, shortDate } from "../insightModel";
 import { Card, CardTitle, Chart, Delta, Empty, Figure, focusRing, Pill, ProgressBar, Section } from "./ui";
+import GuideInfo from "../../../guide/platform/GuideInfo";
 
 const compare = (value, previous, unit = "") => (previous === null || previous === undefined ? null : { change: Math.round((value - previous) * 10) / 10, unit });
 const linkClass = `inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10 ${focusRing}`;
@@ -11,7 +12,7 @@ const linkClass = `inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12.
 export function LearningSection({ learning, range, previousLabel }) {
   const trend = useCallback((theme) => lessonsTrendOption(learning.daily, { from: range.from, to: range.to }, theme), [learning.daily, range.from, range.to]);
   return (
-    <Section id="learning" icon={BookOpen} title="Learning" subtitle={`Last lesson: ${daysAgoText(learning.daysSinceActive)}`} actions={<Link to="/student/learning" className={linkClass}>Open learning<ArrowRight className="h-3.5 w-3.5" /></Link>}>
+    <Section id="learning" data-guide="an-learning" info={<GuideInfo step="an-learning" />} icon={BookOpen} title="Learning" subtitle={`Last lesson: ${daysAgoText(learning.daysSinceActive)}`} actions={<Link to="/student/learning" className={linkClass}>Open learning<ArrowRight className="h-3.5 w-3.5" /></Link>}>
       <div className="grid gap-3 lg:grid-cols-3">
         <Card className="space-y-4 p-4">
           <Figure label="Course progress" value={formatPercent(learning.progress)} sub={`${learning.completedTopics} of ${learning.availableTopics} lessons`} />
@@ -47,7 +48,7 @@ export function TestsSection({ assessment, previousLabel }) {
   const trend = useCallback((theme) => testTrendOption(assessment.tests, assessment.passPercent, theme), [assessment.tests, assessment.passPercent]);
   const outcome = useCallback((theme) => testOutcomeOption(assessment, theme), [assessment]);
   return (
-    <Section id="tests" icon={ClipboardCheck} title="Tests" subtitle={`Pass mark ${assessment.passPercent}% · last test: ${daysAgoText(assessment.daysSinceActive)}`}
+    <Section id="tests" data-guide="an-tests" info={<GuideInfo step="an-tests" />} icon={ClipboardCheck} title="Tests" subtitle={`Pass mark ${assessment.passPercent}% · last test: ${daysAgoText(assessment.daysSinceActive)}`}
       actions={<Link to="/student/assessment-reports" className={linkClass}>Test reports<ArrowRight className="h-3.5 w-3.5" /></Link>}>
       <Card className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
         <Figure label="Average score" value={assessment.taken ? formatPercent(assessment.averageScore) : "—"}><Delta kpi={compare(assessment.averageScore, assessment.previous?.taken ? assessment.previous.averageScore : null, "%")} label={previousLabel} /></Figure>
@@ -112,7 +113,7 @@ export function InterviewSection({ interview, previousLabel }) {
   const trend = useCallback((theme) => mockTrendOption(mock?.mocks || [], theme), [mock?.mocks]);
   const rated = mock?.ratings?.some((rating) => rating.value > 0);
   return (
-    <Section id="interviews" icon={Mic} title="Interviews" subtitle={[mock && `${mock.done} mock`, ai && `${ai.completed} AI`].filter(Boolean).join(" · ") + " in this period"}
+    <Section id="interviews" data-guide="an-interviews" info={<GuideInfo step="an-interviews" />} icon={Mic} title="Interviews" subtitle={[mock && `${mock.done} mock`, ai && `${ai.completed} AI`].filter(Boolean).join(" · ") + " in this period"}
       actions={<>{mock && <Link to="/student/interview" className={linkClass}>Mock interviews<ArrowRight className="h-3.5 w-3.5" /></Link>}{ai && <Link to="/student/ai-interviews" className={linkClass}>AI interviews<ArrowRight className="h-3.5 w-3.5" /></Link>}</>}>
       <Card className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
         {mock && <Figure label="Mock interviews" value={formatNumber(mock.done)} sub={`${mock.given} given · ${mock.scheduled} scheduled`}><Delta kpi={compare(mock.done, interview.previous?.mockDone)} label={previousLabel} /></Figure>}

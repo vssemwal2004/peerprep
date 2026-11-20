@@ -21,6 +21,7 @@ import { RichTextPreview } from './CompilerContentPreview';
 import { getDisplayProblemStatement } from './problemStatementFormatting';
 import { getLanguageLabel } from './compilerUtils';
 import { DifficultyBadge, EmptyState, LoadingPanel, ProblemStatusBadge } from './CompilerUi';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
 
 function normalizeComparableText(value) {
   return String(value ?? '')
@@ -713,18 +714,19 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
         : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300';
 
   const previewHeader = (
-    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3">
+    <div data-guide="cp-header" className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{problem.title}</p>
+          <div className="flex min-w-0 items-center gap-2"><p className="truncate text-sm font-bold text-slate-950 dark:text-white">{problem.title}</p><PageGuideButton /></div>
           <p className="text-[11px] text-slate-500 dark:text-gray-400">{sharedQuestionId ? 'Shared coding preview · source stays with the super admin' : 'Coding preview · validate before publishing'}</p>
         </div>
-        <span className={`hidden rounded-full px-2.5 py-1 text-[11px] font-semibold sm:inline-flex ${statusBadgeClass}`}>
+        <span data-guide="cp-status" className={`hidden rounded-full px-2.5 py-1 text-[11px] font-semibold sm:inline-flex ${statusBadgeClass}`}>
           {verdictStatus || (previewValidated ? 'All Languages Passed' : `Validation Pending · ${validationProgress}`)}
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <select
+          data-guide="cp-language"
           value={language}
           onChange={(event) => setLanguage(event.target.value)}
           disabled={isRunning || isSubmitting}
@@ -754,6 +756,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
         }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">Make local copy</button> : <button type="button" onClick={() => navigate(editTo || `${rolePrefix}/library/coding/${problem._id}/edit`, { state: { returnTo: backTo } })} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{editLabel}</button>}
         {!sharedQuestionId && <button
           type="button"
+          data-guide="cp-publish"
           onClick={canApprovePublish ? handleApproveToPublish : undefined}
           disabled={!canApprovePublish || isApprovingPublish || isSubmitting || isRunning}
           title={!isPublished && !canApprovePublish ? 'Submit an accepted solution to enable publishing.' : ''}
@@ -789,6 +792,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
                 width: leftWidth === null ? 'clamp(320px, 40vw, 680px)' : `${leftWidth}px`,
                 willChange: 'width',
               }}
+              data-guide="cp-description"
               className="flex h-full min-w-[320px] shrink-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-[#282828]"
             >
               <div className="flex h-11 flex-none items-end justify-between border-b border-zinc-200 px-5 dark:border-zinc-700">
@@ -809,7 +813,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               <div className="absolute inset-y-4 left-1/2 w-1 -translate-x-1/2 rounded-full bg-zinc-300 transition group-hover:bg-[#ffa116] dark:bg-zinc-700" />
             </button>
 
-            <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-[#282828]">
+            <section data-guide="cp-editor" className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-[#282828]">
               <CodeEditor
                 supportedLanguages={problem.supportedLanguages || []}
                 language={language}

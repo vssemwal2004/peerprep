@@ -1,4 +1,6 @@
 import PrepCoinIcon from '../../components/prepCoin/PrepCoinIcon';
+import GuideInfo from '../../guide/platform/GuideInfo';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
 import { Glass, OverviewShell } from '../../overview/ui';
 import { relativeTime } from '../../overview/overviewModel';
 import { formatCoins, kindMeta } from './coinModel';
@@ -30,19 +32,24 @@ export function LiveBadge({ updatedAt, loading }) {
   );
 }
 
+/** A card title with the page guide's ⓘ for one tour step beside it. */
+export function InfoTitle({ title, step }) {
+  return <span className="inline-flex items-center gap-1.5">{title}<GuideInfo step={step} /></span>;
+}
+
 export function CoinPage({ title, subtitle, actions, children, live }) {
   return (
     <OverviewShell>
-      <Glass as="header" className="mb-4 flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
+      <Glass as="header" data-guide="coin-header" className="mb-4 flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-4">
           <PrepCoinIcon size={48} shine />
           <div className="min-w-0">
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">Prep Coins</p>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">{title}</h1>
+            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">{title}<PageGuideButton /></h1>
             {subtitle ? <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{subtitle}</p> : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">{live}{actions}</div>
+        <div data-guide="coin-actions" className="flex flex-wrap items-center gap-2">{live}{actions}</div>
       </Glass>
       {children}
     </OverviewShell>

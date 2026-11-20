@@ -39,7 +39,7 @@ export default function InterviewRow({
           {factItems.map((fact, index) => <span key={`${fact}-${index}`} className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 dark:bg-white/[0.06] dark:text-zinc-300">{fact}</span>)}
         </div>}
       </div>
-      <div className={`col-span-2 col-start-1 row-start-3 mt-3 items-start gap-2 sm:col-span-1 sm:col-start-3 sm:row-start-1 sm:mt-0 sm:justify-end sm:self-center ${hasActions ? "flex" : "hidden sm:flex"}`}>
+      <div data-guide="ai-row-action" className={`col-span-2 col-start-1 row-start-3 mt-3 items-start gap-2 sm:col-span-1 sm:col-start-3 sm:row-start-1 sm:mt-0 sm:justify-end sm:self-center ${hasActions ? "flex" : "hidden sm:flex"}`}>
         <div className="flex min-w-0 flex-1 flex-col gap-1 sm:w-[140px] sm:flex-none">
           <div className="flex [&>*]:w-full">{primary}</div>
           {caption && <p className={`text-center text-xs leading-4 tabular-nums ${CAPTION_TONE[captionTone] || CAPTION_TONE.default}`}>{caption}</p>}

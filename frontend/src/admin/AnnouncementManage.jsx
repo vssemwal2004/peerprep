@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../utils/api';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 const typeOptions = [
   { value: '', label: 'All Types' },
@@ -139,13 +140,13 @@ export default function AnnouncementManage() {
     <div className="min-h-screen bg-slate-50 px-6 py-6 dark:bg-gray-900">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Manage Announcements</h1>
+          <div data-guide="am-header">
+            <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-900 dark:text-white">Manage Announcements<PageGuideButton /></h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
               Edit, activate, or remove announcements shown to students.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div data-guide="am-filters" className="flex flex-wrap gap-2">
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -173,7 +174,7 @@ export default function AnnouncementManage() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div data-guide="am-table" className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-gray-700 dark:text-slate-400">

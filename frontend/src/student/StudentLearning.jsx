@@ -5,6 +5,7 @@ import { api } from '../utils/api';
 import socketService from '../utils/socket';
 import { useToast } from '../components/CustomToast';
 import { useNavigate } from 'react-router-dom';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 export default function StudentLearning() {
   const toast = useToast();
@@ -102,9 +103,11 @@ export default function StudentLearning() {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           className="mb-6"
+          data-guide="ln-header"
         >
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-gray-100 mb-1">
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800 dark:text-gray-100 mb-1">
             Learning Modules
+            <PageGuideButton />
           </h1>
           <p className="text-sm text-slate-600 dark:text-gray-400">
             Select a semester to view available subjects and teachers
@@ -116,6 +119,7 @@ export default function StudentLearning() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
+            data-guide="ln-empty"
             className="bg-slate-50 dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-12 text-center"
           >
             <div className="w-16 h-16 bg-slate-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -124,7 +128,7 @@ export default function StudentLearning() {
             <p className="text-sm text-slate-600 dark:text-gray-300 font-medium">No courses available yet</p>
           </motion.div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-guide="ln-semesters">
             {semesters.map((semester, idx) => (
               <motion.div
                 key={semester.semesterName}

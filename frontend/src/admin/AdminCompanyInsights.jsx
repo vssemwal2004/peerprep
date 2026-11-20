@@ -5,6 +5,8 @@ import { api } from "../utils/api";
 import { useToast } from "../components/CustomToast";
 import CompanyBenchmarkForm, { createEmptyBenchmark, validateBenchmark } from "./CompanyBenchmarkForm";
 import { SortHeader, TablePager, useClientTable } from "../components/table";
+import PageGuideButton from "../guide/platform/PageGuideButton";
+import GuideInfo from "../guide/platform/GuideInfo";
 
 const PAGE_SIZE = 8;
 const numberOrNull = (value) => (value === null || value === undefined || value === "" || Number.isNaN(Number(value)) ? null : Number(value));
@@ -195,17 +197,18 @@ export default function AdminCompanyInsights() {
     <div className="min-h-screen bg-white dark:bg-gray-900">
       <div className="mx-auto max-w-7xl px-4 py-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
+          <div data-guide="ci-title">
             <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-gray-400">
               Company Insights
             </div>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">View Benchmarks</h1>
+            <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-slate-900 dark:text-white">View Benchmarks <PageGuideButton /></h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">
               Search, edit, and manage company benchmarks used for readiness analytics.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
+              data-guide="ci-refresh"
               onClick={loadCompanies}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
             >
@@ -213,6 +216,7 @@ export default function AdminCompanyInsights() {
               Refresh
             </button>
             <Link
+              data-guide="ci-add"
               to="/admin/company-insights/add"
               className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500"
             >
@@ -224,10 +228,10 @@ export default function AdminCompanyInsights() {
 
         <div className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
           <div className="flex flex-col gap-4 border-b border-slate-100 px-6 py-4 dark:border-gray-800 md:flex-row md:items-center md:justify-between">
-            <div className="text-sm font-semibold text-slate-700 dark:text-gray-200">
-              Total Companies: {filtered.length}
+            <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-gray-200">
+              Total Companies: {filtered.length} <GuideInfo step="ci-table" />
             </div>
-            <div className="relative w-full md:w-64">
+            <div className="relative w-full md:w-64" data-guide="ci-search">
               <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <input
                 value={search}
@@ -238,7 +242,7 @@ export default function AdminCompanyInsights() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" data-guide="ci-table">
             <table className="min-w-full text-left text-sm" style={{ "--serial-start": (table.page - 1) * table.pageSize }}>
               <thead className="bg-slate-50 text-xs uppercase tracking-widest text-slate-400 dark:bg-gray-800/60 dark:text-gray-500">
                 <tr>
@@ -324,7 +328,7 @@ export default function AdminCompanyInsights() {
             </table>
           </div>
 
-          <TablePager {...table.pager} busy={loading} noun="companies" className="px-6 dark:border-gray-800" />
+          <div data-guide="ci-pager"><TablePager {...table.pager} busy={loading} noun="companies" className="px-6 dark:border-gray-800" /></div>
         </div>
       </div>
 

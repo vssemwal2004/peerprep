@@ -122,9 +122,8 @@ export function normalizePrepScoreConfig(value = {}) {
     },
     modules: {},
   };
-  // Only Prep Coding makes the Prep Score now; the other modules' settings are kept so older
-  // policies still load and the video completion percentage keeps working.
   MODULE_KEYS.forEach((key) => { normalized.modules[key] = normalizeModule(key, object(input.modules)[key]); });
+  if (!MODULE_KEYS.some((key) => normalized.modules[key].weight > 0)) throw new HttpError(400, 'At least one module weight must be greater than zero.');
   return normalized;
 }
 

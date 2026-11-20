@@ -8,6 +8,7 @@ import { SECTION_ICONS } from "../sectionIcons";
 import { CountUp } from "./motion";
 import { buttonClass, focusRing, primaryButtonClass, Segmented } from "./ui";
 import { dayKey } from "../../../components/dateRange/dateRangeModel";
+import PageGuideButton from "../../../guide/platform/PageGuideButton";
 
 // The student's local calendar day (toISOString is UTC and blocked "today" in IST before 05:30).
 const todayKey = () => dayKey();
@@ -30,7 +31,7 @@ function DownloadMenu({ onDownload }) {
     try { await onDownload(format); setOpen(false); } finally { setBusy(""); }
   };
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative" data-guide="an-download">
       <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)} className={buttonClass}>
         <Download className="h-3.5 w-3.5" aria-hidden="true" /><span className="hidden sm:inline">Report</span><ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
@@ -97,7 +98,7 @@ export function ProfileBanner({ insights, badges }) {
   const prep = coverage?.preparation;
   const meta = [student.studentId, student.semester ? `Semester ${student.semester}` : "", student.branch || student.course].filter(Boolean).join(" · ");
   return (
-    <motion.header initial={reduce ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+    <motion.header data-guide="an-banner" initial={reduce ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
       className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 via-sky-700 to-blue-900 p-5 text-white shadow-[0_20px_50px_-24px_rgba(3,105,161,0.65)] sm:p-6">
       <div className="pointer-events-none absolute inset-0 opacity-[0.12] [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:22px_22px]" aria-hidden="true" />
       <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-cyan-300/30 blur-3xl" aria-hidden="true" />
@@ -112,7 +113,10 @@ export function ProfileBanner({ insights, badges }) {
           </div>
           <div className="min-w-0">
             <p className="text-[11.5px] font-semibold uppercase tracking-[0.16em] text-sky-100/90">Prep Analysis</p>
-            <h1 className="truncate text-[24px] font-semibold leading-tight tracking-[-0.02em] sm:text-[28px]">{student.name || "Your preparation"}</h1>
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="truncate text-[24px] font-semibold leading-tight tracking-[-0.02em] sm:text-[28px]">{student.name || "Your preparation"}</h1>
+              <PageGuideButton size="sm" />
+            </div>
             {meta && <p className="truncate text-[12.5px] text-sky-100/85">{meta}</p>}
             <div className="mt-2.5 flex flex-wrap gap-1.5">
               <Chip icon={Flame} title="Days in a row with any activity">{activity.streak.current ? `${activity.streak.current}-day streak` : `Last active ${daysAgoText(activity.daysSinceActive).toLowerCase()}`}</Chip>
@@ -123,7 +127,7 @@ export function ProfileBanner({ insights, badges }) {
           </div>
         </div>
         {prep && (
-          <div className="flex items-center gap-4 rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-inset ring-white/15 backdrop-blur-sm">
+          <div data-guide="an-prep" className="flex items-center gap-4 rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-inset ring-white/15 backdrop-blur-sm">
             <div>
               <p className="text-[11.5px] font-medium text-sky-100">Preparation</p>
               <p className="text-[34px] font-semibold leading-none tracking-[-0.03em]"><CountUp value={Math.round(prep.percent)} />%</p>
@@ -145,7 +149,7 @@ export function ProfileBanner({ insights, badges }) {
 /** Tabs to each Prep Analysis page the student may open. */
 export function PageTabs({ sections, active }) {
   return (
-    <div className="sticky top-[calc(3rem+1px)] z-30 -mx-3 border-b lg:top-[calc(4rem+1px)] border-[#e9eaee]/80 bg-[#f6f7f9]/85 px-3 py-2 backdrop-blur-md sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8 dark:border-white/[0.06] dark:bg-[#1a1a1a]/85">
+    <div data-guide="an-tabs" className="sticky top-[calc(3rem+1px)] z-30 -mx-3 border-b lg:top-[calc(4rem+1px)] border-[#e9eaee]/80 bg-[#f6f7f9]/85 px-3 py-2 backdrop-blur-md sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8 dark:border-white/[0.06] dark:bg-[#1a1a1a]/85">
       <div>
         <nav aria-label="Prep Analysis pages" className="min-w-0">
           <ul className="flex gap-1 overflow-x-auto [scrollbar-width:none]">

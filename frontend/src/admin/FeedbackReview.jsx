@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import InterviewWorkspaceNav from '../components/interviews/InterviewWorkspaceNav';
 import InterviewSelector from '../components/interviews/InterviewSelector';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import GuideInfo from '../guide/platform/GuideInfo';
 import { 
   Filter, 
   RefreshCw, 
@@ -205,7 +206,7 @@ export default function FeedbackReview() {
     <InterviewWorkspaceNav events={events} loading={eventsLoading} error={eventsError}>
       <div className="mx-auto w-full max-w-[1600px] min-w-0">
         <div className="px-4 py-4 sm:px-6">
-          <div className="mb-5 border-b border-slate-200 pb-4 dark:border-gray-800">
+          <div className="mb-5 border-b border-slate-200 pb-4 dark:border-gray-800" data-guide="fb-selector">
             <InterviewSelector events={events} value={selectedEventId} onChange={handleEventClick} />
           </div>
           {/* Header */}
@@ -215,16 +216,17 @@ export default function FeedbackReview() {
             className="mb-3 sm:mb-4"
           >
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" data-guide="fb-heading">
                 <div>
-                  <h2 className="text-lg sm:text-xl font-semibold text-slate-800 dark:text-gray-100">
+                  <h2 className="flex items-center gap-1.5 text-lg sm:text-xl font-semibold text-slate-800 dark:text-gray-100">
                     {selectedEvent ? selectedEvent.name : 'All Feedback'}
+                    <GuideInfo step="fb-heading" />
                   </h2>
                 </div>
               </div>
             
               {/* Stats */}
-              <div className="flex gap-3 sm:gap-4">
+              <div className="flex gap-3 sm:gap-4" data-guide="fb-stats">
                 <div className="text-center">
                   <div className="text-base sm:text-lg font-semibold text-sky-600 dark:text-sky-400">{stats.total}</div>
                   <div className="text-xs text-slate-500 dark:text-gray-400">Total</div>
@@ -248,7 +250,7 @@ export default function FeedbackReview() {
             className="bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-700 p-4 mb-4"
           >
             <div className="flex flex-col lg:flex-row lg:items-end gap-3">
-              <div className="flex-1">
+              <div className="flex-1" data-guide="fb-college">
                 <label className="block text-xs font-medium text-slate-700 dark:text-gray-300 mb-1">
                   Candidate College
                 </label>
@@ -272,7 +274,7 @@ export default function FeedbackReview() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2" data-guide="fb-actions">
                 <button
                   type="button"
                   onClick={reset}
@@ -332,7 +334,7 @@ export default function FeedbackReview() {
           ) : (
             <>
               {/* Mobile View - Cards */}
-              <div className="lg:hidden space-y-2">
+              <div className="lg:hidden space-y-2" data-guide="fb-table">
                 {feedback.length === 0 ? (
                   <div className="text-center py-8 text-slate-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-lg border border-slate-300 dark:border-gray-700">
                     <GraduationCap className="w-8 h-8 text-slate-400 dark:text-gray-500 mx-auto mb-2" />
@@ -363,7 +365,7 @@ export default function FeedbackReview() {
               </div>
 
               {/* Desktop View - Table */}
-              <div className="hidden lg:block">
+              <div className="hidden lg:block" data-guide="fb-table">
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}

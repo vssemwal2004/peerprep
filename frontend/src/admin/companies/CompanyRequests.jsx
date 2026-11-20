@@ -119,7 +119,7 @@ export default function CompanyRequests({ threshold, version, onLoaded, onChange
 
   return <section className={card} aria-labelledby="company-requests-title">
     <h2 id="company-requests-title" className="sr-only">Company requests</h2>
-    <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4 dark:border-zinc-800">
+    <div data-guide="sc-toolbar" className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4 dark:border-zinc-800">
       <div className="max-w-full overflow-x-auto"><Segmented label="Request status" value={status} onChange={changeStatus} options={STATUSES.map(([value, label]) => ({ value, label, count: counts[value] }))} /></div>
       <SearchBox value={search} onChange={changeSearch} placeholder="Search company or spelling" label="Search company requests" />
     </div>
@@ -136,7 +136,7 @@ export default function CompanyRequests({ threshold, version, onLoaded, onChange
     {state.error && <div className="p-4"><Notice tone="error">{state.error} <button type="button" className="font-semibold underline" onClick={load}>Retry</button></Notice></div>}
     {state.loading && !state.data ? <TableSkeleton />
       : !rows.length ? (!state.error && (term ? <EmptyState icon={Search} title={`No company matches “${term}”`}>Try another spelling or switch to All.</EmptyState> : <EmptyState icon={Inbox} title={emptyTitle}>{emptyText}</EmptyState>))
-        : <div className={`overflow-x-auto transition-opacity ${state.loading ? 'opacity-60' : ''}`}>
+        : <div data-guide="sc-table" className={`overflow-x-auto transition-opacity ${state.loading ? 'opacity-60' : ''}`}>
           <table className="w-full min-w-[1080px] whitespace-nowrap text-left text-sm">
             <thead className="bg-slate-50/80 text-[11.5px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-zinc-900/60 dark:text-zinc-400">
               <tr>

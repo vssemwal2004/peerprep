@@ -315,7 +315,7 @@ export default function CoordinatorFeedback() {
     <InterviewWorkspaceNav events={events} loading={eventsLoading} error={eventsError}>
       <div className="mx-auto w-full max-w-[1600px] min-w-0">
         <div className="px-4 py-4 sm:px-6">
-          <div className="mb-5 border-b border-slate-200 pb-4 dark:border-gray-800">
+          <div data-guide="cf-interview" className="mb-5 border-b border-slate-200 pb-4 dark:border-gray-800">
             <InterviewSelector events={events} value={selectedEventId} onChange={handleEventClick} />
           </div>
           {/* Header */}
@@ -327,14 +327,14 @@ export default function CoordinatorFeedback() {
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
               <div className="flex items-center gap-2">
                 <div>
-                  <h2 className="text-xl font-semibold text-slate-800 dark:text-gray-100">
+                  <h2 data-guide="cf-title" className="flex items-center gap-2 text-xl font-semibold text-slate-800 dark:text-gray-100">
                     {selectedEvent ? selectedEvent.name : 'All Student Feedback'}
                   </h2>
                 </div>
               </div>
             
               {/* Stats */}
-              <div className="flex gap-3">
+              <div data-guide="cf-stats" className="flex gap-3">
                 <div className="text-center">
                   <div className="text-lg font-semibold text-sky-600 dark:text-sky-400">{stats.total}</div>
                   <div className="text-xs text-slate-500 dark:text-gray-400">Total</div>
@@ -358,7 +358,7 @@ export default function CoordinatorFeedback() {
             className="bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800 p-4 mb-4"
           >
             <div className="flex flex-col lg:flex-row lg:items-end gap-3">
-              <div className="flex-1">
+              <div data-guide="cf-college" className="flex-1">
                 <label className="block text-xs font-medium text-slate-700 dark:text-gray-300 mb-1">
                   Candidate College
                 </label>
@@ -382,7 +382,7 @@ export default function CoordinatorFeedback() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div data-guide="cf-actions" className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={reset}
@@ -402,6 +402,7 @@ export default function CoordinatorFeedback() {
                 </button>
 
                 <button
+                  data-guide="cf-download"
                   type="button"
                   onClick={downloadCsv}
                   className="px-3 py-1.5 bg-emerald-500 dark:bg-emerald-600 text-white rounded-lg font-medium text-sm flex items-center gap-1 hover:bg-emerald-600 dark:hover:bg-emerald-700 transition-colors"
@@ -442,7 +443,7 @@ export default function CoordinatorFeedback() {
           ) : (
             <>
               {/* Mobile View - Cards */}
-              <div className="lg:hidden space-y-2">
+              <div data-guide="cf-records" className="lg:hidden space-y-2">
                 {feedback.length === 0 ? (
                   <div className="text-center py-8 text-slate-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-lg border border-slate-300 dark:border-gray-600">
                     <GraduationCap className="w-8 h-8 text-slate-400 dark:text-gray-500 mx-auto mb-2" />
@@ -462,6 +463,7 @@ export default function CoordinatorFeedback() {
               {/* Desktop View - Table */}
               <div className="hidden lg:block">
                 <motion.div
+                  data-guide="cf-records"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 overflow-hidden"

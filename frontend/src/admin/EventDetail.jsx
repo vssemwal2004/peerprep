@@ -6,6 +6,7 @@ import InterviewWorkspaceNav from '../components/interviews/InterviewWorkspaceNa
 import InterviewDirectory from '../components/interviews/InterviewDirectory';
 import { InterviewStat as StatCard, InterviewPair as PairCard } from '../components/interviews/InterviewSummary';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import GuideInfo from '../guide/platform/GuideInfo';
 import {
   CheckCircle,
   AlertCircle,
@@ -270,16 +271,18 @@ export default function EventDetail() {
               {!id && msg && !isSuccessMsg ? (
                 <div role="alert" className="flex justify-center py-8"><button type="button" onClick={() => load()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-sky-600 dark:border-gray-700 dark:text-sky-400">Retry loading interviews</button></div>
               ) : !id ? (
+                <div data-guide="iv-list">
                 <InterviewDirectory onChanged={() => { api.listEvents({ view: 'dashboard', page: 1, limit: 50 }).then((data) => setEvents(data.events || [])).catch(() => setEventsError(true)); }} search={searchQuery} onSearchChange={setSearchQuery} view={eventTab} onViewChange={(view) => {
                   setEventTab(view);
                   const root = '/admin/interviews/one-to-one';
                   navigate(view === 'upcoming' ? root + '/scheduled' : view === 'previous' ? root + '/past' : view === 'active' ? root + '?status=active' : root);
                 }} onSelect={handleEventSelect} />
+                </div>
               ) : event ? (
                 <div className="space-y-3 sm:space-y-4">
                   {/* Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="flex-1">
+                    <div className="flex-1" data-guide="ivd-header">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                           <h2 className="text-lg sm:text-xl font-semibold text-slate-800 dark:text-gray-100">{event.name}</h2>
                           <span className="w-fit rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
@@ -300,6 +303,7 @@ export default function EventDetail() {
                       </div>
                     <Link
                       to={backPath}
+                      data-guide="ivd-back"
                       className="flex items-center gap-1 text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 text-sm self-start sm:self-auto"
                     >
                       <ArrowLeft className="w-3 h-3" />
@@ -311,7 +315,7 @@ export default function EventDetail() {
 
 
                   {/* Quick Actions */}
-                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-900/40">
+                  <div data-guide="ivd-actions" className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-900/40">
                     <button
                       onClick={handleExportCsv}
                       className="px-3 py-2 bg-slate-600 dark:bg-slate-700 text-white rounded-lg font-medium text-sm hover:bg-slate-700 dark:hover:bg-slate-800 transition-colors flex items-center gap-1"
@@ -352,10 +356,11 @@ export default function EventDetail() {
 
                   {/* Analytics */}
                   {analytics && (
-                    <div className="rounded-xl bg-slate-50 p-4 dark:bg-gray-950">
+                    <div className="rounded-xl bg-slate-50 p-4 dark:bg-gray-950" data-guide="ivd-analytics">
                       <h3 className="font-medium text-slate-800 dark:text-gray-100 mb-3 flex items-center gap-1.5 text-sm">
                         <BarChart3 className="w-4 h-4 text-sky-600 dark:text-sky-400" />
                         Interview Analytics
+                        <GuideInfo step="ivd-analytics" />
                       </h3>
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
                         <StatCard icon={UserCheck} label="Assigned" value={assignedParticipants.length} />
@@ -368,7 +373,7 @@ export default function EventDetail() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 dark:border-gray-700 dark:bg-gray-900/50">
+                  <div data-guide="ivd-views" className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 dark:border-gray-700 dark:bg-gray-900/50">
                     <button
                       type="button"
                       onClick={() => setActiveDataView('students')}
@@ -388,10 +393,10 @@ export default function EventDetail() {
                   </div>
 
                   {activeDataView === 'students' && (
-                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                  <div data-guide="ivd-students" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 p-3 dark:border-gray-700">
                       <div>
-                        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Assigned Students</h3>
+                        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-white">Assigned Students <GuideInfo step="ivd-students" /></h3>
                         <p className="text-xs text-slate-500 dark:text-gray-400">Invitation emails queue automatically. Resend when required.</p>
                       </div>
                       <div className="relative">
@@ -465,7 +470,7 @@ export default function EventDetail() {
 
                   {/* Pairs Section */}
                   {activeDataView === 'pairs' && (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5 dark:border-gray-700 dark:bg-gray-900/30">
+                  <div data-guide="ivd-pairs" className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5 dark:border-gray-700 dark:bg-gray-900/30">
                     <div className="mb-4">
                       <h3 className="text-base font-bold text-slate-900 dark:text-white">Interview Pairs</h3>
 

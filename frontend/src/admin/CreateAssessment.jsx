@@ -9,6 +9,8 @@ import { useAuth } from '../context/AuthContext';
 import { hasPermission } from './coordinatorPermissions';
 import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, BookOpen, FilePlus2, Check, X, Users, Upload, Search, Loader2, Filter } from 'lucide-react';
 import { SectionCard } from './compiler/CompilerUi';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem, toAssessmentProblemSnapshot } from './compiler/compilerUtils';
 import AssessmentCard from './assessment/components/AssessmentCard';
@@ -1642,7 +1644,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           <span className="ml-auto font-semibold text-slate-600 dark:text-gray-300">{form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}</span>
         </div>
 
-        <SectionCard compact title="Assessment details" subtitle="Fields marked with * are required before you can continue.">
+        <div data-guide="ae-details"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">Assessment details<GuideInfo step="ae-details" /></span>} subtitle="Fields marked with * are required before you can continue.">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">Assessment name <span className="text-rose-500">*</span></label>
@@ -1699,10 +1701,10 @@ export default function CreateAssessment({ viewOnly = false }) {
               />
             </div>
           </div>
-        </SectionCard>
+        </SectionCard></div>
 
         {/* Instructions Section */}
-        <SectionCard compact title="Candidate instructions" subtitle="Platform instructions are included automatically. Additional instructions are optional.">
+        <div data-guide="ae-instructions"><SectionCard compact title="Candidate instructions" subtitle="Platform instructions are included automatically. Additional instructions are optional.">
           <div className="space-y-4">
             <details className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 dark:border-gray-700 dark:bg-gray-800/60">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-semibold text-slate-700 dark:text-gray-200">
@@ -1765,12 +1767,12 @@ export default function CreateAssessment({ viewOnly = false }) {
               </button>
             </div>
           </div>
-        </SectionCard>
+        </SectionCard></div>
       </div>
     ),
     target: (
       <div className="space-y-4">
-        <SectionCard compact title="Students" subtitle="Choose how to add students to this assessment.">
+        <div data-guide="ae-students"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">Students<GuideInfo step="ae-students" /></span>} subtitle="Choose how to add students to this assessment.">
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-3">
               {[
@@ -1792,12 +1794,12 @@ export default function CreateAssessment({ viewOnly = false }) {
             </div>}
             {selectedStudents.length > 0 && <p className="text-xs font-medium text-slate-600 dark:text-gray-300">{selectedStudents.length} student{selectedStudents.length === 1 ? '' : 's'} selected for this assessment</p>}
           </div>
-        </SectionCard>
+        </SectionCard></div>
         {selectedStudents.length > 0 && form.settings?.questionSetEnabled && <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800 dark:border-sky-900 dark:bg-sky-950/20 dark:text-sky-200"><strong>{selectedStudents.length} students ready.</strong> Review the formula, set counts, filters and manual overrides in <strong>Settings → Set allocation</strong>.</div>}
       </div>
     ),
     schedule: (
-      <SectionCard compact title="Assessment schedule" subtitle="Define the duration and availability window. Fields marked with * are required.">
+      <div data-guide="ae-schedule"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">Assessment schedule<GuideInfo step="ae-schedule" /></span>} subtitle="Define the duration and availability window. Fields marked with * are required.">
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">Start date & time <span className="text-rose-500">*</span></label>
@@ -1858,14 +1860,14 @@ export default function CreateAssessment({ viewOnly = false }) {
           Allow late submission (after window closes)
         </div>
 
-      </SectionCard>
+      </SectionCard></div>
     ),
     sections: (
       <div className="space-y-4">
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <section data-guide="ae-sets" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-sky-50/70 px-5 py-5 dark:border-gray-800 dark:from-gray-900 dark:to-sky-950/20">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-600">Paper configuration</p><h2 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">Build your question sets</h2><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Choose the number of papers first. Questions remain reusable in the library.</p></div>
+              <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-600">Paper configuration</p><h2 className="mt-1 flex items-center gap-1.5 text-lg font-bold text-slate-950 dark:text-white">Build your question sets<GuideInfo step="ae-sets" /></h2><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Choose the number of papers first. Questions remain reusable in the library.</p></div>
               <label className="block min-w-52"><span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Number of sets</span><select value={configuredSetCount} onChange={(event) => configureQuestionSetCount(event.target.value)} disabled={viewOnly} className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-950 dark:text-white">{[1, 2, 3, 4, 5, 6, 7, 8].map((count) => <option key={count} value={count} disabled={questionSets.some((entry, index) => index >= count && entry.sections?.length)}>{count === 1 ? '1 set (single paper)' : `${count} sets`}</option>)}</select></label>
             </div>
           </div>
@@ -1884,7 +1886,7 @@ export default function CreateAssessment({ viewOnly = false }) {
 
           <div className="px-4 py-5 text-center">
             <div><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-600">Set {activeQuestionSet + 1} of {configuredSetCount}</p><h3 className="mt-1 text-base font-bold text-slate-950 dark:text-white">Add questions to Set {activeQuestionSet + 1}</h3><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Create new questions or select reusable questions from the library.</p></div>
-          <div className="mx-auto mt-4 grid max-w-2xl gap-3 sm:grid-cols-2">
+          <div data-guide="ae-add-questions" className="mx-auto mt-4 grid max-w-2xl gap-3 sm:grid-cols-2">
             <button type="button" onClick={handleCreateQuestion} className="group flex min-h-24 items-center gap-4 rounded-xl border border-sky-200 bg-sky-50/70 px-5 py-4 text-left transition hover:border-sky-400 hover:bg-sky-100/70 hover:shadow-sm dark:border-sky-900 dark:bg-sky-950/25 dark:hover:border-sky-700">
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm"><FilePlus2 className="h-5 w-5" /></span>
               <span><strong className="block text-sm text-sky-900 dark:text-sky-100">Create questions</strong><span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-gray-400">Independent, passage-based, MCQ, short answer or coding</span></span>
@@ -1898,7 +1900,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           </div>
         </section>
 
-        <SectionBuilder
+        <div data-guide="ae-sections"><SectionBuilder
           sections={sections}
           onChange={updateSections}
           onOpenCodingEditor={handleOpenCodingEditor}
@@ -1907,12 +1909,12 @@ export default function CreateAssessment({ viewOnly = false }) {
             success: (message) => toast.success(message),
             error: (message) => toast.error(message),
           }}
-        />
+        /></div>
 
         {configuredSetCount > 1 && <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"><button type="button" disabled={activeQuestionSet === 0} onClick={() => setActiveQuestionSet((current) => Math.max(0, current - 1))} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300">Previous set</button><div className="text-center"><p className="text-xs font-bold text-slate-800 dark:text-white">Set {activeQuestionSet + 1}</p><p className="text-[10px] text-slate-500">{questionSetStats.filter((entry) => entry.questions > 0).length} of {configuredSetCount} sets have questions</p></div>{activeQuestionSet < configuredSetCount - 1 ? <button type="button" disabled={!questionSetStats[activeQuestionSet]?.questions} onClick={() => setActiveQuestionSet((current) => Math.min(configuredSetCount - 1, current + 1))} className="rounded-lg bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">Continue to Set {activeQuestionSet + 2}</button> : <span className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">All sets reviewed</span>}</div>}
 
         {(questionSetStats[activeQuestionSet]?.questions || 0) > 0 && !form.settings?.questionSetEnabled && (
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <section data-guide="ae-pool" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-4 py-4 dark:border-gray-800">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Question pool shuffle</h3>
@@ -2005,7 +2007,7 @@ export default function CreateAssessment({ viewOnly = false }) {
 
       return (
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm sm:grid-cols-5 dark:border-gray-800 dark:bg-gray-900" role="tablist" aria-label="Assessment setting categories">
+          <div data-guide="ae-settings-tabs" className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm sm:grid-cols-5 dark:border-gray-800 dark:bg-gray-900" role="tablist" aria-label="Assessment setting categories">
             {settingsGroups.map(({ id: groupId, label, description, Icon }, groupIndex) => {
               const locked = groupIndex > maxSettingsGroupIndex;
               const visited = visitedSettingsGroups.includes(groupId);
@@ -2019,9 +2021,9 @@ export default function CreateAssessment({ viewOnly = false }) {
           </div>
           <div className="min-w-0 space-y-4">
           {/* Quick Summary Bar */}
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-sky-100 bg-sky-50/60 px-3 py-2.5 dark:border-sky-900/30 dark:bg-sky-900/10">
+          <div data-guide="ae-settings-summary" className="flex items-center justify-between gap-3 rounded-lg border border-sky-100 bg-sky-50/60 px-3 py-2.5 dark:border-sky-900/30 dark:bg-sky-900/10">
             <div>
-              <p className="text-xs font-semibold text-slate-800 dark:text-white">Assessment controls</p>
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-white">Assessment controls<GuideInfo step="ae-settings-tabs" /></p>
               <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">Access, proctoring, candidate behavior and results.</p>
             </div>
             <span className="whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300">
@@ -2030,7 +2032,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           </div>
 
           {/* ── PASSWORD PROTECTION ── */}
-          <div id="assessment-settings-access" className={activeSettingsGroup === 'access' ? 'block' : 'hidden'}>
+          <div id="assessment-settings-access" data-guide="ae-access" className={activeSettingsGroup === 'access' ? 'block' : 'hidden'}>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <Lock className="h-3.5 w-3.5" /> Access Control
             </h3>
@@ -2076,7 +2078,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           </div>
 
           {/* ── SET ALLOCATION ── */}
-          <div id="assessment-settings-allocation" className={activeSettingsGroup === 'allocation' ? 'block' : 'hidden'}>
+          <div id="assessment-settings-allocation" data-guide="ae-allocation" className={activeSettingsGroup === 'allocation' ? 'block' : 'hidden'}>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <Layers className="h-3.5 w-3.5" /> Student Set Allocation
             </h3>
@@ -2145,7 +2147,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           </div>
 
           {/* ── PROCTORING ── */}
-          <div id="assessment-settings-proctoring" className={activeSettingsGroup === 'proctoring' ? 'block' : 'hidden'}>
+          <div id="assessment-settings-proctoring" data-guide="ae-proctoring" className={activeSettingsGroup === 'proctoring' ? 'block' : 'hidden'}>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <Shield className="h-3.5 w-3.5" /> Proctoring & Anti-Cheating
             </h3>
@@ -2285,7 +2287,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           </div>
 
           {/* ── CANDIDATE BEHAVIOR ── */}
-          <div id="assessment-settings-behavior" className={activeSettingsGroup === 'behavior' ? 'block' : 'hidden'}>
+          <div id="assessment-settings-behavior" data-guide="ae-behavior" className={activeSettingsGroup === 'behavior' ? 'block' : 'hidden'}>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <Navigation className="h-3.5 w-3.5" /> Candidate Behavior
             </h3>
@@ -2348,7 +2350,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           </div>
 
           {/* ── SCORING & RESULTS ── */}
-          <div id="assessment-settings-results" className={activeSettingsGroup === 'results' ? 'block' : 'hidden'}>
+          <div id="assessment-settings-results" data-guide="ae-results" className={activeSettingsGroup === 'results' ? 'block' : 'hidden'}>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <CheckSquare className="h-3.5 w-3.5" /> Scoring & Results
             </h3>
@@ -2417,10 +2419,10 @@ export default function CreateAssessment({ viewOnly = false }) {
               Open Fullscreen Preview
             </button>
           )}
-          <AssessmentPreview assessment={{ ...form, sections: questionSets[0]?.sections || sections }} />
+          <div data-guide="ae-review"><AssessmentPreview assessment={{ ...form, sections: questionSets[0]?.sections || sections }} /></div>
         </div>
         <aside className="space-y-3 lg:sticky lg:top-3">
-          <section className={`rounded-xl border p-4 ${publishReady ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/20' : 'border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/20'}`}>
+          <section data-guide="ae-readiness" className={`rounded-xl border p-4 ${publishReady ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/20' : 'border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/20'}`}>
             <div className="flex items-center gap-2"><span className={`flex h-7 w-7 items-center justify-center rounded-full text-white ${publishReady ? 'bg-emerald-500' : 'bg-amber-500'}`}>{publishReady ? <Check className="h-4 w-4" /> : <Clock className="h-4 w-4" />}</span><div><p className={`text-sm font-bold ${publishReady ? 'text-emerald-900 dark:text-emerald-200' : 'text-amber-900 dark:text-amber-200'}`}>{isPublishedEdit ? 'Published assessment' : publishReady ? 'Ready to publish' : 'Review required'}</p><p className={`text-[10px] ${publishReady ? 'text-emerald-700/80 dark:text-emerald-300/70' : 'text-amber-700/80 dark:text-amber-300/70'}`}>{isPublishedEdit ? 'Changes to this assessment can be saved here' : publishReady ? 'All required phases are complete' : 'Return to any incomplete phase before publishing'}</p></div></div>
             <div className="mt-3 grid grid-cols-3 divide-x divide-emerald-200 text-center dark:divide-emerald-900">
               <div><strong className="block text-sm text-slate-900 dark:text-white">{assessmentValidation.totalQuestions}</strong><span className="text-[9px] uppercase text-slate-500">Questions</span></div>
@@ -2516,8 +2518,8 @@ export default function CreateAssessment({ viewOnly = false }) {
             </button>
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Assessments / {viewOnly ? 'View' : isEditMode ? 'Edit' : 'Create'}</p>
-              <h1 className="mt-0.5 text-lg font-bold text-slate-950 dark:text-white">{viewOnly ? form.title || 'Assessment' : isEditMode ? 'Edit Assessment' : 'Create Assessment'}</h1>
-              <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-gray-400">
+              <h1 className="mt-0.5 flex items-center gap-2 text-lg font-bold text-slate-950 dark:text-white">{viewOnly ? form.title || 'Assessment' : isEditMode ? 'Edit Assessment' : 'Create Assessment'}<PageGuideButton /></h1>
+              <p data-guide="ae-status" className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-gray-400">
                 {!viewOnly && <><span className={`h-1.5 w-1.5 rounded-full ${dirty ? 'bg-amber-400' : 'bg-emerald-500'}`} />{autoSaveStatus || (dirty ? 'Unsaved changes' : 'All changes saved')}<span aria-hidden="true">&middot;</span></>}
                 {form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}
                 <span aria-hidden="true">&middot;</span>
@@ -2525,7 +2527,7 @@ export default function CreateAssessment({ viewOnly = false }) {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div data-guide="ae-actions" className="flex flex-wrap items-center gap-2">
             {currentId && (
               <button type="button" onClick={viewOnly ? () => navigate(`${rolePrefix}/assessment/preview/${id}?return=${encodeURIComponent(`${rolePrefix}/assessment/${id}`)}`) : openStudentPreview} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
                 <Eye className="h-3.5 w-3.5" /> Preview
@@ -2554,7 +2556,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           </div>
         </header>
 
-        <nav className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white px-2 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-label="Assessment creation progress">
+        <nav data-guide="ae-progress" className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white px-2 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-label="Assessment creation progress">
           <ol className="relative grid min-w-[760px] grid-cols-6">
             <span className="absolute left-[8.33%] right-[8.33%] top-4 h-0.5 bg-slate-200 dark:bg-gray-700" aria-hidden="true">
               <span className="block h-full bg-sky-500 transition-all duration-500" style={{ width: `${(Math.max(0, maxUnlockedStepIndex) / (steps.length - 1)) * 100}%` }} />
@@ -2581,7 +2583,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           {stepContent[activeStep]}
         </fieldset>
 
-        <div className="sticky bottom-0 z-30 -mx-4 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-2.5 shadow-[0_-6px_18px_rgba(15,23,42,0.05)] sm:-mx-6 sm:px-6 dark:border-gray-800 dark:bg-gray-900">
+        <div data-guide="ae-footer" className="sticky bottom-0 z-30 -mx-4 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-2.5 shadow-[0_-6px_18px_rgba(15,23,42,0.05)] sm:-mx-6 sm:px-6 dark:border-gray-800 dark:bg-gray-900">
           <button
             type="button"
             onClick={goPrev}

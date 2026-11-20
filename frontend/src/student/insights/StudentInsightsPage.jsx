@@ -126,7 +126,7 @@ export default function StudentInsightsPage() {
     <>
       <ProfileBanner insights={data} badges={badges.data} />
       <PageTabs sections={sections} active={active} />
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2" data-guide="an-period">
         <p className="text-[12.5px] text-slate-500 dark:text-zinc-400">
           Showing <b className="font-semibold text-slate-800 dark:text-zinc-100">{periodLabel(data.range)}</b>{previousLabel ? ` · changes ${previousLabel}` : ""}
         </p>

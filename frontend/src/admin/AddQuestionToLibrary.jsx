@@ -9,6 +9,7 @@ import { downloadQuestionCsvTemplate, downloadQuestionImportErrorCsv } from './l
 import { queueQuestionSelection } from './assessment/assessmentProblemSelectionStore';
 import { createAssessmentOnlyQuestionSelections } from './assessment/assessmentQuestionRetention';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 const importReviewValue = (row, key) => ({
   row: Number(row.rowNumber), status: row.status === 'valid' ? 'Ready' : 'Error', question: row.questionText === '—' ? '' : row.questionText,
@@ -1022,7 +1023,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
         {/* Content Area */}
         <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:p-5">
           
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div data-guide="qe-summary" className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white"><selectedQuestionType.Icon className="h-5 w-5" /></span>
               <div className="min-w-0">
@@ -1030,7 +1031,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
                 <p className="text-xs text-slate-500 dark:text-gray-400">{editQuestionId ? 'Update content, answers, scoring and library settings' : type === 'mcq' ? `${independentQuestionCount} independent · ${passageGroupIds.length} passage set${passageGroupIds.length === 1 ? '' : 's'} · ${completedQuestions}/${questions.length} ready` : `Question ${activeQuestionIndex + 1} of ${questions.length} · ${completedQuestions} ready`}</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div data-guide="qe-tools" className="flex items-center gap-2">
               {assessmentCreateMode && !editQuestionId && <button type="button" onClick={() => handleSaveAll('published', { addToAssessment: true })} disabled={isSubmitting || !questions.length} className="inline-flex h-9 items-center gap-2 rounded-xl bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50">
                 <Plus className="h-4 w-4" />{isSubmitting ? 'Adding...' : 'Add to assessment'}
               </button>}
@@ -1044,7 +1045,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           </div>
 
           {assessmentCreateMode && !editQuestionId && (
-            <section className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-gray-700 dark:bg-gray-800/70 sm:flex-row sm:items-center sm:justify-between">
+            <section data-guide="qe-library-copy" className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-gray-700 dark:bg-gray-800/70 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-900 dark:text-white">Save these questions to the library?</p>
                 <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-gray-400">
@@ -1068,14 +1069,14 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
             </section>
           )}
 
-          <div className="mx-auto w-full max-w-3xl border-y border-slate-100 py-1 dark:border-gray-800">
+          <div data-guide="qe-steps" className="mx-auto w-full max-w-3xl border-y border-slate-100 py-1 dark:border-gray-800">
             <AuthoringStepper steps={AUTHORING_STEPS} activeKey={activeStage} completed={stageCompletion} onChange={changeStage} />
           </div>
 
           {activeStage === 'content' && type === 'mcq' && activePassage && (
-            <section className="rounded-2xl border border-sky-200 bg-sky-50/50 p-4 dark:border-sky-900/50 dark:bg-sky-950/20">
+            <section data-guide="qe-passage" className="rounded-2xl border border-sky-200 bg-sky-50/50 p-4 dark:border-sky-900/50 dark:bg-sky-950/20">
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white"><BookOpenText className="h-4 w-4" /></span><div><h2 className="text-sm font-bold text-slate-900 dark:text-white">Shared passage</h2><p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">Shown once to candidates with all {activePassageQuestionCount} questions below it.</p></div></div>
+                <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white"><BookOpenText className="h-4 w-4" /></span><div><h2 className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white">Shared passage<GuideInfo step="qe-passage" /></h2><p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">Shown once to candidates with all {activePassageQuestionCount} questions below it.</p></div></div>
                 <button type="button" onClick={() => addQuestionToPassage(activePassageId)} className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300"><Plus className="h-3.5 w-3.5" />Add question to this passage</button>
               </div>
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
@@ -1085,7 +1086,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
             </section>
           )}
 
-          <section className={!editQuestionId && importOpen ? 'overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-sm dark:border-sky-900/60 dark:bg-gray-900' : 'hidden'}>
+          <section data-guide="qe-import" className={!editQuestionId && importOpen ? 'overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-sm dark:border-sky-900/60 dark:bg-gray-900' : 'hidden'}>
             <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-sky-50 to-white px-5 py-4 dark:border-gray-800 dark:from-sky-950/30 dark:to-gray-900">
               <div className="flex min-w-0 items-start gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm"><FileSpreadsheet className="h-5 w-5" /></span>
@@ -1204,9 +1205,9 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           )}
 
           <div className={`grid items-start gap-4 ${showNavigator ? 'lg:grid-cols-[260px_minmax(0,1fr)]' : 'grid-cols-1'}`}>
-            {showNavigator && <aside className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800 lg:sticky lg:top-0">
+            {showNavigator && <aside data-guide="qe-navigator" className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800 lg:sticky lg:top-0">
               <div className="flex items-center justify-between gap-2 px-1">
-                <div><p className="text-xs font-bold text-slate-800 dark:text-gray-100">Questions</p><p className="mt-0.5 text-[10px] text-slate-500 dark:text-gray-400">{type === 'mcq' ? `${independentQuestionCount} independent · ${passageGroupIds.length} passage` : `${questions.length} in this set`}</p></div>
+                <div><p className="flex items-center gap-1 text-xs font-bold text-slate-800 dark:text-gray-100">Questions<GuideInfo step="qe-navigator" /></p><p className="mt-0.5 text-[10px] text-slate-500 dark:text-gray-400">{type === 'mcq' ? `${independentQuestionCount} independent · ${passageGroupIds.length} passage` : `${questions.length} in this set`}</p></div>
                 <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-slate-600 shadow-sm dark:bg-gray-900 dark:text-gray-300">{completedQuestions}/{questions.length}</span>
               </div>
               <label className="mt-3 flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 text-slate-500 focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:ring-sky-900/30">
@@ -1253,15 +1254,15 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
                 </div>}
               </div> : !editQuestionId ? <button type="button" onClick={addQuestion} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Plus className="h-4 w-4" />Add question</button> : null}
             </aside>}
-            <main className="min-w-0">
+            <main data-guide="qe-builder" className="min-w-0">
               <QuestionBuilder type={type} value={activeQuestion} onChange={(updates) => updateQuestion(activeQuestionIndex, updates)} onRemove={() => removeQuestion(activeQuestionIndex)} selected onSelect={() => {}} enableMedia questionNumber={activeQuestionIndex + 1} stage={activeStage} hideRemove={Boolean(editQuestionId && (!activePassageId || activePassageQuestionCount === 1))} />
             </main>
           </div>
 
           {(
-            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+            <section data-guide="qe-settings" className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
               <div className="mb-4">
-                <h2 className="text-sm font-bold text-slate-900 dark:text-white">Library settings</h2>
+                <h2 className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white">Library settings<GuideInfo step="qe-settings" /></h2>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">Choose who can find this item and whether it is ready for assessments.</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
@@ -1285,7 +1286,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
             </section>
           )}
 
-          <div className="sticky bottom-0 z-20 -mx-4 -mb-4 flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.05)] dark:border-gray-800 dark:bg-gray-900 sm:-mx-5 sm:-mb-5 sm:px-5">
+          <div data-guide="qe-footer" className="sticky bottom-0 z-20 -mx-4 -mb-4 flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.05)] dark:border-gray-800 dark:bg-gray-900 sm:-mx-5 sm:-mb-5 sm:px-5">
             <button type="button" onClick={() => moveStage(-1)} disabled={activeStageIndex === 0} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
               <ChevronLeft className="h-4 w-4" /><span className="hidden sm:inline">Previous</span>
             </button>

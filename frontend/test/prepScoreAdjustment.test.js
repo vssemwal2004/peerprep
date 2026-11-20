@@ -56,24 +56,22 @@ const setInput = async (input, value) => {
     input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   });
 };
-const simulatorTotal = () => document.querySelector('#simulator-total').textContent;
+const simulatorTotal = () => document.querySelector('#simulator-title').closest('section').querySelector('tfoot td:last-child').textContent;
 
 test('the Master Admin sees the formula with named variables and every value is editable', async () => {
   await mount();
   const text = document.body.textContent;
   assert.match(text, /Prep Score Adjustment/);
-  // The Prep Score is the Prep Coding score: no module weights, no overall average.
-  assert.match(text, /Prep Score = S × Nα × Qβ/);
-  assert.doesNotMatch(text, /Σ\(W|Weight/);
-  for (const label of ['Volume exponent', 'Difficulty exponent', 'Scale', 'Decimal places', 'Daily solves per topic', 'Video completion']) assert.ok(text.includes(label), label);
-  assert.equal(document.querySelectorAll('section[aria-labelledby^="module-"]').length, 1, 'only the Prep Coding card');
+  assert.match(text, /Module score = S × Nα × Qβ/);
+  for (const label of ['Volume exponent', 'Difficulty exponent', 'Scale', 'Decimal places', 'Pass mark', 'Video completion', 'Topic difficulty → level']) assert.ok(text.includes(label), label);
+  assert.equal(document.querySelectorAll('section[aria-labelledby^="module-"]').length, 4, 'one card per module');
   assert.match(text, /Live: version 5/);
   assert.match(text, /Restore as draft/, 'older versions can be restored');
 });
 
 test('the simulator follows unsaved values exactly like the server formula', async () => {
   await mount();
-  const counts = { coding: { Easy: 12, Medium: 8, Hard: 3 } };
+  const counts = { coding: { Easy: 12, Medium: 8, Hard: 3 }, assessment: { Easy: 1, Medium: 2, Hard: 1 }, interview: { Easy: 0, Medium: 2, Hard: 1 }, learning: { Easy: 6, Medium: 4, Hard: 2 } };
   assert.equal(Number(simulatorTotal().replace(/,/g, '')), engine.simulate(CONFIG, counts).total);
   const hard = [...document.querySelectorAll('section[aria-labelledby="module-coding"] input')].find((input) => input.closest('label')?.textContent.startsWith('Hardh'));
   await setInput(hard, 9);
@@ -87,7 +85,7 @@ test('invalid values block saving with a plain explanation', async () => {
   await mount();
   const easy = [...document.querySelectorAll('section[aria-labelledby="module-coding"] input')].find((input) => input.closest('label')?.textContent.startsWith('Easye'));
   await setInput(easy, 7);
-  assert.match(document.body.textContent, /Points must rise from Easy to Medium to Hard/);
+  assert.match(document.body.textContent, /Prep Coding: points must rise from Easy to Medium to Hard/);
   const save = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Save draft'));
   assert.equal(save.disabled, true);
 });

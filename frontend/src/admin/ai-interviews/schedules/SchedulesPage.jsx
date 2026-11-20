@@ -11,7 +11,7 @@ import { STATUS_FILTERS, formatIst, idOf, isEditable, kpiValue, listRows, timing
 
 // Opened from here, the wizard offers "Change" on a preselected interview.
 export function NewScheduleLink({ interviewId }) {
-  return <Link className={primaryClass} state={{ from: "schedules" }} to={`${ROOT}/schedules/new${interviewId ? `?interviewId=${encodeURIComponent(interviewId)}` : ""}`}>
+  return <Link data-guide="ai-new-schedule" className={primaryClass} state={{ from: "schedules" }} to={`${ROOT}/schedules/new${interviewId ? `?interviewId=${encodeURIComponent(interviewId)}` : ""}`}>
     <CalendarPlus size={16} aria-hidden="true" />New schedule
   </Link>;
 }
@@ -73,6 +73,7 @@ export default function SchedulesPage({ navigation }) {
       navigation={navigation}
       actions={<NewScheduleLink interviewId={interviewId} />}
     >
+      <div data-guide="ai-schedules">
       <Panel
         title="Schedules"
         description="Status, window and completion for every cohort you scheduled."
@@ -149,6 +150,7 @@ export default function SchedulesPage({ navigation }) {
         {remote.result?.pagination && rows.length > 0 && <TablePager page={remote.result.pagination.page || page} pageSize={limit} total={remote.result.pagination.total || 0}
           onPage={(value) => set("page", String(value))} onPageSize={(value) => set("limit", String(value))} busy={remote.loading} noun="schedules" />}
       </Panel>
+      </div>
     </ScheduleFrame>
   );
 }

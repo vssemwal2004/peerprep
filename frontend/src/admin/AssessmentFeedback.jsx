@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 const formatDate = (value, options = {}) => {
   if (!value) return 'Date not available';
@@ -321,7 +323,7 @@ function AssessmentFeedbackDetail({ assessment, onBack }) {
             <div className="mb-1.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-600 dark:text-sky-300">
               <MessageSquareText className="h-4 w-4" /> Assessment feedback
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{assessment.title}</h1>
+            <h1 data-guide="af-detail-title" className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{assessment.title} <PageGuideButton /></h1>
             <p className="mt-1.5 flex items-center gap-2 text-xs text-slate-500 dark:text-gray-400">
               <CalendarDays className="h-4 w-4" />
               {formatDateTime(assessment.startTime)}
@@ -334,14 +336,14 @@ function AssessmentFeedbackDetail({ assessment, onBack }) {
           </button>
         </div>
 
-        <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+        <div data-guide="af-detail-summary" className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryTile icon={Users} label="Completed students" value={summary.completedStudents ?? 0} helper="Finished assessment attempts" />
           <SummaryTile icon={MessageSquareText} label="Feedback received" value={summary.feedbackCount ?? 0} helper="Submitted responses" tone="emerald" />
           <SummaryTile icon={Clock3} label="Pending feedback" value={summary.pendingFeedback ?? 0} helper="Students still to review" tone="amber" />
           <SummaryTile icon={Star} label="Average rating" value={summary.averageRating ? `${summary.averageRating}/5` : '—'} helper="Student experience rating" tone="slate" />
         </div>
 
-        <section className="mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <section data-guide="af-detail-filters" className="mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <div className="flex flex-col gap-2.5 xl:flex-row xl:items-end">
             <label className="min-w-0 flex-1">
               <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-gray-400">Search student</span>
@@ -366,10 +368,10 @@ function AssessmentFeedbackDetail({ assessment, onBack }) {
 
         {error && <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">{error}</div>}
 
-        <section className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <section data-guide="af-students" className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-gray-800">
             <div>
-              <h2 className="text-base font-bold text-slate-950 dark:text-white">Student feedback</h2>
+              <h2 className="flex items-center gap-1.5 text-base font-bold text-slate-950 dark:text-white">Student feedback<GuideInfo step="af-students" /></h2>
               <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">Click a student row to view the complete response.</p>
             </div>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 dark:bg-gray-800 dark:text-gray-300">{data.rows.length} students</span>
@@ -475,12 +477,12 @@ export default function AssessmentFeedback() {
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_55%,#eef4ff_100%)] px-3 py-4 dark:bg-gray-950 sm:px-5 lg:px-6">
       <div className="mx-auto max-w-[1500px]">
-        <header data-page-header className="flex flex-col gap-3 bg-[#f8fbff] py-2 dark:bg-gray-950 lg:flex-row lg:items-end lg:justify-between">
+        <header data-page-header data-guide="af-header" className="flex flex-col gap-3 bg-[#f8fbff] py-2 dark:bg-gray-950 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-1.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-600 dark:text-sky-300">
               <MessageSquareText className="h-4 w-4" /> Admin workspace
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">Assessment Feedback</h1>
+            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">Assessment Feedback <PageGuideButton /></h1>
             <p className="mt-1.5 max-w-2xl text-xs leading-5 text-slate-500 dark:text-gray-400">Review student experience after each assessment. Select an assessment to open its feedback table.</p>
           </div>
           <button type="button" onClick={() => void loadAssessments()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-sm transition-colors hover:border-sky-300 hover:text-sky-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-sky-700 dark:hover:text-sky-300">
@@ -488,14 +490,14 @@ export default function AssessmentFeedback() {
           </button>
         </header>
 
-        <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+        <div data-guide="af-summary" className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryTile icon={ClipboardCheck} label="Assessments" value={overview.assessments} helper="Published assessment windows" />
           <SummaryTile icon={Users} label="Completed attempts" value={overview.completed} helper="Students eligible for feedback" tone="emerald" />
           <SummaryTile icon={MessageSquareText} label="Feedback received" value={overview.responses} helper="Submitted student responses" tone="sky" />
           <SummaryTile icon={Clock3} label="Pending responses" value={overview.pending} helper="Awaiting student feedback" tone="amber" />
         </div>
 
-        <section className="mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <section data-guide="af-filters" className="mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <div className="flex flex-col gap-2.5 xl:flex-row xl:items-end">
             <label className="min-w-0 flex-1">
               <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-gray-400">Search assessments</span>
@@ -520,10 +522,10 @@ export default function AssessmentFeedback() {
 
         {error && <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">{error}</div>}
 
-        <section className="mt-4">
+        <section data-guide="af-list" className="mt-4">
           <div className="mb-3 flex items-end justify-between gap-3">
             <div>
-              <h2 className="text-lg font-bold text-slate-950 dark:text-white">Assessments</h2>
+              <h2 className="flex items-center gap-1.5 text-lg font-bold text-slate-950 dark:text-white">Assessments<GuideInfo step="af-list" /></h2>
               <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Sorted by assessment date, newest first.</p>
             </div>
             <span className="text-xs font-semibold text-slate-500 dark:text-gray-400">{assessments.length} found</span>

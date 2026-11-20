@@ -15,6 +15,7 @@ import { CreateListModal, SaveToListsModal } from './problems/ProblemListModals'
 import { DEFAULT_PAGE_SIZE, DIFFICULTY, fieldBase, focusRing, PAGE_SIZE_OPTIONS, problemStatus } from './problems/problemsUi';
 import PracticePager from './problems/PracticePager';
 import { nextSort } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 const PAGE_SIZE_KEY = 'peerprep:prepcoding-page-size';
 const SEARCH_DEBOUNCE_MS = 250;
@@ -58,7 +59,7 @@ function ColumnSort({ sortKey, sort, onSort, align = 'left', className = '', chi
 
 /** Column labels over the question cards (tablet and up), lined up with ProblemRow's grid. */
 function ProblemColumns({ sort, onSort }) {
-  return <div aria-label="Sort questions by column" role="group"
+  return <div aria-label="Sort questions by column" role="group" data-guide="pc-columns"
     className={`mb-2 hidden items-center gap-3 border border-transparent pl-4 pr-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400 sm:grid ${ROW_GRID}`}>
     <span><span className="sr-only">Status</span></span>
     <div className="flex items-center gap-2">
@@ -245,15 +246,15 @@ export default function ProblemsPage() {
       <AnviHero />
 
       <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-          <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-zinc-50">PrepCoding</h1>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5" data-guide="pc-header">
+          <h1 className="flex items-center gap-2 text-[20px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-zinc-50">PrepCoding<PageGuideButton /></h1>
           <p className="text-[13px] text-slate-500 dark:text-zinc-400">
             {initialLoad
               ? <span className="inline-block h-3 w-52 animate-pulse rounded bg-slate-200/80 align-middle dark:bg-white/[0.08]" aria-label="Loading counts" />
               : <>{Number(totalProblems).toLocaleString()} questions · {topicCounts.length.toLocaleString()} topics · {companyCounts.length.toLocaleString()} companies</>}
           </p>
         </div>
-        <button type="button" disabled={!problems.length} onClick={() => openProblem(problems[Math.floor(Math.random() * problems.length)])}
+        <button type="button" disabled={!problems.length} onClick={() => openProblem(problems[Math.floor(Math.random() * problems.length)])} data-guide="pc-surprise"
           className={`group inline-flex items-center gap-2 rounded-xl border border-[#e4e7ec] bg-white px-3 py-1.5 text-[13px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-colors hover:border-sky-200 hover:text-sky-700 disabled:opacity-40 dark:border-white/10 dark:bg-[#232325] dark:text-zinc-200 dark:hover:text-sky-300 ${focusRing}`}>
           <Shuffle className="h-4 w-4 transition-transform group-hover:rotate-12" aria-hidden="true" />Surprise me
         </button>
@@ -276,7 +277,7 @@ export default function ProblemsPage() {
           {selection && <SelectionHeader kind={selection.kind} title={selection.title} description={selection.description} catalogCount={selection.catalogCount}
             shownCount={pagination.total || 0} filtered={narrowed} loading={loading} onClear={selection.clear} />}
           <div className="flex flex-wrap items-center gap-2">
-            <label className="relative block min-w-[220px] flex-1">
+            <label className="relative block min-w-[220px] flex-1" data-guide="pc-search">
               <span className="sr-only">Search questions</span>
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
               <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} maxLength={100}
@@ -284,7 +285,7 @@ export default function ProblemsPage() {
                 className={`w-full pl-10 pr-9 [&::-webkit-search-cancel-button]:hidden ${fieldBase}`} />
               {searchQuery && <button type="button" onClick={clearSearch} aria-label="Clear search" className={`absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700 ${focusRing}`}><X className="h-4 w-4" /></button>}
             </label>
-            <div role="radiogroup" aria-label="Difficulty" className="flex h-10 items-center rounded-xl border border-[#e4e7ec] bg-white p-1 dark:border-white/10 dark:bg-[#1f1f21]">
+            <div role="radiogroup" aria-label="Difficulty" data-guide="pc-difficulty" className="flex h-10 items-center rounded-xl border border-[#e4e7ec] bg-white p-1 dark:border-white/10 dark:bg-[#1f1f21]">
               {DIFFICULTY_OPTIONS.map((value) => {
                 const active = difficulty === value;
                 return <button key={value || 'all'} type="button" role="radio" aria-checked={active} onClick={() => setDifficulty(value)}
@@ -293,7 +294,7 @@ export default function ProblemsPage() {
                 </button>;
               })}
             </div>
-            <label className="relative">
+            <label className="relative" data-guide="pc-sort">
               <span className="sr-only">Sort questions</span>
               <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
               <select value={sortValue} onChange={(event) => setSortValue(event.target.value)} className={`pl-9 pr-8 ${fieldBase}`}>
@@ -302,7 +303,7 @@ export default function ProblemsPage() {
             </label>
           </div>
 
-          <div className="mt-3 flex min-h-[28px] flex-wrap items-center gap-2 text-[12.5px] text-slate-500 dark:text-zinc-400">
+          <div className="mt-3 flex min-h-[28px] flex-wrap items-center gap-2 text-[12.5px] text-slate-500 dark:text-zinc-400" data-guide="pc-summary">
             <span><strong className="font-semibold tabular-nums text-slate-800 dark:text-zinc-100">{Number(pagination.total || 0).toLocaleString()}</strong> {pagination.total === 1 ? 'question' : 'questions'}
               {problems.length > 0 && <><span className="text-slate-400 dark:text-zinc-500"> · </span>{solvedOnPage} of {problems.length} solved on this page</>}</span>
             {activeFilters.map((filter) => <FilterChip key={filter.key} label={filter.label} onRemove={filter.clear} />)}
@@ -321,7 +322,7 @@ export default function ProblemsPage() {
                 : <>
                   <ProblemColumns sort={columnSort} onSort={sortByColumn} />
                   {/* The current page stays in place, dimmed, until the next one arrives. */}
-                  <ul aria-busy={loading} className={`space-y-2 transition-opacity duration-150 ${loading ? 'opacity-60' : ''}`}>
+                  <ul aria-busy={loading} data-guide="pc-list" className={`space-y-2 transition-opacity duration-150 ${loading ? 'opacity-60' : ''}`}>
                     {problems.map((problem, index) => <ProblemRow key={problem._id} problem={problem}
                       number={Number(problem.displayOrder) > 0 && Number(problem.displayOrder) < NO_ORDER ? Number(problem.displayOrder) : (((pagination.page || 1) - 1) * (pagination.limit || pageSize)) + index + 1}
                       saved={favorites.includes(String(problem.listId)) || lists.some((list) => list.problemIds.includes(String(problem.listId)))}

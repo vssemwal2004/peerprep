@@ -11,6 +11,8 @@ import StudentAccessSelector from './components/StudentAccessSelector';
 import TeacherPicker from './components/TeacherPicker';
 import { STANDARD_STUDENT_FEATURES } from '../student/studentFeatureAccess';
 import { DataTable, SortHeader, TablePager, useClientTable } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 // Server result of a CSV upload/check, one row per CSV line.
 const UPLOAD_RESULT_COLUMNS = [
@@ -558,26 +560,27 @@ export default function StudentOnboarding() {
           <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 bg-indigo-800 dark:bg-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
             <Users className="text-white w-5 h-5 sm:w-6 sm:h-6" />
           </div>
-          <div className="flex-1">
-            <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 dark:text-gray-100">Add Students</h1>
+          <div className="flex-1" data-guide="onb-title">
+            <h1 className="flex items-center gap-2 text-xl sm:text-2xl font-semibold text-slate-900 dark:text-gray-100">Add Students <PageGuideButton /></h1>
             <p className="text-slate-600 dark:text-gray-400 text-xs sm:text-sm mt-0.5 sm:mt-1 hidden sm:block">
               Efficiently onboard students via bulk CSV upload or individual entry with real-time validation.
             </p>
           </div>
         </div>
 
-        <AccountQuotaNotice role="student" />
+        <div data-guide="onb-quota"><AccountQuotaNotice role="student" /></div>
         {/* Guidelines Card */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
+          data-guide="onb-guidelines"
           className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg p-3 sm:p-4 mb-4 sm:mb-6"
         >
           <div className="flex items-start gap-2 sm:gap-3">
             <BookOpen className="w-4 h-4 text-slate-600 dark:text-gray-400 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <h3 className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-gray-200 mb-1 sm:mb-2">CSV Upload Guidelines</h3>
+              <h3 className="flex items-center gap-1 text-xs sm:text-sm font-semibold text-slate-800 dark:text-gray-200 mb-1 sm:mb-2">CSV Upload Guidelines <GuideInfo step="onb-guidelines" /></h3>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 text-xs text-slate-700 dark:text-gray-300">
                 <div className="space-y-1">
                   <p><strong>Required columns:</strong> Course, Name, Email, Student ID, Branch, College, Teacher ID, Semester</p>
@@ -594,7 +597,7 @@ export default function StudentOnboarding() {
         </motion.div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4 sm:mb-6" data-guide="onb-actions">
           <motion.a
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -622,6 +625,7 @@ export default function StudentOnboarding() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
+            data-guide="onb-single-form"
             className="bg-slate-50 dark:bg-gray-700 p-3 sm:p-4 rounded-lg mb-4 sm:mb-6 border border-slate-200 dark:border-gray-600"
           >
             <h3 className="text-base sm:text-lg font-semibold text-slate-800 dark:text-gray-100 mb-3 sm:mb-4">Add Individual Student</h3>
@@ -728,6 +732,7 @@ export default function StudentOnboarding() {
           className="mb-6"
         >
           <div
+            data-guide="onb-upload"
             className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
               dragActive 
                 ? 'border-sky-400 dark:border-sky-500 bg-sky-50 dark:bg-sky-900/20' 
@@ -777,6 +782,7 @@ export default function StudentOnboarding() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
+            data-guide="onb-stats"
             className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6"
           >
             <div className="bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-lg p-4 shadow-sm">
@@ -844,9 +850,9 @@ export default function StudentOnboarding() {
             className="flex-1 flex flex-col"
           >
             {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4 p-4 bg-slate-50 dark:bg-gray-700 rounded-lg border border-slate-200 dark:border-gray-600">
+            <div data-guide="onb-records" className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4 p-4 bg-slate-50 dark:bg-gray-700 rounded-lg border border-slate-200 dark:border-gray-600">
               <div>
-                <h3 className="text-lg font-semibold text-slate-800 dark:text-gray-100">Student Records</h3>
+                <h3 className="flex items-center gap-1.5 text-lg font-semibold text-slate-800 dark:text-gray-100">Student Records <GuideInfo step="onb-records" /></h3>
                 <p className="text-slate-600 dark:text-gray-400 text-sm">{students.length} records loaded • {clientErrors.length} errors to fix</p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -936,6 +942,7 @@ export default function StudentOnboarding() {
               <motion.div
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
+                data-guide="onb-errors"
                 className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-lg shadow-sm"
               >
                 <h3 className="font-semibold text-red-800 dark:text-red-300 mb-3 text-sm">
@@ -1005,7 +1012,7 @@ export default function StudentOnboarding() {
             )}
 
             {/* Data Table */}
-            <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+            <div data-guide="onb-preview" className="overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
              <div className="overflow-auto">
               <table className="min-w-full" style={{ '--serial-start': (previewTable.page - 1) * previewTable.pageSize }}>
                 <thead className="bg-slate-50 dark:bg-gray-700">

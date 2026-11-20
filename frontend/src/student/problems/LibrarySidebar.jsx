@@ -1,5 +1,6 @@
 import { Layers3, LayoutList, LoaderCircle, Plus, Star, Trash2 } from 'lucide-react';
 import { card, focusRing } from './problemsUi';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 function NavItem({ active, icon: Icon, iconClass, label, count, onClick, children }) {
   return <div className="group relative">
@@ -17,8 +18,8 @@ function NavItem({ active, icon: Icon, iconClass, label, count, onClick, childre
 
 /** Saved lists. Lists keep their server ids; favorites stay on this device. */
 export default function LibrarySidebar({ view, totalProblems, favoritesCount, lists, busyListId, onView, onCreateList, onDeleteList }) {
-  return <div className={`p-3 ${card}`}>
-    <p className="px-2.5 pb-1.5 pt-1 text-[11.5px] font-semibold text-slate-400 dark:text-zinc-500">Library</p>
+  return <div data-guide="pc-library" className={`p-3 ${card}`}>
+    <p className="flex items-center gap-1.5 px-2.5 pb-1.5 pt-1 text-[11.5px] font-semibold text-slate-400 dark:text-zinc-500">Library<GuideInfo step="pc-library" /></p>
     <div className="space-y-0.5">
       <NavItem active={view.kind === 'all'} icon={LayoutList} iconClass="bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300" label="All questions" count={Number(totalProblems || 0).toLocaleString()} onClick={() => onView({ kind: 'all' })} />
       <NavItem active={view.kind === 'favorites'} icon={Star} iconClass="bg-amber-50 text-amber-500 dark:bg-amber-500/10 dark:text-amber-300" label="Favorites" count={favoritesCount} onClick={() => onView({ kind: 'favorites' })} />

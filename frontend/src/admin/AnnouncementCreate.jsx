@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../utils/api';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 const typeOptions = [
   { value: 'motivation', label: 'Motivation' },
@@ -66,8 +67,8 @@ export default function AnnouncementCreate() {
   return (
     <div className="min-h-screen bg-slate-50 px-6 py-6 dark:bg-gray-900">
       <div className="mx-auto flex max-w-4xl flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Add Announcement</h1>
+        <div data-guide="ac-header">
+          <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-900 dark:text-white">Add Announcement<PageGuideButton /></h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
             Create announcements that appear on the student dashboard.
           </p>
@@ -86,7 +87,7 @@ export default function AnnouncementCreate() {
 
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
           <div className="grid grid-cols-1 gap-5">
-            <div>
+            <div data-guide="ac-title">
               <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Title</label>
               <input
                 value={form.title}
@@ -96,7 +97,7 @@ export default function AnnouncementCreate() {
               />
             </div>
 
-            <div>
+            <div data-guide="ac-message">
               <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Message</label>
               <textarea
                 value={form.message}
@@ -107,7 +108,7 @@ export default function AnnouncementCreate() {
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div data-guide="ac-type-status" className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Type</label>
                 <select
@@ -134,7 +135,7 @@ export default function AnnouncementCreate() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div data-guide="ac-priority-expiry" className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Priority</label>
                 <select
@@ -158,7 +159,7 @@ export default function AnnouncementCreate() {
               </div>
             </div>
 
-            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/60">
+            <label data-guide="ac-popup" className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/60">
               <input
                 type="checkbox"
                 checked={form.showAsPopup}
@@ -171,7 +172,7 @@ export default function AnnouncementCreate() {
               </span>
             </label>
 
-            <div className="flex flex-wrap items-center gap-3 pt-2">
+            <div data-guide="ac-buttons" className="flex flex-wrap items-center gap-3 pt-2">
               <button
                 onClick={() => handleSubmit()}
                 disabled={saving}

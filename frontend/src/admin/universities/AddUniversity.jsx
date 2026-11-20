@@ -105,7 +105,7 @@ export default function AddUniversity() {
     <div className={`${pageShell} max-w-5xl`}>
       <PageHeader title="Add a university" description="Five short steps. Nothing is saved until you press Create on the last one; credentials stay on the server." />
 
-      <ol className="grid gap-2 sm:grid-cols-5" aria-label="Steps">
+      <ol data-guide="au-steps" className="grid gap-2 sm:grid-cols-5" aria-label="Steps">
         {STEPS.map((item, index) => {
           const done = index < step;
           const active = index === step;
@@ -121,7 +121,7 @@ export default function AddUniversity() {
         })}
       </ol>
 
-      <Card>
+      <Card data-guide="au-form">
         {current.key === 'identity' && (
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="University ID" required hint={<>Used in the web address: <b className="font-mono">peerprep.co.in/u/{form.universityId || 'your-id'}</b>. It cannot be changed later.</>}>
@@ -197,11 +197,11 @@ export default function AddUniversity() {
         )}
 
         {problems.length > 0 && current.key !== 'review' && (
-          <ul className="mt-5 space-y-1 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">{problems.map((problem) => <li key={problem}>• {problem}</li>)}</ul>
+          <ul data-guide="au-problems" className="mt-5 space-y-1 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">{problems.map((problem) => <li key={problem}>• {problem}</li>)}</ul>
         )}
         {error && <div className="mt-5"><Notice tone="danger">{error}</Notice></div>}
 
-        <div className="mt-6 flex items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+        <div data-guide="au-nav" className="mt-6 flex items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
           <Button variant="ghost" icon={ChevronLeft} disabled={step === 0 || creating} onClick={() => setStep((value) => value - 1)}>Back</Button>
           {current.key === 'review'
             ? <Button busy={creating} icon={Check} onClick={create}>{creating ? 'Creating university…' : 'Create university'}</Button>

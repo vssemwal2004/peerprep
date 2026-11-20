@@ -260,14 +260,14 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
       {error ? <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div> : null}
       {data?.partial?.length ? <div className="mb-4 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200"><AlertCircle className="h-4 w-4 shrink-0" />Some figures could not be loaded ({data.partial.join(', ')}). The rest are current.</div> : null}
 
-      <div className={`grid gap-3 ${showSkeleton ? 'sm:grid-cols-2 xl:grid-cols-4' : kpiGrid}`}>
+      <div data-guide="ov-kpis" className={`grid gap-3 ${showSkeleton ? 'sm:grid-cols-2 xl:grid-cols-4' : kpiGrid}`}>
         {showSkeleton
           ? [1, 2, 3, 4].map((key) => <KpiTile key={key} label="" loading />)
           : kpis.map((kpi) => <KpiTile key={kpi.label} {...kpi} />)}
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-12">
-        <Glass className="p-5 xl:col-span-8">
+        <Glass data-guide="ov-trend" className="p-5 xl:col-span-8">
           <CardHeader title="Engagement trend" subtitle={`Daily student actions per module, ${period}`} Icon={Activity} action={data?.access?.activity ? <CardLink to={links.activity}>Activity log</CardLink> : null} />
           {showSkeleton ? <div className="h-[260px] animate-pulse rounded-xl bg-slate-200/60 dark:bg-white/[0.05]" />
             : view.series.length ? <ActivityTrendChart data={view.trend} series={view.series} />
@@ -275,7 +275,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
         </Glass>
 
         <div className="grid gap-4 xl:col-span-4">
-          <Glass className="p-5">
+          <Glass data-guide="ov-today" className="p-5">
             <CardHeader title="Today at a glance" subtitle="Compared with yesterday" Icon={CalendarClock} />
             {showSkeleton ? <SkeletonRows rows={3} /> : (
               <ul className="divide-y divide-slate-100 dark:divide-white/5">
@@ -284,7 +284,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
               </ul>
             )}
           </Glass>
-          <Glass id="needs-attention" className="scroll-mt-24 p-5">
+          <Glass id="needs-attention" data-guide="ov-attention" className="scroll-mt-24 p-5">
             <CardHeader title="Needs attention" subtitle="Open items you can act on" Icon={BellRing} />
             {showSkeleton ? <SkeletonRows rows={3} /> : view.pending.length ? (
               <ul className="space-y-1.5">
@@ -301,11 +301,11 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
         </div>
       </div>
 
-      {modulePanels.length ? <div className={`mt-4 grid gap-4 ${panelGrid}`}>{modulePanels}</div> : null}
+      {modulePanels.length ? <div data-guide="ov-modules" className={`mt-4 grid gap-4 ${panelGrid}`}>{modulePanels}</div> : null}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {(data?.assessments || data?.mockInterviews || showSkeleton) ? (
-          <Glass id="upcoming" className="scroll-mt-24 p-5">
+          <Glass id="upcoming" data-guide="ov-upcoming" className="scroll-mt-24 p-5">
             <CardHeader title="Upcoming schedule" subtitle="Assessments and interview events" Icon={CalendarDays} />
             {showSkeleton ? <SkeletonRows /> : data.upcoming?.length ? (
               <ol className="relative space-y-3 before:absolute before:bottom-2 before:left-[5px] before:top-2 before:w-px before:bg-slate-200 dark:before:bg-white/10">
@@ -328,7 +328,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
         ) : null}
 
         {data?.prepScore && data.access?.students ? (
-          <Glass className="p-5">
+          <Glass data-guide="ov-top" className="p-5">
             <CardHeader title="Top students" subtitle="By current Prep Score" Icon={Trophy} action={<CardLink to={links.analysis}>Prep analysis</CardLink>} />
             {data.prepScore.top.length ? (
               <ol className="space-y-1">
@@ -345,7 +345,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
         ) : null}
 
         {data?.access?.activity || showSkeleton ? (
-          <Glass className="p-5">
+          <Glass data-guide="ov-recent" className="p-5">
             <CardHeader title="Recent activity" subtitle={role === 'admin' ? 'Changes by admins and coordinators' : 'Your latest changes'} Icon={Activity} action={<CardLink to={links.activity}>All activity</CardLink>} />
             {showSkeleton ? <SkeletonRows /> : data.recent?.length ? (
               <ul className="space-y-2.5">

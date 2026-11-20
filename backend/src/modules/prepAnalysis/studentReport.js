@@ -17,6 +17,7 @@ const STATUS = {
   interview: { active: 'Interviewing', inactive: 'Stopped', never: 'Never interviewed' },
   assessment: { active: 'Taking tests', inactive: 'Stopped', never: 'Never took a test' },
 };
+const MODULE_LABELS = { coding: 'Prep Coding', learning: 'Prep Learning', interview: 'Prep Interview', assessment: 'Prep Assessment' };
 const day = (value) => (value ? new Date(value).toISOString().slice(0, 10) : null);
 const percent = (part, whole) => (whole ? Math.round((part / whole) * 1000) / 10 : 0);
 const language = (key) => LANGUAGE_NAMES[key] || key;
@@ -58,11 +59,11 @@ export function buildStudentReport({ row, profile, times = new Map(), range, gen
     ['Period', periodText(range)], ['Generated', generatedAt.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })],
   ]));
 
-  // The Prep Score is the Prep Coding score alone (2026-11): one number, no module breakdown.
+  const features = forStudent ? {} : profile.prepScore?.features || {};
   sections.push({
     title: 'Prep Score', columns: [col('Part', 'text', 22), col('Score', 'decimal', 12)],
-    rows: [['Prep Score', profile.prepScore?.total ?? 0]],
-    note: 'Prep Score comes from practice coding solves, is all-time and does not change with the period.',
+    rows: [['Overall', profile.prepScore?.total ?? 0], ...Object.entries(features).map(([key, feature]) => [MODULE_LABELS[key] || key, feature?.score ?? 0])],
+    note: 'Prep Score is all-time and does not change with the period.',
   });
 
   if (profile.coding) {

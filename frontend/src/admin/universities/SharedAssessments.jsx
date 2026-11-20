@@ -53,7 +53,7 @@ export default function SharedAssessments() {
       <PageHeader title="Shared assessments" description="Choose which universities can use each PeerPrep assessment. Public, published questions are shared with every university automatically." />
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
       <Card>
-        <div className="flex flex-wrap items-center gap-3">
+        <div data-guide="sh-filters" className="flex flex-wrap items-center gap-3">
           <label className="relative min-w-[16rem] flex-1">
             <span className="sr-only">Search assessments</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
@@ -63,7 +63,7 @@ export default function SharedAssessments() {
             <option value="all">All assessments</option><option value="shared">Shared</option><option value="hidden">Not shared</option>
           </select>
         </div>
-        <div className="mt-4 space-y-3">
+        <div data-guide="sh-list" className="mt-4 space-y-3">
           {visible.length === 0 ? <EmptyState icon={ClipboardCheck} title={rows.length ? 'No assessment matches' : 'No assessments yet'}>{rows.length ? 'Try another search.' : 'Assessments created in the PeerPrep admin appear here.'}</EmptyState> : visible.map((row) => {
             const chosen = selection[row.id] || [];
             const dirty = !sameSet(chosen, row.saved);

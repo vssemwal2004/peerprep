@@ -13,6 +13,8 @@ import { DataTable } from '../../components/table';
 import WindowChip from '../../student/quests/WindowChip';
 import { windowText } from '../../student/quests/questWindow';
 import PerformanceReportMenu from '../../components/PerformanceReportMenu';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const initials = (name) => String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join('');
 
@@ -65,7 +67,7 @@ export default function QuickPrepView() {
     {message && <Notice tone={message.tone} onClose={() => setMessage(null)}>{message.text}</Notice>}
 
     <section className={`${card} overflow-hidden`} aria-labelledby="quickprep-title">
-      <div className={`relative overflow-hidden bg-gradient-to-br ${theme.band} px-5 py-6 text-white sm:px-6`}>
+      <div data-guide="qpv-hero" className={`relative overflow-hidden bg-gradient-to-br ${theme.band} px-5 py-6 text-white sm:px-6`}>
         <TypeIcon className="absolute -bottom-8 -right-4 h-44 w-44 rotate-[-10deg] text-white/10" strokeWidth={1.2} aria-hidden="true" />
         <div className="relative flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 max-w-3xl">
@@ -74,21 +76,21 @@ export default function QuickPrepView() {
               <span className="rounded-full bg-white px-0.5"><StatusPill status={quest.status} /></span>
               <span className="rounded-full bg-white px-0.5"><WindowChip quest={quest} /></span>
             </div>
-            <h1 id="quickprep-title" className="mt-3 text-[26px] font-semibold tracking-[-0.02em]">{quest.title}</h1>
+            <h1 id="quickprep-title" className="mt-3 flex items-center gap-2 text-[26px] font-semibold tracking-[-0.02em]">{quest.title}<PageGuideButton /></h1>
             {quest.description && <p className="mt-1.5 text-sm leading-relaxed text-white/85">{quest.description}</p>}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div data-guide="qpv-actions" className="flex flex-wrap items-center gap-2">
             <Link to={`${QUICKPREP_ROOT}/${quest.id}/edit`} className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3.5 py-2 text-sm font-semibold ring-1 ring-inset ring-white/30 transition hover:bg-white/25"><Pencil className="h-4 w-4" />Edit</Link>
             <Link to={quickPrepLibraryUrl(quest)} className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3.5 py-2 text-sm font-semibold ring-1 ring-inset ring-white/30 transition hover:bg-white/25"><LibraryBig className="h-4 w-4" />Add questions</Link>
             {quest.status === 'published'
               ? <button type="button" disabled={busyId === quest.id} onClick={() => setStatus(quest, 'draft')} className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-100 disabled:opacity-60"><EyeOff className="h-4 w-4" />Unpublish</button>
               : <button type="button" disabled={busyId === quest.id || !quest.questionCount} onClick={() => setStatus(quest, 'published')} className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-100 disabled:opacity-60"><Rocket className="h-4 w-4" />Publish</button>}
-            {!central && <PerformanceReportMenu kind="quickprep" id={quest.id} />}
+            {!central && <span data-guide="qpv-report" className="inline-flex"><PerformanceReportMenu kind="quickprep" id={quest.id} /></span>}
             <span className="rounded-xl bg-white"><RowMenu name={quest.title} actions={actionsFor(quest, { includeView: false })} /></span>
           </div>
         </div>
       </div>
-      <dl className="grid gap-x-6 gap-y-4 px-5 py-4 text-sm sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
+      <dl data-guide="qpv-setup" className="grid gap-x-6 gap-y-4 px-5 py-4 text-sm sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><Building2 className="h-3.5 w-3.5" />Companies</dt><dd className="mt-1"><Chips values={quest.companies} max={4} empty="All companies" /></dd></div>
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><Tags className="h-3.5 w-3.5" />Topics</dt><dd className="mt-1"><Chips values={quest.topics} max={4} empty="All topics" /></dd></div>
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><GraduationCap className="h-3.5 w-3.5" />Audience</dt><dd className="mt-1 font-semibold">{quest.semesters?.length ? `Semester ${quest.semesters.join(', ')}` : 'All semesters'} <span className="font-normal text-slate-500">· {central ? 'every university' : plural(summary.audience, 'student')}</span></dd></div>
@@ -101,16 +103,16 @@ export default function QuickPrepView() {
       </dl>
     </section>
 
-    {issues.length ? <Notice tone="warning">
+    <div data-guide="qpv-visibility">{issues.length ? <Notice tone="warning">
       <p className="flex items-center gap-1.5 font-semibold"><TriangleAlert className="h-4 w-4" />Students cannot see this QuickPrep yet</p>
       <ul className="mt-1 list-disc space-y-0.5 pl-6">{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
-    </Notice> : <Notice tone="info"><span className="inline-flex items-center gap-1.5"><Eye className="h-4 w-4" />{central ? 'Live for every university with coding enabled' : `Live: ${plural(summary.audience, 'student')} can see it on their QuickPrep page`}{quest.unavailableCount ? `. ${plural(quest.unavailableCount, 'question')} unpublished in the library ${quest.unavailableCount === 1 ? 'is' : 'are'} hidden.` : '.'}</span></Notice>}
+    </Notice> : <Notice tone="info"><span className="inline-flex items-center gap-1.5"><Eye className="h-4 w-4" />{central ? 'Live for every university with coding enabled' : `Live: ${plural(summary.audience, 'student')} can see it on their QuickPrep page`}{quest.unavailableCount ? `. ${plural(quest.unavailableCount, 'question')} unpublished in the library ${quest.unavailableCount === 1 ? 'is' : 'are'} hidden.` : '.'}</span></Notice>}</div>
 
-    {central ? <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+    {central ? <div data-guide="qpv-stats" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       <StatCard icon={Layers} label="Questions" value={quest.questionCount} hint={quest.unavailableCount ? `${quest.unavailableCount} unavailable` : 'All available'} tone="sky" />
       <StatCard icon={Globe2} label="Delivered to" value="All" hint="Universities with coding enabled" tone="emerald" />
       <StatCard icon={Sparkles} label="Reward" value={`${quest.rewardXp} XP`} hint={quest.badgeTitle || `${quest.title} Finisher`} tone="rose" />
-    </div> : <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+    </div> : <div data-guide="qpv-stats" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
       <StatCard icon={Layers} label="Questions" value={quest.questionCount} hint={quest.unavailableCount ? `${quest.unavailableCount} unavailable` : 'All available'} tone="sky" />
       <StatCard icon={UsersRound} label="Audience" value={summary.audience} hint="Students who can see it" tone="slate" />
       <StatCard icon={Users} label="Started" value={summary.started} hint={`${reach}% of audience`} tone="violet" />
@@ -120,9 +122,12 @@ export default function QuickPrepView() {
     </div>}
     {central && <p className="text-[12.5px] text-slate-500 dark:text-zinc-400">Each university keeps its own students’ progress privately, so student numbers are not shown on the central platform.</p>}
 
-    <section className={card} aria-label="Details">
-      {!central && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-zinc-800">
-        <Segmented label="Show" value={tab} onChange={setTab} options={[{ value: 'questions', label: 'Questions', count: questions.length }, { value: 'students', label: 'Students', count: students.length }]} />
+    <section data-guide="qpv-details" className={card} aria-label="Details">
+      {!central && <div data-guide="qpv-tabs" className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-zinc-800">
+        <span className="inline-flex items-center gap-2">
+          <Segmented label="Show" value={tab} onChange={setTab} options={[{ value: 'questions', label: 'Questions', count: questions.length }, { value: 'students', label: 'Students', count: students.length }]} />
+          <GuideInfo step="qpv-tabs" />
+        </span>
       </div>}
       {central || tab === 'questions' ? <QuestionsTable questions={questions} started={summary.started} quest={quest} central={central} /> : <StudentsTable students={students} title={quest.title} />}
     </section>
@@ -177,7 +182,8 @@ function StudentsTable({ students, title }) {
   };
   if (!students.length) return <div className="px-6 py-12 text-center"><Users className="mx-auto h-8 w-8 text-slate-300" aria-hidden="true" /><p className="mt-2 text-sm font-semibold">No students have started yet</p><p className="text-[13px] text-slate-500">A student appears here when they start it or open one of its questions.</p></div>;
   return <>
-    <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3 dark:border-zinc-800">
+    <div data-guide="qpv-students-tools" className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3 dark:border-zinc-800">
+      <GuideInfo step="qpv-students-tools" />
       <SearchBox value={search} onChange={setSearch} placeholder="Search name, email or student ID" label="Search students" />
       <Segmented label="Status" value={filter} onChange={setFilter} options={[{ value: 'all', label: 'All' }, { value: 'progress', label: 'In progress' }, { value: 'completed', label: 'Completed' }]} />
       <button type="button" onClick={exportCsv} className={secondaryButton}><Download className="h-4 w-4" />Export CSV</button>

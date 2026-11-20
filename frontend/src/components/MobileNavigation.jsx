@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { ChevronDown, LogOut, Menu, Moon, Sun, X } from 'lucide-react';
+import { ChevronDown, Compass, LogOut, Menu, Moon, Sun, X } from 'lucide-react';
 
 const rowBase = 'flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-[14px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60';
 const rowTone = (active) => (active
@@ -19,7 +19,7 @@ function Avatar({ avatarUrl, initials, accent, size = 'h-9 w-9' }) {
  */
 export default function MobileNavigation({
   navItems, isRouteActive, homePath, logo, roleLabel, displayName, displayEmail, avatarUrl, initials, accent,
-  accountLinks = [], theme, toggleTheme, onLogout,
+  accountLinks = [], theme, toggleTheme, onLogout, onOpenGuides = null,
 }) {
   const location = useLocation();
   const [open, setOpen] = useState(false);
@@ -85,7 +85,7 @@ export default function MobileNavigation({
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-[70] flex h-14 items-center gap-2 border-b border-sky-100 bg-white/95 px-2 backdrop-blur-xl dark:border-sky-950 dark:bg-slate-950/95">
+      <header data-guide="app-nav" className="fixed inset-x-0 top-0 z-[70] flex h-14 items-center gap-2 border-b border-sky-100 bg-white/95 px-2 backdrop-blur-xl dark:border-sky-950 dark:bg-slate-950/95">
         <button type="button" onClick={() => setOpen(true)} aria-label={hasBadge ? 'Open menu (new requests waiting)' : 'Open menu'} aria-expanded={open} aria-controls="mobile-navigation"
           className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-slate-200 dark:hover:bg-white/10">
           <Menu className="h-5 w-5" aria-hidden="true" />
@@ -142,6 +142,12 @@ export default function MobileNavigation({
               <Icon className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />{label}
             </Link>
           ))}
+          {onOpenGuides && (
+            <button type="button" data-guide="app-guides" onClick={() => { setOpen(false); onOpenGuides(); }} className={`${rowBase} ${rowTone(false)} min-h-10 text-[13.5px]`}>
+              <Compass className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden="true" />
+              <span className="flex-1">Guides: page tours</span>
+            </button>
+          )}
           <button type="button" onClick={toggleTheme} role="switch" aria-checked={theme === 'dark'} className={`${rowBase} ${rowTone(false)} min-h-10 text-[13.5px]`}>
             {theme === 'dark' ? <Moon className="h-4 w-4 shrink-0 text-sky-400" aria-hidden="true" /> : <Sun className="h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />}
             <span className="flex-1">Dark theme</span>

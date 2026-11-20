@@ -482,14 +482,13 @@ export const DRILL_CHART_IDS = Object.freeze(Object.keys(DRILLS));
 
 // ---------------------------------------------------------------- tables
 
-// Every drill table shows the student's Prep Score (since 2026-11 the Prep Coding score alone).
-const PREP_SCORE_COLUMN = { label: 'Prep Score', get: (row) => row.scores?.total ?? row.coding?.prepScore ?? 0 };
 const MODULE_SCORE = {
   coding: { label: 'Prep Score', get: (row) => row.coding.prepScore },
-  quickprep: PREP_SCORE_COLUMN,
-  learning: PREP_SCORE_COLUMN,
-  interview: PREP_SCORE_COLUMN,
-  assessment: PREP_SCORE_COLUMN,
+  // Quick Prep has no Prep Score of its own: show the overall one.
+  quickprep: { label: 'Prep Score (overall)', get: (row) => row.scores?.total ?? 0 },
+  learning: { label: 'Prep Learning score', get: (row) => row.scores?.features.learning?.score ?? 0 },
+  interview: { label: 'Prep Interview score', get: (row) => row.scores?.features.interview?.score ?? 0 },
+  assessment: { label: 'Prep Assessment score', get: (row) => row.scores?.features.assessment?.score ?? 0 },
 };
 const STUDENT_COLUMNS = [
   { ...text('name', 'Student name', 24), get: (row) => row.name },

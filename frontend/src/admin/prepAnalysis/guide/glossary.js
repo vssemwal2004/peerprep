@@ -2,8 +2,10 @@
 // definition. Text anywhere on the page (chart insights, headline cards, guide steps) can be
 // split into parts so these words get a dotted underline and a hover card (GlossaryText.jsx).
 
+import { makeGlossary } from "../../../guide/engine/glossaryEngine.js";
+
 export const GLOSSARY = Object.freeze([
-  { key: "prepScore", term: "Prep Score", aliases: ["Prep Scores"], text: "A student's coding score: points from the problems they solved first-time-accepted, weighted by difficulty (Hard counts most). Only coding practice counts, within the daily topic limit." },
+  { key: "prepScore", term: "Prep Score", aliases: ["Prep Scores"], text: "A student's overall score: the weighted average of their module scores (Prep Coding, Assessment, Interview, Learning) from verified work, harder work counting more. Coding solves count up to the daily topic limit." },
   { key: "solved", term: "solved", aliases: ["solve", "solves"], text: "A problem counts as solved the first time the student's submission is accepted. Solving it again does not count twice." },
   { key: "accepted", term: "accepted", aliases: ["acceptance rate"], text: "A submission is accepted when it passes every test case. The acceptance rate is accepted submissions out of all submissions." },
   { key: "submission", term: "submission", aliases: ["submissions"], text: "Each time a student submits code for a problem. Runs (testing without submitting) are not counted." },
@@ -23,31 +25,10 @@ export const GLOSSARY = Object.freeze([
   { key: "drill", term: "student list", aliases: ["students behind"], text: "Click any bar, slice, bubble or row to open the exact students behind it, with download and email." },
 ]);
 
-const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const ENTRIES = GLOSSARY.flatMap((entry) => [entry.term, ...entry.aliases].map((word) => ({ word, entry })))
-  .sort((left, right) => right.word.length - left.word.length);
-const PATTERN = new RegExp(`(^|[^A-Za-z])(${ENTRIES.map((item) => escape(item.word)).join("|")})(?=$|[^A-Za-z])`, "g");
-const BY_WORD = new Map(ENTRIES.map((item) => [item.word, item.entry]));
+const ENGINE = makeGlossary(GLOSSARY);
 
 /**
  * Splits text into plain strings and glossary words: [{ text }, { text, entry }]. Each glossary
  * entry is marked once per text (its first use), so a sentence is not underlined all over.
  */
-export function glossaryParts(text, { once = true } = {}) {
-  const value = String(text ?? "");
-  const parts = [];
-  const used = new Set();
-  let last = 0;
-  for (const match of value.matchAll(PATTERN)) {
-    const word = match[2];
-    const start = match.index + match[1].length;
-    const entry = BY_WORD.get(word);
-    if (!entry || (once && used.has(entry.key))) continue;
-    used.add(entry.key);
-    if (start > last) parts.push({ text: value.slice(last, start) });
-    parts.push({ text: word, entry });
-    last = start + word.length;
-  }
-  if (last < value.length) parts.push({ text: value.slice(last) });
-  return parts;
-}
+export const glossaryParts = (text, options) => ENGINE.parts(text, options);

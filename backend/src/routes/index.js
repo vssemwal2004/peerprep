@@ -45,6 +45,7 @@ import coinPricingSettingsRoutes from './coinPricingSettings.js';
 import overviewRoutes from './overview.js';
 import coinAdminRoutes from './coinAdmin.js';
 import peerRoutes from './peers.js';
+import guideRoutes from '../modules/guides/guides.routes.js';
 import { requireAuth, requireFullStudent, requireStudent, requireStudentFeature } from '../middleware/auth.js';
 
 const router = Router();
@@ -65,6 +66,7 @@ router.use('/ai-interviews', aiInterviewRoutes);
 router.use('/student/ai-interviews', requireAuth, requireStudentFeature('ai_interviews'), aiInterviewStudentRoutes);
 router.use('/bulk-uploads', bulkUploadRoutes);
 router.use('/auth', authRoutes);
+router.use('/guides', guideRoutes);
 router.use('/engagement', requireAuth, requireStudentFeature('quickprep'), engagementRoutes);
 router.use('/quests', requireAuth, requireStudentFeature('quickprep'), questRoutes);
 router.use('/interview-companies', interviewCompanyRoutes);

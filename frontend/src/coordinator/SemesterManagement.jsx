@@ -11,6 +11,8 @@ import {
 import { useToast } from '../components/CustomToast';
 import LearningAnalyticsModal from '../components/LearningAnalyticsModal';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 const DIFFICULTY_LEVELS = ['easy', 'easy-medium', 'medium', 'medium-hard', 'hard'];
 const difficultyColors = Object.fromEntries(DIFFICULTY_LEVELS.map((level) => [level, difficultyTheme(level).pill]));
@@ -352,7 +354,7 @@ export default function SemesterManagement() {
     <div className="min-h-screen bg-white dark:bg-gray-900">
       <div className="flex h-[calc(100vh-4rem)]">
         {/* LEFT SIDEBAR - Learning Modules */}
-        <div className={`${getSidebarWidthClass()} transition-all duration-300 overflow-hidden border-r border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm`}>
+        <div data-guide="sm-sidebar" className={`${getSidebarWidthClass()} transition-all duration-300 overflow-hidden border-r border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm`}>
           <div className="h-full flex flex-col">
             {/* Sidebar Header */}
             <div className="p-4 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800">
@@ -362,9 +364,11 @@ export default function SemesterManagement() {
                     <Calendar className="w-5 h-5 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h2 className="text-lg font-semibold text-slate-800 dark:text-gray-100">Learning Modules</h2>
+                  <GuideInfo step="sm-sidebar" />
                 </div>
                 <div className="flex gap-1.5">
                   <button
+                    data-guide="sm-width"
                     onClick={cycleSidebarWidth}
                     className="p-2 bg-slate-100 dark:bg-gray-700 hover:bg-slate-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
                     title="Adjust Width"
@@ -377,8 +381,8 @@ export default function SemesterManagement() {
             </div>
 
             {/* Semester Dropdown in Sidebar */}
-            <div className="p-4">
-              <SidebarSemesterDropdown 
+            <div data-guide="sm-semester" className="p-4">
+              <SidebarSemesterDropdown
                 semesters={semesters}
                 selectedSemester={selectedSemester}
                 onSelectSemester={handleSelectSemester}
@@ -394,6 +398,7 @@ export default function SemesterManagement() {
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <button
+                  data-guide="sm-toggle"
                   onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                   className="p-2 hover:bg-white dark:hover:bg-gray-700 rounded-lg transition-colors border border-slate-200 dark:border-gray-700"
                   title={isSidebarOpen ? 'Hide Sidebar' : 'Show Sidebar'}
@@ -404,8 +409,9 @@ export default function SemesterManagement() {
                   <BookOpen className="w-6 h-6 text-sky-600 dark:text-sky-400" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-slate-800 dark:text-gray-100">
+                  <h1 data-guide="sm-title" className="flex items-center gap-2 text-2xl font-bold text-slate-800 dark:text-gray-100">
                     {selectedSemester ? selectedSemester.semesterName : 'Select a Learning Module'}
+                    <PageGuideButton />
                   </h1>
                   {selectedSemester?.semesterDescription && (
                     <p className="text-sm text-slate-600 dark:text-gray-400 font-medium mt-0.5">{selectedSemester.semesterDescription}</p>
@@ -509,6 +515,7 @@ function SubjectList({
     <div>
       {/* Add Subject Button */}
       <button
+        data-guide="sm-add-subject"
         onClick={() => setShowAddSubject(true)}
         className="flex items-center gap-2 bg-sky-500 text-white px-4 py-2.5 rounded-lg hover:bg-sky-600 mb-6 font-medium shadow-sm transition-colors"
       >
@@ -565,6 +572,7 @@ function SubjectList({
 
       {semester.subjects && semester.subjects.length > 0 ? (
         <Reorder.Group
+          data-guide="sm-subjects"
           axis="y"
           values={semester.subjects}
           onReorder={handleReorderSubjects}
@@ -692,8 +700,9 @@ function SubjectCard({ subject, semesterId, isExpanded, onToggle, onDelete, load
       <div className="p-3 bg-white dark:bg-gray-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-gray-700 transition-colors" onClick={onToggle}>
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-2 flex-1">
-            <GripVertical 
-              className="w-4 h-4 text-slate-400 dark:text-gray-500 cursor-grab active:cursor-grabbing flex-shrink-0 mt-0.5 hover:text-slate-600 dark:hover:text-gray-400" 
+            <GripVertical
+              data-guide="sm-drag"
+              className="w-4 h-4 text-slate-400 dark:text-gray-500 cursor-grab active:cursor-grabbing flex-shrink-0 mt-0.5 hover:text-slate-600 dark:hover:text-gray-400"
               onPointerDown={(e) => e.stopPropagation()}
             />
             <div className="flex-1">
@@ -739,10 +748,10 @@ function SubjectCard({ subject, semesterId, isExpanded, onToggle, onDelete, load
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             {!isEditing && (
               <>
-                <button onClick={() => setShowAnalytics(true)} className="p-1.5 bg-sky-50 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 rounded hover:bg-sky-100 dark:hover:bg-sky-900/60 transition-colors" title="View Analytics">
+                <button data-guide="sm-analytics" onClick={() => setShowAnalytics(true)} className="p-1.5 bg-sky-50 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 rounded hover:bg-sky-100 dark:hover:bg-sky-900/60 transition-colors" title="View Analytics">
                   <BarChart3 className="w-3.5 h-3.5" />
                 </button>
-                <button onClick={() => setIsEditing(true)} className="p-1.5 bg-slate-50 dark:bg-slate-900/40 text-slate-600 dark:text-slate-400 rounded hover:bg-slate-100 dark:hover:bg-slate-900/60 transition-colors" title="Edit Subject">
+                <button data-guide="sm-edit-subject" onClick={() => setIsEditing(true)} className="p-1.5 bg-slate-50 dark:bg-slate-900/40 text-slate-600 dark:text-slate-400 rounded hover:bg-slate-100 dark:hover:bg-slate-900/60 transition-colors" title="Edit Subject">
                   <Edit2 className="w-3.5 h-3.5" />
                 </button>
                 <button onClick={onDelete} className="p-1.5 bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-400 rounded hover:bg-red-100 dark:hover:bg-red-900/60 transition-colors" title="Delete Subject">
@@ -750,7 +759,7 @@ function SubjectCard({ subject, semesterId, isExpanded, onToggle, onDelete, load
                 </button>
               </>
             )}
-            <div className="p-1.5 bg-slate-50 dark:bg-gray-700 text-slate-600 dark:text-gray-400 rounded border border-slate-200 dark:border-gray-600">
+            <div data-guide="sm-expand" className="p-1.5 bg-slate-50 dark:bg-gray-700 text-slate-600 dark:text-gray-400 rounded border border-slate-200 dark:border-gray-600">
               {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </div>
           </div>
@@ -762,6 +771,7 @@ function SubjectCard({ subject, semesterId, isExpanded, onToggle, onDelete, load
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-slate-200 dark:border-gray-700">
             <div className="p-3 bg-slate-50 dark:bg-gray-900">
               <button
+                data-guide="sm-add-chapter"
                 onClick={() => setShowAddChapter(true)}
                 className="flex items-center gap-1.5 bg-sky-500 text-white px-2.5 py-1.5 rounded hover:bg-sky-600 mb-2 text-xs font-medium shadow-sm transition-colors"
               >
@@ -813,7 +823,7 @@ function SubjectCard({ subject, semesterId, isExpanded, onToggle, onDelete, load
               )}
 
               {subject.chapters && subject.chapters.length > 0 ? (
-                <Reorder.Group axis="y" values={subject.chapters} onReorder={handleReorderChapters} className="space-y-1.5">
+                <Reorder.Group data-guide="sm-chapters" axis="y" values={subject.chapters} onReorder={handleReorderChapters} className="space-y-1.5">
                   {subject.chapters.map((chapter) => (
                     <ChapterCard
                       key={chapter._id}
@@ -1016,6 +1026,7 @@ function ChapterCard({ chapter, semesterId, subjectId, isExpanded, onToggle, onD
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-slate-200 dark:border-gray-700">
             <div className="px-2 pb-2 pt-2 bg-slate-50 dark:bg-gray-900">
               <button
+                data-guide="sm-add-topic"
                 onClick={() => setShowAddTopic(true)}
                 className="flex items-center gap-1 bg-sky-500 text-white px-2.5 py-1.5 rounded hover:bg-sky-600 mb-2 text-xs font-medium shadow-sm transition-colors"
               >
@@ -1133,7 +1144,7 @@ function ChapterCard({ chapter, semesterId, subjectId, isExpanded, onToggle, onD
               )}
 
               {chapter.topics && chapter.topics.length > 0 ? (
-                <div>
+                <div data-guide="sm-topics">
                 <div className="overflow-x-auto">
                   <table className="w-full table-fixed">
                     <colgroup>

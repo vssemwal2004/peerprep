@@ -8,7 +8,7 @@ export default function ProfilePrepCoin({ focusRing = '' }) {
   const { balance, changeCount } = usePrepCoinBalance();
   if (balance == null) return null;
   return (
-    <Link to="/student/wallet" aria-label={`Prep Coin balance ${balance.toLocaleString()}. Open Prep Coin history`}
+    <Link to="/student/wallet" data-guide="pf-coins" aria-label={`Prep Coin balance ${balance.toLocaleString()}. Open Prep Coin history`}
       className={`group relative flex items-center gap-3 overflow-hidden rounded-xl border border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-amber-100/60 px-3.5 py-3 transition-colors hover:border-amber-300 dark:border-amber-500/25 dark:from-amber-500/10 dark:via-transparent dark:to-amber-500/5 ${focusRing}`}>
       <span aria-hidden="true" className="pointer-events-none absolute -right-6 -top-8 h-20 w-20 rounded-full bg-amber-300/30 blur-2xl" />
       <PrepCoinIcon key={changeCount} size={40} shine pop={changeCount > 0} />

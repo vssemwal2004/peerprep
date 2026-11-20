@@ -39,15 +39,18 @@ function ActivityRow({ activityKey, activity, onChange }) {
   );
 }
 
-/** Points, daily topic limit and activity rules for the Prep Coding module (the Prep Score). */
-export default function ModuleCard({ moduleKey, label, module, update }) {
+/** Weight, points and activity rules for one module. */
+export default function ModuleCard({ moduleKey, label, symbol, module, update }) {
   const Icon = ICONS[moduleKey];
   const set = (path, value) => update(['modules', moduleKey, ...path], value);
   return (
-    <section className={card} aria-labelledby={`module-${moduleKey}`}>
-      <div className="flex items-center gap-2">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"><Icon className="h-4 w-4" aria-hidden="true" /></span>
-        <h2 id={`module-${moduleKey}`} className={sectionTitle}>{label}</h2>
+    <section data-guide="psa-module" className={card} aria-labelledby={`module-${moduleKey}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"><Icon className="h-4 w-4" aria-hidden="true" /></span>
+          <div><h2 id={`module-${moduleKey}`} className={sectionTitle}>{label}</h2><p className={helperText}>Module score <var className="font-mono not-italic">{symbol}</var></p></div>
+        </div>
+        <div className="w-28"><NumberField compact label="Weight" symbol="W" value={module.weight} min={0} max={100} step={0.5} onChange={(value) => set(['weight'], value)} /></div>
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-3">

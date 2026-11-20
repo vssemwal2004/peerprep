@@ -105,7 +105,7 @@ export function ResourceList({ kind, picker = false, onSelect }) {
   };
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2" data-guide="ai-resource-tools">
         <div className="min-w-40 flex-1">
           <TextInput
             aria-label={`Search ${kind}`}

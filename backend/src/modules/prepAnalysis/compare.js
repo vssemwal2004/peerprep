@@ -79,7 +79,7 @@ const METRICS = [
   { key: 'students', label: 'Students', module: 'student', format: 'count', better: null, get: (rows) => rows.length },
   { key: 'active', label: 'Active in period', module: 'student', format: 'count', better: 'high', get: (rows, modules) => count(rows, (row) => activeInPeriod(row, modules)) },
   { key: 'activeShare', label: 'Active in period (%)', module: 'student', format: 'percent', better: 'high', get: (rows, modules) => percent(count(rows, (row) => activeInPeriod(row, modules)), rows.length) },
-  { key: 'prepScore', label: 'Avg Prep Score', module: 'student', format: 'decimal', better: 'high', get: (rows) => average(rows.map((row) => row.scores?.total ?? 0)) },
+  { key: 'prepScore', label: 'Avg Prep Score (overall)', module: 'student', format: 'decimal', better: 'high', get: (rows) => average(rows.map((row) => row.scores?.total ?? 0)) },
 
   { key: 'codingPractising', label: 'Practised coding', module: 'coding', format: 'count', better: 'high', get: (rows) => count(rows, (row) => row.coding.submissions > 0) },
   { key: 'solved', label: 'Problems solved', module: 'coding', format: 'count', better: 'high', get: (rows) => sum(rows, (row) => row.coding.solved.total) },
@@ -115,8 +115,7 @@ const MODULE_LABELS = { student: 'Students', coding: 'Prep Coding', quickprep: '
 // Grouped bar charts: one group of bars per compared value, one bar per measure.
 const CHARTS = [
   { id: 'students', title: 'Students and active students', metrics: ['students', 'active'] },
-  // codingScore equals prepScore since the Prep Score became the Prep Coding score (2026-11).
-  { id: 'scores', title: 'Average Prep Score', metrics: ['prepScore'] },
+  { id: 'scores', title: 'Average Prep Score', metrics: ['prepScore', 'codingScore'] },
   { id: 'solved', title: 'Problems solved by difficulty', metrics: ['solvedEasy', 'solvedMedium', 'solvedHard'], stack: true },
   { id: 'rates', title: 'Rates and averages (%)', metrics: ['activeShare', 'accuracy', 'sheetProgress', 'learningProgress', 'mockScore', 'testAverage', 'passRate'] },
   { id: 'quickprep', title: 'Quick Prep sheets', metrics: ['sheetStarters', 'sheetFinishers'] },

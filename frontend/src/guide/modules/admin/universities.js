@@ -1,0 +1,493 @@
+// Admin guides for the control deployment (Master Admin): the platform overview, universities,
+// shared assessments, defaults, the control-plane activity log and suggested companies.
+
+const uniHeader = (id, body) => ({ id, target: "uni-header", chapter: "overview", title: "What this page is for", body });
+
+export default [
+  {
+    id: "admin.platform-overview",
+    paths: ["/admin", "/admin/overview", "/admin/dashboard"],
+    area: "Get started",
+    title: "Platform overview",
+    icon: "dashboard",
+    deployment: "control",
+    summary: "The Master Admin's home: every university's health, students, content, Prep Score and Prep Coins, and what needs you.",
+    intro: "Welcome to PeerPrep! This is the platform command centre.\nIt combines PeerPrep's main database with every connected university, so you can see what needs attention and act on it.",
+    next: "admin.universities",
+    tips: [
+      "Start with Needs attention: each row opens the exact place to fix it.",
+      "The shortcuts row jumps to each section of this page or to the main pages.",
+      "Sort University health by Needs attention to see problems first.",
+    ],
+    steps: [
+      {
+        id: "ov-title", target: "ov-title", chapter: "overview",
+        title: "Your home page",
+        body: "Platform-wide figures for universities, students, content and Prep Coins. The refresh button next to Create reloads every figure.",
+      },
+      {
+        id: "ov-search", target: "ov-search", chapter: "actions",
+        title: "Find a student",
+        body: "Type a name, ID or email and press Enter to open the student list filtered by it. Press / anywhere on the page to jump here.",
+      },
+      {
+        id: "ov-period", target: "ov-period", chapter: "actions",
+        title: "Engagement period",
+        body: "Sets the period for the activity trend, the module panels and the coding totals (last 30 days by default). Other figures show current values.",
+      },
+      {
+        id: "ov-create", target: "ov-create", chapter: "actions", quick: true,
+        title: "Create",
+        body: "Start common jobs from one menu: add a university, a new QuickPrep, a shared assessment, a coding problem, issue Prep Coins, or write an announcement.",
+      },
+      {
+        id: "ov-stats", target: "ov-stats", chapter: "parts", quick: true,
+        title: "Four numbers at a glance",
+        body: "Universities live, items needing your attention, students active this week, and Prep Coins held by universities. Click one to open the matching page or section.",
+      },
+      {
+        id: "ov-shortcuts", target: "ov-shortcuts", chapter: "layout",
+        title: "Shortcuts",
+        body: "Jump to a section of this page (Engagement, Universities, Content library, Prep Score & Coins, Activity) or open universities, Prep Analysis, the Prep Score policy, coin pricing, the library, the email queue or the activity log.",
+      },
+      {
+        id: "pov-kpis", target: "pov-kpis", chapter: "parts", quick: true,
+        title: "Headline cards",
+        body: "Total students (main database and universities), active this week, accounts not signed in yet, coding submissions, average Prep Score, coding problems, library questions and universities live. Click a card for the page behind it.",
+      },
+      {
+        id: "pov-attention", target: "pov-attention", chapter: "parts", quick: true,
+        title: "Needs attention",
+        body: "Open items across the platform, most urgent first: databases not connected or unreadable, service periods ending, unfinished setup, an unpublished Prep Score policy or draft, missing coin prices, failed emails and main-database tasks. Each row opens where you fix it.",
+      },
+      {
+        id: "pov-trend", target: "pov-trend", chapter: "parts",
+        title: "Student activity",
+        body: "Daily student actions per module in the period, for the main database plus every connected university. A falling line shows which module is losing attention.",
+      },
+      {
+        id: "pov-today", target: "pov-today", chapter: "parts",
+        title: "Today at a glance",
+        body: "Today's activity per module and student sign-ins compared with yesterday, plus students active today and new in the last 30 days.",
+      },
+      {
+        id: "pov-modules", target: "pov-modules", chapter: "parts",
+        title: "Main database modules",
+        body: "Coding, assessments, interviews and learning in PeerPrep's main database for the period, each with a link to its full page.",
+      },
+      {
+        id: "pov-health", target: "pov-health", chapter: "parts", quick: true,
+        title: "University health",
+        body: "One row per university: status, students against the limit, active share this week, modules on, setup checks (database, code judge, AI interview service, logo) and days until the service ends. A red link means the database needs connecting. Click a row to manage it.",
+      },
+      {
+        id: "pov-renewals", target: "pov-renewals", chapter: "parts",
+        title: "Renewals",
+        body: "The service periods that end first, with days left. Click one to open that university's plan.",
+      },
+      {
+        id: "pov-adoption", target: "pov-adoption", chapter: "parts",
+        title: "Module adoption",
+        body: "How many universities have each module switched on. Defaults opens the settings new universities start with.",
+      },
+      {
+        id: "pov-content", target: "pov-content", chapter: "parts",
+        title: "Content library",
+        body: "Everything PeerPrep shares with universities: published coding problems by difficulty, library questions by type, and counts of assessments, shared assessments, QuickPreps, AI interviews and learning semesters.",
+      },
+      {
+        id: "pov-prep-score", target: "pov-prep-score", chapter: "parts",
+        title: "Prep Score",
+        body: "The live policy version, the average and highest scores and how many students are scored, with students per score range. Adjust opens the Prep Score policy.",
+      },
+      {
+        id: "pov-coins", target: "pov-coins", chapter: "parts",
+        title: "Prep Coin flow",
+        body: "Daily coin movements over the last 30 days (issued, passed to students, spent, refunded), coins held by universities, how many features are paid, and charges and refunds.",
+      },
+      {
+        id: "pov-changes", target: "pov-changes", chapter: "parts",
+        title: "Platform changes",
+        body: "The latest Master Admin changes to universities, policies and prices. All opens the full activity log.",
+      },
+      {
+        id: "pov-actions", target: "pov-actions", chapter: "parts",
+        title: "Admin and coordinator actions",
+        body: "Recent actions by admins and coordinators in the main database, with who did them and when.",
+      },
+      {
+        id: "pov-system", target: "pov-system", chapter: "parts",
+        title: "System health",
+        body: "Emails sent in 30 days, waiting and failed, plus the assessments and interviews coming up. Email queue shows each email and its errors.",
+      },
+    ],
+  },
+  {
+    id: "admin.universities",
+    paths: ["/admin/universities"],
+    area: "Universities",
+    title: "Universities overview",
+    icon: "building",
+    deployment: "control",
+    summary: "How many universities there are, which need action, what changed recently, and how a university goes live.",
+    intro: "Every university runs on the same PeerPrep website with its own database, code judge and admins.\nStart here to see which universities need you.",
+    next: "admin.university-list",
+    tips: [
+      "Click a row in Needs attention to open that university on the right tab.",
+      "Follow the four steps at the bottom when you set up a new university.",
+    ],
+    steps: [
+      uniHeader("uo-header", "A summary of all universities: counts, the ones that need action, and the latest changes."),
+      {
+        id: "uo-actions", target: "uni-actions", chapter: "actions",
+        title: "All universities and Add",
+        body: "All universities opens the full searchable list. Add university starts the step-by-step registration.",
+      },
+      {
+        id: "uo-stats", target: "uo-stats", chapter: "parts", quick: true,
+        title: "Counts",
+        body: "Universities in total, live now, needing attention, ending within 30 days, and Prep Coins held in university wallets.",
+      },
+      {
+        id: "uo-attention", target: "uo-attention", chapter: "parts", quick: true,
+        title: "Needs attention",
+        body: "Universities with missing setup, or a service period that has ended or ends soon. Each row shows the first issue; click it to open the university.",
+      },
+      {
+        id: "uo-recent", target: "uo-recent", chapter: "parts",
+        title: "Recent activity",
+        body: "The latest university changes with the date. View all opens the activity log.",
+      },
+      {
+        id: "uo-flow", target: "uo-flow", chapter: "parts", quick: true,
+        title: "How a university goes live",
+        body: "Four steps: add the university, choose its modules, share assessments, and let its admin create students. Each step opens the page where you do it.",
+      },
+    ],
+  },
+  {
+    id: "admin.university-list",
+    paths: ["/admin/universities/all"],
+    area: "Universities",
+    title: "All universities",
+    icon: "building",
+    deployment: "control",
+    summary: "Every university in one searchable, sortable table, with status, modules, service period, limits and coins.",
+    intro: "Find any university, check its status at a glance, and open it to manage it.",
+    next: "admin.university-add",
+    tips: [
+      "Use the Needs attention filter to see only universities with open issues.",
+      "The open-portal icon opens the university's student portal in a new tab.",
+    ],
+    steps: [
+      uniHeader("ul-header", "All universities in one table. Open a university to change anything about it."),
+      {
+        id: "ul-add", target: "uni-actions", chapter: "actions",
+        title: "Add university",
+        body: "Starts the step-by-step registration of a new university.",
+      },
+      {
+        id: "ul-search", target: "ul-search", chapter: "actions",
+        title: "Search",
+        body: "Search by university name, ID or contact email.",
+      },
+      {
+        id: "ul-filters", target: "ul-filters", chapter: "actions", quick: true,
+        title: "Status filters",
+        body: "All, Live, Needs attention or Disabled, each with its count.",
+        tryIt: "Click a filter, for example Needs attention",
+      },
+      {
+        id: "ul-table", target: "ul-table", chapter: "parts", quick: true,
+        title: "The table",
+        body: "Each university's status and setup items left, modules switched on, service period, coordinator and student limits, and Prep Coin balance. Click a column header to sort.",
+      },
+      {
+        id: "ul-manage", target: "ul-table", chapter: "actions", quick: true,
+        title: "Manage or open the portal",
+        body: "Manage (or the university's name) opens its page with every setting. The arrow icon opens its student portal in a new tab.",
+      },
+    ],
+  },
+  {
+    id: "admin.university-add",
+    paths: ["/admin/universities/new"],
+    area: "Universities",
+    title: "Add a university",
+    icon: "building",
+    deployment: "control",
+    summary: "Register a new university in five steps: identity, connections, first admin, plan and review.",
+    intro: "Add a university in five short steps.\nNothing is saved until you press Create university on the last step, and credentials stay on the server.",
+    next: "admin.university-list",
+    tips: [
+      "Choose the university ID carefully: it is part of the web address and cannot be changed later.",
+      "Use Generate for a strong starting password; the admin must change it on first sign-in.",
+      "The new university starts with the modules set in new-university defaults.",
+    ],
+    steps: [
+      uniHeader("au-header", "A guided registration. Nothing is created until the last step, so you can go back and change anything."),
+      {
+        id: "au-steps", target: "au-steps", chapter: "layout", quick: true,
+        title: "Five steps",
+        body: "Identity, Connections, First admin, Plan and Review. Finished steps turn green; click one to go back to it.",
+      },
+      {
+        id: "au-identity", target: "au-form", chapter: "parts", quick: true,
+        title: "Identity",
+        body: "The university ID (2 to 63 lowercase letters, numbers or hyphens) becomes its web address, peerprep.co.in/u/your-id, and cannot be changed later. Add the name and an optional contact email.",
+      },
+      {
+        id: "au-connections", chapter: "parts",
+        title: "Connections",
+        body: "Paste the university's MongoDB URI and press Test connection: it must pass before you continue. Add the Judge0 URL (auth header and token together, or neither). The AI interview service is optional; its secret needs at least 32 characters.",
+      },
+      {
+        id: "au-admin", chapter: "parts",
+        title: "First admin",
+        body: "The admin's email and a starting password of at least 12 characters (Generate makes a strong one). If that email already has an admin account in the university's database, that account is kept.",
+      },
+      {
+        id: "au-plan", chapter: "parts",
+        title: "Plan",
+        body: "Service start and end dates, starting Prep Coins for the university wallet, and the maximum coordinators and students. No new account can be added beyond a limit, including by bulk upload.",
+      },
+      {
+        id: "au-problems", target: "au-problems", chapter: "parts",
+        title: "What is missing",
+        body: "The amber list says exactly what blocks the current step. Continue stays disabled until it is empty.",
+      },
+      {
+        id: "au-nav", target: "au-nav", chapter: "actions", quick: true,
+        title: "Back, Continue, Create",
+        body: "Move between steps with Back and Continue. On Review, check the summary and the starting modules, then press Create university; you are taken to the new university's page.",
+      },
+    ],
+  },
+  {
+    id: "admin.shared-assessments",
+    paths: ["/admin/universities/assessments"],
+    area: "Universities",
+    title: "Shared assessments",
+    icon: "clipboard",
+    deployment: "control",
+    summary: "Choose which universities can use each PeerPrep assessment.",
+    intro: "Share PeerPrep assessments with universities.\nTick the universities for an assessment, then share or save. Public, published questions are shared with every university automatically.",
+    next: "admin.university-defaults",
+    tips: [
+      "Filter by Not shared to find assessments no university can use yet.",
+      "An Unsaved tag means your ticks are not saved yet.",
+    ],
+    steps: [
+      uniHeader("sh-header", "One card per PeerPrep assessment, with the universities that can use it."),
+      {
+        id: "sh-filters", target: "sh-filters", chapter: "actions", quick: true,
+        title: "Search and show",
+        body: "Search assessments by title, and show all, only shared, or only not shared.",
+      },
+      {
+        id: "sh-list", target: "sh-list", chapter: "parts", quick: true,
+        title: "Assessments",
+        body: "Each card shows the title, whether it is shared and with how many universities, draft or published, and its dates. Tick the universities that should get it.",
+      },
+      {
+        id: "sh-save", target: "sh-list", chapter: "actions", quick: true,
+        title: "Share, save or stop",
+        body: "Select all ticks every university. Share (or Save access once shared) saves the ticked universities. Stop sharing hides the assessment from every university; you can share it again later.",
+      },
+    ],
+  },
+  {
+    id: "admin.university-defaults",
+    paths: ["/admin/universities/defaults"],
+    area: "Universities",
+    title: "New-university defaults",
+    icon: "sliders",
+    deployment: "control",
+    summary: "The modules, learning source and level progression every new university starts with.",
+    intro: "Every new university starts with these settings.\nChanging them never changes a university that already exists; adjust those on each university's page.",
+    next: "admin.universities",
+    tips: [
+      "A university's Modules tab can copy its own settings here with Use as new-university defaults.",
+    ],
+    steps: [
+      uniHeader("ud-header", "Starting settings for universities added from now on. Existing universities are not changed."),
+      {
+        id: "ud-modules", target: "ud-modules", chapter: "parts", quick: true,
+        title: "Modules",
+        body: "Switch each module on or off for new universities. Each switch saves straight away.",
+      },
+      {
+        id: "ud-learning", target: "ud-learning", chapter: "parts", quick: true,
+        title: "Learning content source",
+        body: "Whether new universities use their own curriculum or the shared PeerPrep curriculum. Saved as soon as you choose.",
+      },
+      {
+        id: "ud-progression", target: "ud-progression", chapter: "parts", quick: true,
+        title: "Level progression",
+        body: "How quickly students move up levels: which activities earn XP and how much each counts. Press Save progression to keep your changes.",
+      },
+    ],
+  },
+  {
+    id: "admin.university-activity",
+    paths: ["/admin/universities/activity", "/admin/activity"],
+    area: "Universities",
+    title: "Activity log",
+    icon: "history",
+    deployment: "control",
+    summary: "The last 10 days of control-plane changes made by Master Admins.",
+    intro: "A record of what Master Admins changed in the last 10 days: universities, shared assessments, the Prep Score and Prep Coins.\nUniversity admin and coordinator logs stay inside each university's database.",
+    next: "admin.universities",
+    tips: [
+      "Click a day in the activity sheet to see only that day.",
+      "Search by operator name to see what one person changed.",
+    ],
+    steps: [
+      uniHeader("ua-header", "Control-plane changes only. Activity inside university databases is never shown or combined here."),
+      {
+        id: "ua-refresh", target: "uni-actions", chapter: "actions",
+        title: "Refresh",
+        body: "Reloads the timeline with the latest control-plane activity.",
+      },
+      {
+        id: "ua-stats", target: "ua-stats", chapter: "parts", quick: true,
+        title: "Summary",
+        body: "Events in 10 days, actions today, how many Master Admins acted, and sensitive actions (remove, restore or rotate).",
+      },
+      {
+        id: "ua-days", target: "ua-days", chapter: "actions", quick: true,
+        title: "10-day activity sheet",
+        body: "One box per day with its event count. Click a day to show only it; click again, or Show all 10 days, to clear.",
+        tryIt: "Click a day",
+      },
+      {
+        id: "ua-filters", target: "ua-filters", chapter: "actions", quick: true,
+        title: "Search and kind",
+        body: "Search by action, operator or details, and choose a kind: university management, shared assessments, Prep Score or Prep Coin.",
+      },
+      {
+        id: "ua-timeline", target: "ua-timeline", chapter: "parts",
+        title: "Timeline",
+        body: "Events grouped by day: the time, the action, who did it, the details and the university affected. Load more fetches older events within the 10 days.",
+      },
+    ],
+  },
+  {
+    id: "admin.university-detail",
+    paths: ["/admin/universities/:universityId"],
+    area: "Universities",
+    title: "University",
+    icon: "building",
+    deployment: "control",
+    openFrom: "admin.university-list",
+    summary: "Manage one university: setup, profile, modules, plan and Prep Coins, connections, level progression and students.",
+    intro: "Everything about one university, in focused tabs.\nStart with the Overview tab: it lists anything still to set up.",
+    next: "admin.university-list",
+    tips: [
+      "Use Fix this in the setup card to jump to the right tab.",
+      "Disable blocks sign-in for the whole university; Enable restores it.",
+      "Removing a university does not touch its own database.",
+    ],
+    steps: [
+      {
+        id: "unid-back", target: "unid-back", chapter: "layout",
+        title: "Back to the list",
+        body: "Returns to All universities, the searchable list of every university.",
+      },
+      {
+        id: "unid-header", target: "unid-header", chapter: "overview",
+        title: "The university",
+        body: "Name, status, university ID, web address and contact email.",
+      },
+      {
+        id: "unid-actions", target: "unid-actions", chapter: "actions", quick: true,
+        title: "Open portal, Disable or Enable",
+        body: "Open portal opens the student portal in a new tab. Disable stops everyone at this university from signing in; Enable lets them sign in again.",
+      },
+      {
+        id: "unid-tabs", target: "unid-tabs", chapter: "layout", quick: true,
+        title: "Tabs",
+        body: "Overview, Profile & logo, Modules, Plan & Prep Coins, Connections, Level progression and Students. Each tab saves its own changes.",
+        tryIt: "Click a tab",
+      },
+      {
+        id: "unid-setup", target: "unid-setup", chapter: "parts", quick: true,
+        title: "Setup status",
+        body: "What is still missing (database, code judge, service dates, account limits). Students cannot use every feature until these are done. Fix this opens the right tab.",
+      },
+      {
+        id: "unid-facts", target: "unid-facts", chapter: "parts",
+        title: "Key facts",
+        body: "Status, service period with days left, account limits and the university wallet balance. Change opens the Plan & Prep Coins tab.",
+      },
+      {
+        id: "unid-modules", target: "unid-modules", chapter: "parts",
+        title: "Modules",
+        body: "Which modules are on or off. Manage modules opens the Modules tab; turning a module off hides it at once, and its data is kept.",
+      },
+      {
+        id: "unid-wallet", target: "unid-wallet", chapter: "actions",
+        title: "University wallet",
+        body: "On the Plan & Prep Coins tab: the wallet balance and Add coins. Added coins go straight into the university wallet for its admin to pass on; this tab has no way to take them back.",
+      },
+      {
+        id: "unid-remove", target: "unid-remove", chapter: "actions",
+        title: "Remove university",
+        body: "After you confirm, removes the registration from PeerPrep and revokes its shared assessments. The university's own database is not touched.",
+      },
+    ],
+  },
+  {
+    id: "admin.suggested-companies",
+    paths: ["/admin/settings/suggested-companies"],
+    area: "Settings",
+    title: "Suggested companies",
+    icon: "briefcase",
+    deployment: "control",
+    summary: "Moderate the interview companies students report, and set how many students must confirm a question tag.",
+    intro: "Students report the companies that asked a question after they solve it.\nApprove or merge the names here; a company tag appears on a question only after enough different students confirm it.",
+    next: "admin.master-data",
+    tips: [
+      "Use Merge for misspellings of a company that already exists.",
+      "Rejected names never appear to students; you can move them back to pending.",
+    ],
+    terms: [{ term: "question tag", text: "A company shown on a question. It appears to students only after enough different students confirm it." }],
+    steps: [
+      {
+        id: "sc-header", target: "sc-header", chapter: "overview",
+        title: "Student-reported companies",
+        body: "Company names students typed after solving questions. Names need your approval before they can tag questions.",
+      },
+      {
+        id: "sc-stats", target: "sc-stats", chapter: "parts", quick: true,
+        title: "Summary",
+        body: "Pending names waiting for a decision, approved names (with merged and rejected counts), and verified question tags that students can see.",
+      },
+      {
+        id: "sc-threshold", target: "sc-threshold", chapter: "actions", quick: true,
+        title: "Votes needed",
+        body: "How many different students must confirm a company for a question before the tag shows. Click Change, enter a whole number from 1 to 1000, and Save.",
+      },
+      {
+        id: "sc-views", target: "sc-views", chapter: "layout",
+        title: "Requests and Question tags",
+        body: "Requests is where you decide on company names. Question tags shows each question and company pair and how close it is to being verified.",
+      },
+      {
+        id: "sc-toolbar", target: "sc-toolbar", chapter: "actions",
+        title: "Status and search",
+        body: "Show pending, approved, merged, rejected or all names, and search by company or spelling.",
+      },
+      {
+        id: "sc-table", target: "sc-table", chapter: "parts", quick: true,
+        title: "Requests",
+        body: "Each name with other spellings, students and questions, universities, request dates, a similar existing company with a one-click Merge, and status. The row menu can approve, approve with another name, merge, reject or move back to pending.",
+      },
+      {
+        id: "sc-bulk", chapter: "tips",
+        title: "Decide in bulk",
+        body: "Tick pending or rejected rows to approve several at once, or tick pending rows to reject them together. Clear selection undoes the ticks, not the decisions.",
+      },
+    ],
+  },
+];

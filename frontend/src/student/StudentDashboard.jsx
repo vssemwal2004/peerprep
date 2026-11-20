@@ -104,29 +104,29 @@ export default function StudentDashboard() {
         <div className="min-w-0 space-y-7 [grid-area:head]">
           <GreetingHeader greeting={getGreeting(now)} name={name} nudge={nudge} section={progress}
             firstSession={firstSession} canQuestions={canQuestions} canLearning={canLearning} onRetry={sections.refresh}
-            aside={!progress.error && <BadgeShelf shelf={shelf} loading={progress.loading || sections.engagement.loading} />} />
+            aside={!progress.error && <div data-guide="dash-badges"><BadgeShelf shelf={shelf} loading={progress.loading || sections.engagement.loading} /></div>} />
           {(showResume || showToday) && <div className={`grid grid-cols-1 items-stretch gap-4 ${showResume && showToday ? 'xl:grid-cols-[minmax(0,1.55fr)_minmax(300px,1fr)]' : ''}`}>
-            {showResume && <ContinueSection items={resumeItems} section={progress} now={now} onRetry={sections.refresh} {...rise(1)} />}
-            {showToday && <TodayCard now={now} week={week} streak={data?.coding?.streak} loading={progress.loading} engagement={sections.engagement}
-              showDaily={showDaily} fallbackProblem={suggestions[0]} onRetry={sections.refresh} {...rise(2)} />}
+            {showResume && <div data-guide="dash-continue" {...rise(1, 'flex min-w-0')}><ContinueSection items={resumeItems} section={progress} now={now} onRetry={sections.refresh} className="w-full" /></div>}
+            {showToday && <div data-guide="dash-today" {...rise(2, 'flex min-w-0')}><TodayCard now={now} week={week} streak={data?.coding?.streak} loading={progress.loading} engagement={sections.engagement}
+              showDaily={showDaily} fallbackProblem={suggestions[0]} onRetry={sections.refresh} className="w-full" /></div>}
           </div>}
         </div>
 
         <aside aria-label="Your progress and priorities" className={`grid min-w-0 grid-cols-1 content-start gap-3 [grid-area:rail] sm:grid-cols-2 lg:grid-cols-1 lg:self-start ${railPosition}`}>
-          {showNotices && <AnnouncementsCard items={notices} section={sections.announcements} onRetry={sections.refresh} now={now}
-            showAll={allNotices} onToggleAll={() => setAllNotices((value) => !value)} />}
-          {canQuestions && (progress.error
+          {showNotices && <div data-guide="dash-announcements" className="min-w-0"><AnnouncementsCard items={notices} section={sections.announcements} onRetry={sections.refresh} now={now}
+            showAll={allNotices} onToggleAll={() => setAllNotices((value) => !value)} /></div>}
+          {canQuestions && <div data-guide="dash-coding" className="min-w-0">{progress.error
             ? <section aria-labelledby="coding-error-title" className={`p-4 ${card}`}><CardTitle id="coding-error-title" title="Coding progress" icon={Gauge} tone="sky" /><Unavailable className="mt-3" message="Coding progress could not be loaded." onRetry={sections.refresh} /></section>
             : <CodingProgress {...(data?.coding || {})} compact loading={progress.loading} description={null} titleIcon={<TitleIcon icon={Gauge} tone="sky" />}
-              className="!rounded-2xl !border-[#e9eaee] !p-4 !shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:!border-white/[0.07]" />)}
-          {canRanking && <RankCard ranking={data?.ranking} loading={progress.loading} error={progress.error} onRetry={sections.refresh} />}
-          {(canEvents || canAssessments || canInterviews) && <ComingUpCard items={upcoming} loading={dueLoading} error={dueError} onRetry={sections.refresh} canAssessments={canAssessments} canEvents={canEvents} canInterviews={canInterviews} />}
+              className="!rounded-2xl !border-[#e9eaee] !p-4 !shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:!border-white/[0.07]" />}</div>}
+          {canRanking && <div data-guide="dash-rank" className="min-w-0"><RankCard ranking={data?.ranking} loading={progress.loading} error={progress.error} onRetry={sections.refresh} /></div>}
+          {(canEvents || canAssessments || canInterviews) && <div data-guide="dash-coming-up" className="min-w-0"><ComingUpCard items={upcoming} loading={dueLoading} error={dueError} onRetry={sections.refresh} canAssessments={canAssessments} canEvents={canEvents} canInterviews={canInterviews} /></div>}
         </aside>
 
         <div className="min-w-0 space-y-8 [grid-area:body]" data-dashboard-main>
-          {canQuestions && <CodingSheets />}
-          {canQuestions && <div {...rise(3)}><MonthlyBadgesCard /></div>}
-          {showPractice && <div {...rise(4)}><PracticeSuggestions problems={suggestions} section={progress} onRetry={sections.refresh} /></div>}
+          {canQuestions && <div data-guide="dash-sheets"><CodingSheets /></div>}
+          {canQuestions && <div data-guide="dash-monthly-badges" {...rise(3)}><MonthlyBadgesCard /></div>}
+          {showPractice && <div data-guide="dash-practice" {...rise(4)}><PracticeSuggestions problems={suggestions} section={progress} onRetry={sections.refresh} /></div>}
         </div>
       </div>
       <AchievementCelebration revision={sections.engagement.data?.generatedAt} enabled={!sections.engagement.error && sections.engagement.data?.version === 2} />

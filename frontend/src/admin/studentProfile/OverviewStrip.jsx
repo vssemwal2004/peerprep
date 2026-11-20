@@ -2,6 +2,7 @@ import { BookOpenCheck, CheckCircle2, ClipboardList, Clock3, Flame, MessageSquar
 import { AnimatedMetric } from '../../student/profile/ui';
 import { Muted, StatStrip } from './shared';
 import { fmtDateTime, fmtRelative, plural } from './utils';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 function StreakDots({ week, best }) {
   const active = week.filter((day) => day.active).length;
@@ -92,12 +93,13 @@ export default function OverviewStrip({ headline, lastActive, coding, acceptance
   return (
     <section
       aria-labelledby="admin-overview-title"
+      data-guide="sp-snapshot"
       className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(16,24,40,0.05)] dark:border-zinc-800 dark:bg-[#242424]"
     >
       <header className="mb-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5">
         <div className="min-w-0">
-          <h2 id="admin-overview-title" className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-zinc-50">
-            Performance snapshot
+          <h2 id="admin-overview-title" className="flex items-center gap-1.5 text-[15px] font-semibold tracking-tight text-slate-900 dark:text-zinc-50">
+            Performance snapshot <GuideInfo step="sp-snapshot" />
           </h2>
           <p className="truncate text-xs text-slate-500 dark:text-zinc-400" title={headline}>{headline}</p>
         </div>

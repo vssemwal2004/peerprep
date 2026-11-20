@@ -20,6 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import { hasPermission } from '../coordinatorPermissions';
 import { api } from '../../utils/api';
 import { canAuthorQuickPrep } from '../../platform/universityPermissions';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
 
 const AddQuestionToLibrary = lazy(() => import('../AddQuestionToLibrary'));
 const CreateProblem = lazy(() => import('../compiler/CreateProblem'));
@@ -366,13 +367,17 @@ export default function LibraryWorkspace({ view = 'questions' }) {
               </Link>
             ))}
           </nav>}
-          {view !== 'coding-analytics' && <header data-page-header className="sticky top-0 z-40 border-b border-slate-200 bg-white px-4 sm:px-5 lg:px-6 dark:border-gray-800 dark:bg-gray-900">
+          {view !== 'coding-analytics' && <header data-page-header data-guide="lib-header" className="sticky top-0 z-40 border-b border-slate-200 bg-white px-4 sm:px-5 lg:px-6 dark:border-gray-800 dark:bg-gray-900">
             <div className="flex min-h-16 items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400"><BookOpenCheck className="h-3.5 w-3.5" /> Library <ChevronRight className="h-3 w-3" /> <span className="truncate text-slate-600 dark:text-gray-300">{title}</span></div>
-                <h1 className="mt-0.5 truncate text-lg font-bold leading-tight text-slate-950 dark:text-white">{title}</h1>
+                <div className="mt-0.5 flex min-w-0 items-center gap-2">
+                  <h1 className="truncate text-lg font-bold leading-tight text-slate-950 dark:text-white">{title}</h1>
+                  {/* Editor drawers carry their own ⓘ; only one per page. */}
+                  {!isDrawerView && <PageGuideButton />}
+                </div>
               </div>
-              {!pickerMode && (canCreateGeneral || canCreateCoding) && <button type="button" onClick={() => setTypeDrawerOpen(true)} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white shadow-sm transition hover:bg-sky-500">
+              {!pickerMode && (canCreateGeneral || canCreateCoding) && <button type="button" data-guide="lib-create" onClick={() => setTypeDrawerOpen(true)} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white shadow-sm transition hover:bg-sky-500">
                 <Plus className="h-4 w-4" /> Create question
               </button>}
             </div>
@@ -392,10 +397,10 @@ export default function LibraryWorkspace({ view = 'questions' }) {
         <>
           <button type="button" aria-label="Close question editor" className="fixed inset-0 z-[90] bg-slate-950/45 backdrop-blur-[1px]" onClick={requestDrawerClose} />
           <section className="fixed inset-y-0 right-0 z-[91] flex h-dvh w-full flex-col overflow-hidden border-l border-slate-200 bg-slate-50 shadow-2xl lg:w-[86vw] xl:max-w-[1480px] dark:border-gray-700 dark:bg-gray-950">
-            <div className="z-30 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5 sm:px-5 dark:border-gray-800 dark:bg-gray-900">
+            <div data-guide="lib-editor-header" className="z-30 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5 sm:px-5 dark:border-gray-800 dark:bg-gray-900">
               {view === 'preview-coding' ? <div id="coding-preview-drawer-header" className="flex min-w-0 flex-1" /> : <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-400">Question library</p>
-                <h2 className="mt-0.5 text-base font-bold text-slate-950 dark:text-white">{drawerTitle}</h2>
+                <h2 className="mt-0.5 flex items-center gap-2 text-base font-bold text-slate-950 dark:text-white">{drawerTitle}<PageGuideButton /></h2>
               </div>}
               <button type="button" onClick={requestDrawerClose} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
             </div>

@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal, X } 
 import { Link } from "react-router-dom";
 import { AnviMark } from "../../components/AnviApproach";
 import { ICON_TONES, TONES } from "./theme";
+import PageGuideButton from "../../guide/platform/PageGuideButton";
 
 /*
  * Design tokens for the admin AI interview area.
@@ -256,6 +257,7 @@ export function PageHeader({ title, description, back, crumbs = [], actions, met
   return (
     <header
       data-page-header
+      data-guide="ai-header"
       className="border-b border-slate-200/80 bg-white/95 px-4 pb-4 pt-3 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 sm:px-6"
     >
       <div className="mb-2 flex min-w-0 items-center gap-1.5 text-xs text-slate-500 dark:text-gray-400">
@@ -291,6 +293,7 @@ export function PageHeader({ title, description, back, crumbs = [], actions, met
             <h1 className="min-w-0 truncate text-[22px] font-semibold leading-8 tracking-tight text-slate-950 dark:text-white">
               {title}
             </h1>
+            <PageGuideButton size="sm" />
             {meta}
           </div>
           {description && <p className="mt-0.5 max-w-2xl text-sm text-slate-500 dark:text-gray-400">{description}</p>}

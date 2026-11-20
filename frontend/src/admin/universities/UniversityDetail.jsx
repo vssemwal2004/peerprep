@@ -7,6 +7,7 @@ import { useAction, useUniversities } from './useUniversities';
 import { portalUrl, STATUS_META, universityHealth } from './universityModel';
 import { Button, Card, EmptyState, LoadingBlock, Notice, pageShell, Pill, helper } from './ui';
 import UniversityBadge from './UniversityBadge';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
 import OverviewTab from './detail/OverviewTab';
 import ProfileTab from './detail/ProfileTab';
 import ModulesTab from './detail/ModulesTab';
@@ -50,17 +51,17 @@ export default function UniversityDetail() {
 
   return (
     <div className={pageShell}>
-      <Link to="/admin/universities/all" className="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-sky-700 dark:text-slate-400"><ArrowLeft className="h-4 w-4" aria-hidden="true" />All universities</Link>
+      <Link to="/admin/universities/all" data-guide="unid-back" className="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-sky-700 dark:text-slate-400"><ArrowLeft className="h-4 w-4" aria-hidden="true" />All universities</Link>
 
-      <header className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <header data-guide="unid-header" className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex min-w-0 items-center gap-4">
           <UniversityBadge university={university} size="lg" />
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{university.name}</h1><Pill tone={status.tone}>{status.label}</Pill></div>
+            <div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{university.name}</h1><PageGuideButton /><Pill tone={status.tone}>{status.label}</Pill></div>
             <p className={`mt-1 ${helper}`}><span className="font-mono">{university.universityId}</span> · peerprep.co.in/u/{university.universityId}{university.contactEmail ? ` · ${university.contactEmail}` : ''}</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div data-guide="unid-actions" className="flex flex-wrap gap-2">
           <a href={portalUrl(university)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"><ExternalLink className="h-4 w-4" aria-hidden="true" />Open portal</a>
           <Button variant={university.active ? 'danger' : 'primary'} icon={Power} busy={busy === 'active'}
             onClick={() => run('active', () => api.updateUniversity(university.universityId, { active: !university.active }), university.active ? 'University disabled: its users cannot sign in.' : 'University enabled.')}>
@@ -72,7 +73,7 @@ export default function UniversityDetail() {
       {params.get('created') && <Notice tone="success">University created. Its first admin can now sign in at peerprep.co.in/u/{university.universityId} and must change the starting password.</Notice>}
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
 
-      <nav className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-slate-800 dark:bg-slate-900" role="tablist" aria-label="University sections">
+      <nav data-guide="unid-tabs" className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-slate-800 dark:bg-slate-900" role="tablist" aria-label="University sections">
         {TABS.map((item) => (
           <button key={item.key} type="button" role="tab" aria-selected={tab === item.key} onClick={() => setParams({ tab: item.key })}
             className={`whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-semibold transition ${tab === item.key ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'}`}>

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnalysisApi } from "../analysisScope";
-import TourOverlay from "./TourOverlay";
-import { TourContext, onMilestone } from "./tourContext";
+import TourOverlay from "../../../guide/engine/TourOverlay";
+import GlossaryText from "./GlossaryText";
+import { CHAPTERS, TourContext, onMilestone } from "./tourContext";
+import { buildPageTour } from "./content/page";
 
 const EMPTY = { completed: [], milestones: [], welcomeDismissed: false, checklistDismissed: false };
 
@@ -45,8 +47,10 @@ export default function TourProvider({ children }) {
   const activeRef = useRef(null);
   const start = useCallback((guide) => {
     if (!guide?.steps?.length) return;
-    activeRef.current = guide;
-    setActive(guide);
+    // Prep Analysis guides speak its own chapter names and underline its glossary words.
+    const ready = { chapters: CHAPTERS, Text: GlossaryText, ...guide };
+    activeRef.current = ready;
+    setActive(ready);
   }, []);
   const finish = useCallback((completed) => {
     const current = activeRef.current;
@@ -54,6 +58,13 @@ export default function TourProvider({ children }) {
     setActive(null);
     if (completed && current) save({ completed: [current.id, ...(current.alsoCompletes || [])], milestones: current.milestone ? [current.milestone] : [] });
   }, [save]);
+
+  // The platform's ⓘ beside the page title (and Guides) hands over to this page's own tour.
+  useEffect(() => {
+    const onStart = () => { if (!activeRef.current) start(buildPageTour()); };
+    window.addEventListener("prep-analysis:start-page-tour", onStart);
+    return () => window.removeEventListener("prep-analysis:start-page-tour", onStart);
+  }, [start]);
 
   const value = useMemo(() => ({
     progress, start, running: Boolean(active), milestone,

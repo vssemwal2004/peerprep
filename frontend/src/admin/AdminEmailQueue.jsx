@@ -3,6 +3,7 @@ import { AlertCircle, CalendarDays, CheckCircle2, Clock3, Loader2, Mail, Refresh
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { SortHeader, TablePager, nextSort } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 const MAIL_TYPES = {
   student_credentials: 'Student credentials',
@@ -99,22 +100,22 @@ export default function AdminEmailQueue() {
   return (
     <div className="min-h-screen bg-slate-50/70 px-3 pb-12 pt-5 dark:bg-gray-950 sm:px-5">
       <div className="mx-auto max-w-[1500px]">
-        <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <section data-guide="eq-header" className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
             <div className="flex items-start gap-3">
               <span className="rounded-xl bg-sky-50 p-3 text-sky-600 dark:bg-sky-950/40"><Send className="h-5 w-5" /></span>
-              <div><h1 className="text-xl font-bold text-slate-950 dark:text-white">Email Queue</h1><p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Track queued, delivered, and failed system emails. Delivery logs are retained for seven days.</p></div>
+              <div><h1 className="flex items-center gap-2 text-xl font-bold text-slate-950 dark:text-white">Email Queue<PageGuideButton /></h1><p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Track queued, delivered, and failed system emails. Delivery logs are retained for seven days.</p></div>
             </div>
-            <button type="button" onClick={load} disabled={loading} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
+            <button type="button" data-guide="eq-refresh" onClick={load} disabled={loading} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
           </div>
         </section>
 
-        <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div data-guide="eq-cards" className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {cards.map(({ label, value, Icon, tone }) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"><div className="flex items-center gap-3"><span className={`rounded-lg p-2 ${tone}`}><Icon className="h-4 w-4" /></span><div><p className="text-xs font-semibold text-slate-500 dark:text-gray-400">{label}</p><p className="text-xl font-bold text-slate-950 dark:text-white">{value.toLocaleString()}</p></div></div></div>)}
         </div>
 
         <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-          <div className="grid gap-2 border-b border-slate-200 p-4 dark:border-gray-800 md:grid-cols-2 xl:grid-cols-6">
+          <div data-guide="eq-filters" className="grid gap-2 border-b border-slate-200 p-4 dark:border-gray-800 md:grid-cols-2 xl:grid-cols-6">
             <label className="relative md:col-span-2"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input value={filters.search} onChange={(event) => updateFilter('search', event.target.value)} placeholder="Search recipient, requester, batch or error" className="h-10 w-full rounded-lg border border-slate-200 pl-9 pr-3 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white" /></label>
             <select aria-label="Mail type" value={filters.type} onChange={(event) => updateFilter('type', event.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white"><option value="">All mail types</option>{Object.entries(MAIL_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
             <select aria-label="Delivery status" value={filters.status} onChange={(event) => updateFilter('status', event.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm capitalize dark:border-gray-700 dark:bg-gray-800 dark:text-white"><option value="">All statuses</option>{['queued', 'processing', 'sent', 'failed', 'cancelled'].map((status) => <option key={status} value={status}>{status}</option>)}</select>
@@ -122,7 +123,7 @@ export default function AdminEmailQueue() {
             <label className="relative"><CalendarDays className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" /><input aria-label="To date" type="date" value={filters.dateTo} onChange={(event) => updateFilter('dateTo', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" /></label>
           </div>
 
-          <div className="overflow-x-auto">
+          <div data-guide="eq-table" className="overflow-x-auto">
             <table className="w-full min-w-[1050px] text-left text-sm">
               <thead className="bg-slate-50 text-[11px] uppercase text-slate-500 dark:bg-gray-800 dark:text-gray-400"><tr>{[['recipient', 'Recipient'], ['type', 'Mail type'], ['status', 'Status'], ['attempts', 'Attempts'], ['createdAt', 'Queued'], ['completed', 'Completed'], ['details', 'Details']].map(([key, label]) => <SortHeader key={key} sortKey={key} sort={sort} onSort={toggleSort} className="px-4 py-3">{label}</SortHeader>)}</tr></thead>
               <tbody className="divide-y divide-slate-100 dark:divide-gray-800">

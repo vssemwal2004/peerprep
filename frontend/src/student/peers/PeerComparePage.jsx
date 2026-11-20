@@ -14,6 +14,8 @@ import {
 } from './peerGlyphs';
 import MonthlyBadgeEmblem from '../rewards/MonthlyBadgeEmblem';
 import { card, focusRing, Skeleton } from '../dashboard/ui';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const firstName = (name) => String(name || '').trim().split(/\s+/)[0] || 'Your Prep Mate';
 const TIERS = ['Bronze', 'Bronze', 'Silver', 'Silver', 'Gold', 'Gold', 'Platinum', 'Platinum', 'Diamond', 'Legend'];
@@ -120,9 +122,9 @@ export default function PeerComparePage() {
   const leaderColor = (row) => (row.isYou ? YOU_COLOR : row.isMate ? MATE_COLOR : withLeaders && otherColor.get(row.id)) || '#94a3b8';
 
   return page(<>
-    {back}
+    <div className="flex items-start gap-2" data-guide="cmp-back">{back}<PageGuideButton /></div>
     {/* Face-off: who is compared, in which colour, and the overall score. */}
-    <section className="relative overflow-hidden rounded-3xl border border-[#ece6dc] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-[#242424]" aria-label="You and your Prep Mate">
+    <section className="relative overflow-hidden rounded-3xl border border-[#ece6dc] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-[#242424]" aria-label="You and your Prep Mate" data-guide="cmp-faceoff">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_120%_at_0%_0%,rgba(14,165,233,0.14),transparent_60%),radial-gradient(60%_120%_at_100%_0%,rgba(245,158,11,0.18),transparent_60%)] dark:bg-[radial-gradient(60%_120%_at_0%_0%,rgba(14,165,233,0.16),transparent_60%),radial-gradient(60%_120%_at_100%_0%,rgba(245,158,11,0.14),transparent_60%)]" aria-hidden="true" />
       <div className="relative flex flex-col gap-6 p-5 sm:flex-row sm:items-center sm:p-7">
         <Fighter person={you} color={YOU_COLOR} role="You" />
@@ -141,7 +143,7 @@ export default function PeerComparePage() {
       </div>
     </section>
 
-    <ul className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-5" aria-label="Head to head">
+    <ul className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-5" aria-label="Head to head" data-guide="cmp-scores">
       <ScoreCard glyph={CrestGlyph} tone="bg-sky-500" label="Problems solved" you={you.totals.total} mate={mate.totals.total} mateName={mateName} />
       <ScoreCard glyph={TrendGlyph} tone="bg-emerald-500" label="This week" you={you.thisWeek} mate={mate.thisWeek} mateName={mateName} />
       <ScoreCard glyph={(props) => <MiniFlame lit {...props} />} tone="bg-orange-500" label="Current streak" you={you.streak.current} mate={mate.streak.current} mateName={mateName} unit="d" />
@@ -150,8 +152,8 @@ export default function PeerComparePage() {
     </ul>
 
     <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
-      <section className={panel} aria-labelledby="performance-title">
-        <PanelTitle id="performance-title" glyph={TrendGlyph} tone="sky" title="Performance comparison" subtitle={mode === 'week' ? 'Problems solved each week, last 8 weeks' : 'Problems solved so far, week by week'}
+      <section className={panel} aria-labelledby="performance-title" data-guide="cmp-performance">
+        <PanelTitle id="performance-title" glyph={TrendGlyph} tone="sky" info={<GuideInfo step="cmp-performance" />} title="Performance comparison" subtitle={mode === 'week' ? 'Problems solved each week, last 8 weeks' : 'Problems solved so far, week by week'}
           action={<div className="flex rounded-xl bg-slate-100 p-0.5 dark:bg-white/[0.06]" role="tablist" aria-label="Chart view">
             {[['week', 'Each week'], ['total', 'Total so far']].map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={mode === key} onClick={() => setMode(key)}
               className={`rounded-[10px] px-3 py-1.5 text-[12px] font-semibold transition ${focusRing} ${mode === key ? 'bg-white text-slate-900 shadow-sm dark:bg-white/[0.12] dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>{label}</button>)}
@@ -166,7 +168,7 @@ export default function PeerComparePage() {
         <div className="mt-3"><PerformanceChart series={series} mode={mode} /></div>
       </section>
 
-      <section className={panel} aria-labelledby="leaders-title">
+      <section className={panel} aria-labelledby="leaders-title" data-guide="cmp-leaders">
         <PanelTitle id="leaders-title" glyph={LadderGlyph} tone="amber" title="Problems solved" subtitle="Top of your Prep Mates, all time" />
         <div className="mt-5"><LeaderBars leaders={data.leaders || []} colorFor={leaderColor} /></div>
         <Link to="/student/peers" className={`mt-5 inline-flex items-center gap-1 rounded text-[12.5px] font-semibold text-sky-700 hover:text-sky-800 dark:text-sky-400 ${focusRing}`}>Full ranking<ArrowRight className="h-3.5 w-3.5" /></Link>
@@ -174,22 +176,22 @@ export default function PeerComparePage() {
     </div>
 
     <div className="mt-5 grid gap-5 lg:grid-cols-2">
-      <section className={panel} aria-labelledby="difficulty-title">
+      <section className={panel} aria-labelledby="difficulty-title" data-guide="cmp-difficulty">
         <PanelTitle id="difficulty-title" glyph={TargetGlyph} tone="rose" title="Difficulty mix" subtitle="Easy, Medium and Hard problems solved" />
         <div className="mt-5"><DifficultyMix you={you} mate={mate} mateName={mateName} /></div>
       </section>
-      <section className={panel} aria-labelledby="topics-title">
-        <PanelTitle id="topics-title" glyph={HiveGlyph} tone="violet" title="Topics" subtitle="Your most practised topics, side by side" />
+      <section className={panel} aria-labelledby="topics-title" data-guide="cmp-topics">
+        <PanelTitle id="topics-title" glyph={HiveGlyph} tone="violet" info={<GuideInfo step="cmp-topics" />} title="Topics" subtitle="Your most practised topics, side by side" />
         <div className="mt-5"><TopicButterfly topics={data.topics} mateName={mateName} /></div>
       </section>
     </div>
 
-    <section className={`${panel} mt-5`} aria-labelledby="rhythm-title">
+    <section className={`${panel} mt-5`} aria-labelledby="rhythm-title" data-guide="cmp-rhythm">
       <PanelTitle id="rhythm-title" glyph={GridGlyph} tone="emerald" title="Last 30 days" subtitle="Each square is a day with practice" />
       <div className="mt-5"><ConsistencyGrid you={you} mate={mate} mateName={mateName} /></div>
     </section>
 
-    <section className={`${panel} mt-5`} aria-labelledby="badges-title">
+    <section className={`${panel} mt-5`} aria-labelledby="badges-title" data-guide="cmp-badges">
       <PanelTitle id="badges-title" glyph={MedalGlyph} tone="violet" title="Badges this month" subtitle={`Levels reached in ${new Date(`${data.month}-01T00:00:00Z`).toLocaleDateString(undefined, { month: 'long', timeZone: 'UTC' })}`}
         action={<span className="rounded-full bg-slate-100 px-3 py-1 text-[12px] text-slate-600 dark:bg-white/[0.06] dark:text-zinc-300">Badge levels <b style={{ color: YOU_COLOR }}>{you.monthBadgeLevels}</b> vs <b style={{ color: MATE_COLOR }}>{mate.monthBadgeLevels}</b></span>} />
       <ul className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
@@ -204,7 +206,7 @@ export default function PeerComparePage() {
       </ul>
     </section>
 
-    <section className="relative mt-5 overflow-hidden rounded-3xl border border-[#ece6dc] bg-white p-5 sm:p-6 dark:border-white/[0.07] dark:bg-[#242424]" aria-labelledby="coach-title">
+    <section className="relative mt-5 overflow-hidden rounded-3xl border border-[#ece6dc] bg-white p-5 sm:p-6 dark:border-white/[0.07] dark:bg-[#242424]" aria-labelledby="coach-title" data-guide="cmp-coach">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_100%_at_100%_100%,rgba(245,158,11,0.14),transparent_70%)]" aria-hidden="true" />
       <div className="relative">
         <PanelTitle id="coach-title" glyph={CompassGlyph} tone="ink" title="What this means for you"
@@ -221,6 +223,6 @@ export default function PeerComparePage() {
         </ul>
       </div>
     </section>
-    <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11.5px] text-slate-400 dark:text-zinc-500"><DuelGlyph className="h-3.5 w-3.5" />Only practice is compared. Prep Score, Prep Coins, tests and interviews stay private.</p>
+    <p data-guide="cmp-privacy" className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11.5px] text-slate-400 dark:text-zinc-500"><DuelGlyph className="h-3.5 w-3.5" />Only practice is compared. Prep Score, Prep Coins, tests and interviews stay private.</p>
   </>);
 }

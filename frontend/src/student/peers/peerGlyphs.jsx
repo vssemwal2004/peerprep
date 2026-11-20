@@ -120,7 +120,7 @@ export function GlyphTile({ glyph: Glyph, tone = 'sky', size = 'md' }) {
 }
 
 /** Section heading: gradient glyph tile, title, optional one-line subtitle and an action slot. */
-export function PanelTitle({ id, glyph, tone, title, subtitle, action }) {
+export function PanelTitle({ id, glyph, tone, title, subtitle, action, info = null }) {
   return <header className="flex flex-wrap items-center justify-between gap-3">
     <div className="flex min-w-0 items-center gap-3">
       <GlyphTile glyph={glyph} tone={tone} />
@@ -128,6 +128,7 @@ export function PanelTitle({ id, glyph, tone, title, subtitle, action }) {
         <h2 id={id} className="truncate text-[16px] font-semibold tracking-[-0.015em] text-slate-900 dark:text-zinc-50">{title}</h2>
         {subtitle && <p className="truncate text-[12.5px] text-slate-500 dark:text-zinc-400">{subtitle}</p>}
       </div>
+      {info}
     </div>
     {action}
   </header>;

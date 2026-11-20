@@ -42,15 +42,12 @@ export const EXPORT_COLUMNS = [
   { key: 'coordinators', label: 'Coordinators', group: 'Student details', module: 'student', width: 18, get: (row) => list(row.student.coordinators) },
   { key: 'lists', label: 'Uploaded lists', group: 'Student details', module: 'student', width: 22, get: (row) => list(row.student.batchNames) },
   { key: 'account', label: 'Account', group: 'Student details', module: 'student', width: 10, get: (row) => (row.student.status === 'inactive' ? 'Disabled' : 'Active') },
-  // The Prep Score is the Prep Coding score (2026-11). `prepScore` (coding copy, same value) stays
-  // accepted for saved downloads but is hidden from the picker. The module "activity points" are
-  // not part of the Prep Score.
-  { key: 'overallPrepScore', label: 'Prep Score', group: 'Student details', module: 'student', kind: 'decimal', width: 11, get: (row) => row.scores?.total ?? 0 },
-  { key: 'learningPrepScore', label: 'Learning activity points', group: 'Prep Learning', module: 'learning', kind: 'decimal', width: 11, get: (row) => row.scores?.features.learning?.score ?? null },
-  { key: 'interviewPrepScore', label: 'Interview activity points', group: 'Prep Interview', module: 'interview', kind: 'decimal', width: 11, get: (row) => row.scores?.features.interview?.score ?? null },
-  { key: 'assessmentPrepScore', label: 'Assessment activity points', group: 'Prep Assessment', module: 'assessment', kind: 'decimal', width: 11, get: (row) => row.scores?.features.assessment?.score ?? null },
+  { key: 'overallPrepScore', label: 'Prep Score (overall)', group: 'Student details', module: 'student', kind: 'decimal', width: 11, get: (row) => row.scores?.total ?? 0 },
+  { key: 'learningPrepScore', label: 'Prep Learning score', group: 'Prep Learning', module: 'learning', kind: 'decimal', width: 11, get: (row) => row.scores?.features.learning?.score ?? null },
+  { key: 'interviewPrepScore', label: 'Prep Interview score', group: 'Prep Interview', module: 'interview', kind: 'decimal', width: 11, get: (row) => row.scores?.features.interview?.score ?? null },
+  { key: 'assessmentPrepScore', label: 'Prep Assessment score', group: 'Prep Assessment', module: 'assessment', kind: 'decimal', width: 11, get: (row) => row.scores?.features.assessment?.score ?? null },
 
-  { key: 'prepScore', label: 'Prep Score', group: 'Prep Coding', module: 'coding', kind: 'decimal', width: 11, hidden: true, get: (row) => row.coding.prepScore },
+  { key: 'prepScore', label: 'Prep Score', group: 'Prep Coding', module: 'coding', kind: 'decimal', width: 11, get: (row) => row.coding.prepScore },
   { key: 'solvedTotal', label: 'Problems solved', group: 'Prep Coding', module: 'coding', kind: 'number', width: 10, get: (row) => row.coding.solved.total },
   { key: 'solvedEasy', label: 'Easy solved', group: 'Prep Coding', module: 'coding', kind: 'number', width: 9, get: (row) => row.coding.solved.Easy },
   { key: 'solvedMedium', label: 'Medium solved', group: 'Prep Coding', module: 'coding', kind: 'number', width: 9, get: (row) => row.coding.solved.Medium },
@@ -118,17 +115,17 @@ export const COLUMN_BY_KEY = new Map(EXPORT_COLUMNS.map((column) => [column.key,
 // Ticked when the download popup opens; the admin can add or remove any column.
 export const DEFAULT_EXPORT_COLUMNS = Object.freeze({
   // Each default fits on a PDF page (EXPORT_LIMITS.maxPdfColumns).
-  coding: ['position', 'name', 'studentId', 'semester', 'branch', 'overallPrepScore', 'solvedTotal', 'solvedEasy', 'solvedMedium', 'solvedHard', 'accuracy', 'practiceStatus'],
+  coding: ['position', 'name', 'studentId', 'semester', 'branch', 'prepScore', 'solvedTotal', 'solvedEasy', 'solvedMedium', 'solvedHard', 'accuracy', 'practiceStatus'],
   quickprep: ['position', 'name', 'studentId', 'semester', 'branch', 'sheetProgress', 'sheetsStarted', 'sheetsFinished', 'sheetCoverage', 'sheetQuestionsSolved', 'quickPrepStatus', 'daysSinceSheet'],
   learning: ['position', 'name', 'studentId', 'semester', 'branch', 'learningPrepScore', 'learningProgress', 'topicsCompleted', 'topicsAvailable', 'videoMinutes', 'learningStatus', 'daysSinceLesson'],
   interview: ['position', 'name', 'studentId', 'semester', 'branch', 'interviewPrepScore', 'interviewsDone', 'mockDone', 'mockScore', 'bestMockScore', 'aiInterviews', 'interviewStatus'],
   assessment: ['position', 'name', 'studentId', 'semester', 'branch', 'assessmentPrepScore', 'testsTaken', 'testsPassed', 'testsMissed', 'testScore', 'bestTestScore', 'testStatus'],
-  all: ['position', 'name', 'studentId', 'semester', 'branch', 'overallPrepScore', 'solvedTotal', 'sheetProgress', 'learningProgress', 'mockScore', 'testScore', 'practiceStatus'],
+  all: ['position', 'name', 'studentId', 'semester', 'branch', 'overallPrepScore', 'prepScore', 'sheetProgress', 'learningProgress', 'mockScore', 'testScore', 'practiceStatus'],
 });
 
 export function publicExportColumns(permissions) {
   const modules = new Set(allowedModules(permissions));
-  return EXPORT_COLUMNS.filter((column) => modules.has(column.module) && !column.hidden).map(({ get, hidden, ...column }) => column);
+  return EXPORT_COLUMNS.filter((column) => modules.has(column.module)).map(({ get, ...column }) => column);
 }
 
 const AREA_LABELS = { all: 'All features', coding: 'Prep Coding', quickprep: 'Quick Prep', learning: 'Prep Learning', interview: 'Prep Interview', assessment: 'Prep Assessment' };

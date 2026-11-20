@@ -4,7 +4,7 @@ import { AlertCircle, CheckCircle2, Gift, LayoutDashboard, Loader2, Save, Undo2 
 import { api } from '../utils/api';
 import { CardHeader, Glass } from '../overview/ui';
 import PrepCoinIcon from '../components/prepCoin/PrepCoinIcon';
-import { CoinPage } from './prepCoins/shared';
+import { CoinPage, InfoTitle } from './prepCoins/shared';
 import { buttonClass, inputClass } from './prepCoins/coinModel';
 import EarningSettings from './prepCoins/EarningSettings';
 
@@ -49,7 +49,7 @@ export default function PrepCoinPricing() {
       <EarningSettings />
       {!pricing ? <p className="text-sm text-slate-500">{error ? '' : 'Loading Prep Coin prices…'}</p> : (
         <>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div data-guide="pcp-features" className="grid gap-4 lg:grid-cols-2">
             {pricing.catalog.map((feature) => {
               const value = features[feature.key] || { price: 0, freePerMonth: 0 };
               const saved = pricing.features[feature.key] || { price: 0, freePerMonth: 0 };
@@ -90,9 +90,9 @@ export default function PrepCoinPricing() {
             })}
           </div>
 
-          <Glass className="sticky bottom-4 mt-4 p-4">
+          <Glass data-guide="pcp-save" className="sticky bottom-4 mt-4 p-4">
             {invalid && <p role="alert" className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">Use whole numbers of 0 or more.</p>}
-            <CardHeader title="Save changes" subtitle={pricing.updatedAt ? `Version ${pricing.version} · last changed ${new Date(pricing.updatedAt).toLocaleString()}` : 'Every feature is free until a price is saved.'} Icon={Save} />
+            <CardHeader title={<InfoTitle title="Save changes" step="pcp-save" />} subtitle={pricing.updatedAt ? `Version ${pricing.version} · last changed ${new Date(pricing.updatedAt).toLocaleString()}` : 'Every feature is free until a price is saved.'} Icon={Save} />
             <div className="flex flex-col gap-2 sm:flex-row">
               <input className={inputClass} maxLength={300} value={reason} onChange={(event) => setReason(event.target.value)} aria-label="Reason for this change (optional)"
                 placeholder="Reason for this change (optional), e.g. AI interviews now use a paid speech model" />

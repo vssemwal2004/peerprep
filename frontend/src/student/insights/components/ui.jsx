@@ -11,14 +11,14 @@ export function Card({ as: Tag = "div", className = "", children, ...props }) {
 }
 
 /** A page section: anchor id, icon tile, title, one-line subtitle and optional actions. */
-export function Section({ id, icon: Icon, title, subtitle, actions, children }) {
+export function Section({ id, icon: Icon, title, subtitle, actions, "data-guide": guide, info, children }) {
   return (
-    <section id={`analysis-${id}`} aria-labelledby={`analysis-${id}-title`} data-section={id} className="scroll-mt-36 space-y-3">
+    <section id={`analysis-${id}`} aria-labelledby={`analysis-${id}-title`} data-section={id} data-guide={guide} className="scroll-mt-36 space-y-3">
       <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div className="flex min-w-0 items-center gap-3">
           {Icon && <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-600/10 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/15" aria-hidden="true"><Icon className="h-[18px] w-[18px]" /></span>}
           <div className="min-w-0">
-            <h2 id={`analysis-${id}-title`} className="text-[17px] font-semibold tracking-[-0.01em] text-slate-950 dark:text-zinc-50">{title}</h2>
+            <div className="flex items-center gap-1.5"><h2 id={`analysis-${id}-title`} className="text-[17px] font-semibold tracking-[-0.01em] text-slate-950 dark:text-zinc-50">{title}</h2>{info}</div>
             {subtitle && <p className="truncate text-[12.5px] text-slate-500 dark:text-zinc-400">{subtitle}</p>}
           </div>
         </div>

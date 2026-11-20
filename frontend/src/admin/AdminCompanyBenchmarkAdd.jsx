@@ -3,6 +3,8 @@ import { UploadCloud, Download, Save, RotateCcw } from "lucide-react";
 import { api } from "../utils/api";
 import { useToast } from "../components/CustomToast";
 import CompanyBenchmarkForm, { createEmptyBenchmark, validateBenchmark } from "./CompanyBenchmarkForm";
+import PageGuideButton from "../guide/platform/PageGuideButton";
+import GuideInfo from "../guide/platform/GuideInfo";
 
 export default function AdminCompanyBenchmarkAdd() {
   const toast = useToast();
@@ -84,11 +86,11 @@ export default function AdminCompanyBenchmarkAdd() {
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
       <div className="mx-auto max-w-6xl px-4 py-6">
-        <div className="mb-6">
+        <div className="mb-6" data-guide="cb-title">
           <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-gray-400">
             Company Insights
           </div>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Add Benchmark</h1>
+          <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-slate-900 dark:text-white">Add Benchmark <PageGuideButton /></h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">
             Upload bulk benchmarks or add a single company with structured evaluation criteria.
           </p>
@@ -96,13 +98,14 @@ export default function AdminCompanyBenchmarkAdd() {
 
         <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
           <div className="space-y-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div data-guide="cb-upload" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-gray-400">Bulk Upload</div>
-                  <h2 className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">Upload CSV</h2>
+                  <h2 className="mt-1 flex items-center gap-1.5 text-lg font-semibold text-slate-900 dark:text-white">Upload CSV <GuideInfo step="cb-upload" /></h2>
                 </div>
                 <button
+                  data-guide="cb-template"
                   onClick={handleTemplateDownload}
                   className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                 >
@@ -138,7 +141,7 @@ export default function AdminCompanyBenchmarkAdd() {
               </div>
 
               {uploadResult && (
-                <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-600 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-300">
+                <div data-guide="cb-upload-result" className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-600 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-300">
                   <div className="font-semibold text-slate-800 dark:text-gray-100">
                     Imported {uploadResult.imported} rows · Skipped {uploadResult.skipped} rows
                   </div>
@@ -155,7 +158,7 @@ export default function AdminCompanyBenchmarkAdd() {
               )}
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div data-guide="cb-validation" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-gray-400">
                 Validation
               </div>
@@ -168,7 +171,7 @@ export default function AdminCompanyBenchmarkAdd() {
           <div className="space-y-4">
             <CompanyBenchmarkForm values={values} setValues={setValues} errors={errors} />
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3" data-guide="cb-actions">
               <button
                 onClick={handleSave}
                 disabled={saving}

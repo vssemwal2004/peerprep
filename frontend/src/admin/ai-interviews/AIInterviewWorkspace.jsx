@@ -32,7 +32,7 @@ function Navigation() {
     { to: `${ROOT}/companies`, label: "Companies", Icon: Building2 },
   ];
   return (
-    <aside className="min-w-0 border-b border-slate-200/80 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900 lg:border-b-0 lg:border-r lg:px-3 lg:py-5">
+    <aside data-guide="ai-nav" className="min-w-0 border-b border-slate-200/80 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900 lg:border-b-0 lg:border-r lg:px-3 lg:py-5">
       <div className="mb-5 hidden px-2.5 lg:block">
         <AnviBrand />
         <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-gray-400">

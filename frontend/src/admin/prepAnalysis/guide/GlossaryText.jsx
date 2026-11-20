@@ -1,5 +1,5 @@
 import { glossaryParts } from "./glossary";
-import HoverCard from "./HoverCard";
+import HoverCard from "../../../guide/engine/HoverCard";
 
 /**
  * Text with its glossary words (Prep Score, accepted, streak, Middle student…) underlined with a

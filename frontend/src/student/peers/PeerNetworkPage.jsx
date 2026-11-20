@@ -10,6 +10,7 @@ import StandingHero from './StandingHero';
 import { CircleWelcome, Suggestions } from './Suggestions';
 import { PEER_NETWORK_EVENT, errorMessage, peerSubtitle, usePeerSummary } from './peerNetwork';
 import { usePeerSearch } from './usePeerSearch';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
 
 /** Search any classmate in your university (not only Prep Mates) and send a request from the list. */
 function FindClassmates() {
@@ -23,7 +24,7 @@ function FindClassmates() {
     return () => document.removeEventListener('mousedown', close);
   }, []);
   const searching = query.trim().length >= 2;
-  return <div ref={box} className="relative w-full sm:w-80">
+  return <div ref={box} className="relative w-full sm:w-80" data-guide="pm-find">
     <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
     <input id="find-classmates" type="search" value={query} onFocus={() => setOpen(true)} onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
       placeholder="Find classmates by name" aria-label="Find classmates by name"
@@ -97,17 +98,18 @@ export default function PeerNetworkPage() {
   return <div className="min-h-[calc(100dvh-65px)] bg-[#f6f7f9] font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:text-zinc-100">
     <div className="mx-auto max-w-[1180px] px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
       <header className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+        <div data-guide="pm-title">
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-zinc-500">Your university circle</p>
           <h1 className="mt-1 text-[30px] font-medium leading-tight tracking-[-0.03em] text-slate-900 sm:text-[34px] dark:text-zinc-50">
             Prep <span className="relative inline-block font-bold text-sky-600 dark:text-sky-400">Mates<TitleUnderline /></span>
+            <PageGuideButton className="ml-3 align-middle" />
           </h1>
           <p className="mt-3 max-w-xl text-[14px] text-slate-500 dark:text-zinc-400">See where you stand among classmates and compare your practice with any Prep Mate.</p>
         </div>
         <FindClassmates />
       </header>
 
-      {summary && summary.visibleToPeers === false && <div className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800 dark:border-amber-900/60 dark:bg-amber-500/10 dark:text-amber-200">
+      {summary && summary.visibleToPeers === false && <div data-guide="pm-hidden" className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800 dark:border-amber-900/60 dark:bg-amber-500/10 dark:text-amber-200">
         <EyeOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         <p>Your profile is hidden from classmates, so you can browse but not connect. Turn on <strong>Visible to peers</strong> in <Link to="/student/profile" className="font-semibold underline">Edit Profile</Link>.</p>
       </div>}

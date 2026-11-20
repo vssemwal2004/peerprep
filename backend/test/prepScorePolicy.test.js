@@ -39,10 +39,7 @@ test('every formula constant is a Master Admin variable (points 1/3.5/9, α, β,
   // With α = β = 1 each module is S × (weighted points).
   assert.equal(result.features.coding.score, 27);
   assert.equal(result.features.assessment.score, 40);
-  // The Prep Score is the Prep Coding score alone; weights and other modules no longer change it.
-  assert.equal(result.total, 27);
-  assert.equal(scoreFromLevelCounts({ assessment: { Hard: 2 } }, ALL, config).total, 0);
-  assert.equal(scoreFromLevelCounts({ coding: { Hard: 1 } }, { ...ALL, coding: false }, config).total, 0);
+  assert.equal(result.total, round((27 * 3 + 40) / 4));
 });
 
 test('each activity takes its content level, falls back to the configured level, and honours pass marks', () => {
@@ -71,10 +68,10 @@ test('fixed levels, disabled activities, "counts as" units and unlicensed featur
   const { counts } = levelCounts(evidence, config, ALL);
   assert.deepEqual(counts.coding, { Easy: 0, Medium: 0, Hard: 6 });
   assert.deepEqual(counts.interview, { Easy: 0, Medium: 0, Hard: 0 });
-  // Only coding work makes a student rankable: interviews alone no longer do.
+  // Low marks still count as work: the student is ranked, at the bottom.
   const score = prepScore({ mockCompleted: [{ percent: 10 }] }, { ...ALL, coding: false, assessment: false, learning: false }, { version: 7 });
   assert.equal(score.total, 0);
-  assert.equal(score.hasProgress, false);
+  assert.equal(score.hasProgress, true);
   assert.equal(score.policyVersion, 7);
   assert.deepEqual(Object.keys(score.features), ['interview']);
   // Solves past the daily topic limit earn nothing but still make the student rankable.
@@ -94,8 +91,7 @@ test('test and AI interview levels come from their own content', () => {
 
 test('invalid policy changes fail closed; pre-v5 drafts upgrade', () => {
   assert.throws(() => normalizePrepScoreConfig({ modules: { coding: { points: { Easy: 5, Medium: 2, Hard: 4 } } } }), /ordered/);
-  // Module weights no longer matter, so all-zero weights are accepted.
-  assert.doesNotThrow(() => normalizePrepScoreConfig({ modules: Object.fromEntries(['coding', 'assessment', 'interview', 'learning'].map((key) => [key, { weight: 0 }])) }));
+  assert.throws(() => normalizePrepScoreConfig({ modules: Object.fromEntries(['coding', 'assessment', 'interview', 'learning'].map((key) => [key, { weight: 0 }])) }), /At least one/);
   assert.equal(normalizePrepScoreConfig({}).modules.coding.dailyTopicLimit, 3);
   assert.equal(normalizePrepScoreConfig({ modules: { coding: { dailyTopicLimit: 0 } } }).modules.coding.dailyTopicLimit, 0);
   assert.throws(() => normalizePrepScoreConfig({ modules: { coding: { dailyTopicLimit: -1 } } }), /Daily solves per topic/);

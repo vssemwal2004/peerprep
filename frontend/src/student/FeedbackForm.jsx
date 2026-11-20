@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import { CheckCircle, AlertCircle, Award, Calendar, User, Lock, ExternalLink, Copy } from "lucide-react";
+import PageGuideButton from "../guide/platform/PageGuideButton";
+import GuideInfo from "../guide/platform/GuideInfo";
 
 export default function FeedbackForm() {
   const { pairId } = useParams();
@@ -189,7 +191,7 @@ export default function FeedbackForm() {
         <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-4 shadow-lg">
           {/* Meeting Link */}
           {pair?.meetingLink && (
-            <div className="mb-3 p-3 bg-gradient-to-r from-sky-50 to-blue-50 dark:from-sky-900/20 dark:to-blue-900/20 border border-sky-200 dark:border-sky-700 rounded-lg">
+            <div data-guide="ifb-meeting" className="mb-3 p-3 bg-gradient-to-r from-sky-50 to-blue-50 dark:from-sky-900/20 dark:to-blue-900/20 border border-sky-200 dark:border-sky-700 rounded-lg">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
@@ -234,9 +236,10 @@ export default function FeedbackForm() {
               <h1 className="text-lg font-bold text-slate-900 dark:text-gray-100 flex items-center gap-2">
                 {!submitted && <Lock className="w-4 h-4 text-sky-600 dark:text-sky-400" />}
                 Interview Feedback Form
+                <PageGuideButton size="sm" />
               </h1>
             </div>
-            <div className="grid grid-cols-3 gap-3 text-xs">
+            <div className="grid grid-cols-3 gap-3 text-xs" data-guide="ifb-details">
               <div>
                 <span className="font-semibold text-slate-600 dark:text-gray-400">Event:</span>
                 <span className="ml-1 text-slate-900 dark:text-gray-200">{pair.event?.name || "N/A"}</span>
@@ -258,12 +261,13 @@ export default function FeedbackForm() {
 
           {/* Evaluation Criteria */}
           <div className="mb-2">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-gray-100 mb-2">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-gray-100 mb-2">
               Evaluation Criteria
+              <GuideInfo step="ifb-ratings" />
             </h2>
 
             {/* Rating Table */}
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" data-guide="ifb-ratings">
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-gray-700">
@@ -313,7 +317,7 @@ export default function FeedbackForm() {
                       ))}
                     </tr>
                   ))}
-                  <tr className="bg-sky-50 dark:bg-sky-900/30 font-semibold">
+                  <tr className="bg-sky-50 dark:bg-sky-900/30 font-semibold" data-guide="ifb-total">
                     <td className="p-2 border border-slate-200 dark:border-gray-600 text-slate-900 dark:text-gray-100 text-xs">
                       Total Marks
                     </td>
@@ -326,7 +330,7 @@ export default function FeedbackForm() {
             </div>
 
             {/* Additional Suggestions / Comments (Required) */}
-            <div className="mt-3">
+            <div className="mt-3" data-guide="ifb-comments">
               <label className="block text-xs font-semibold text-slate-700 dark:text-gray-300 mb-1">
                 Additional Comments (Required)
               </label>
@@ -363,6 +367,7 @@ export default function FeedbackForm() {
           {/* Submit Button */}
           <button
             type="submit"
+            data-guide="ifb-submit"
             disabled={submitting || submitted}
             className="w-full px-4 py-2 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 dark:bg-sky-700 dark:hover:bg-sky-600 dark:active:bg-sky-800 text-white text-sm font-semibold rounded-lg transition-colors disabled:bg-slate-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >

@@ -14,6 +14,8 @@ import {
   Users, UserMinus, UserPlus, BarChart3, ArrowDown, ArrowUp, ArrowUpDown,
 } from 'lucide-react';
 import AssessmentLifecycleSidebar from './assessment/components/AssessmentLifecycleSidebar';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 import { deriveStudentFacets, filterStudentsLocally, mergeSemesterOptions } from '../utils/semesterOptions';
 import { SortHeader, TablePager, nextSort, useClientTable } from '../components/table';
 
@@ -1408,11 +1410,11 @@ export default function AssessmentDashboard() {
       <motion.div className="flex h-full min-h-0 flex-col" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
         <header data-page-header className="shrink-0 border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950">
           <div className="mx-auto flex min-h-16 max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
-            <div>
+            <div data-guide="as-title">
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Assessments</p>
-              <h1 className="mt-0.5 text-xl font-bold tracking-tight text-slate-950 dark:text-white">All Assessments</h1>
+              <h1 className="mt-0.5 flex items-center gap-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white">All Assessments <PageGuideButton /></h1>
             </div>
-            {canCreateAssessments && <button type="button" onClick={() => navigate(`${rolePrefix}/assessment/create`)} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500">
+            {canCreateAssessments && <button type="button" data-guide="as-create" onClick={() => navigate(`${rolePrefix}/assessment/create`)} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500">
               <Plus className="h-4 w-4" /> Create Assessment
             </button>}
           </div>
@@ -1435,7 +1437,7 @@ export default function AssessmentDashboard() {
           />
           <main className="min-w-0 px-4 py-4 sm:px-6 lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden">
             <div className="shrink-0 flex flex-col gap-3 border-b border-slate-200 pb-3 dark:border-gray-800 xl:flex-row xl:items-center">
-              <div className="relative min-w-0 flex-1">
+              <div data-guide="as-search" className="relative min-w-0 flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   value={filters.search}
@@ -1444,7 +1446,7 @@ export default function AssessmentDashboard() {
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/30"
                 />
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div data-guide="as-sort" className="flex shrink-0 items-center gap-2">
                 <span className="whitespace-nowrap rounded-lg bg-slate-100 px-2.5 py-2 text-xs font-medium text-slate-600 dark:bg-gray-800 dark:text-gray-300">{filtered.length} assessment{filtered.length === 1 ? '' : 's'}</span>
                 <select value={filters.sort} onChange={(event) => { assessmentTable.setSort(null); setFilters((current) => ({ ...current, sort: event.target.value })); }} aria-label="Sort assessments" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-600 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
                   <option value="updated">Recently updated</option>
@@ -1458,7 +1460,7 @@ export default function AssessmentDashboard() {
               </div>
             </div>
 
-          <section className="pt-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pb-4" aria-label="Assessment list">
+          <section data-guide="as-list" className="pt-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pb-4" aria-label="Assessment list">
             {loading ? (
               <div className="flex min-h-56 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm text-slate-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading assessments...</div>
             ) : error ? (
@@ -1472,11 +1474,11 @@ export default function AssessmentDashboard() {
               </div>
             ) : (
               <div role="list" className="space-y-2.5">
-                <div className="sticky top-0 z-20 -mx-1 isolate hidden grid-cols-[minmax(190px,1.5fr)_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px] items-center gap-x-3 bg-slate-50 px-5 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 shadow-[0_1px_0_0_rgb(226,232,240)] xl:grid dark:bg-gray-950 dark:text-gray-500 dark:shadow-[0_1px_0_0_rgb(31,41,55)]">
+                <div data-guide="as-columns" className="sticky top-0 z-20 -mx-1 isolate hidden grid-cols-[minmax(190px,1.5fr)_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px] items-center gap-x-3 bg-slate-50 px-5 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 shadow-[0_1px_0_0_rgb(226,232,240)] xl:grid dark:bg-gray-950 dark:text-gray-500 dark:shadow-[0_1px_0_0_rgb(31,41,55)]">
                   {ASSESSMENT_COLUMNS.map(([key, label]) => (
                     <span key={key} className="min-w-0"><GridSortButton sortKey={key} sort={assessmentTable.sort} onSort={assessmentTable.toggleSort}>{label}</GridSortButton></span>
                   ))}
-                  <span className="sr-only">Actions</span>
+                  <span className="flex justify-end"><span className="sr-only">Actions</span><GuideInfo step="as-columns" /></span>
                 </div>
                 {assessmentTable.pageRows.map((assessment) => {
                   const completedCount = Number(assessment.completedCount || 0);
@@ -1588,7 +1590,7 @@ export default function AssessmentDashboard() {
                     </article>
                   );
                 })}
-                <div className="rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                <div data-guide="as-pager" className="rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
                   <TablePager {...assessmentTable.pager} noun="assessments" className="border-t-0" />
                 </div>
               </div>

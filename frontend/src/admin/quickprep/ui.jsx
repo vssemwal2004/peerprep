@@ -25,14 +25,15 @@ export function Breadcrumbs({ items }) {
   </nav>;
 }
 
-export function PageHeader({ icon: Icon, title, description, crumbs, actions }) {
-  return <header className="space-y-3">
+// `info` sits right after the title (the page's ⓘ); `guide` marks the header for the page tour.
+export function PageHeader({ icon: Icon, title, description, crumbs, actions, info, guide }) {
+  return <header className="space-y-3" data-guide={guide}>
     {crumbs && <Breadcrumbs items={crumbs} />}
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div className="flex min-w-0 items-start gap-3.5">
         {Icon && <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white shadow-lg shadow-sky-500/25"><Icon className="h-6 w-6" aria-hidden="true" /></span>}
         <div className="min-w-0">
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-zinc-50">{title}</h1>
+          <h1 className={`text-[22px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-zinc-50 ${info ? 'flex items-center gap-2' : ''}`}>{title}{info}</h1>
           {description && <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-zinc-400">{description}</p>}
         </div>
       </div>

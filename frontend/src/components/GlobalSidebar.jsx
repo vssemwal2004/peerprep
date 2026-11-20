@@ -61,6 +61,8 @@ import { getInterviewNavigation, getInterviewSection } from './interviews/interv
 import { getSidebarWidth, STUDENT_SIDEBAR_PANEL_WIDTH, STUDENT_SIDEBAR_RAIL_WIDTH } from './sidebarLayout';
 import { firstStudentFeaturePath, hasStudentFeature } from '../student/studentFeatureAccess';
 import MobileNavigation from './MobileNavigation';
+import SidebarGuidesButton from '../guide/platform/SidebarGuidesButton';
+import { usePlatformGuide } from '../guide/platform/context';
 import useIsMobileNav from './useIsMobileNav';
 import { canUsePeers, compactCount, PEER_TERMS, usePeerSummary } from '../student/peers/peerNetwork';
 
@@ -471,6 +473,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const { allowsPath } = useUniversityPolicy();
   const { theme, toggleTheme } = useTheme();
   const isMobileNav = useIsMobileNav();
+  const guide = usePlatformGuide();
   const profileOpenRef = useRef(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const isCoordinator = role === 'coordinator';
@@ -652,6 +655,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
         theme={theme}
         toggleTheme={toggleTheme}
         onLogout={handleLogout}
+        onOpenGuides={guide?.ready && guide.modules.length ? guide.openCenter : null}
       />
     );
   }
@@ -702,7 +706,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
           )}
         </div>
 
-        <nav className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${isStudent ? 'space-y-1 px-2 py-3' : 'space-y-1 px-1.5 py-3'}`} aria-label={`${roleLabel} navigation`}>
+        <nav data-guide="app-nav" className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${isStudent ? 'space-y-1 px-2 py-3' : 'space-y-1 px-1.5 py-3'}`} aria-label={`${roleLabel} navigation`}>
         {navItems.map((item) => {
           if (item.type === 'link') {
             const Icon = item.icon;
@@ -974,8 +978,10 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
             document.body,
           )}
 
+          <SidebarGuidesButton isExpanded={isExpanded} />
           <button
             type="button"
+            data-guide="app-account"
             onClick={() => {
               if (!isExpanded) onExpand();
               updateProfileOpen((open) => !open);

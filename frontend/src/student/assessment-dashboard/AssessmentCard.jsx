@@ -32,6 +32,7 @@ export default function AssessmentCard({ assessment, onLaunch, onFeedback }) {
     <motion.article
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
+      data-guide="asl-card"
       className="flex h-full flex-col rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-sky-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800"
     >
       <div className="flex items-start justify-between gap-3">
@@ -39,13 +40,13 @@ export default function AssessmentCard({ assessment, onLaunch, onFeedback }) {
           <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950 dark:text-white">{assessment.title || 'Not available'}</h3>
         </div>
 
-        <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone}`}>
+        <span data-guide="asl-card-status" className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone}`}>
           {isCompleted && <CheckCircle2 className="h-3.5 w-3.5" />}
           {isCompleted ? 'Completed' : assessment.status || 'Not available'}
         </span>
       </div>
 
-      <div className="mt-3 grid gap-2 text-[11px] text-slate-500 dark:text-gray-400">
+      <div className="mt-3 grid gap-2 text-[11px] text-slate-500 dark:text-gray-400" data-guide="asl-card-facts">
         <div className="flex items-center gap-2"><CalendarDays className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{formatDateTime(assessment.startTime)}</span></div>
         <div className="grid grid-cols-2 gap-2"><span className="flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" />{formatDurationMinutes(assessment.duration)}</span><span className="flex items-center gap-2"><ListChecks className="h-3.5 w-3.5" />{assessment.totalQuestions !== undefined && assessment.totalQuestions !== null ? `${assessment.totalQuestions} questions` : 'Not available'}</span></div>
       </div>
@@ -56,6 +57,7 @@ export default function AssessmentCard({ assessment, onLaunch, onFeedback }) {
         </div>
         <button
           type="button"
+          data-guide="asl-card-action"
           onClick={() => {
             if (canGiveFeedback) onFeedback?.(assessment);
             else if (canLaunch) onLaunch(assessment);

@@ -56,12 +56,12 @@ export default function UniversityList() {
 
       <Card>
         <div className="flex flex-wrap items-center gap-3">
-          <label className="relative min-w-[16rem] flex-1">
+          <label data-guide="ul-search" className="relative min-w-[16rem] flex-1">
             <span className="sr-only">Search universities</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input className={`${inputClass} pl-9`} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, ID or contact email" />
           </label>
-          <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800" role="tablist" aria-label="Filter universities">
+          <div data-guide="ul-filters" className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800" role="tablist" aria-label="Filter universities">
             {FILTERS.map(({ key, label }) => (
               <button key={key} type="button" role="tab" aria-selected={filter === key} onClick={() => setFilter(key)}
                 className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${filter === key ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white' : 'text-slate-600 hover:text-slate-900 dark:text-slate-300'}`}>
@@ -80,7 +80,7 @@ export default function UniversityList() {
           ) : (
             <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-left text-sm" data-no-serial>
+              <table data-guide="ul-table" className="w-full min-w-[820px] text-left text-sm" data-no-serial>
                 <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800">
                   <tr>{header('name', 'University')}{header('status', 'Status')}{header('modules', 'Modules')}{header('service', 'Service')}{header('limits', 'Account limits')}{header('coins', 'Prep Coins', { align: 'right' })}<th className="py-2"><span className="sr-only">Actions</span></th></tr>
                 </thead>

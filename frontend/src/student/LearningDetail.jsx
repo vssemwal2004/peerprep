@@ -21,6 +21,8 @@ import { api } from '../utils/api';
 import socketService from '../utils/socket';
 import { useToast } from '../components/CustomToast';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 const TOPIC_DIFFICULTY_RANK = { easy: 1, 'easy-medium': 2, medium: 3, 'medium-hard': 4, hard: 5 };
 const TOPIC_HEAD = 'py-3 px-4 text-xs font-semibold text-slate-600 dark:text-gray-400 uppercase tracking-wider';
@@ -47,7 +49,7 @@ function ChapterTopicsTable({ topics, isCompleted, renderRow }) {
   }, [isCompleted]);
   const table = useClientTable(topics, { getValue });
   return (
-    <div>
+    <div data-guide="ld-topics">
       <div className="overflow-x-auto">
         <table className="w-full table-fixed" style={{ '--serial-start': (table.page - 1) * table.pageSize }}>
           <colgroup>{TOPIC_COLUMNS.map(([key, , , width]) => <col key={key} style={{ width }} />)}</colgroup>
@@ -626,10 +628,11 @@ export default function LearningDetail() {
           initial={false}
           animate={{ width: sidebarOpen ? 280 : 0 }}
           className="bg-white dark:bg-gray-800 border-r border-slate-200 dark:border-gray-700 overflow-hidden shadow-sm"
+          data-guide="ld-subjects"
         >
           <div className="h-full overflow-y-auto p-4">
             <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200 dark:border-gray-700">
-              <h2 className="text-base font-bold text-slate-800 dark:text-gray-100">My Subjects</h2>
+              <h2 className="flex items-center gap-1.5 text-base font-bold text-slate-800 dark:text-gray-100">My Subjects<GuideInfo step="ld-subjects" /></h2>
               <button
                 onClick={() => setSidebarOpen(false)}
                 className="lg:hidden p-1.5 hover:bg-slate-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -716,13 +719,17 @@ export default function LearningDetail() {
           {subjectDetails ? (
             <div className="w-full p-6 sm:p-6 lg:px-10 lg:py-8">
               {/* Header */}
-              <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-slate-200 dark:border-gray-700 p-5">
+              <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-slate-200 dark:border-gray-700 p-5" data-guide="ld-header">
                 <div className="flex items-start justify-between mb-2">
-                  <h1 className="text-2xl font-bold text-slate-800 dark:text-gray-100">
-                    {subjectDetails.subjectName}
-                  </h1>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-2xl font-bold text-slate-800 dark:text-gray-100">
+                      {subjectDetails.subjectName}
+                    </h1>
+                    <PageGuideButton />
+                  </div>
                   <button
                     onClick={() => navigate('/student/learning')}
+                    data-guide="ld-back"
                     className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-gray-400 hover:text-slate-800 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                   >
                     <ArrowLeft className="w-4 h-4" />
@@ -731,14 +738,14 @@ export default function LearningDetail() {
                 </div>
                 <p className="text-sm text-slate-600 dark:text-gray-400 mb-3">{subjectDetails.subjectDescription}</p>
                 <div className="flex items-center space-x-2 text-xs">
-                  <span className="px-2 py-1 bg-sky-100 dark:bg-sky-900 text-sky-700 dark:text-sky-300 rounded font-medium">
+                  <span data-guide="ld-instructor" className="px-2 py-1 bg-sky-100 dark:bg-sky-900 text-sky-700 dark:text-sky-300 rounded font-medium">
                     Instructor: {currentCoordinatorName || subjectDetails?.coordinatorName || initialCoordinatorName || 'Teacher'}
                   </span>
                 </div>
               </div>
 
               {/* Chapters */}
-              <div className="space-y-3">
+              <div className="space-y-3" data-guide="ld-chapters">
                 {subjectDetails.chapters.map((chapter, chapterIdx) => {
                   const { completedTopics, totalTopics, percentage } = getChapterProgress(chapter);
 
@@ -809,7 +816,7 @@ export default function LearningDetail() {
                           className="border-t border-slate-200 dark:border-gray-700"
                         >
                           <div className="p-4 bg-white dark:bg-gray-900">
-                            <h4 className="text-sm font-semibold text-slate-700 dark:text-gray-300 mb-3">Topics</h4>
+                            <h4 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-gray-300 mb-3">Topics<GuideInfo step="ld-topics" /></h4>
                             <ChapterTopicsTable
                               topics={chapter.topics}
                               isCompleted={isTopicCompleted}
@@ -927,7 +934,7 @@ export default function LearningDetail() {
                                     </tr>
                               )}
                             />
-                            <div className="mt-3 text-xs text-slate-600 dark:text-gray-400 bg-slate-50 dark:bg-gray-800/60 border border-slate-200 dark:border-gray-700 rounded-lg px-3 py-2">
+                            <div data-guide="ld-tip" className="mt-3 text-xs text-slate-600 dark:text-gray-400 bg-slate-50 dark:bg-gray-800/60 border border-slate-200 dark:border-gray-700 rounded-lg px-3 py-2">
                               Tip: when you finish a video, click the status circle to mark it complete so your progress updates.
                             </div>
                           </div>

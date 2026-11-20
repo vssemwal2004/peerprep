@@ -6,6 +6,7 @@ import { useStudentAssessmentDashboardData } from './assessment-dashboard/useStu
 import { formatScore, formatShortDate, formatSeconds } from './assessment-dashboard/assessmentDashboardUtils';
 import { RESULT_NOT_ANNOUNCED, isResultAnnounced } from '../utils/assessmentEvaluation';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 const PAGE_SIZE = 8;
 const HEADERS = [['name', 'Assessment Name'], ['completed', 'Completed On'], ['result', 'Result'], ['time', 'Time'], ['status', 'Attempt Status']];
@@ -45,7 +46,7 @@ export default function AssessmentHistoryPage() {
   return (
     <AssessmentModuleLayout title="Assessment History">
       <div className="space-y-5">
-        <div className={`grid gap-4 ${summaryCards.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+        <div data-guide="hist-summary" className={`grid gap-4 ${summaryCards.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
           {summaryCards.map(({ label, value, Icon, tone }) => (
             <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
               <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${
@@ -61,10 +62,10 @@ export default function AssessmentHistoryPage() {
 
         <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Completed Assessment Records</h2>
+            <h2 className="flex items-center gap-1.5 text-base font-semibold text-slate-900 dark:text-white">Completed Assessment Records<GuideInfo step="hist-table" /></h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Open any completed test to review the available report details.</p>
           </div>
-          <div className="relative w-full sm:max-w-xs">
+          <div className="relative w-full sm:max-w-xs" data-guide="hist-search">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               value={query}
@@ -81,7 +82,7 @@ export default function AssessmentHistoryPage() {
           <div className="rounded-2xl border border-rose-200 bg-white px-6 py-10 text-sm text-rose-600 dark:border-rose-900/60 dark:bg-gray-900 dark:text-rose-300">{error}</div>
         ) : (
           <>
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div data-guide="hist-table" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
               <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead className="border-b border-slate-200 bg-slate-50 dark:border-gray-800 dark:bg-gray-950">
@@ -93,6 +94,7 @@ export default function AssessmentHistoryPage() {
                     {pagedRows.length ? pagedRows.map((row) => (
                       <tr
                         key={row.id}
+                        data-guide="hist-row"
                         onClick={() => setSelectedReport(row)}
                         className="cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50 dark:border-gray-800 dark:hover:bg-gray-800/70"
                       >
@@ -106,7 +108,7 @@ export default function AssessmentHistoryPage() {
                             {formatShortDate(row.submittedAt || row.dateAttempted)}
                           </span>
                         </td>
-                        <td className="px-5 py-4 text-sm font-semibold text-slate-800 dark:text-gray-200">
+                        <td className="px-5 py-4 text-sm font-semibold text-slate-800 dark:text-gray-200" data-guide="hist-result">
                           {isResultAnnounced(row)
                             ? `${formatScore(row.score)}${row.totalMarks ? ` / ${formatScore(row.totalMarks)}` : ''}`
                             : <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">{RESULT_NOT_ANNOUNCED}</span>}

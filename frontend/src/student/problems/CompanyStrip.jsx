@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Building2, ChevronDown, LoaderCircle, Search, X } from 'lucide-react';
 import { card, companyInitial, companyTone, fieldBase, focusRing } from './problemsUi';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 function CompanyChip({ company, count, selected, onSelect }) {
   return <button type="button" aria-pressed={selected} onClick={() => onSelect(company)}
@@ -33,11 +34,12 @@ export default function CompanyStrip({ companies, loading, selected, onSelect })
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', escape); };
   }, [open]);
 
-  return <section aria-labelledby="companies-title" ref={panelRef} className={`relative px-4 py-3 ${card}`}>
+  return <section aria-labelledby="companies-title" ref={panelRef} data-guide="pc-companies" className={`relative px-4 py-3 ${card}`}>
     <div className="flex items-center gap-3">
       <h2 id="companies-title" className="flex shrink-0 items-center gap-2 text-[13.5px] font-semibold text-slate-900 dark:text-zinc-100">
         <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-300" aria-hidden="true"><Building2 className="h-4 w-4" /></span>
         <span className="hidden sm:inline">Companies</span>
+        <GuideInfo step="pc-companies" />
       </h2>
       <div className="relative min-w-0 flex-1">
         <div className="flex items-center gap-2 overflow-x-auto py-0.5 pr-8 [mask-image:linear-gradient(90deg,black_calc(100%-48px),transparent)] [scrollbar-width:none]">

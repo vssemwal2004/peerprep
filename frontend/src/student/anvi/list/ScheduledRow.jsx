@@ -25,7 +25,7 @@ export function ReadyChecklist({ item, onResume, disabled = false }) {
   const language = languageSetupOf(item);
   // "English or Hindi" (the student picks in the lobby), else "English only".
   const languageText = language.choices.length > 1 ? `${language.choices.slice(0, -1).join(", ")} or ${language.choices.at(-1)}` : `${language.primary}${language.strict ? " only" : ""}`;
-  return <ul aria-label="Before your interview" className="flex flex-wrap items-center gap-1.5" data-checklist="">
+  return <ul aria-label="Before your interview" className="flex flex-wrap items-center gap-1.5" data-checklist="" data-guide="ai-checklist">
     {resume.mode !== "none" && <li>
       <button type="button" onClick={() => onResume?.(item)} disabled={disabled}
         aria-label={resume.provided ? "Resume added. Manage your resume" : `Resume ${resume.mode === "required" ? "needed" : "optional"}. Add your resume`}
@@ -159,7 +159,7 @@ export default function ScheduledRow({ entry, now, facts, busy, locked, confirmi
     }
   }
 
-  return <InterviewRow data-assignment={id} tile={<DateTile value={when} tone={tone} pulse={pulse} />}
+  return <InterviewRow data-assignment={id} data-guide="ai-scheduled-row" tile={<DateTile value={when} tone={tone} pulse={pulse} />}
     title={title} chip={chip} badge={badge} subtitle={subtitle} meta={meta} facts={factLine}
     primary={primary} caption={caption} captionTone={captionTone} menu={menu.length ? <ActionMenu label={title} items={menu} /> : null} extra={extra} extraTone={extraTone} />;
 }

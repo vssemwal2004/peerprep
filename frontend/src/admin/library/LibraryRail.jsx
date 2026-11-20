@@ -43,7 +43,7 @@ export default function LibraryRail({
   const { open, railProps, reveal } = useHoverRail('(min-width: 768px)');
 
   return (
-    <aside className="relative hidden md:block" style={{ width: RAIL_WIDTH }} aria-label="Library sections">
+    <aside data-guide="lib-rail" className="relative hidden md:block" style={{ width: RAIL_WIDTH }} aria-label="Library sections">
       {/* A sticky element is its own stacking context, so the layer must be set here: above the
           page's sticky table headers (z-40/50), below its drawers and modals (z-60 and up). */}
       <div className="sticky top-[var(--app-navbar-height,5rem)] z-[55] h-[calc(100vh-var(--app-navbar-height,5rem))]">

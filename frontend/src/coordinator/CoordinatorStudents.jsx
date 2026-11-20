@@ -7,6 +7,7 @@ import { Search, Users, Loader2, X, Download } from "lucide-react";
 import Fuse from "fuse.js";
 import ContributionCalendar from "../components/ContributionCalendar";
 import { SortHeader, TablePager, useClientTable } from "../components/table";
+import PageGuideButton from "../guide/platform/PageGuideButton";
 
 const SEARCH_STATE_KEY = 'peerprep.coordinatorStudents.search';
 
@@ -289,8 +290,9 @@ export default function CoordinatorStudents() {
                 <Users className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
               </div>
               <div>
-                <h2 className="text-2xl font-semibold text-slate-800 dark:text-gray-100">
+                <h2 data-guide="cs-title" className="flex items-center gap-2 text-2xl font-semibold text-slate-800 dark:text-gray-100">
                   {uploadBatchName || 'My Students'}
+                  <PageGuideButton />
                 </h2>
                 <p className="text-slate-600 dark:text-gray-400 text-sm">
                   {uploadBatchId ? 'Students from this bulk list assigned to you' : 'View and manage students assigned to you'}
@@ -302,6 +304,7 @@ export default function CoordinatorStudents() {
             <div className="flex items-center gap-2">
               {/* Download All Students */}
               <button
+                data-guide="cs-download"
                 onClick={handleDownloadAllStudents}
                 disabled={isDownloadingAll || !students.length}
                 className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 rounded-lg transition-colors whitespace-nowrap"
@@ -309,7 +312,7 @@ export default function CoordinatorStudents() {
                 {isDownloadingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                 Download All
               </button>
-              <form onSubmit={handleSearch} className="w-80">
+              <form data-guide="cs-search" onSubmit={handleSearch} className="w-80">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-gray-500" />
                 <input
@@ -337,7 +340,7 @@ export default function CoordinatorStudents() {
           </div>
 
           {/* Stats */}
-          <div className="mb-6 p-4 bg-slate-50 dark:bg-gray-700 rounded-lg border border-slate-200 dark:border-gray-600">
+          <div data-guide="cs-total" className="mb-6 p-4 bg-slate-50 dark:bg-gray-700 rounded-lg border border-slate-200 dark:border-gray-600">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Users className="w-5 h-5 text-slate-600 dark:text-gray-300" />
@@ -384,17 +387,17 @@ export default function CoordinatorStudents() {
             </div>
           ) : (
             // Students Table
-            <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700">
+            <div data-guide="cs-table" className="overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200 dark:divide-gray-700" style={{ '--serial-start': (table.page - 1) * table.pageSize }}>
-                <thead className="bg-slate-50 dark:bg-gray-700">
+                <thead data-guide="cs-columns" className="bg-slate-50 dark:bg-gray-700">
                   <tr>
                     {STUDENT_COLUMNS.map((column) => (
                       <SortHeader key={column.key} sortKey={column.key} sort={table.sort} onSort={table.toggleSort} className="px-4 py-2 dark:text-gray-300">{column.label}</SortHeader>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-gray-700 bg-white dark:bg-gray-800">
+                <tbody data-guide="cs-rows" className="divide-y divide-slate-100 dark:divide-gray-700 bg-white dark:bg-gray-800">
                   {table.pageRows.map((s) => {
                     const initial = s.name?.charAt(0)?.toUpperCase() || "?";
                     return (

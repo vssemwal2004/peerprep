@@ -5,6 +5,7 @@ import { api } from '../utils/api';
 import InterviewWorkspaceNav from '../components/interviews/InterviewWorkspaceNav';
 import InterviewDirectory from '../components/interviews/InterviewDirectory';
 import { InterviewStat as StatCard, InterviewPair as PairCard } from '../components/interviews/InterviewSummary';
+import GuideInfo from '../guide/platform/GuideInfo';
 import {
   CheckCircle,
   AlertCircle,
@@ -164,18 +165,20 @@ export default function CoordinatorEventDetail() {
               {!id && msg && !isSuccessMsg ? (
                 <div role="alert" className="flex justify-center py-8"><button type="button" onClick={() => load()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-sky-600 dark:border-gray-700 dark:text-sky-400">Retry loading interviews</button></div>
               ) : !id ? (
+                <div data-guide="ci-directory">
                 <InterviewDirectory onChanged={() => { api.listEvents({ view: 'dashboard', page: 1, limit: 50 }).then((data) => setEvents(data.events || [])).catch(() => setEventsError(true)); }} search={searchQuery} onSearchChange={setSearchQuery} view={eventTab} onViewChange={(view) => {
                   setEventTab(view);
                   const root = '/coordinator/interviews/one-to-one';
                   navigate(view === 'upcoming' ? root + '/scheduled' : view === 'previous' ? root + '/past' : view === 'active' ? root + '?status=active' : root);
                 }} onSelect={handleEventSelect} />
+                </div>
               ) : event ? (
                 <div className="space-y-4">
                   {/* Header */}
-                  <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div data-guide="ci-event-header" className="flex items-center justify-between flex-wrap gap-3">
                     <div>
                       <div className="flex items-center gap-3">
-                        <h2 className="text-xl font-semibold text-slate-800 dark:text-gray-100">{event.name}</h2>
+                        <h2 className="flex items-center gap-2 text-xl font-semibold text-slate-800 dark:text-gray-100">{event.name}</h2>
                         {(event.startDate || event.endDate) && (
                           <div className="text-sm text-slate-500 dark:text-gray-400">
                             {event.startDate && (
@@ -190,6 +193,7 @@ export default function CoordinatorEventDetail() {
                       <p className="text-slate-600 dark:text-gray-400 text-sm mt-0.5">{event.description}</p>
                     </div>
                     <Link
+                      data-guide="ci-back"
                       to={getBasePath()}
                       className="flex items-center gap-1 text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 text-sm"
                     >
@@ -201,6 +205,7 @@ export default function CoordinatorEventDetail() {
                   {/* Quick Actions */}
                   <div className="flex gap-2">
                     <button
+                      data-guide="ci-export"
                       onClick={handleExportCsv}
                       className="px-3 py-2 bg-slate-600 dark:bg-slate-700 text-white rounded-lg font-medium text-sm hover:bg-slate-700 dark:hover:bg-slate-800 transition-colors flex items-center gap-1"
                     >
@@ -211,10 +216,11 @@ export default function CoordinatorEventDetail() {
 
                   {/* Analytics */}
                   {analytics && (
-                    <div className="rounded-xl bg-slate-50 p-4 dark:bg-gray-950">
+                    <div data-guide="ci-analytics" className="rounded-xl bg-slate-50 p-4 dark:bg-gray-950">
                       <h3 className="font-medium text-slate-800 dark:text-gray-100 mb-3 flex items-center gap-1.5 text-sm">
                         <BarChart3 className="w-4 h-4 text-sky-600 dark:text-sky-400" />
                         Interview Analytics
+                        <GuideInfo step="ci-analytics" />
                       </h3>
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
                         <StatCard icon={Users} label="Joined" value={analytics.joined} />
@@ -227,8 +233,8 @@ export default function CoordinatorEventDetail() {
                   )}
 
                   {/* Pairs Section */}
-                  <div>
-                    <h3 className="font-medium text-slate-800 dark:text-gray-100 mb-2 text-sm">Interview Pairs</h3>
+                  <div data-guide="ci-pairs">
+                    <h3 className="font-medium text-slate-800 dark:text-gray-100 mb-2 flex items-center gap-1.5 text-sm">Interview Pairs<GuideInfo step="ci-pairs" /></h3>
                     {pairs.length === 0 ? (
                       <div className="text-center py-4 text-slate-500 dark:text-gray-400 bg-slate-50 dark:bg-gray-700 rounded border border-slate-300 dark:border-gray-600 text-sm">
                         No pairs available for this event.

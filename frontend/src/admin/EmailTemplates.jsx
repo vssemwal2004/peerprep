@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Edit3, Eye, MoreVertical, Power, Redo2, Trash2, Undo2 } from 'lucide-react';
 import { api } from '../utils/api';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 const HISTORY_LIMIT = 50;
 
@@ -454,14 +455,14 @@ export default function EmailTemplates() {
   return (
     <div className="min-h-screen bg-slate-50 px-6 py-6 dark:bg-gray-900">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div data-guide="et-header" className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Email Templates</h1>
+            <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-900 dark:text-white">Email Templates<PageGuideButton /></h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
               Manage the subject lines and HTML content used in system emails.
             </p>
           </div>
-          <div className="w-full max-w-sm">
+          <div data-guide="et-search" className="w-full max-w-sm">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -477,7 +478,7 @@ export default function EmailTemplates() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div data-guide="et-table" className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-gray-700 dark:text-slate-400">

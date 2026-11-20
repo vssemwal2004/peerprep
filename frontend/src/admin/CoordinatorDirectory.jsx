@@ -5,6 +5,8 @@ import { CheckSquare, Edit2, Eye, Loader2, Lock, Mail, MoreVertical, Search, Shi
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 const timeValue = (value) => {
   const time = value ? new Date(value).getTime() : Number.NaN;
@@ -307,26 +309,26 @@ export default function CoordinatorDirectory() {
       <div className="mx-auto w-full flex-1 px-3 py-3">
         <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
           <div data-page-header className="mb-3 flex flex-col gap-3 bg-white py-1 dark:bg-gray-900 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5" data-guide="cd-title">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-emerald-100 dark:bg-emerald-900">
                 <Users className="h-4 w-4 text-emerald-600" />
               </div>
               <div>
-                <h1 className="text-base font-semibold text-slate-900 dark:text-white">Coordinator Database</h1>
+                <h1 className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-white">Coordinator Database <PageGuideButton size="sm" /></h1>
                 <p className="text-[11px] text-slate-500 dark:text-gray-400">{filtered.length.toLocaleString()} {query || statusFilter !== 'all' ? 'matching coordinators' : 'registered coordinators'}</p>
               </div>
             </div>
 
             <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-              <div className="relative min-w-[240px] flex-1 xl:max-w-sm">
+              <div className="relative min-w-[240px] flex-1 xl:max-w-sm" data-guide="cd-search">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, ID, email, phone..." className="h-9 w-full rounded-md border border-slate-200 bg-white pl-9 pr-9 text-xs text-slate-700 shadow-sm outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
                 {query ? <button type="button" aria-label="Clear search" onClick={() => setQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 transition-colors hover:bg-slate-100 dark:hover:bg-gray-600"><X className="h-3 w-3 text-slate-500" /></button> : null}
               </div>
-              <select aria-label="Filter coordinator status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+              <select aria-label="Filter coordinator status" data-guide="cd-status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                 <option value="all">All statuses</option><option value="active">Active</option><option value="disabled">Disabled</option>
               </select>
-              <Link to="/admin/coordinators" className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700">
+              <Link to="/admin/coordinators" data-guide="cd-add" className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700">
                 <UserPlus className="h-4 w-4" />Add coordinator
               </Link>
             </div>
@@ -335,14 +337,15 @@ export default function CoordinatorDirectory() {
         {error ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">{error}</div> : null}
 
         <div className="mb-2 flex items-center justify-between rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-800/70">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2" data-guide="cd-select">
+            <GuideInfo step="cd-select" />
             <button type="button" onClick={() => setSelectedCoordinatorIds((current) => { const next = new Set(current); const allSelected = pageItems.length > 0 && pageItems.every((item) => next.has(String(item._id))); pageItems.forEach((item) => { const key = String(item._id); if (allSelected) next.delete(key); else next.add(key); }); return next; })} className="inline-flex h-8 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
               <CheckSquare className="h-3.5 w-3.5 text-sky-600" />Select page
             </button>
             <span className="text-xs font-medium text-slate-500 dark:text-gray-400">{selectedCoordinatorIds.size ? `${selectedCoordinatorIds.size} selected` : `${pageItems.length} visible on this page`}</span>
             {selectedCoordinatorIds.size > 0 && <button type="button" onClick={() => setSelectedCoordinatorIds(new Set())} className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:text-gray-400">Clear</button>}
           </div>
-          <div className="relative">
+          <div className="relative" data-guide="cd-bulk">
             <button type="button" onClick={() => setBulkMenuOpen((open) => !open)} disabled={bulkWorking} aria-label="Coordinator bulk actions" aria-expanded={bulkMenuOpen} className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{bulkWorking ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreVertical className="h-4 w-4" />}</button>
             {bulkMenuOpen && <div data-platform-action-menu className="absolute right-0 top-9 z-50 w-60 rounded-md border border-slate-200 bg-white py-1 shadow-xl dark:border-gray-700 dark:bg-gray-900">
               <button type="button" onClick={() => { setSelectedCoordinatorIds(new Set(filtered.map((item) => String(item._id)))); setBulkMenuOpen(false); }} className="w-full px-3 py-2 text-left text-xs font-medium hover:bg-slate-50 dark:hover:bg-gray-800">Select all {filtered.length} filtered</button>
@@ -367,14 +370,14 @@ export default function CoordinatorDirectory() {
           </div>
         ) : (
           <>
-            <div className="space-y-3 lg:hidden">
+            <div className="space-y-3 lg:hidden" data-guide="cd-table">
               {pageItems.map((coordinator) => (
                 <CoordinatorCard key={coordinator._id} coordinator={coordinator} checked={selectedCoordinatorIds.has(String(coordinator._id))} onCheck={() => setSelectedCoordinatorIds((current) => { const next = new Set(current); const key = String(coordinator._id); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onView={setSelected} onEdit={startEdit} onToggle={toggleStatus} onDelete={deleteCoordinator} onMail={sendCoordinatorMail} onAccess={(item) => navigate(`/admin/coordinator-access/${item._id}`)} />
               ))}
               <div className="rounded-lg border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900"><TablePager {...table.pager} noun="coordinators" className="border-t-0" /></div>
             </div>
 
-            <div className="hidden overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700 lg:block">
+            <div className="hidden overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700 lg:block" data-guide="cd-table">
               <div className="overflow-x-auto overflow-y-visible">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50 dark:bg-gray-700">

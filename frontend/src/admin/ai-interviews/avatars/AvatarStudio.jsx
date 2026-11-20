@@ -61,7 +61,7 @@ function AvatarLibrary({ capabilities }) {
   };
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <div data-guide="ai-avatar-tools" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <div className="relative min-w-48 max-w-sm flex-1">
             <Search
@@ -149,7 +149,7 @@ function AvatarLibrary({ capabilities }) {
           />
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-guide="ai-avatars">
           {remote.result.items.map((doc) => (
             <article
               key={doc._id}

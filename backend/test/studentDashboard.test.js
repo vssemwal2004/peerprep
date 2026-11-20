@@ -53,16 +53,15 @@ test('progress scores each module from its own evidence and averages the license
     },
   }, now);
   assert.deepEqual(scored.scoreBreakdown, { coding: 6.28, learning: 5.79, interview: 4.39, assessment: 4.39 });
-  // The Prep Score is the Prep Coding score alone (2026-11); other modules are admin detail only.
-  assert.equal(scored.score, 6.28);
+  assert.equal(scored.score, 5.21);
   // Harder content earns more than the same amount of easier content.
   const hardTests = scoreStudentProgress({ scoreEvidence: { assessmentCompleted: times(2, { level: 'Hard', percent: 80 }) } }, now);
   const easyTests = scoreStudentProgress({ scoreEvidence: { assessmentCompleted: times(2, { level: 'Easy', percent: 80 }) } }, now);
   assert.ok(hardTests.scoreBreakdown.assessment > easyTests.scoreBreakdown.assessment);
-  // Tests alone earn no Prep Score and do not make a student rankable: only coding work does.
+  // Below the pass mark nothing is earned, but the student is still ranked (at the bottom), not "not started".
   const lowButWorking = scoreStudentProgress({ scoreEvidence: { assessmentCompleted: times(2, { level: null, percent: 30 }) } }, now);
   assert.equal(lowButWorking.score, 0);
-  assert.equal(lowButWorking.hasProgress, false);
+  assert.equal(lowButWorking.hasProgress, true);
   const huge = scoreStudentProgress({ scoreEvidence: { videoCompleted: times(1e6, { topicLevel: 'medium' }) } }, now);
   assert.equal(huge.scoreBreakdown.learning, 710.47, 'the formula has no fixed ceiling');
   const codingOnly = scoreStudentProgress({ scoreEvidence: { problemSolved: [{ level: 'Easy', count: 3 }], videoCompleted: times(9, {}) }, scoreFeatures: { coding: true, learning: false, interview: false, assessment: false } }, now);
@@ -495,8 +494,8 @@ test('Prep Interview score uses the student\'s own mock scores (both feedback sc
   const rank = await getStudentUniversityRanking(learner, null, now);
   assert.equal(rank.scoreBreakdown.interview, 4.39, 'two mocks and one verified AI completion count; unfinished and other-tenant AI interviews do not');
   assert.equal(rank.score, rank.prepScore.total);
-  assert.equal(rank.score, 0, 'interviews are not part of the Prep Score (Prep Coding only)');
-  assert.equal(rank.rank ?? null, null, 'without coding work the student is not ranked');
+  assert.ok(Math.abs(rank.score - 4.39 / 4) < 0.01, 'the overall score averages all four features');
+  assert.equal(rank.rank, 1);
   const interview = rank.prepScore.features.interview;
   assert.deepEqual(interview.counts, { Easy: 0, Medium: 3, Hard: 0 });
   assert.equal(interview.volume, 3);

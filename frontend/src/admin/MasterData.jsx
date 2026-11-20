@@ -19,6 +19,8 @@ import {
 import { api } from "../utils/api";
 import { useToast } from "../components/CustomToast";
 import { SortHeader, TablePager, useClientTable } from "../components/table";
+import GuideInfo from "../guide/platform/GuideInfo";
+import PageGuideButton from "../guide/platform/PageGuideButton";
 
 const CATEGORIES = [
   {
@@ -208,13 +210,14 @@ export default function MasterData() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6 dark:bg-gray-950">
       <div className="mx-auto max-w-7xl">
-        <header data-page-header className="mb-5 flex flex-col gap-4 bg-slate-50 py-2 dark:bg-gray-950 sm:flex-row sm:items-end sm:justify-between">
+        <header data-page-header data-guide="md-header" className="mb-5 flex flex-col gap-4 bg-slate-50 py-2 dark:bg-gray-950 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-700">
               Settings · Master data
             </p>
-            <h1 className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">
+            <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold text-slate-950 dark:text-white">
               Academic master data
+              <PageGuideButton />
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-slate-500">
               Maintain the approved values used by student onboarding,
@@ -223,6 +226,7 @@ export default function MasterData() {
           </div>
           <button
             type="button"
+            data-guide="md-sync"
             onClick={sync}
             disabled={syncing}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 shadow-sm hover:border-sky-300 hover:text-sky-700 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
@@ -233,9 +237,10 @@ export default function MasterData() {
         </header>
 
         <div className="grid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[280px_minmax(0,1fr)] dark:border-gray-800 dark:bg-gray-900">
-          <aside className="border-b border-slate-200 bg-slate-50/70 p-3 lg:min-h-[650px] lg:border-b-0 lg:border-r dark:border-gray-800 dark:bg-gray-950/40">
-            <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+          <aside data-guide="md-categories" className="border-b border-slate-200 bg-slate-50/70 p-3 lg:min-h-[650px] lg:border-b-0 lg:border-r dark:border-gray-800 dark:bg-gray-950/40">
+            <p className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
               Data categories
+              <GuideInfo step="md-categories" />
             </p>
             <nav className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1">
               {CATEGORIES.map((item) => {
@@ -271,7 +276,7 @@ export default function MasterData() {
           </aside>
 
           <main className="min-w-0">
-            <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800">
+            <div data-guide="md-category" className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800">
               <div>
                 <h2 className="text-lg font-bold text-slate-950 dark:text-white">
                   {categoryInfo.label}
@@ -282,6 +287,7 @@ export default function MasterData() {
               </div>
               <button
                 type="button"
+                data-guide="md-add"
                 onClick={openCreate}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-bold text-white hover:bg-sky-500"
               >
@@ -290,7 +296,7 @@ export default function MasterData() {
               </button>
             </div>
             <div className="border-b border-slate-100 p-4 dark:border-gray-800">
-              <div className="relative max-w-md">
+              <div data-guide="md-search" className="relative max-w-md">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   value={search}
@@ -306,7 +312,7 @@ export default function MasterData() {
                 <Loader2 className="h-7 w-7 animate-spin text-sky-600" />
               </div>
             ) : visibleEntries.length ? (
-              <div>
+              <div data-guide="md-table">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] text-left text-sm" style={{ "--serial-start": (table.page - 1) * table.pageSize }}>
                   <thead className="bg-slate-50 dark:bg-gray-950/40">

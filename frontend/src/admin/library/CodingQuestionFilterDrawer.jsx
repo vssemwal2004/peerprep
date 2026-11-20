@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronDown, Layers3, Search, Tags, X } from 'lucide-react';
 import { api } from '../../utils/api';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const RESULT_LIMIT = 75;
 const idOf = (value) => String(value?._id || value || '');
@@ -97,7 +98,7 @@ export default function CodingQuestionFilterDrawer({ open, onClose, filters, onA
       : `${topicLogic} ${draft.classificationMatch === 'any' ? 'OR' : 'AND'} ${selectedTags.size ? `${selectedTags.size} selected tag(s)` : 'all tags'}`;
 
   return <><button type="button" aria-label="Close filters" onClick={onClose} className="fixed inset-0 z-[110] bg-slate-950/35 backdrop-blur-[1px]" /><aside role="dialog" aria-modal="true" aria-label="Question bank filters" className="fixed inset-y-0 right-0 z-[111] flex h-dvh w-full max-w-2xl flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-    <header className="flex min-h-16 items-center justify-between border-b border-slate-200 px-5 dark:border-gray-700"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-600">Question bank</p><h2 className="mt-0.5 text-base font-bold text-slate-950 dark:text-white">Search and filter</h2></div><button type="button" onClick={onClose} className="rounded-xl border border-slate-200 p-2 text-slate-500 dark:border-gray-700"><X className="h-4 w-4" /></button></header>
+    <header className="flex min-h-16 items-center justify-between border-b border-slate-200 px-5 dark:border-gray-700"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-600">Question bank</p><h2 className="mt-0.5 flex items-center gap-1.5 text-base font-bold text-slate-950 dark:text-white">Search and filter<GuideInfo step="lib-filters" /></h2></div><button type="button" onClick={onClose} className="rounded-xl border border-slate-200 p-2 text-slate-500 dark:border-gray-700"><X className="h-4 w-4" /></button></header>
     <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
       {error && <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">{error}</div>}
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300"><span className="font-bold text-slate-900 dark:text-white">Current page:</span> {pageLabel}. Filters will not change the question type.</div>

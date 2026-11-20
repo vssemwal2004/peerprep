@@ -6,6 +6,7 @@ import { hasPermission } from '../../admin/coordinatorPermissions';
 import { api } from '../../utils/api';
 import { getInterviewNavigation, getInterviewSection } from './interviewNavigation';
 import { interviewStatus } from './interviewSetup';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
 
 const icons = { all: CalendarDays, active: CircleDot, scheduled: CalendarClock, past: History, feedback: MessageSquareText, create: Plus };
 
@@ -95,19 +96,19 @@ export default function InterviewWorkspaceNav({ children, events: providedEvents
     <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
       <header className="border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950">
         <div className="mx-auto flex min-h-16 max-w-[1600px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="min-w-0">
+          <div className="min-w-0" data-guide="iw-title">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400"><span>Interviews</span><ChevronRight className="h-3 w-3" /><span>One-to-One</span></div>
-            <h1 className="mt-0.5 text-lg font-bold tracking-tight text-slate-950 dark:text-white">{current?.title || 'One-to-One Interviews'}</h1>
+            <h1 className="mt-0.5 flex items-center gap-2 text-lg font-bold tracking-tight text-slate-950 dark:text-white">{current?.title || 'One-to-One Interviews'} <PageGuideButton size="sm" /></h1>
           </div>
-          {canCreate && section !== 'create' && <Link to={`${root}/event/create`} className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-sky-500"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Create interview</span><span className="sm:hidden">Create</span></Link>}
+          {canCreate && section !== 'create' && <Link to={`${root}/event/create`} data-guide="iw-create" className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-sky-500"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Create interview</span><span className="sm:hidden">Create</span></Link>}
         </div>
       </header>
       <div className="mx-auto grid max-w-[1600px] items-start lg:grid-cols-[216px_minmax(0,1fr)]">
-        <aside className="sticky top-0 hidden h-[calc(100dvh-4rem)] overflow-y-auto border-r border-slate-200 bg-white [scrollbar-width:thin] lg:block dark:border-gray-800 dark:bg-gray-950">
+        <aside data-guide="iw-sidebar" className="sticky top-0 hidden h-[calc(100dvh-4rem)] overflow-y-auto border-r border-slate-200 bg-white [scrollbar-width:thin] lg:block dark:border-gray-800 dark:bg-gray-950">
           <WorkspaceSidebar {...sidebarProps} />
         </aside>
         <div className="min-w-0">
-          <details key={location.pathname + location.search} className="border-b border-slate-200 bg-white lg:hidden dark:border-gray-800 dark:bg-gray-950">
+          <details key={location.pathname + location.search} data-guide="iw-sidebar" className="border-b border-slate-200 bg-white lg:hidden dark:border-gray-800 dark:bg-gray-950">
             <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 dark:text-gray-200"><span>{current?.label || 'Interview navigation'}</span><ChevronDown className="h-4 w-4" /></summary>
             <WorkspaceSidebar {...sidebarProps} />
           </details>

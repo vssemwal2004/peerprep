@@ -31,6 +31,8 @@ import {
 import { api } from "../../utils/api";
 import { useToast } from "../../components/CustomToast";
 import { LoadingPanel } from "./CompilerUi";
+import PageGuideButton from "../../guide/platform/PageGuideButton";
+import GuideInfo from "../../guide/platform/GuideInfo";
 import { SortHeader, TablePager, useClientTable } from "../../components/table";
 
 const conversionRateOf = (problem) => (problem.studentsAttempted > 0
@@ -951,14 +953,15 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
 
   return (
     <div className={`flex flex-col gap-3 ${embedded ? 'min-h-0' : 'min-h-[calc(100vh-var(--app-navbar-height,5rem)-2rem)]'}`}>
-      <header data-page-header className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:bg-gray-900">
+      <header data-page-header data-guide="ca-header" className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:bg-gray-900">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-sky-50 ring-1 ring-sky-100 dark:bg-sky-950/40 dark:ring-sky-900">
             <BarChart3 className="h-5 w-5 text-sky-700 dark:text-sky-300" aria-hidden="true" />
           </span>
           <div>
-            <h1 className="text-lg font-bold text-slate-950 dark:text-white">
+            <h1 className="flex items-center gap-2 text-lg font-bold text-slate-950 dark:text-white">
               Coding analysis
+              <PageGuideButton />
             </h1>
             <p className="text-xs text-slate-500 dark:text-gray-400">
               {assessmentTitle ? `${assessmentTitle} · coding performance` : 'Topic proficiency, submissions, difficulty, and language performance'}
@@ -968,6 +971,7 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            data-guide="ca-filters"
             onClick={openFilters}
             className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:border-sky-300 hover:bg-sky-50 dark:border-gray-700 dark:text-gray-200"
           >
@@ -992,6 +996,7 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
           </button>
           <button
             type="button"
+            data-guide="ca-export"
             onClick={() => setExportOpen(true)}
             className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-bold text-white hover:bg-sky-500"
           >
@@ -1002,7 +1007,7 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
       </header>
 
       {filterLabels.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div data-guide="ca-active-filters" className="flex flex-wrap items-center gap-2">
           {filterLabels.map((label) => (
             <span
               key={label}
@@ -1022,7 +1027,7 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
         </div>
       )}
 
-      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-4 dark:border-gray-800 dark:bg-gray-800">
+      <section data-guide="ca-summary" className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-4 dark:border-gray-800 dark:bg-gray-800">
         {[
           ["Total students", cohortSize],
           ["Total attempts", summary.totalAttempts || 0],
@@ -1040,11 +1045,12 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
         ))}
       </section>
 
-      <section className="flex min-h-[500px] flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <section data-guide="ca-topics" className="flex min-h-[500px] flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 dark:border-gray-800">
           <div>
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+            <h2 className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white">
               Students who know each topic
+              <GuideInfo step="ca-topics" />
             </h2>
             <p className="mt-0.5 text-[10px] text-slate-500">
               A student is counted after solving at least one problem in that
@@ -1077,7 +1083,7 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
         </div>
       </section>
 
-      <section className="grid gap-3 xl:grid-cols-2">
+      <section data-guide="ca-charts" className="grid gap-3 xl:grid-cols-2">
         <ChartCard
           title="Problem conversion"
           description={`Top ${problemConversionData.length} completion gaps · Light attempted, dark solved`}

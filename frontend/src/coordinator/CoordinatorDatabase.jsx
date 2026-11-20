@@ -8,6 +8,8 @@ import {
   ExternalLink, Youtube
 } from 'lucide-react';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 const DIFFICULTY_LEVELS = ['easy', 'easy-medium', 'medium', 'medium-hard', 'hard'];
 const difficultyColors = Object.fromEntries(DIFFICULTY_LEVELS.map((level) => [level, difficultyTheme(level).pill]));
@@ -140,7 +142,7 @@ export default function CoordinatorDatabase() {
     <div className="min-h-screen bg-white dark:bg-gray-900">
       <div className="flex h-[calc(100vh-4rem)]">
         {/* LEFT SIDEBAR - Registered Courses */}
-        <div className={`${getSidebarWidthClass()} transition-all duration-300 overflow-hidden border-r border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm`}>
+        <div data-guide="db-sidebar" className={`${getSidebarWidthClass()} transition-all duration-300 overflow-hidden border-r border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm`}>
           <div className="h-full flex flex-col">
             {/* Sidebar Header */}
             <div className="p-4 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800">
@@ -150,9 +152,11 @@ export default function CoordinatorDatabase() {
                     <DatabaseIcon className="w-5 h-5 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h2 className="text-lg font-semibold text-slate-800 dark:text-gray-100">Registered Courses</h2>
+                  <GuideInfo step="db-sidebar" />
                 </div>
                 <div className="flex gap-1.5">
                   <button
+                    data-guide="db-width"
                     onClick={cycleSidebarWidth}
                     className="p-2 bg-slate-100 dark:bg-gray-700 hover:bg-slate-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
                     title="Adjust Width"
@@ -175,7 +179,7 @@ export default function CoordinatorDatabase() {
                   <p className="text-xs text-slate-400 dark:text-gray-500">Create a learning module to get started</p>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div data-guide="db-courses" className="space-y-2">
                   {semesters.map((semester) => (
                     <button
                       key={semester._id}
@@ -231,6 +235,7 @@ export default function CoordinatorDatabase() {
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <button
+                  data-guide="db-toggle"
                   onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                   className="p-2 hover:bg-white dark:hover:bg-gray-700 rounded-lg transition-colors border border-slate-200 dark:border-gray-700"
                   title={isSidebarOpen ? 'Hide Sidebar' : 'Show Sidebar'}
@@ -241,8 +246,9 @@ export default function CoordinatorDatabase() {
                   <BookOpen className="w-6 h-6 text-sky-600 dark:text-sky-400" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-slate-800 dark:text-gray-100">
+                  <h1 data-guide="db-title" className="flex items-center gap-2 text-2xl font-bold text-slate-800 dark:text-gray-100">
                     {selectedSemester ? selectedSemester.semesterName : 'Select a Course'}
+                    <PageGuideButton />
                   </h1>
                   {selectedSemester?.semesterDescription && (
                     <p className="text-sm text-slate-600 dark:text-gray-400 font-medium mt-0.5">{selectedSemester.semesterDescription}</p>
@@ -268,7 +274,7 @@ export default function CoordinatorDatabase() {
             ) : (
               <div className="space-y-4">
                 {/* Course Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div data-guide="db-stats" className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <div className="bg-white dark:bg-gray-800 rounded-xl border border-slate-200 dark:border-gray-700 p-4 shadow-sm">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center">
@@ -312,7 +318,7 @@ export default function CoordinatorDatabase() {
 
                 {/* Subjects List */}
                 {Array.isArray(selectedSemester.subjects) && selectedSemester.subjects.length > 0 ? (
-                  <div className="space-y-4">
+                  <div data-guide="db-subjects" className="space-y-4">
                     {selectedSemester.subjects.map((subject) => (
                       <SubjectCard
                         key={subject._id}
@@ -391,7 +397,7 @@ function SubjectCard({ subject, isExpanded, onToggle, expandedChapters, toggleCh
             exit={{ height: 0, opacity: 0 }}
             className="border-t border-slate-200 dark:border-gray-700"
           >
-            <div className="p-4 bg-slate-50 dark:bg-gray-900 space-y-3">
+            <div data-guide="db-chapters" className="p-4 bg-slate-50 dark:bg-gray-900 space-y-3">
               {Array.isArray(subject.chapters) && subject.chapters.length > 0 ? (
                 subject.chapters.map((chapter) => (
                   <ChapterCard
@@ -461,7 +467,7 @@ function ChapterCard({ chapter, isExpanded, onToggle }) {
           >
             <div className="p-3 bg-slate-50 dark:bg-gray-900">
               {Array.isArray(chapter.topics) && chapter.topics.length > 0 ? (
-                <div>
+                <div data-guide="db-topics">
                 <div className="overflow-x-auto">
                   <table className="w-full table-fixed">
                     <colgroup>

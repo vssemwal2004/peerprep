@@ -6,6 +6,7 @@ import socketService from '../utils/socket';
 import { ChevronDown, ChevronRight, BookOpen, X, GraduationCap, Edit2, Trash2, Plus, Save } from 'lucide-react';
 import { useToast } from '../components/CustomToast';
 import { useNavigate } from 'react-router-dom';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 export default function AdminLearning() {
   const [semesters, setSemesters] = useState([]);
@@ -145,9 +146,9 @@ export default function AdminLearning() {
           animate={{ opacity: 1, y: 0 }}
           className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
         >
-          <div>
-            <h1 className="text-lg sm:text-xl font-bold text-slate-800 dark:text-white mb-0.5">
-              Learning Modules
+          <div data-guide="lrn-title">
+            <h1 className="flex items-center gap-2 text-lg sm:text-xl font-bold text-slate-800 dark:text-white mb-0.5">
+              Learning Modules <PageGuideButton />
             </h1>
             <p className="text-xs text-slate-500 dark:text-white">
               {sharedLearning ? 'Shared learning content is managed by the super admin' : 'Manage all semesters, subjects, and teachers'}
@@ -155,6 +156,7 @@ export default function AdminLearning() {
           </div>
           <div className="flex items-center gap-2">
             {!sharedLearning && <button
+              data-guide="lrn-edit"
               onClick={() => setEditMode(!editMode)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shadow-sm ${
                 editMode
@@ -182,6 +184,7 @@ export default function AdminLearning() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
+            data-guide="lrn-empty"
             className="bg-slate-50 dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-12 text-center"
           >
             <div className="w-14 h-14 bg-slate-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-2.5">
@@ -190,7 +193,7 @@ export default function AdminLearning() {
             <p className="text-xs text-slate-600 dark:text-gray-400 font-medium">No courses available yet</p>
           </motion.div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          <div data-guide="lrn-semesters" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {semesters.map((semester, idx) => (
               <motion.div
                 key={semester.semesterName}
@@ -275,7 +278,7 @@ export default function AdminLearning() {
               className="fixed inset-0 z-50 flex items-center justify-center p-4"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-xl max-h-[75vh] overflow-hidden border border-slate-200 dark:border-gray-700">
+              <div data-guide="lrn-subjects" className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-xl max-h-[75vh] overflow-hidden border border-slate-200 dark:border-gray-700">
                 {/* Modal Header */}
                 <div className="sticky top-0 bg-white dark:bg-gray-800 px-4 py-3 border-b border-slate-200 dark:border-gray-700 flex items-center justify-between">
                   <div>

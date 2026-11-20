@@ -4,7 +4,7 @@ import { AlertCircle, ReceiptText, RefreshCw, Send } from 'lucide-react';
 import { api } from '../../utils/api';
 import { DEFAULT_PAGE_SIZE, TablePager } from '../../components/table';
 import { CardHeader, EmptyHint, Glass, SkeletonRows } from '../../overview/ui';
-import { CoinAmount, CoinPage, KindChip, LiveBadge } from './shared';
+import { CoinAmount, CoinPage, InfoTitle, KindChip, LiveBadge } from './shared';
 import { KIND_GROUPS, buttonClass, inputClass } from './coinModel';
 
 const LIVE_MS = 30_000;
@@ -85,15 +85,15 @@ export default function CoinLedger() {
         <Link to="/admin/prep-coins/issue" className={buttonClass.primary}><Send className="h-4 w-4" />Issue coins</Link>
       </>}>
       <Glass className="p-5">
-        <CardHeader title="Movements" Icon={ReceiptText} />
+        <CardHeader title={<InfoTitle title="Movements" step="cl-list" />} Icon={ReceiptText} />
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <div role="tablist" aria-label="Movement type" className="inline-flex flex-wrap rounded-xl bg-slate-900/[0.05] p-0.5 dark:bg-white/[0.06]">
+          <div data-guide="cl-kinds" role="tablist" aria-label="Movement type" className="inline-flex flex-wrap rounded-xl bg-slate-900/[0.05] p-0.5 dark:bg-white/[0.06]">
             {KIND_GROUPS.map((group) => (
               <button key={group.value || 'all'} type="button" role="tab" aria-selected={kind === group.value} onClick={() => setFilter('kind', group.value)}
                 className={`rounded-[10px] px-3 py-1.5 text-[11px] font-semibold transition ${kind === group.value ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}`}>{group.label}</button>
             ))}
           </div>
-          <select className={`${inputClass} h-9 w-auto min-w-[200px] text-xs`} value={scope} onChange={(event) => setFilter('scope', event.target.value)} aria-label="Wallet">
+          <select data-guide="cl-scope" className={`${inputClass} h-9 w-auto min-w-[200px] text-xs`} value={scope} onChange={(event) => setFilter('scope', event.target.value)} aria-label="Wallet">
             <option value="">Every wallet</option>
             <option value="main">PeerPrep main accounts</option>
             {universities.map((university) => <option key={university.universityId} value={university.universityId}>{university.name}</option>)}
@@ -101,7 +101,7 @@ export default function CoinLedger() {
         </div>
         {error ? <p role="alert" className="mb-3 flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-400/10 dark:text-rose-200"><AlertCircle className="h-4 w-4" />{error}</p> : null}
         {!entries ? <SkeletonRows rows={6} /> : days.length ? (
-          <div className="space-y-5">
+          <div data-guide="cl-list" className="space-y-5">
             {days.map((day) => (
               <div key={day.label}>
                 <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{day.label}</p>

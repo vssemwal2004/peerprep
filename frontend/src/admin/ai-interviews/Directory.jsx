@@ -106,7 +106,7 @@ const TILE_TONES = {
 
 export function DirectoryActions({ params }) {
   return (
-    <Link className={primaryClass} to={`${ROOT}/new`} state={{ returnTo: `${ROOT}${params ? `?${params}` : ""}` }}>
+    <Link data-guide="ai-create" className={primaryClass} to={`${ROOT}/new`} state={{ returnTo: `${ROOT}${params ? `?${params}` : ""}` }}>
       <Plus size={16} aria-hidden="true" />
       Create interview
     </Link>
@@ -248,10 +248,11 @@ export default function Directory() {
       )}
       <section
         aria-label="Interview directory"
+        data-guide="ai-list"
         className={`overflow-visible ${surfaceClass}`}
       >
         <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between">
-          <div ref={strip.ref} style={strip.style} role="group" aria-label="Interview status" className={`flex max-w-full gap-1 rounded-lg bg-slate-100 p-1 dark:bg-gray-950/70 lg:self-start ${scrollStripClass}`}>
+          <div ref={strip.ref} style={strip.style} role="group" aria-label="Interview status" data-guide="ai-status" className={`flex max-w-full gap-1 rounded-lg bg-slate-100 p-1 dark:bg-gray-950/70 lg:self-start ${scrollStripClass}`}>
             {FILTERS.map(([value, label]) => (
               <button
                 key={value}
@@ -264,7 +265,7 @@ export default function Directory() {
               </button>
             ))}
           </div>
-          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center lg:w-auto" data-guide="ai-search">
             <div className="relative min-w-0 flex-1 sm:w-72 sm:flex-none">
               <Search size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-gray-500" />
               <TextInput

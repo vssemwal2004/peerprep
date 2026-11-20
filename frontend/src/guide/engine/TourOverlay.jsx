@@ -2,13 +2,12 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from "react-dom";
 import { ArrowLeft, ArrowRight, Check, MousePointerClick, Sparkles, X } from "lucide-react";
 import { useReducedMotion } from "framer-motion";
-import GlossaryText from "./GlossaryText";
-import { CHAPTERS } from "./tourContext";
 import { findElement, placeCard, scrollElement, targetRect } from "./targets";
 
 const wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 const textOf = (value, ctx) => (typeof value === "function" ? value(ctx) : value);
 const CARD_WIDTH = 368;
+const PlainText = ({ text }) => text;
 
 function inView(element) {
   const rect = element.getBoundingClientRect();
@@ -20,14 +19,18 @@ function inView(element) {
  * part), and a card beside it explains it, with chapters, progress, Back / Next and Skip. A "try
  * it" step waits for the admin to click the lit part; a step's action button (e.g. "Show these
  * students") ends the guide and does it. Steps' `before` changes (a view switch) are undone at
- * the end. guide: { id, title, steps, ctx }.
+ * the end. guide: { id, title, steps, ctx, chapters?: { key: name }, Text?: component that
+ * renders one line of body text (e.g. with glossary underlines), startAt?: step index }.
+ * Shared by every guide on the platform (Prep Analysis chart guides and the ⓘ page tours).
  */
 export default function TourOverlay({ guide, onFinish }) {
   const reduced = useReducedMotion();
   const titleId = useId();
   const steps = guide.steps;
   const ctx = guide.ctx;
-  const [index, setIndex] = useState(0);
+  const Text = guide.Text || PlainText;
+  const chapterNames = guide.chapters || {};
+  const [index, setIndex] = useState(() => Math.min(Math.max(0, guide.startAt || 0), steps.length - 1));
   const [rect, setRect] = useState(null);
   const [ready, setReady] = useState(false);
   const [tried, setTried] = useState(false);
@@ -162,7 +165,7 @@ export default function TourOverlay({ guide, onFinish }) {
                   return (
                     <button key={chapter.key} type="button" role="tab" aria-selected={current} onClick={() => go(chapter.at)}
                       className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${current ? "bg-sky-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/[0.06] dark:text-slate-300"}`}>
-                      {CHAPTERS[chapter.key] || chapter.key}
+                      {chapterNames[chapter.key] || chapter.key}
                     </button>
                   );
                 })}
@@ -174,7 +177,7 @@ export default function TourOverlay({ guide, onFinish }) {
         <div className="min-h-0 overflow-y-auto px-4 pb-1 pt-2.5">
           <h2 id={titleId} className="text-[15px] font-bold leading-snug text-slate-950 dark:text-white">{title}</h2>
           <div className="mt-1.5 space-y-1.5 text-[12.5px] leading-relaxed text-slate-600 dark:text-slate-300" aria-live="polite">
-            {String(body || "").split("\n").filter(Boolean).map((line, at) => <p key={at}><GlossaryText text={line} /></p>)}
+            {String(body || "").split("\n").filter(Boolean).map((line, at) => <p key={at}><Text text={line} /></p>)}
           </div>
           {step.tryIt && (
             <p className={`mt-2.5 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11.5px] font-semibold ${tried ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200"}`}>

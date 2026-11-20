@@ -3,6 +3,7 @@ import { ChartScatter, Layers, LayoutGrid, List, Search, X } from "lucide-react"
 import { topicMapOption, topicTreemapOption } from "../insightCharts";
 import { filterTopics, formatPercent, stateCounts, STATE_ORDER, TOPIC_SORTS, TOPIC_STATES } from "../insightModel";
 import { Card, Chart, Empty, focusRing, Pill, ProgressBar, Section, Segmented } from "./ui";
+import GuideInfo from "../../../guide/platform/GuideInfo";
 
 const VIEWS = [
   { id: "list", label: "List", icon: List },
@@ -45,10 +46,10 @@ export default function TopicsSection({ coverage, filters, onFilters, onOpenTopi
   const openFromChart = (item) => { const key = item?.data?.topic?.key; if (key) onOpenTopic(key); };
 
   return (
-    <Section id="topics" icon={Layers} title="Topics" subtitle={`How much of each topic you have covered and how much is correct · new solves: ${periodLabel}`}
+    <Section id="topics" data-guide="an-topics" info={<GuideInfo step="an-topics" />} icon={Layers} title="Topics" subtitle={`How much of each topic you have covered and how much is correct · new solves: ${periodLabel}`}
       actions={<Segmented label="Topic view" options={VIEWS} value={view} onChange={(next) => set({ view: next })} size="sm" />}>
       <Card className="overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-[#eef0f3] p-3.5 dark:border-white/[0.06] lg:flex-row lg:items-center lg:justify-between">
+        <div data-guide="an-topic-filters" className="flex flex-col gap-3 border-b border-[#eef0f3] p-3.5 dark:border-white/[0.06] lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by state">
             {["all", ...STATE_ORDER].map((key) => {
               const active = state === key;

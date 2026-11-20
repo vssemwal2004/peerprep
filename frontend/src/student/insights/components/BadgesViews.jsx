@@ -102,7 +102,7 @@ export function BadgesPage({ badges, milestones }) {
   if (!badges.data) return <Card><Empty icon={Award} title="Badges could not be loaded." /></Card>;
   const { earned, locked, level, total } = badges.data;
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-guide="an-badges-page">
       <div className="grid gap-3 md:grid-cols-3">
         {level && (
           <Card className="relative overflow-hidden p-5 md:col-span-1">

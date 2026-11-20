@@ -17,6 +17,8 @@ import StudentAccessSelector from './components/StudentAccessSelector';
 import BulkStudentAccessDialog from './components/BulkStudentAccessDialog';
 import { normalizeStudentAccess } from '../student/studentFeatureAccess';
 import { useAuth } from '../context/AuthContext';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 const EMPTY_FILTERS = {
   semester: '',
@@ -1059,7 +1061,7 @@ export default function StudentDirectory() {
   // The student search sits in the row above the table ("Select page · N visible"), and in the
   // "No students found" message, so a search with no results can still be changed or cleared.
   const renderSearchBox = (className = '') => (
-    <form onSubmit={handleSearch} className={className} role="search">
+    <form onSubmit={handleSearch} className={className} role="search" data-guide="sd-search">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
@@ -1096,7 +1098,7 @@ export default function StudentDirectory() {
           
           {/* Header Section with Search and Sort */}
           <div data-page-header className="mb-3 flex flex-col gap-3 bg-white py-1 dark:bg-gray-900 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5" data-guide="sd-title">
               <div className={`w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 ${
                 activeTab === "students" ? "bg-emerald-100 dark:bg-emerald-900" : "bg-indigo-100 dark:bg-indigo-900"
               }`}>
@@ -1105,8 +1107,9 @@ export default function StudentDirectory() {
                 }`} />
               </div>
               <div>
-                <h1 className="text-base font-semibold text-slate-900 dark:text-white">
+                <h1 className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-white">
                   {activeTab === "students" ? (uploadBatchName || "Student Database") : "Special Event Students"}
+                  <PageGuideButton size="sm" />
                 </h1>
                 <p className="text-[11px] text-slate-500 dark:text-gray-400">
                   {pagination.total.toLocaleString()} {uploadBatchId ? 'students in this bulk list' : (debouncedSearch || activeFilterCount > 0 ? 'matching students' : 'registered students')}
@@ -1115,7 +1118,7 @@ export default function StudentDirectory() {
             </div>
 
             <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-              <div className="relative min-w-[190px]">
+              <div className="relative min-w-[190px]" data-guide="sd-upload-file">
                 <FileSpreadsheet className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <select
                   value={uploadBatchId}
@@ -1130,7 +1133,7 @@ export default function StudentDirectory() {
                 </select>
               </div>
 
-              <div className="relative min-w-[160px]">
+              <div className="relative min-w-[160px]" data-guide="sd-semester">
                 <Filter className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <select
                   value={filters.semester}
@@ -1147,7 +1150,7 @@ export default function StudentDirectory() {
                 </select>
               </div>
 
-              <div ref={filterPanelRef} className="relative">
+              <div ref={filterPanelRef} className="relative" data-guide="sd-filters">
                 <button
                   type="button"
                   onClick={() => setShowFilters((open) => !open)}
@@ -1165,7 +1168,7 @@ export default function StudentDirectory() {
                   <div className="absolute right-0 top-11 z-30 w-[min(680px,calc(100vw-7rem))] rounded-lg border border-slate-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-900">
                     <div className="mb-3 flex items-center justify-between">
                       <div>
-                        <div className="text-xs font-semibold text-slate-900 dark:text-white">Filter students</div>
+                        <div className="flex items-center gap-1 text-xs font-semibold text-slate-900 dark:text-white">Filter students <GuideInfo step="sd-filters" /></div>
                       </div>
                       <button
                         type="button"
@@ -1199,7 +1202,7 @@ export default function StudentDirectory() {
                 )}
               </div>
 
-              <div ref={columnsMenuRef} className="relative">
+              <div ref={columnsMenuRef} className="relative" data-guide="sd-columns">
                 <button
                   type="button"
                   onClick={() => setShowColumns((open) => !open)}
@@ -1224,6 +1227,7 @@ export default function StudentDirectory() {
 
               <button
                 onClick={handleExportCsv}
+                data-guide="sd-export"
                 disabled={isExporting || isLoading}
                 title="Export the currently searched and filtered students"
                 className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400"
@@ -1267,7 +1271,8 @@ export default function StudentDirectory() {
             // Students Table (no tabs, clear and scannable)
             <div>
               <div className="mb-2 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-800/70 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2" data-guide="sd-select">
+                  <GuideInfo step="sd-select" />
                   <button
                     type="button"
                     onClick={toggleSelectPage}
@@ -1321,7 +1326,7 @@ export default function StudentDirectory() {
 
                 <div className="flex min-w-0 items-center gap-2 sm:flex-1 sm:justify-end">
                 {renderSearchBox('min-w-0 flex-1 sm:max-w-sm')}
-                <div ref={bulkMenuRef} className="relative shrink-0">
+                <div ref={bulkMenuRef} className="relative shrink-0" data-guide="sd-bulk-actions">
                   <button
                     data-platform-menu-trigger
                     aria-expanded={showBulkMenu}
@@ -1415,7 +1420,7 @@ export default function StudentDirectory() {
                 </div>
               </div>
 
-              <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700">
+              <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-gray-700" data-guide="sd-table">
               <div className="overflow-x-auto overflow-y-visible">
               <table className="min-w-full divide-y divide-slate-200" style={{ '--serial-start': startIndex }}>
                 <thead className="bg-slate-50 dark:bg-gray-700">

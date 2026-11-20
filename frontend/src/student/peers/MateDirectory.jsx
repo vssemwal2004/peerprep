@@ -9,6 +9,7 @@ import { PEER_NETWORK_EVENT, compactCount, errorMessage, peerSubtitle } from './
 import { PingButton, PracticeMeta, Pager, StatusAvatar } from './circleParts';
 import { DuelGlyph, MatesGlyph, PanelTitle } from './peerGlyphs';
 import { card, focusRing, Skeleton } from '../dashboard/ui';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const SORTS = [
   { key: 'recent', label: 'Newest first' },
@@ -114,10 +115,10 @@ export default function MateDirectory({ summary, onPinged }) {
   const counts = { mates: summary?.prepMates, incoming: summary?.incomingRequests, outgoing: null };
   const data = state.data;
 
-  return <section id="my-prep-mates" className={card} aria-labelledby="directory-title">
+  return <section id="my-prep-mates" className={card} aria-labelledby="directory-title" data-guide="pm-directory">
     <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-      <PanelTitle id="directory-title" glyph={MatesGlyph} tone="sky" title="Your Prep Mates" subtitle="Search, sort and compare anyone in your circle" />
-      <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Prep Mate lists">
+      <PanelTitle id="directory-title" glyph={MatesGlyph} tone="sky" info={<GuideInfo step="pm-directory" />} title="Your Prep Mates" subtitle="Search, sort and compare anyone in your circle" />
+      <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Prep Mate lists" data-guide="pm-lists">
         {TABS.map(({ key, label, Icon }) => {
           const selected = tab === key;
           const count = counts[key];

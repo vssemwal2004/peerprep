@@ -16,7 +16,7 @@ export default function UniversityDefaults() {
       {(error || message) && <Notice tone={error ? 'danger' : message.tone}>{error || message.text}</Notice>}
       {defaults && (
         <>
-          <Card id="default-modules-title" title="Modules" icon={SlidersHorizontal}>
+          <Card id="default-modules-title" data-guide="ud-modules" info="ud-modules" title="Modules" icon={SlidersHorizontal}>
             <ul className="grid gap-3 md:grid-cols-2">
               {MODULES.map((module) => {
                 const on = defaults.permissions?.[module.key] === true;
@@ -30,7 +30,7 @@ export default function UniversityDefaults() {
               })}
             </ul>
           </Card>
-          <Card id="default-source-title" title="Learning content">
+          <Card id="default-source-title" data-guide="ud-learning" title="Learning content">
             <Field label="Learning content source" className="max-w-sm">
               <select className={inputClass} value={defaults.sources?.learning || 'university'} disabled={Boolean(busy)}
                 onChange={(event) => run('source', () => api.updateUniversityDefaults({ sources: { learning: event.target.value } }), 'Default learning content source saved.')}>
@@ -40,7 +40,7 @@ export default function UniversityDefaults() {
             </Field>
           </Card>
           {defaults.progression && (
-            <Card id="default-progression-title" title="Level progression" description="How quickly students move up levels at a new university.">
+            <Card id="default-progression-title" data-guide="ud-progression" info="ud-progression" title="Level progression" description="How quickly students move up levels at a new university.">
               <ProgressionEditor defaultOpen scopeLabel="new universities" stored={defaults.progression} permissions={defaults.permissions} disabled={Boolean(busy)}
                 onSave={(body) => api.updateUniversityDefaults(body)} onSaved={reload} />
             </Card>

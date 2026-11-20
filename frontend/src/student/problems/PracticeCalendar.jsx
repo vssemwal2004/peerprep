@@ -4,6 +4,7 @@ import { ArrowRight, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight
 import DailyCodingChallenge from '../DailyCodingChallenge';
 import usePracticeCalendar, { istDayKey, utcDayKey } from './usePracticeCalendar';
 import { card, DIFFICULTY, focusRing } from './problemsUi';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const MONTHS_BACK = 11;
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -108,11 +109,12 @@ export default function PracticeCalendar() {
   const navButton = `flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-[#f3f4f6] disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-white/[0.06] ${focusRing}`;
   const toggle = () => { setExpanded((value) => !value); setMonthsBack(0); };
 
-  return <section aria-labelledby="practice-calendar-title" aria-busy={data.loading} className={`p-4 ${card}`}>
+  return <section aria-labelledby="practice-calendar-title" aria-busy={data.loading} data-guide="pc-calendar" className={`p-4 ${card}`}>
     <header className="flex items-center justify-between gap-3">
       <h2 id="practice-calendar-title" className="flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.01em] text-slate-900 dark:text-zinc-50">
         <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/15" aria-hidden="true"><CalendarDays className="h-4 w-4" /></span>
         Calendar
+        <GuideInfo step="pc-calendar" />
       </h2>
       <button type="button" onClick={toggle} aria-expanded={expanded} aria-controls="practice-calendar-days"
         className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-medium text-slate-600 hover:bg-[#f3f4f6] dark:text-zinc-300 dark:hover:bg-white/[0.06] ${focusRing}`}>

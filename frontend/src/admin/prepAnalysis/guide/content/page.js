@@ -1,6 +1,6 @@
 // The page tour: Prep Analysis as a whole, for an admin's first visit. Targets are "#name"
 // (data-tour on the page) or the first chart card on the page.
-import { findElement } from "../targets.js";
+import { findElement } from "../../../../guide/engine/targets.js";
 
 const firstCard = () => document.querySelector("[data-chart-id]");
 const firstGuideButton = () => firstCard()?.querySelector('[aria-label^="Guide:"]') || null;

@@ -6,6 +6,7 @@ import { BADGE_LEVEL_EARNED, COINS_EARNED } from '../rewards/rewardEvents';
 import MonthlyBadgeEmblem from '../rewards/MonthlyBadgeEmblem';
 import { badgeLook, TIER_METAL } from '../rewards/badgeLooks';
 import { card, focusRing, SectionHeader, Skeleton, Unavailable } from './ui';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const SHOWN = 3;
 const monthName = (month) => {
@@ -86,7 +87,7 @@ export default function MonthlyBadgesCard() {
   const hidden = ordered.length - SHOWN;
 
   return <section id="badges" aria-labelledby="monthly-badges-title" className="scroll-mt-24">
-    <SectionHeader id="monthly-badges-title" title={data ? `${monthName(data.month)} badges` : 'Monthly badges'}
+    <SectionHeader id="monthly-badges-title" title={data ? `${monthName(data.month)} badges` : 'Monthly badges'} info={<GuideInfo step="dash-monthly-badges" />}
       action={data && <span className="flex shrink-0 items-center gap-3 text-[12px] text-slate-500 dark:text-zinc-400">
         <span className="inline-flex items-center gap-1"><PrepCoinIcon size={14} /><b className="text-amber-700 dark:text-amber-300">{data.coinsThisMonth}</b> earned</span>
         <span className="hidden sm:inline">New targets in {daysLeft(data.resetsAt)} days</span>

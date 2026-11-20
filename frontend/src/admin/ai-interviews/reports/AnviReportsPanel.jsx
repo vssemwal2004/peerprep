@@ -174,7 +174,7 @@ export default function AnviReportsPanel() {
     choose(TABS[(next + TABS.length) % TABS.length].id, true);
   };
   return <div className="space-y-4">
-    <div role="tablist" aria-label="Report views" className="inline-flex gap-1 rounded-lg border border-slate-200 bg-slate-100/80 p-1 dark:border-gray-800 dark:bg-gray-950">
+    <div role="tablist" aria-label="Report views" data-guide="ai-report-tabs" className="inline-flex gap-1 rounded-lg border border-slate-200 bg-slate-100/80 p-1 dark:border-gray-800 dark:bg-gray-950">
       {TABS.map((tab, index) => {
         const selected = view === tab.id;
         const Icon = tab.icon;
@@ -186,7 +186,7 @@ export default function AnviReportsPanel() {
         </button>;
       })}
     </div>
-    <div role="tabpanel" id={`reports-panel-${view}`} aria-labelledby={`reports-tab-${view}`}>
+    <div role="tabpanel" data-guide="ai-reports" id={`reports-panel-${view}`} aria-labelledby={`reports-tab-${view}`}>
       {view === "usage" ? <UsagePanel /> : <AttemptsView params={params} setParams={setParams} />}
     </div>
   </div>;

@@ -28,6 +28,8 @@ import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import LearningAnalyticsModal from '../components/LearningAnalyticsModal';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 // Convert YouTube URL to embed format
 const convertToEmbedUrl = (url) => {
@@ -374,11 +376,12 @@ export default function AdminLearningDetail() {
         <motion.aside
           initial={false}
           animate={{ width: sidebarOpen ? 320 : 0 }}
+          data-guide="lrd-subjects"
           className="bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-hidden"
         >
           <div className="h-full overflow-y-auto p-4">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-gray-900 dark:text-white">Subjects</h2>
+              <h2 className="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white">Subjects <GuideInfo step="lrd-subjects" /></h2>
               <button
                 onClick={() => setSidebarOpen(false)}
                 className="lg:hidden p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
@@ -429,12 +432,13 @@ export default function AdminLearningDetail() {
             <div className="max-w-5xl mx-auto p-3 sm:p-4 lg:p-6">
               {/* Header */}
               <div className="mb-4 sm:mb-6 lg:mb-8 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                <div className="flex-1">
+                <div className="flex-1" data-guide="lrd-header">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-                    <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">
-                      {subjectDetails.subjectName}
+                    <h1 className="flex items-center gap-2 text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">
+                      {subjectDetails.subjectName} <PageGuideButton />
                     </h1>
                     <button
+                      data-guide="lrd-back"
                       onClick={() => navigate('/admin/learning')}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-white hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-gray-700 rounded-lg transition-colors self-start sm:self-auto"
                     >
@@ -451,6 +455,7 @@ export default function AdminLearningDetail() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    data-guide="lrd-analytics"
                     onClick={() => setShowAnalytics(true)}
                     className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-sky-500 to-sky-600 text-white rounded-lg hover:from-sky-600 hover:to-sky-700 transition-all shadow-md hover:shadow-lg text-sm font-medium"
                   >
@@ -458,6 +463,7 @@ export default function AdminLearningDetail() {
                     <span>Analytics</span>
                   </button>
                   {!sharedLearning && <button
+                    data-guide="lrd-add-chapter"
                     onClick={openCreateChapterModal}
                     className="flex items-center space-x-2 px-3 sm:px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm sm:text-base"
                   >
@@ -468,7 +474,7 @@ export default function AdminLearningDetail() {
               </div>
 
               {/* Chapters */}
-              <div className="space-y-4">
+              <div className="space-y-4" data-guide="lrd-chapters">
                 {subjectDetails.chapters.map((chapter, chapterIdx) => (
                   <div key={chapter._id} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
                     {/* Chapter Header */}
@@ -671,7 +677,7 @@ export default function AdminLearningDetail() {
             </div>
           ) : (
             <div className="flex items-center justify-center h-full">
-              <div className="text-center">
+              <div className="text-center" data-guide="lrd-empty">
                 <BookOpen className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
                 <p className="text-gray-500 dark:text-gray-400">Select a subject to view details</p>
               </div>

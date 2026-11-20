@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowLeft, Check, ChevronRight } from "lucide-react";
 import { STEPS, stepIndex } from "./steps";
 import { ToneChip, pageClass } from "../ui";
+import PageGuideButton from "../../../guide/platform/PageGuideButton";
 
 export function StatusChip({ status }) {
   return (
@@ -84,6 +85,7 @@ export default function WizardShell({
       <header
         ref={topRef}
         data-page-header
+        data-guide="ai-header"
         className="border-b border-slate-200/80 bg-white/95 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95"
       >
         <div className="mx-auto w-full max-w-6xl px-4 pb-4 pt-3 sm:px-6">
@@ -110,6 +112,7 @@ export default function WizardShell({
               <h1 className="min-w-0 truncate text-xl font-semibold leading-8 tracking-tight text-slate-950 dark:text-white sm:text-[22px]">
                 {title}
               </h1>
+              <PageGuideButton size="sm" />
               <StatusChip status={status} />
             </div>
             <div className="flex items-center gap-3">
@@ -117,7 +120,7 @@ export default function WizardShell({
               {menu}
             </div>
           </div>
-          <div className="mt-5">
+          <div className="mt-5" data-guide="ai-wizard-steps">
             <Stepper current={current} onStep={onStep} stepReady={stepReady} locked={locked} />
           </div>
         </div>
@@ -129,7 +132,7 @@ export default function WizardShell({
           {children}
         </div>
       </div>
-      <footer className="sticky bottom-0 z-30 border-t border-slate-200 bg-white shadow-[0_-4px_16px_rgba(15,23,42,0.06)] dark:border-gray-800 dark:bg-gray-900 dark:shadow-[0_-4px_16px_rgba(0,0,0,0.35)]">
+      <footer data-guide="ai-wizard-footer" className="sticky bottom-0 z-30 border-t border-slate-200 bg-white shadow-[0_-4px_16px_rgba(15,23,42,0.06)] dark:border-gray-800 dark:bg-gray-900 dark:shadow-[0_-4px_16px_rgba(0,0,0,0.35)]">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div>{back}</div>
           <div className="flex items-center gap-3">

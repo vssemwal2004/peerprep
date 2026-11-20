@@ -13,6 +13,7 @@ import { difficultyTheme } from '../../utils/difficultyTheme';
 import PeerAvatar from './PeerAvatar';
 import PeerActions from './PeerActions';
 import { PEER_TERMS, compactCount } from './peerNetwork';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
 
 const TOTAL_LEVELS = 6;
 const firstNameOf = (name) => String(name || 'This student').trim().split(/\s+/)[0];
@@ -75,11 +76,14 @@ export function PeerIdentityCard({ profile, progress, network, relation, isSelf,
       </div>
 
       <div className="flex flex-1 flex-col gap-5 px-5 pb-5">
-        <div className="relative z-10 -mt-14 flex flex-col items-center text-center">
+        <div className="relative z-10 -mt-14 flex flex-col items-center text-center" data-guide="pp-identity">
           <div className="rounded-full bg-gradient-to-br from-sky-400 via-cyan-300 to-indigo-400 p-[3px] shadow-lg shadow-sky-500/20">
             <PeerAvatar name={profile.name} url={profile.avatarUrl} className="!h-[88px] !w-[88px] !rounded-full !text-3xl ring-[3px] ring-white dark:ring-[#242424]" />
           </div>
-          <h1 className="mt-3 max-w-full truncate text-lg font-semibold tracking-tight text-slate-900 dark:text-zinc-50" title={profile.name}>{profile.name}</h1>
+          <div className="mt-3 flex max-w-full items-center justify-center gap-1.5">
+            <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight text-slate-900 dark:text-zinc-50" title={profile.name}>{profile.name}</h1>
+            <PageGuideButton />
+          </div>
           <p className="max-w-full truncate text-[13px] text-slate-500 dark:text-zinc-400">
             {[profile.course, profile.branch].filter(Boolean).join(' · ') || 'Student'}
           </p>
@@ -93,14 +97,14 @@ export function PeerIdentityCard({ profile, progress, network, relation, isSelf,
           </p>
         </div>
 
-        <PrepMatesButton count={network?.prepMates} onOpen={onOpenMates} label={`${firstName}’s Prep Mates`} />
+        <div data-guide="pp-mates"><PrepMatesButton count={network?.prepMates} onOpen={onOpenMates} label={`${firstName}’s Prep Mates`} /></div>
 
         {isSelf ? (
           <Link to="/student/profile" className={`inline-flex w-full items-center justify-center rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-white/5 ${focusRing}`}>
             This is how classmates see you · Edit profile
           </Link>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2" data-guide="pp-actions">
             <PeerActions peer={profile} relation={relation} onRelationChange={onRelationChange} block />
             {relation?.mate === 'mates' && (
               <Link to={`/student/peers/${profile.id}/compare`} className={`inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-semibold text-white hover:bg-slate-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white ${focusRing}`}>
@@ -110,7 +114,7 @@ export function PeerIdentityCard({ profile, progress, network, relation, isSelf,
           </div>
         )}
 
-        <section aria-labelledby="peer-about-title" className="border-t border-slate-100 pt-4 dark:border-zinc-800">
+        <section aria-labelledby="peer-about-title" data-guide="pp-about" className="border-t border-slate-100 pt-4 dark:border-zinc-800">
           <SectionTitle><span id="peer-about-title">About</span></SectionTitle>
           <dl>
             <DetailRow icon={<BookOpen className="h-3.5 w-3.5" />} label="Course" value={profile.course} />
@@ -139,7 +143,7 @@ export function PeerIdentityCard({ profile, progress, network, relation, isSelf,
           </div>
         </section>
 
-        <p className="mt-auto flex items-center justify-center gap-1 text-[11px] text-slate-400 dark:text-zinc-500">
+        <p data-guide="pp-privacy" className="mt-auto flex items-center justify-center gap-1 text-[11px] text-slate-400 dark:text-zinc-500">
           <ShieldCheck className="h-3 w-3" aria-hidden="true" />Contact details, scores and Prep Coins stay private
         </p>
       </div>
@@ -162,7 +166,7 @@ export function PeerHighlightBanner({ name, progress }) {
   ].filter(Boolean);
 
   return (
-    <section aria-label={`${name}’s highlights`} className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.02)] dark:border-zinc-800 dark:bg-[#242424]">
+    <section aria-label={`${name}’s highlights`} data-guide="pp-highlights" className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.02)] dark:border-zinc-800 dark:bg-[#242424]">
       <div className={`grid ${level ? 'sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.6fr)]' : ''}`}>
         {level && (
           <div className="relative flex items-center gap-4 overflow-hidden bg-gradient-to-br from-sky-500 to-sky-700 px-5 py-4 text-white">

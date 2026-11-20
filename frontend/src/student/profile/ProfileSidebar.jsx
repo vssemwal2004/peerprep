@@ -14,6 +14,8 @@ import {
 import { focusRing } from './format';
 import { levelTheme } from './levelTheme';
 import ProfilePrepCoin from '../prepCoin/ProfilePrepCoin';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 function normalizeHref(href) {
   const raw = typeof href === 'string' ? href.trim() : '';
@@ -145,7 +147,7 @@ export default function ProfileSidebar({
 
       <div className="flex flex-1 flex-col gap-5 px-5 pb-5">
         {/* Identity */}
-        <div className="-mt-14 flex flex-col items-center text-center">
+        <div className="-mt-14 flex flex-col items-center text-center" data-guide="pf-identity">
           <div className="relative rounded-full bg-gradient-to-br from-sky-400 via-cyan-300 to-indigo-400 p-[3px] shadow-lg shadow-sky-500/20">
             {user?.avatarUrl ? (
               <img
@@ -171,9 +173,12 @@ export default function ProfileSidebar({
               <Camera className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
-          <h1 className="mt-3 max-w-full truncate text-lg font-semibold tracking-tight text-slate-900 dark:text-zinc-50" title={user?.name || 'Student'}>
-            {user?.name || 'Student'}
-          </h1>
+          <div className="mt-3 flex max-w-full items-center justify-center gap-1.5">
+            <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight text-slate-900 dark:text-zinc-50" title={user?.name || 'Student'}>
+              {user?.name || 'Student'}
+            </h1>
+            <PageGuideButton />
+          </div>
           <p className="max-w-full truncate text-[13px] text-slate-500 dark:text-zinc-400">{handle}</p>
           <div className="flex flex-wrap items-center justify-center gap-1.5">
             <BadgePill badge={badge} level={level} onOpen={onOpenBadges} />
@@ -196,18 +201,19 @@ export default function ProfileSidebar({
           <button
             type="button"
             onClick={onEditProfile}
+            data-guide="pf-edit"
             className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm shadow-sky-600/30 transition-colors hover:bg-sky-700 dark:bg-sky-600 dark:hover:bg-sky-500 ${focusRing}`}
           >
             <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
             Edit Profile
           </button>
-          {prepMates ? <div className="mt-3 w-full">{prepMates}</div> : null}
+          {prepMates ? <div className="mt-3 w-full" data-guide="pf-mates">{prepMates}</div> : null}
         </div>
 
         {user?.role === 'student' && user?.accessScope !== 'assessment_only' ? <ProfilePrepCoin focusRing={focusRing} /> : null}
 
-        <section aria-labelledby="about-title" className="border-t border-slate-100 pt-4 dark:border-zinc-800">
-          <SectionTitle><span id="about-title">About</span></SectionTitle>
+        <section aria-labelledby="about-title" data-guide="pf-about" className="border-t border-slate-100 pt-4 dark:border-zinc-800">
+          <SectionTitle aside={<GuideInfo step="pf-about" />}><span id="about-title">About</span></SectionTitle>
           <dl>
             <DetailRow icon={<GraduationCap className="h-3.5 w-3.5" />} label="College" value={user?.college} />
             <DetailRow icon={<BookOpen className="h-3.5 w-3.5" />} label="Course" value={user?.course} />
@@ -218,7 +224,7 @@ export default function ProfileSidebar({
           </dl>
         </section>
 
-        <section aria-labelledby="links-title" className="mt-auto border-t border-slate-100 pt-4 dark:border-zinc-800">
+        <section aria-labelledby="links-title" data-guide="pf-links" className="mt-auto border-t border-slate-100 pt-4 dark:border-zinc-800">
           <SectionTitle><span id="links-title">Links</span></SectionTitle>
           <div className="flex items-center gap-2">
             {socialLinks.map((item) => (

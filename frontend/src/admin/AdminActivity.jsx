@@ -16,6 +16,8 @@ import { api } from '../utils/api';
 import { getApiBase } from '../utils/apiBase';
 import { useToast } from '../components/CustomToast';
 import { TablePager, nextSort } from '../components/table';
+import GuideInfo from '../guide/platform/GuideInfo';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 const DAY_MS = 86_400_000;
 const PAGE_SIZE = 40;
@@ -257,16 +259,16 @@ export default function AdminActivity() {
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5 px-4 py-6 sm:px-6 lg:px-8">
-      <header className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <header data-guide="act-header" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="relative px-5 py-6 sm:px-7">
           <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-gradient-to-l from-sky-50 to-transparent dark:from-sky-950/30" />
           <div className="relative flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-400">University workspace</p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-3xl">Activity log</h1>
+              <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-3xl">Activity log<PageGuideButton /></h1>
               <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">A focused 10-day audit sheet for university administrators and coordinators. Logs stay inside this university database.</p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div data-guide="act-buttons" className="flex flex-wrap gap-2">
               <button type="button" onClick={() => load(true)} disabled={refreshing} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
                 <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
               </button>
@@ -278,14 +280,14 @@ export default function AdminActivity() {
         </div>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Activity summary">
+      <section data-guide="act-stats" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Activity summary">
         <Metric icon={Activity} label="10-day activity" value={stats.totalActivities || 0} hint="Events in the selected view" />
         <Metric icon={CalendarDays} label="Today" value={stats.todayActivities || 0} hint="Actions recorded since midnight" tone="violet" />
         <Metric icon={ShieldCheck} label="Changes" value={changes} hint="Created or updated records" tone="emerald" />
         <Metric icon={Users} label="Sensitive actions" value={sensitive} hint="Delete, cancel or reject events" tone="rose" />
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-label="Activity filters">
+      <section data-guide="act-filters" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-label="Activity filters">
         <form onSubmit={(event) => { event.preventDefault(); setSearch(searchInput.trim()); setPage(1); }} className="grid gap-3 xl:grid-cols-[minmax(16rem,1.5fr)_minmax(12rem,1fr)_repeat(2,minmax(9rem,.75fr))_minmax(9rem,.75fr)_minmax(9rem,.75fr)_auto]">
           <label className="relative"><span className="sr-only">Search activity</span><Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" /><input className={`${fieldClass} w-full pl-9`} value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search action, email or record ID" /></label>
           <select className={fieldClass} value={actor} onChange={(event) => { setActor(event.target.value); setPage(1); }} aria-label="Actor">
@@ -300,9 +302,9 @@ export default function AdminActivity() {
         </form>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="sheet-title">
+      <section data-guide="act-sheet" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="sheet-title">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
-          <div><h2 id="sheet-title" className="font-bold text-slate-950 dark:text-white">10-day activity sheet</h2><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{byTime && sort?.direction === 'asc' ? 'Oldest actions appear first' : byTime ? 'Newest actions appear first' : `Sorted by ${SHEET_COLUMNS.find(([key]) => key === sort.key)?.[1] || 'column'}`} · Page {Math.min(page, totalPages)} of {totalPages}</p></div>
+          <div><h2 id="sheet-title" className="flex items-center gap-1.5 font-bold text-slate-950 dark:text-white">10-day activity sheet<GuideInfo step="act-sheet" /></h2><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{byTime && sort?.direction === 'asc' ? 'Oldest actions appear first' : byTime ? 'Newest actions appear first' : `Sorted by ${SHEET_COLUMNS.find(([key]) => key === sort.key)?.[1] || 'column'}`} · Page {Math.min(page, totalPages)} of {totalPages}</p></div>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{stats.totalActivities || 0} records</span>
         </div>
         <div className="hidden grid-cols-[7rem_minmax(10rem,1fr)_7.5rem_minmax(8rem,.8fr)_minmax(14rem,1.5fr)] gap-4 border-b border-slate-100 bg-slate-50/80 px-5 py-2.5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-400 sm:grid">{SHEET_COLUMNS.map(([key, label]) => <GridSortButton key={key} sortKey={key} sort={sort} onSort={toggleSort}>{label}</GridSortButton>)}</div>

@@ -9,7 +9,7 @@ import DateRangeFilter from '../../components/dateRange/DateRangeFilter';
 import { rangeLabel, rangeToQuery } from '../../components/dateRange/dateRangeModel';
 import UniversityBadge from '../universities/UniversityBadge';
 import PrepCoinIcon from '../../components/prepCoin/PrepCoinIcon';
-import { CoinAmount, CoinPage, KindChip, LiveBadge } from './shared';
+import { CoinAmount, CoinPage, InfoTitle, KindChip, LiveBadge } from './shared';
 import { buttonClass, formatCoins, useLive } from './coinModel';
 import { SortHeader, TablePager, useClientTable } from '../../components/table';
 
@@ -75,19 +75,19 @@ export default function PrepCoinsOverview() {
       </>}>
       {error ? <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div> : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div data-guide="pco-kpis" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {showSkeleton ? [1, 2, 3, 4, 5, 6, 7, 8].map((key) => <KpiTile key={key} label="" loading />) : kpis.map((kpi) => <KpiTile key={kpi.label} {...kpi} />)}
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-12">
-        <Glass className="p-5 xl:col-span-8">
-          <CardHeader title="Coin flow" subtitle={`Daily movements, ${period}`} Icon={ReceiptText} action={<CardLink to="/admin/prep-coins/ledger">Open ledger</CardLink>} />
+        <Glass data-guide="pco-flow" className="p-5 xl:col-span-8">
+          <CardHeader title={<InfoTitle title="Coin flow" step="pco-flow" />} subtitle={`Daily movements, ${period}`} Icon={ReceiptText} action={<CardLink to="/admin/prep-coins/ledger">Open ledger</CardLink>} />
           {view ? <StackedBars data={view.trend} series={FLOW_SERIES} height={240} /> : <div className="h-[240px] animate-pulse rounded-xl bg-slate-200/60 dark:bg-white/[0.05]" />}
           <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-500 dark:text-slate-400">
             {FLOW_SERIES.map((item) => <span key={item.key} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />{item.label}</span>)}
           </div>
         </Glass>
-        <Glass className="p-5 xl:col-span-4">
+        <Glass data-guide="pco-where" className="p-5 xl:col-span-4">
           <CardHeader title="Where coins are" subtitle="Current balances" Icon={Layers} />
           {view ? (
             <DonutChart centre={formatCoins(view.circulation)} caption="coins"
@@ -102,8 +102,8 @@ export default function PrepCoinsOverview() {
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-12">
-        <Glass className="p-5 xl:col-span-6">
-          <CardHeader title="Paid features" subtitle={`Prices and spending, ${period}`} Icon={Tag} action={<CardLink to="/admin/prep-coins/pricing">Edit prices</CardLink>} />
+        <Glass data-guide="pco-features" className="p-5 xl:col-span-6">
+          <CardHeader title={<InfoTitle title="Paid features" step="pco-features" />} subtitle={`Prices and spending, ${period}`} Icon={Tag} action={<CardLink to="/admin/prep-coins/pricing">Edit prices</CardLink>} />
           {showSkeleton ? <SkeletonRows rows={2} /> : (
             <div className="-mx-2 overflow-x-auto">
               <table className="w-full min-w-[460px] text-left text-xs" style={{ '--serial-start': (featureTable.page - 1) * featureTable.pageSize }}>
@@ -126,7 +126,7 @@ export default function PrepCoinsOverview() {
           )}
           {data && !features.some((feature) => feature.price) ? <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">No feature has a price yet, so students use everything for free.</p> : null}
         </Glass>
-        <Glass className="p-5 xl:col-span-3">
+        <Glass data-guide="pco-holders" className="p-5 xl:col-span-3">
           <CardHeader title="Top holders" subtitle="Largest account balances" Icon={Trophy} />
           {showSkeleton ? <SkeletonRows /> : topHolders.length ? (
             <ol className="space-y-2">
@@ -140,7 +140,7 @@ export default function PrepCoinsOverview() {
             </ol>
           ) : <EmptyHint>No account holds coins yet.</EmptyHint>}
         </Glass>
-        <Glass className="p-5 xl:col-span-3">
+        <Glass data-guide="pco-universities" className="p-5 xl:col-span-3">
           <CardHeader title="University wallets" subtitle={`Balance · passed on, ${period}`} Icon={Building2} action={<CardLink to="/admin/prep-coins/wallets">All</CardLink>} />
           {showSkeleton ? <SkeletonRows /> : universities.length ? (
             <ul className="space-y-2.5">
@@ -156,8 +156,8 @@ export default function PrepCoinsOverview() {
         </Glass>
       </div>
 
-      <Glass className="mt-4 p-5">
-        <CardHeader title="Latest movements" subtitle="Refreshes every 30 seconds" Icon={ReceiptText} action={<CardLink to="/admin/prep-coins/ledger">Full ledger</CardLink>} />
+      <Glass data-guide="pco-recent" className="mt-4 p-5">
+        <CardHeader title={<InfoTitle title="Latest movements" step="pco-recent" />} subtitle="Refreshes every 30 seconds" Icon={ReceiptText} action={<CardLink to="/admin/prep-coins/ledger">Full ledger</CardLink>} />
         {showSkeleton ? <SkeletonRows rows={5} /> : recent.length ? (
           <ul className="divide-y divide-slate-100 dark:divide-white/5">
             {recent.map((row) => (

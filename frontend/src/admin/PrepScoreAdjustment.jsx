@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, History, RotateCcw, Save } from 'lucide-react';
 import { api } from '../utils/api';
-import { configProblem } from './prepScore/engine';
-import { card, helperText, inputClass, NumberField, sectionTitle } from './prepScore/fields';
+import { configProblem, MODULES } from './prepScore/engine';
+import { card, helperText, inputClass, sectionTitle } from './prepScore/fields';
 import FormulaCard from './prepScore/FormulaCard';
 import ModuleCard from './prepScore/ModuleCard';
 import Simulator from './prepScore/Simulator';
 import ImpactPanel from './prepScore/ImpactPanel';
+import GuideInfo from '../guide/platform/GuideInfo';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 const clone = (value) => structuredClone(value);
 const formatDate = (value) => (value ? new Date(value).toLocaleString() : '');
@@ -69,13 +71,13 @@ export default function PrepScoreAdjustment() {
   const draftVersion = workspace?.draft?.version;
   return (
     <div className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+      <header data-guide="psa-header" className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-600">Master Admin settings</p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">Prep Score Adjustment</h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">Every value in the Prep Score formula, for all universities. The Prep Score comes from practice coding only. Students see only their score and rank, never these settings. Prep Coin is separate and unaffected.</p>
+          <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold text-slate-950 dark:text-white">Prep Score Adjustment<PageGuideButton /></h1>
+          <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">Every value in the Prep Score formula, for all universities. Students see only their score and rank, never these settings. Prep Coin is separate and unaffected.</p>
         </div>
-        <div className="flex flex-wrap gap-2 text-xs font-semibold">
+        <div data-guide="psa-status" className="flex flex-wrap gap-2 text-xs font-semibold">
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">Live: version {workspace.active.version}</span>
           {draftVersion && <span className="rounded-full bg-sky-50 px-3 py-1 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">Draft: version {draftVersion}</span>}
           {unsaved && <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">Unsaved changes</span>}
@@ -86,24 +88,15 @@ export default function PrepScoreAdjustment() {
 
       <FormulaCard config={config} update={update} />
       <div className="grid gap-5 xl:grid-cols-2">
-        <ModuleCard moduleKey="coding" label="Prep Coding (makes the Prep Score)" module={config.modules.coding} update={update} />
-        {/* Not part of the Prep Score: decides when a learning topic counts as completed. */}
-        <section className={card} aria-labelledby="learning-video-title">
-          <h2 id="learning-video-title" className={sectionTitle}>Learning video completion</h2>
-          <p className={`mt-1 ${helperText}`}>Not part of the Prep Score.</p>
-          <div className="mt-3 max-w-xs">
-            <NumberField compact label="Video completion" symbol="v" value={config.modules.learning.completionPercent} min={1} max={100} suffix="%"
-              onChange={(value) => update(['modules', 'learning', 'completionPercent'], value)} helper="Share of a topic video watched before the topic counts as completed" />
-          </div>
-        </section>
+        {MODULES.map(({ key, label, symbol }) => <ModuleCard key={key} moduleKey={key} label={label} symbol={symbol} module={config.modules[key]} update={update} />)}
       </div>
       <div className="grid gap-5 xl:grid-cols-2">
         <Simulator config={config} />
         <ImpactPanel config={config} universities={workspace.universities} disabled={Boolean(problem)} />
       </div>
 
-      <section className={card} aria-labelledby="publish-title">
-        <h2 id="publish-title" className={sectionTitle}>Save and publish</h2>
+      <section data-guide="psa-publish" className={card} aria-labelledby="publish-title">
+        <h2 id="publish-title" className={`flex items-center gap-1.5 ${sectionTitle}`}>Save and publish<GuideInfo step="psa-publish" /></h2>
         <p className={`mt-1 ${helperText}`}>A draft changes nothing for students. Publishing recalculates every student's score and rank with these values.</p>
         {problem && <p role="alert" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">{problem}</p>}
         <label className="mt-3 block text-sm font-semibold text-slate-700 dark:text-slate-200">Reason for this change
@@ -125,8 +118,8 @@ export default function PrepScoreAdjustment() {
         {reason.trim().length < 5 && <p className={`mt-2 ${helperText}`}>Publishing needs a reason of at least 5 characters.</p>}
       </section>
 
-      <section className={card} aria-labelledby="history-title">
-        <div className="flex items-center gap-2"><History className="h-5 w-5 text-sky-600" aria-hidden="true" /><h2 id="history-title" className={sectionTitle}>Version history</h2></div>
+      <section data-guide="psa-history" className={card} aria-labelledby="history-title">
+        <div className="flex items-center gap-2"><History className="h-5 w-5 text-sky-600" aria-hidden="true" /><h2 id="history-title" className={sectionTitle}>Version history</h2><GuideInfo step="psa-history" /></div>
         {workspace.history.length === 0 ? <p className={`mt-3 ${helperText}`}>Nothing published yet: the built-in defaults are live (version {workspace.active.version}).</p> : (
           <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
             {workspace.history.map((row) => (

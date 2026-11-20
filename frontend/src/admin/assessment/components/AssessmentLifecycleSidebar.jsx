@@ -1,5 +1,6 @@
 import { Archive, CalendarRange, CheckCircle2, FilePen, Layers, PlayCircle, Shapes } from 'lucide-react';
 import { RAIL_PANEL_WIDTH, RAIL_WIDTH, useHoverRail } from '../../../components/useHoverRail';
+import GuideInfo from '../../../guide/platform/GuideInfo';
 
 const statusItems = [
   { id: 'all', label: 'All', countKey: 'total', Icon: Layers },
@@ -44,7 +45,7 @@ export default function AssessmentLifecycleSidebar({
   const typeSet = testType && testType !== 'all';
 
   return (
-    <div className="relative lg:h-full lg:min-h-0" style={desktop ? { width: RAIL_WIDTH } : undefined}>
+    <div data-guide="as-rail" className="relative lg:h-full lg:min-h-0" style={desktop ? { width: RAIL_WIDTH } : undefined}>
       <aside
         aria-label="Assessment filters"
         {...railProps}
@@ -55,7 +56,7 @@ export default function AssessmentLifecycleSidebar({
       >
         <div className="h-full overflow-y-auto overflow-x-hidden px-2.5 py-4 [scrollbar-width:thin]" style={desktop ? { width: RAIL_PANEL_WIDTH } : undefined}>
           <section>
-            <h2 className={`mb-2 h-4 whitespace-nowrap px-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400 ${reveal}`}>Test status</h2>
+            <h2 className={`mb-2 flex h-4 items-center gap-1 whitespace-nowrap px-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400 ${reveal}`}>Test status<GuideInfo step="as-rail" /></h2>
             <nav className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1" aria-label="Assessment status">
               {statusItems.map(({ id, label, countKey, Icon }) => {
                 const isActive = active === id;

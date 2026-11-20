@@ -3,6 +3,7 @@ import { Loader2, RefreshCw, Users } from 'lucide-react';
 import { api } from '../../utils/api';
 import { SortHeader, TablePager, useClientTable } from '../../components/table';
 import { card, helperText, inputClass, sectionTitle } from './fields';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const PLATFORM = { id: 'platform', name: 'PeerPrep students (no university)' };
 const impactValue = (row, key) => ({ student: row.name, now: row.before?.score, after: row.after?.score }[key]);
@@ -45,8 +46,8 @@ export default function ImpactPanel({ config, universities = [], disabled }) {
   }
 
   return (
-    <section className={card} aria-labelledby="impact-title">
-      <div className="flex items-center gap-2"><Users className="h-5 w-5 text-sky-600" aria-hidden="true" /><h2 id="impact-title" className={sectionTitle}>Impact on real students</h2></div>
+    <section data-guide="psa-impact" className={card} aria-labelledby="impact-title">
+      <div className="flex items-center gap-2"><Users className="h-5 w-5 text-sky-600" aria-hidden="true" /><h2 id="impact-title" className={sectionTitle}>Impact on real students</h2><GuideInfo step="psa-impact" /></div>
       <p className={`mt-1 ${helperText}`}>Compares students' current scores with the values on this page. Nothing is saved or shown to students.</p>
       <div className="mt-4 flex flex-wrap items-end gap-3">
         <label className="block min-w-[14rem] flex-1 text-sm font-semibold text-slate-700 dark:text-slate-200">University

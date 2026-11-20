@@ -21,6 +21,7 @@ import AssessmentModuleLayout from './assessment-dashboard/AssessmentModuleLayou
 import { useStudentAssessmentDashboardData } from './assessment-dashboard/useStudentAssessmentDashboardData';
 import { formatDateTime, formatDurationMinutes, formatScore, formatSeconds, formatShortDate } from './assessment-dashboard/assessmentDashboardUtils';
 import { useToast } from '../components/CustomToast';
+import GuideInfo from '../guide/platform/GuideInfo';
 import { RESULT_NOT_ANNOUNCED, isResultAnnounced } from '../utils/assessmentEvaluation';
 
 const STORAGE_KEY = 'peerprep_student_report_workspace_v1';
@@ -259,16 +260,16 @@ function ReportNavigation({ reports, selectedId, query, setQuery, status, setSta
   }, [reports]);
 
   return (
-    <aside className={`${shellClass} flex max-h-[300px] min-h-0 flex-col rounded-xl lg:max-h-none`}>
+    <aside data-guide="rep-list" className={`${shellClass} flex max-h-[300px] min-h-0 flex-col rounded-xl lg:max-h-none`}>
       <div className="shrink-0 border-b border-slate-200 p-3 dark:border-gray-800">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className={labelClass}>Reports</div>
+            <div className={`${labelClass} flex items-center gap-1`}>Reports<GuideInfo step="rep-list" /></div>
             <div className="mt-0.5 text-xs font-semibold text-slate-950 dark:text-white">{reports.length} assessments</div>
           </div>
           <BarChart3 className="h-4 w-4 text-sky-600 dark:text-sky-300" />
         </div>
-        <div className="relative mt-3">
+        <div className="relative mt-3" data-guide="rep-search">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input
             value={query}
@@ -278,7 +279,7 @@ function ReportNavigation({ reports, selectedId, query, setQuery, status, setSta
           />
         </div>
         {statusOptions.length > 1 ? (
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2" data-guide="rep-status">
             <Filter className="h-3.5 w-3.5 text-slate-400" />
             <select
               value={status}
@@ -303,6 +304,7 @@ function ReportNavigation({ reports, selectedId, query, setQuery, status, setSta
             <button
               key={report.id}
               type="button"
+              data-guide="rep-item"
               onClick={() => onSelect(report)}
               className={`mb-1.5 w-full rounded-lg border px-2.5 py-2 text-left transition-colors ${
                 selected
@@ -351,7 +353,7 @@ function WorkspaceHeader({ report, onExport, search, setSearch, filterOpen, setF
   ];
 
   return (
-    <div className={`${shellClass} sticky top-0 z-30 rounded-xl shadow-sm`}>
+    <div data-guide="rep-header" className={`${shellClass} sticky top-0 z-30 rounded-xl shadow-sm`}>
       <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 dark:border-gray-800 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -389,14 +391,14 @@ function WorkspaceHeader({ report, onExport, search, setSearch, filterOpen, setF
             </>
           ) : null}
           {isResultAnnounced(report) ? (
-            <button type="button" onClick={onExport} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">
+            <button type="button" onClick={onExport} data-guide="rep-export" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">
               <Download className="h-3.5 w-3.5" /> Export Excel
             </button>
           ) : null}
         </div>
       </div>
       {isResultAnnounced(report) ? (
-        <div className="grid grid-cols-2 gap-2 p-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 p-3 lg:grid-cols-4" data-guide="rep-metrics">
           <ReportMetric label="Score" value={hasValue(report.score) && hasValue(report.totalMarks) ? `${formatScore(report.score)} / ${formatScore(report.totalMarks)}` : formatScore(report.score)} hidden={!scoreVisible} tone="text-sky-700 dark:text-sky-300" />
           <ReportMetric label="Percentage" value={pct !== null ? `${Math.round(pct)}%` : null} hidden={!percentageVisible} />
           <ReportMetric label="Attempts" value={report.attempts ?? report.attemptCount} />
@@ -410,7 +412,7 @@ function WorkspaceHeader({ report, onExport, search, setSearch, filterOpen, setF
 function ReportTabs({ tabs, activeTab, setActiveTab }) {
   if (!tabs.length) return null;
   return (
-    <div className="flex gap-5 overflow-x-auto border-b border-slate-200 bg-[#f8fbff] px-1 dark:border-gray-800 dark:bg-gray-950">
+    <div data-guide="rep-tabs" className="flex gap-5 overflow-x-auto border-b border-slate-200 bg-[#f8fbff] px-1 dark:border-gray-800 dark:bg-gray-950">
       {tabs.map((tab) => (
         <button
           key={tab.id}
@@ -425,6 +427,7 @@ function ReportTabs({ tabs, activeTab, setActiveTab }) {
           {tab.label}
         </button>
       ))}
+      <span className="ml-auto flex shrink-0 items-center pr-1"><GuideInfo step="rep-tabs" /></span>
     </div>
   );
 }
@@ -775,15 +778,17 @@ export default function AssessmentReportsPage() {
                   />
                   <ReportTabs tabs={tabs} activeTab={activeTab} setActiveTab={setActiveTab} />
 
-                  {activeTab === 'overview' ? <OverviewPanel report={currentReport} /> : null}
-                  {activeTab === 'questions' ? <QuestionReview report={currentReport} search={reportSearch} filterOpen={filterOpen} /> : null}
-                  {activeTab === 'performance' ? <PerformancePanel report={currentReport} /> : null}
-                  {activeTab === 'violations' ? <ViolationsPanel report={currentReport} /> : null}
-                  {activeTab === 'feedback' && hasValue(currentReport.feedback) ? (
-                    <SectionShell id="feedback" title="Feedback">
-                      <div className="text-sm leading-6 text-slate-700 dark:text-gray-300">{currentReport.feedback}</div>
-                    </SectionShell>
-                  ) : null}
+                  <div data-guide="rep-panel">
+                    {activeTab === 'overview' ? <OverviewPanel report={currentReport} /> : null}
+                    {activeTab === 'questions' ? <QuestionReview report={currentReport} search={reportSearch} filterOpen={filterOpen} /> : null}
+                    {activeTab === 'performance' ? <PerformancePanel report={currentReport} /> : null}
+                    {activeTab === 'violations' ? <ViolationsPanel report={currentReport} /> : null}
+                    {activeTab === 'feedback' && hasValue(currentReport.feedback) ? (
+                      <SectionShell id="feedback" title="Feedback">
+                        <div className="text-sm leading-6 text-slate-700 dark:text-gray-300">{currentReport.feedback}</div>
+                      </SectionShell>
+                    ) : null}
+                  </div>
                 </div>
               ) : (
                 <EmptyState

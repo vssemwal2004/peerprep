@@ -3,6 +3,7 @@ import { Activity, CalendarDays, History, RefreshCw, Search, ShieldCheck, UserRo
 import { api } from '../../utils/api';
 import { actionLabel } from './universityModel';
 import { Button, EmptyState, Notice, PageHeader, Pill, pageShell, helper, inputClass } from './ui';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const DAY_MS = 86_400_000;
 const KINDS = [
@@ -129,16 +130,16 @@ export default function UniversityActivity() {
 
       <Notice tone="info">This feed contains PeerPrep control-plane actions only. It does not combine or expose activity from university databases.</Notice>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Platform activity summary">
+      <section data-guide="ua-stats" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Platform activity summary">
         <StatCard icon={Activity} label="10-day activity" value={total} hint="Master workspace events" />
         <StatCard icon={CalendarDays} label="Today" value={todayCount} hint="Actions loaded today" />
         <StatCard icon={UserRound} label="Operators" value={operators} hint="Active Master Admins" />
         <StatCard icon={ShieldCheck} label="Sensitive actions" value={sensitive} hint="Remove, restore or rotate" />
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="days-title">
+      <section data-guide="ua-days" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="days-title">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h2 id="days-title" className="text-sm font-bold text-slate-950 dark:text-white">10-day activity sheet</h2><p className={helper}>Select a day to focus the timeline.</p></div>
+          <div><h2 id="days-title" className="flex items-center gap-1.5 text-sm font-bold text-slate-950 dark:text-white">10-day activity sheet<GuideInfo step="ua-days" /></h2><p className={helper}>Select a day to focus the timeline.</p></div>
           {selectedDay && <Button variant="ghost" onClick={() => setSelectedDay('')}>Show all 10 days</Button>}
         </div>
         <div className="mt-4 grid grid-cols-5 gap-2 lg:grid-cols-10">
@@ -156,15 +157,15 @@ export default function UniversityActivity() {
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-label="Activity filters">
+      <section data-guide="ua-filters" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-label="Activity filters">
         <div className="grid gap-3 sm:grid-cols-[minmax(15rem,1fr)_minmax(13rem,.45fr)]">
           <label className="relative"><span className="sr-only">Search platform activity</span><Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" /><input className={`${inputClass} pl-9`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search action, operator or details" /></label>
           <select className={inputClass} value={action} onChange={(event) => setAction(event.target.value)} aria-label="Kind of activity">{KINDS.map((kind) => <option key={kind.value} value={kind.value}>{kind.label}</option>)}</select>
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="timeline-title">
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800"><div><h2 id="timeline-title" className="font-bold text-slate-950 dark:text-white">Control-plane timeline</h2><p className={helper}>{visibleEntries.length} loaded event{visibleEntries.length === 1 ? '' : 's'} shown</p></div><Pill tone="neutral">Master only</Pill></div>
+      <section data-guide="ua-timeline" className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="timeline-title">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800"><div><h2 id="timeline-title" className="flex items-center gap-1.5 font-bold text-slate-950 dark:text-white">Control-plane timeline<GuideInfo step="ua-timeline" /></h2><p className={helper}>{visibleEntries.length} loaded event{visibleEntries.length === 1 ? '' : 's'} shown</p></div><Pill tone="neutral">Master only</Pill></div>
         {error && <div className="p-4"><Notice tone="danger">{error}</Notice></div>}
         {loading && !entries.length ? (
           <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-slate-500"><RefreshCw className="h-4 w-4 animate-spin text-sky-600" /> Loading activity…</div>

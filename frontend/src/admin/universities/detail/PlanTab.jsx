@@ -62,7 +62,7 @@ export default function PlanTab({ university, run, busy }) {
           onClick={() => run('limits', () => api.updateUniversity(id, { coordinatorLimit: Number(coordinatorLimit), studentLimit: Number(studentLimit) }), 'Account limits saved.')}>Save limits</Button>
       </Card>
 
-      <Card id="wallet-title" title="University wallet" icon={Coins} className="lg:col-span-2" description="The university admin passes these Prep Coins to coordinators, who pass them to students.">
+      <Card id="wallet-title" data-guide="unid-wallet" title="University wallet" icon={Coins} className="lg:col-span-2" description="The university admin passes these Prep Coins to coordinators, who pass them to students.">
         <div className="flex flex-wrap items-end gap-6">
           <div><p className={helper}>Balance</p><p className="text-3xl font-bold tabular-nums text-slate-950 dark:text-white">{Number(university.coinBalance || 0).toLocaleString()}</p></div>
           <Field label="Add Prep Coins" className="w-48"><input className={inputClass} type="number" min="1" step="1" value={topUp} onChange={(event) => { topUpRequest.current = null; setTopUp(event.target.value); }} placeholder="e.g. 500" /></Field>

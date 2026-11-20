@@ -9,6 +9,7 @@ import { BadgesCard } from "../components/BadgesViews";
 import { HeatmapCard, LastActiveList, RecordsCard } from "../components/ExtraCards";
 import { Reveal, RevealItem } from "../components/motion";
 import { focusRing, ProgressBar, Section } from "../components/ui";
+import GuideInfo from "../../../guide/platform/GuideInfo";
 
 const ACCENTS = {
   topics: "from-sky-500 to-cyan-400", coding: "from-blue-600 to-sky-400", quickprep: "from-amber-500 to-orange-400", learning: "from-teal-500 to-emerald-400",
@@ -65,20 +66,20 @@ export default function OverviewPage({ insights, badges, onOpenTopic }) {
   const hasBadges = Boolean(badges.loading || badges.data);
   return (
     <div className="space-y-8">
-      <Section id="overview" icon={SECTION_ICONS.overview} title="Your preparation at a glance" subtitle="Tap any number to open its full analysis" actions={<LastActiveList insights={insights} />}>
+      <Section id="overview" data-guide="an-summary" info={<GuideInfo step="an-summary" />} icon={SECTION_ICONS.overview} title="Your preparation at a glance" subtitle="Tap any number to open its full analysis" actions={<LastActiveList insights={insights} />}>
         <SummaryHero insights={insights} />
       </Section>
 
       <Reveal className={`grid gap-3 ${hasBadges ? "xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" : ""}`}>
-        <RevealItem><HeatmapCard activity={insights.activity} compact /></RevealItem>
+        <RevealItem data-guide="an-heatmap"><HeatmapCard activity={insights.activity} compact /></RevealItem>
         {hasBadges && <RevealItem><BadgesCard badges={badges} /></RevealItem>}
       </Reveal>
 
-      <Section id="next" icon={Compass} title="What to do next" subtitle="Picked from your own numbers. Each step opens the place to act.">
+      <Section id="next" data-guide="an-next" info={<GuideInfo step="an-next" />} icon={Compass} title="What to do next" subtitle="Picked from your own numbers. Each step opens the place to act.">
         <CoachPanel steps={insights.coach} onOpenTopic={onOpenTopic} />
       </Section>
 
-      <Section id="explore" icon={LayoutGrid} title="Explore your analysis" subtitle="Open any part for its full analysis">
+      <Section id="explore" data-guide="an-explore" icon={LayoutGrid} title="Explore your analysis" subtitle="Open any part for its full analysis">
         <Reveal className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" stagger={0.04}>
           {features.map((section) => <RevealItem key={section.id}><FeatureCard section={section} insights={insights} badges={badges} /></RevealItem>)}
         </Reveal>

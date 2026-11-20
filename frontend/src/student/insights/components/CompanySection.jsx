@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Building2, Loader2 } from "lucide-react";
 import { insightsApi } from "../insightsApi";
 import { Card, CardTitle, Empty, focusRing, Pill, ProgressBar, Section } from "./ui";
+import GuideInfo from "../../../guide/platform/GuideInfo";
 
 const BADGES = {
   Ready: "bg-emerald-50 text-emerald-700 ring-emerald-600/15 dark:bg-emerald-500/10 dark:text-emerald-300",
@@ -42,7 +43,7 @@ export default function CompanySection() {
   const result = report.data?.report;
 
   return (
-    <Section id="companies" icon={Building2} title="Company readiness" subtitle="How close you are to a company's hiring bar"
+    <Section id="companies" data-guide="an-companies" info={<GuideInfo step="an-companies" />} icon={Building2} title="Company readiness" subtitle="How close you are to a company's hiring bar"
       actions={companies.list.length > 0 && (
         <select value={known ? selected : ""} onChange={(event) => setSelected(event.target.value)} aria-label="Choose a company"
           className="h-8 max-w-[220px] rounded-lg border border-[#e4e7ec] bg-white px-2 text-[12.5px] font-medium text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-white/10 dark:bg-[#232325] dark:text-zinc-200">

@@ -78,7 +78,7 @@ export default function CompanyBenchmarkForm({ values, setValues, errors = {} })
 
   return (
     <div className="grid gap-5">
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div data-guide="cb-basic" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-gray-400">Basic Info</div>
         <label className="mt-3 block text-xs font-semibold text-slate-600 dark:text-gray-300">
           Company Name
@@ -92,7 +92,7 @@ export default function CompanyBenchmarkForm({ values, setValues, errors = {} })
         </label>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div data-guide="cb-dsa" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-gray-400">DSA Requirements</div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="text-xs font-semibold text-slate-600 dark:text-gray-300">
@@ -163,7 +163,7 @@ export default function CompanyBenchmarkForm({ values, setValues, errors = {} })
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div data-guide="cb-consistency" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-gray-400">Consistency</div>
         <label className="mt-3 block text-xs font-semibold text-slate-600 dark:text-gray-300">
           Minimum Streak Days
@@ -178,7 +178,7 @@ export default function CompanyBenchmarkForm({ values, setValues, errors = {} })
         </label>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div data-guide="cb-interview" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-gray-400">Interview</div>
         <label className="mt-3 block text-xs font-semibold text-slate-600 dark:text-gray-300">
           Minimum Interview Score
@@ -194,7 +194,7 @@ export default function CompanyBenchmarkForm({ values, setValues, errors = {} })
         </label>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div data-guide="cb-weights" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between">
           <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-gray-400">Weight Configuration</div>
           <div className={`text-xs font-semibold ${weightWarning ? "text-amber-500" : "text-emerald-500"}`}>

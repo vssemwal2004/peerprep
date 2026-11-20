@@ -28,7 +28,7 @@ export default function UniversitiesOverview() {
         actions={<><ButtonLink to="/admin/universities/all" variant="secondary">All universities</ButtonLink><ButtonLink to="/admin/universities/new" icon={PlusCircle}>Add university</ButtonLink></>} />
       {error && <Notice tone="danger">{error}</Notice>}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div data-guide="uo-stats" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Stat label="Universities" value={universities.length} />
         <Stat label="Live now" value={live} />
         <Stat label="Need attention" value={attention.length} tone={attention.length ? 'warning' : undefined} />
@@ -40,7 +40,7 @@ export default function UniversitiesOverview() {
         <Card><EmptyState icon={Building2} title="No universities yet" action={<ButtonLink to="/admin/universities/new" icon={PlusCircle}>Add your first university</ButtonLink>}>Add a university to give its students their own PeerPrep portal.</EmptyState></Card>
       ) : (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-          <Card id="attention-title" title="Needs attention" icon={AlertTriangle} description="Missing setup, or a service period that has ended or ends soon.">
+          <Card id="attention-title" data-guide="uo-attention" info="uo-attention" title="Needs attention" icon={AlertTriangle} description="Missing setup, or a service period that has ended or ends soon.">
             {attention.length === 0 ? <p className={helper}>Every university is set up and within its service period.</p> : (
               <ul className="divide-y divide-slate-100 dark:divide-slate-800">
                 {attention.map(({ university, health }) => (
@@ -59,7 +59,7 @@ export default function UniversitiesOverview() {
               </ul>
             )}
           </Card>
-          <Card id="recent-title" title="Recent activity" icon={Activity} actions={<Link to="/admin/universities/activity" className="text-sm font-semibold text-sky-700 hover:underline dark:text-sky-300">View all</Link>}>
+          <Card id="recent-title" data-guide="uo-recent" info="uo-recent" title="Recent activity" icon={Activity} actions={<Link to="/admin/universities/activity" className="text-sm font-semibold text-sky-700 hover:underline dark:text-sky-300">View all</Link>}>
             {(overview?.audit || []).length === 0 ? <p className={helper}>Nothing has changed yet.</p> : (
               <ul className="space-y-3">
                 {overview.audit.slice(0, 7).map((row) => (
@@ -74,7 +74,7 @@ export default function UniversitiesOverview() {
         </div>
       )}
 
-      <Card id="flow-title" title="How a university goes live">
+      <Card id="flow-title" data-guide="uo-flow" info="uo-flow" title="How a university goes live">
         <ol className="grid gap-3 md:grid-cols-4">
           {STEPS.map(({ title, text, to, icon: Icon }, index) => (
             <li key={title}>

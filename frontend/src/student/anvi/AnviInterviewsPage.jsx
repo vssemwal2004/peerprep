@@ -6,6 +6,7 @@ import { AnviMark } from "../../components/AnviApproach";
 import { api } from "../../utils/api";
 import { usePrepCoinCheckout } from "../prepCoin/usePrepCoinCheckout";
 import InterviewBoard from "./list/InterviewBoard";
+import PageGuideButton from "../../guide/platform/PageGuideButton";
 
 const unwrapAssignments = (value) => (Array.isArray(value) ? value : Array.isArray(value?.assignments) ? value.assignments : []);
 
@@ -92,12 +93,12 @@ export default function AnviInterviewsPage({ now }) {
   return <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#1a1a1a] dark:text-zinc-100">
     <StudentDashboardHeader />
     <main className="mx-auto max-w-6xl px-4 pb-16 pt-6 sm:px-6 sm:pt-8 lg:px-8">
-      <header className="mb-7 flex min-w-0 items-center gap-3.5 sm:gap-4">
+      <header className="mb-7 flex min-w-0 items-center gap-3.5 sm:gap-4" data-guide="ai-header">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-white/[0.04] sm:h-12 sm:w-12">
           <AnviMark className="h-7 w-7" />
         </span>
         <div className="min-w-0">
-          <h1 className="text-[22px] font-bold leading-tight tracking-tight text-slate-900 dark:text-white sm:text-2xl">AI Interviews</h1>
+          <h1 className="flex items-center gap-2 text-[22px] font-bold leading-tight tracking-tight text-slate-900 dark:text-white sm:text-2xl">AI Interviews<PageGuideButton /></h1>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-zinc-400">Complete scheduled interviews or practise with ANVI.</p>
         </div>
       </header>

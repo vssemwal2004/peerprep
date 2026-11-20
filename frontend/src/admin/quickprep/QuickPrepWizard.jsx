@@ -12,6 +12,8 @@ import { Chips, DifficultyPill, MixBar, MultiSelect, Notice, Page, PageHeader, S
 import { plural } from './format';
 import { QUICKPREP_ROOT, quickPrepLibraryUrl } from './useQuickPrepActions';
 import { SortHeader, TablePager, useClientTable } from '../../components/table';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 // Questions step table: [sort key, header, width class]. Rows are { item, position } entries.
 const QUESTION_COLUMNS = [['title', 'Question', ''], ['difficulty', 'Difficulty', ''], ['tags', 'Topics', ''], ['companies', 'Companies', ''], ['section', 'Section', 'w-44']];
@@ -128,12 +130,12 @@ export default function QuickPrepWizard() {
   if (loading) return <Page><div className="h-24 animate-pulse rounded-2xl bg-slate-200 dark:bg-zinc-800" /><div className="h-96 animate-pulse rounded-2xl bg-slate-200 dark:bg-zinc-800" /></Page>;
 
   return <Page>
-    <PageHeader icon={Zap} title={id ? `Edit ${saved?.title || 'QuickPrep'}` : 'Create QuickPrep'}
+    <PageHeader icon={Zap} title={id ? `Edit ${saved?.title || 'QuickPrep'}` : 'Create QuickPrep'} guide="qpw-header" info={<PageGuideButton />}
       crumbs={[{ label: 'QuickPrep', to: QUICKPREP_ROOT }, ...(id ? [{ label: saved?.title || 'QuickPrep', to: `${QUICKPREP_ROOT}/${id}` }] : []), { label: id ? 'Edit' : 'Create' }]}
       description="Three short steps: describe it, add questions from the library, then choose who sees it and publish."
       actions={saved && <StatusPill status={saved.status} />} />
 
-    <nav aria-label="QuickPrep steps" className={`${card} p-2`}>
+    <nav aria-label="QuickPrep steps" data-guide="qpw-steps" className={`${card} p-2`}>
       <ol className="grid gap-1 sm:grid-cols-3">
         {STEPS.map((entry, index) => {
           const active = entry.key === step;
@@ -172,20 +174,20 @@ function Field({ label, hint, children, required }) {
 }
 
 function StepFooter({ children }) {
-  return <div className="sticky bottom-0 z-20 -mx-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 dark:border-zinc-800 dark:bg-[#1a1a1a]/90">{children}</div>;
+  return <div data-guide="qpw-footer" className="sticky bottom-0 z-20 -mx-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 dark:border-zinc-800 dark:bg-[#1a1a1a]/90">{children}</div>;
 }
 
 function DetailsStep({ form, set, taxonomy, preview, busy, onNext, onCancel, isNew }) {
   return <>
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
-      <section className={`${card} space-y-5 p-5`} aria-labelledby="details-title">
+      <section data-guide="qpw-details" className={`${card} space-y-5 p-5`} aria-labelledby="details-title">
         <div>
-          <h2 id="details-title" className="text-base font-semibold">Details</h2>
+          <h2 id="details-title" className="flex items-center gap-1.5 text-base font-semibold">Details<GuideInfo step="qpw-details" /></h2>
           <p className="text-[13px] text-slate-500 dark:text-zinc-400">Students see the name, description, companies and topics on the QuickPrep card.</p>
         </div>
         <Field label="Name" hint={`${form.title.length}/80`} required><input value={form.title} maxLength={80} onChange={(event) => set('title', event.target.value)} placeholder="e.g. Amazon Top 50 or 75 Hard" className={inputClass} /></Field>
         <Field label="Description" hint={`${form.description.length}/600`}><textarea value={form.description} maxLength={600} rows={3} onChange={(event) => set('description', event.target.value)} placeholder="What students practise here and how to approach it." className={`${inputClass} resize-y`} /></Field>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div data-guide="qpw-tags" className="grid gap-4 md:grid-cols-2">
           <SelectMenu label="Type" options={QUEST_CATEGORIES} value={form.category} onChange={(value) => set('category', value)} />
           <MultiSelect label="Companies" icon={Building2} allLabel="All companies" placeholder="Search companies" options={taxonomy.companies} value={form.companies} onChange={(value) => set('companies', value)} loading={taxonomy.loading} />
           <MultiSelect label="Topics" icon={Tags} allLabel="All topics" placeholder="Search topics" options={taxonomy.topics} value={form.topics} onChange={(value) => set('topics', value)} loading={taxonomy.loading} />
@@ -203,7 +205,7 @@ function DetailsStep({ form, set, taxonomy, preview, busy, onNext, onCancel, isN
             <p className="mt-1.5 text-[11.5px] text-slate-400">{form.difficulties.length ? 'Shown to students as the focus of this QuickPrep.' : 'All levels.'}</p>
           </div>
         </div>
-        <div>
+        <div data-guide="qpw-colour">
           <span className="mb-1.5 block text-[13px] font-semibold text-slate-700 dark:text-zinc-200">Card colour</span>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Card colour">
             {Object.entries(QUEST_THEMES).map(([name, theme]) => <button key={name} type="button" role="radio" aria-checked={form.theme === name} aria-label={name} onClick={() => set('theme', name)}
@@ -224,7 +226,7 @@ function DetailsStep({ form, set, taxonomy, preview, busy, onNext, onCancel, isN
 }
 
 function PreviewPanel({ preview }) {
-  return <aside className="space-y-3 lg:sticky lg:top-4 lg:self-start" aria-label="Student preview">
+  return <aside data-guide="qpw-preview" className="space-y-3 lg:sticky lg:top-4 lg:self-start" aria-label="Student preview">
     <p className="text-[11.5px] font-semibold uppercase tracking-wide text-slate-400">Student preview</p>
     <QuestCard quest={preview} preview />
     <p className="text-[12px] text-slate-500 dark:text-zinc-400">This is how the card appears on the student QuickPrep page and dashboard.</p>
@@ -252,22 +254,22 @@ function QuestionsStep({ form, set, dirty, busy, onLibrary, onSave, onBack, onNe
   const canReorder = !table.sort || (table.sort.key === 'position' && table.sort.direction === 'asc');
 
   return <>
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div data-guide="qpw-summary" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <SummaryTile icon={Layers} label="Questions" value={available.length} hint={items.length > available.length ? `${items.length - available.length} unavailable` : 'Ready for students'} />
       <div className={`${card} p-4`}><p className="text-[12px] font-medium text-slate-500">Difficulty mix</p><div className="mt-3"><MixBar difficulty={difficulty} /></div></div>
       <div className={`${card} p-4`}><p className="mb-2 text-[12px] font-medium text-slate-500">Topics covered</p><Chips values={topics} max={3} icon={Tags} empty="None yet" /></div>
       <div className={`${card} p-4`}><p className="mb-2 text-[12px] font-medium text-slate-500">Companies covered</p><Chips values={companies} max={3} icon={Building2} empty="None yet" /></div>
     </div>
 
-    <section className={card} aria-labelledby="questions-title">
+    <section data-guide="qpw-questions" className={card} aria-labelledby="questions-title">
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4 dark:border-zinc-800">
         <div className="mr-auto">
-          <h2 id="questions-title" className="text-base font-semibold">Questions <span className="text-slate-400">({items.length})</span></h2>
+          <h2 id="questions-title" className="flex items-center gap-1.5 text-base font-semibold">Questions <span className="text-slate-400">({items.length})</span><GuideInfo step="qpw-questions" /></h2>
           <p className="text-[12.5px] text-slate-500 dark:text-zinc-400">Students solve them in this order. Group them with sections such as “Week 1”.</p>
         </div>
         {dirty && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11.5px] font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">Unsaved changes</span>}
         {dirty && <button type="button" onClick={onSave} disabled={busy} className={secondaryButton}><Save className="h-4 w-4" />Save</button>}
-        <button type="button" onClick={onLibrary} disabled={busy} className={primaryButton}><LibraryBig className="h-4 w-4" />Add questions from library</button>
+        <button type="button" data-guide="qpw-library" onClick={onLibrary} disabled={busy} className={primaryButton}><LibraryBig className="h-4 w-4" />Add questions from library</button>
       </div>
 
       {selected.size > 0 && <div className="flex flex-wrap items-center gap-2 border-b border-sky-100 bg-sky-50/70 px-4 py-2.5 text-sm dark:border-sky-500/20 dark:bg-sky-500/10">
@@ -285,7 +287,7 @@ function QuestionsStep({ form, set, dirty, busy, onLibrary, onSave, onBack, onNe
         <p className="mx-auto mt-1 max-w-md text-sm text-slate-500 dark:text-zinc-400">Open the library, tick the questions you want and choose “Add to QuickPrep”. They will appear here to order and group.</p>
         <button type="button" onClick={onLibrary} className={`${primaryButton} mt-5`}><LibraryBig className="h-4 w-4" />Open library</button>
       </div>
-        : <><div className="overflow-x-auto">
+        : <><div data-guide="qpw-order" className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-left text-sm" style={{ '--serial-start': (table.page - 1) * table.pageSize }}>
             <thead className="bg-slate-50/80 text-[11.5px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-zinc-900/60 dark:text-zinc-400">
               <tr>
@@ -359,8 +361,8 @@ function PublishStep({ form, set, saved, preview, busy, onBack, onFinish }) {
   return <>
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="space-y-5">
-        <section className={`${card} space-y-4 p-5`} aria-labelledby="audience-title">
-          <div><h2 id="audience-title" className="flex items-center gap-2 text-base font-semibold"><GraduationCap className="h-4 w-4 text-sky-600" />Audience</h2><p className="text-[13px] text-slate-500 dark:text-zinc-400">Choose which semesters see this QuickPrep. Students outside them will not see it at all.</p></div>
+        <section data-guide="qpw-audience" className={`${card} space-y-4 p-5`} aria-labelledby="audience-title">
+          <div><h2 id="audience-title" className="flex items-center gap-2 text-base font-semibold"><GraduationCap className="h-4 w-4 text-sky-600" />Audience<GuideInfo step="qpw-audience" /></h2><p className="text-[13px] text-slate-500 dark:text-zinc-400">Choose which semesters see this QuickPrep. Students outside them will not see it at all.</p></div>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Semesters">
             <button type="button" aria-pressed={all} onClick={() => set('semesters', [])} className={`rounded-xl border px-3.5 py-2 text-sm font-semibold transition ${all ? 'border-sky-500 bg-sky-600 text-white' : 'border-slate-200 text-slate-600 hover:border-slate-300 dark:border-zinc-700 dark:text-zinc-300'}`}>All semesters</button>
             {SEMESTERS.map((semester) => {
@@ -370,7 +372,7 @@ function PublishStep({ form, set, saved, preview, busy, onBack, onFinish }) {
             })}
           </div>
         </section>
-        <section className={`${card} grid gap-4 p-5 md:grid-cols-2`} aria-labelledby="window-title">
+        <section data-guide="qpw-window" className={`${card} grid gap-4 p-5 md:grid-cols-2`} aria-labelledby="window-title">
           <div className="flex flex-wrap items-center gap-2 md:col-span-2">
             <h2 id="window-title" className="flex items-center gap-2 text-base font-semibold"><CalendarClock className="h-4 w-4 text-sky-600" />Start and end time</h2>
             {!windowProblem && <WindowChip quest={draftWindow} />}
@@ -384,7 +386,7 @@ function PublishStep({ form, set, saved, preview, busy, onBack, onFinish }) {
             {(form.startsAt || form.endsAt) && <button type="button" onClick={() => { set('startsAt', ''); set('endsAt', ''); }} className="ml-auto text-[12.5px] font-semibold text-sky-700 hover:underline dark:text-sky-300">Clear</button>}
           </div>
         </section>
-        <section className={`${card} grid gap-4 p-5 md:grid-cols-2`} aria-labelledby="reward-title">
+        <section data-guide="qpw-reward" className={`${card} grid gap-4 p-5 md:grid-cols-2`} aria-labelledby="reward-title">
           <h2 id="reward-title" className="flex items-center gap-2 text-base font-semibold md:col-span-2"><Sparkles className="h-4 w-4 text-amber-500" />Completion reward</h2>
           <div>
             <Field label="XP on completion" hint="0–1000"><input type="number" min={0} max={1000} value={form.rewardXp} onChange={(event) => set('rewardXp', event.target.value)} className={inputClass} /></Field>
@@ -393,8 +395,8 @@ function PublishStep({ form, set, saved, preview, busy, onBack, onFinish }) {
           <Field label="Badge name" hint="Optional"><input value={form.badgeTitle} maxLength={60} onChange={(event) => set('badgeTitle', event.target.value)} placeholder={`${form.title || 'QuickPrep'} Finisher`} className={inputClass} /></Field>
           <p className="text-[12.5px] text-slate-500 md:col-span-2 dark:text-zinc-400">XP counts toward the student’s level and rank. The badge joins their profile collection the moment they solve every question.</p>
         </section>
-        <section className={`${card} p-5`} aria-labelledby="checks-title">
-          <h2 id="checks-title" className="flex items-center gap-2 text-base font-semibold"><Gauge className="h-4 w-4 text-sky-600" />Ready to publish?</h2>
+        <section data-guide="qpw-checks" className={`${card} p-5`} aria-labelledby="checks-title">
+          <h2 id="checks-title" className="flex items-center gap-2 text-base font-semibold"><Gauge className="h-4 w-4 text-sky-600" />Ready to publish?<GuideInfo step="qpw-checks" /></h2>
           <ul className="mt-3 divide-y divide-slate-100 dark:divide-zinc-800">
             {checks.map((check) => <li key={check.label} className="flex items-center gap-3 py-2.5">
               <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${check.ok ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15' : check.warn ? 'bg-amber-100 text-amber-600 dark:bg-amber-500/15' : 'bg-rose-100 text-rose-600 dark:bg-rose-500/15'}`}>{check.ok ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : <TriangleAlert className="h-3.5 w-3.5" />}</span>

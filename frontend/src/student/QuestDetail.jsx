@@ -7,6 +7,8 @@ import BadgeEmblem from './profile/BadgeEmblem';
 import { DifficultyMix } from './quests/QuestCard';
 import { DIFFICULTY_TONES, questCategory, questPercent, questTheme } from './quests/questTheme';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2';
 const FILTERS = [['all', 'All'], ['todo', 'To solve'], ['solved', 'Solved']];
@@ -103,21 +105,21 @@ export default function QuestDetail() {
 
   return <div className="min-h-screen bg-[#f6f7f9] pb-12 font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:text-zinc-100">
     <main className="mx-auto w-full max-w-[1200px] px-4 pt-5 sm:px-6 lg:px-8">
-      <Link to="/student/quickprep" className={`inline-flex items-center gap-1.5 rounded text-[13px] font-medium text-slate-600 hover:text-slate-900 dark:text-zinc-300 dark:hover:text-white ${focusRing}`}><ArrowLeft className="h-4 w-4" aria-hidden="true" />All QuickPreps</Link>
+      <Link to="/student/quickprep" data-guide="qs-back" className={`inline-flex items-center gap-1.5 rounded text-[13px] font-medium text-slate-600 hover:text-slate-900 dark:text-zinc-300 dark:hover:text-white ${focusRing}`}><ArrowLeft className="h-4 w-4" aria-hidden="true" />All QuickPreps</Link>
 
-      <section aria-labelledby="quest-title" className={`relative mt-3 overflow-hidden rounded-3xl bg-gradient-to-br ${theme.band} p-6 text-white shadow-[0_24px_48px_-32px_rgba(15,23,42,0.6)] sm:p-8`}>
+      <section aria-labelledby="quest-title" data-guide="qs-hero" className={`relative mt-3 overflow-hidden rounded-3xl bg-gradient-to-br ${theme.band} p-6 text-white shadow-[0_24px_48px_-32px_rgba(15,23,42,0.6)] sm:p-8`}>
         <span className="absolute inset-0 opacity-20 [background-image:radial-gradient(rgba(255,255,255,0.8)_1px,transparent_1px)] [background-size:16px_16px]" aria-hidden="true" />
         <CategoryIcon className="absolute -bottom-10 -right-6 h-56 w-56 rotate-[-10deg] text-white/[0.1]" strokeWidth={1.2} aria-hidden="true" />
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0 max-w-2xl">
-            <p className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-white/90">
+            <p className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-white/90" data-guide="qs-tags">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-2.5 py-1 ring-1 ring-inset ring-white/25"><CategoryIcon className="h-3.5 w-3.5" aria-hidden="true" />{category.label}</span>
               {companies.slice(0, 4).map((name) => <span key={name} className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-1 ring-1 ring-inset ring-white/25"><Building2 className="h-3 w-3" aria-hidden="true" />{name}</span>)}
               {quest.topics?.slice(0, 3).map((topic) => <span key={topic} className="rounded-full bg-white/10 px-2.5 py-1">{topic}</span>)}
             </p>
-            <h1 id="quest-title" className="mt-3 text-[28px] font-semibold leading-tight tracking-[-0.025em] sm:text-[34px]">{quest.title}</h1>
+            <h1 id="quest-title" className="mt-3 text-[28px] font-semibold leading-tight tracking-[-0.025em] sm:text-[34px]">{quest.title}<PageGuideButton className="ml-2 align-middle" /></h1>
             {quest.description && <p className="mt-2 text-[14.5px] leading-relaxed text-white/85">{quest.description}</p>}
-            <div className="mt-5 flex flex-wrap items-center gap-3">
+            <div className="mt-5 flex flex-wrap items-center gap-3" data-guide="qs-action">
               {quest.completedAt
                 ? <span className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-[14px] font-semibold text-emerald-700"><CalendarCheck className="h-4 w-4" aria-hidden="true" />Completed {new Date(quest.completedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                 : openState !== 'open'
@@ -134,7 +136,7 @@ export default function QuestDetail() {
               {openState === 'open' && hasWindow(quest) && <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2.5 text-[13px] font-medium ring-1 ring-inset ring-white/25" title={windowText(quest)}><CalendarClock className="h-4 w-4" aria-hidden="true" />{windowNote(quest) || windowText(quest)}</span>}
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-5 rounded-2xl bg-white/10 p-4 ring-1 ring-inset ring-white/20 backdrop-blur-sm">
+          <div data-guide="qs-progress" className="flex shrink-0 items-center gap-5 rounded-2xl bg-white/10 p-4 ring-1 ring-inset ring-white/20 backdrop-blur-sm">
             <div className="relative h-24 w-24" role="progressbar" aria-label="QuickPrep progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-valuetext={`${quest.solved} of ${quest.total} solved`}>
               <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true"><circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="8" /><circle cx="50" cy="50" r="42" fill="none" stroke="white" strokeWidth="8" pathLength="100" strokeDasharray={`${percent} 100`} strokeLinecap="round" /></svg>
               <span className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-[20px] font-bold tabular-nums">{quest.solved}/{quest.total}</span><span className="text-[11px] text-white/80">solved</span></span>
@@ -151,15 +153,15 @@ export default function QuestDetail() {
       <section aria-labelledby="quest-questions-title" className="mt-6 overflow-hidden rounded-2xl border border-[#e9eaee] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-[#202022]">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#eef0f3] px-5 py-4 dark:border-white/[0.06]">
           <div className="min-w-0">
-            <h2 id="quest-questions-title" className="text-[17px] font-semibold tracking-[-0.015em]">Questions</h2>
-            <div className="mt-2 flex items-center gap-3">
+            <h2 id="quest-questions-title" className="flex items-center gap-1.5 text-[17px] font-semibold tracking-[-0.015em]">Questions<GuideInfo step="qs-mix" /></h2>
+            <div className="mt-2 flex items-center gap-3" data-guide="qs-mix">
               <div className="w-48"><DifficultyMix difficulty={quest.difficulty} total={quest.total} /></div>
               <p className="text-[12px] text-slate-500 dark:text-zinc-400">{['Easy', 'Medium', 'Hard'].filter((level) => quest.difficulty?.[level]).map((level) => `${quest.difficulty[level]} ${level}`).join(' · ')}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <p className="text-[12.5px] text-slate-500 dark:text-zinc-400"><strong className="text-emerald-600 dark:text-emerald-400">{quest.solved}</strong> solved · <strong className="text-amber-600 dark:text-amber-400">{attempted}</strong> attempted · <strong className="text-slate-700 dark:text-zinc-200">{quest.total - quest.solved - attempted}</strong> to start</p>
-            <div role="radiogroup" aria-label="Filter questions" className="flex rounded-xl bg-slate-100 p-1 dark:bg-white/[0.06]">
+            <p className="text-[12.5px] text-slate-500 dark:text-zinc-400" data-guide="qs-counts"><strong className="text-emerald-600 dark:text-emerald-400">{quest.solved}</strong> solved · <strong className="text-amber-600 dark:text-amber-400">{attempted}</strong> attempted · <strong className="text-slate-700 dark:text-zinc-200">{quest.total - quest.solved - attempted}</strong> to start</p>
+            <div role="radiogroup" aria-label="Filter questions" data-guide="qs-filter" className="flex rounded-xl bg-slate-100 p-1 dark:bg-white/[0.06]">
               {FILTERS.map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={filter === value} onClick={() => setFilter(value)}
                 className={`rounded-lg px-3 py-1.5 text-[12.5px] font-semibold transition ${focusRing} ${filter === value ? 'bg-white text-slate-900 shadow-sm dark:bg-zinc-900 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100'}`}>{label}</button>)}
             </div>
@@ -169,7 +171,7 @@ export default function QuestDetail() {
         {openState === 'ended' && !quest.completedAt && <p role="status" className="mx-5 mt-3 flex items-center gap-2 rounded-xl bg-slate-100 px-3.5 py-2.5 text-[13px] text-slate-600 dark:bg-white/[0.05] dark:text-zinc-300"><Lock className="h-4 w-4 shrink-0" aria-hidden="true" />This QuickPrep has ended. You can review it, but new solves no longer count toward it.</p>}
         {openState === 'upcoming' ? <p className="flex flex-col items-center gap-2 px-6 py-12 text-center text-[13px] text-slate-500 dark:text-zinc-400"><CalendarClock className="h-6 w-6 text-amber-500" aria-hidden="true" />The questions appear when it opens: {formatWhen(quest.startsAt)}.</p>
           : !groups.length ? <p className="px-6 py-12 text-center text-[13px] text-slate-500 dark:text-zinc-400">{filter === 'solved' ? 'Nothing solved yet. Your first one is a click away.' : 'Every question is solved. Nicely done!'}</p>
-          : <><table className="w-full text-left text-sm" style={{ '--serial-start': (table.page - 1) * table.pageSize }}>
+          : <><table data-guide="qs-table" className="w-full text-left text-sm" style={{ '--serial-start': (table.page - 1) * table.pageSize }}>
             <caption className="sr-only">Questions in {quest.title}{table.sort ? '' : ', in order'}</caption>
             <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-400 max-sm:hidden dark:bg-white/[0.02] dark:text-zinc-500">
               <tr>

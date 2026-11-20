@@ -5,6 +5,7 @@ import {
   Crown, Database, FileQuestion, Gauge, History, Image, Layers, Library, Mail, Megaphone, Route, Tag, Trophy, UserX, Users, X,
 } from 'lucide-react';
 import OverviewHeader from './OverviewHeader';
+import GuideInfo from '../guide/platform/GuideInfo';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { ActivityTrendChart, BandChart, BarRows, DonutChart, StackedBars } from './charts';
@@ -71,11 +72,11 @@ function SetupCheck({ ok, label, Icon }) {
   );
 }
 
-function SectionTitle({ id, title, subtitle }) {
+function SectionTitle({ id, title, subtitle, info }) {
   return (
     <div id={id} className="mb-3 mt-8 scroll-mt-20 flex items-end justify-between gap-3">
       <div>
-        <h2 className="text-base font-semibold tracking-tight text-slate-950 dark:text-white">{title}</h2>
+        <h2 className="flex items-center gap-1.5 text-base font-semibold tracking-tight text-slate-950 dark:text-white">{title}{info ? <GuideInfo step={info} /> : null}</h2>
         {subtitle ? <p className="text-xs text-slate-500 dark:text-slate-400">{subtitle}</p> : null}
       </div>
     </div>
@@ -261,12 +262,12 @@ export default function PlatformOverview() {
 
       {error ? <div className="mt-4 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div> : null}
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div data-guide="pov-kpis" className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((kpi) => <KpiTile key={kpi.label} {...kpi} loading={showSkeleton} />)}
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-12">
-        <Glass id="needs-attention" className="scroll-mt-24 p-5 xl:col-span-8">
+        <Glass id="needs-attention" data-guide="pov-attention" className="scroll-mt-24 p-5 xl:col-span-8">
           <CardHeader title="Needs attention" subtitle="Open items across the platform, most urgent first" Icon={BellRing} />
           {showSkeleton ? <SkeletonRows rows={4} /> : model.attention.length ? (
             <ul className="grid gap-1.5 md:grid-cols-2">
@@ -280,7 +281,7 @@ export default function PlatformOverview() {
             </ul>
           ) : <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-3 text-xs font-medium text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200"><CheckCircle2 className="h-4 w-4" />Nothing needs your attention.</div>}
         </Glass>
-        <Glass className="p-5 xl:col-span-4">
+        <Glass data-guide="pov-accounts" className="p-5 xl:col-span-4">
           <CardHeader title="Accounts" subtitle="Main database and universities" Icon={Users} />
           <DonutChart
             centre={formatNumber(model.students + (central?.accounts.coordinators || 0) + (central?.accounts.admins || 0))}
@@ -295,13 +296,13 @@ export default function PlatformOverview() {
         </Glass>
       </div>
 
-      <SectionTitle id="engagement" title="Engagement" subtitle={`What students did, ${period}`} />
+      <SectionTitle id="engagement" info="pov-trend" title="Engagement" subtitle={`What students did, ${period}`} />
       <div className="grid gap-4 xl:grid-cols-12">
-        <Glass className="p-5 xl:col-span-8">
+        <Glass data-guide="pov-trend" className="p-5 xl:col-span-8">
           <CardHeader title="Student activity" subtitle="Main database plus every connected university" Icon={Activity} action={<CardLink to="/admin/activity">Activity log</CardLink>} />
           {showSkeleton ? <div className="h-[260px] animate-pulse rounded-xl bg-slate-200/60 dark:bg-white/[0.05]" /> : <ActivityTrendChart data={model.trend} series={SERIES} />}
         </Glass>
-        <Glass className="p-5 xl:col-span-4">
+        <Glass data-guide="pov-today" className="p-5 xl:col-span-4">
           <CardHeader title="Today at a glance" subtitle="Compared with yesterday" Icon={CalendarClock} />
           {showSkeleton ? <SkeletonRows rows={4} /> : (
             <ul className="divide-y divide-slate-100 dark:divide-white/5">
@@ -316,7 +317,7 @@ export default function PlatformOverview() {
         </Glass>
       </div>
       {ws ? (
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div data-guide="pov-modules" className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {ws.coding ? <CodingPanel coding={ws.coding} links={ADMIN_LINKS} period={period} /> : null}
           {ws.assessments ? <AssessmentPanel assessments={ws.assessments} links={ADMIN_LINKS} period={period} short={short} /> : null}
           {ws.mockInterviews || ws.aiInterviews ? <InterviewPanel mock={ws.mockInterviews} ai={ws.aiInterviews} links={ADMIN_LINKS} period={period} short={short} /> : null}
@@ -324,9 +325,9 @@ export default function PlatformOverview() {
         </div>
       ) : null}
 
-      <SectionTitle id="universities" title="Universities" subtitle="Setup, usage and service period of every university" />
+      <SectionTitle id="universities" info="pov-health" title="Universities" subtitle="Setup, usage and service period of every university" />
       <div className="grid gap-4 xl:grid-cols-12">
-        <Glass className="p-5 xl:col-span-9">
+        <Glass data-guide="pov-health" className="p-5 xl:col-span-9">
           <CardHeader title="University health" subtitle="Connections, account limits and engagement" Icon={Building2}
             action={<Segmented label="Sort universities" value={sortBy} onChange={setSortBy} options={[{ value: 'attention', label: 'Needs attention' }, { value: 'students', label: 'Students' }, { value: 'name', label: 'Name' }]} />} />
           {showSkeleton ? <SkeletonRows rows={4} /> : sortedRows.length ? (
@@ -393,14 +394,14 @@ export default function PlatformOverview() {
           ) : <EmptyHint action={<CardLink to="/admin/universities/new">Add the first university</CardLink>}>No universities yet.</EmptyHint>}
         </Glass>
         <div className="grid gap-4 xl:col-span-3">
-          <Glass className="p-5">
+          <Glass data-guide="pov-status" className="p-5">
             <CardHeader title="Service status" Icon={Layers} />
             {overview ? (
               <DonutChart size={120} centre={formatNumber(model.registrations.length)} caption="universities"
                 slices={model.statusCounts.filter((item) => item.value).map((item) => ({ label: STATUS_META[item.status].label, value: item.value, color: STATUS_COLORS[item.status] }))} />
             ) : <SkeletonRows rows={3} />}
           </Glass>
-          <Glass className="p-5">
+          <Glass data-guide="pov-renewals" className="p-5">
             <CardHeader title="Renewals" subtitle="Service periods ending first" Icon={CalendarClock} />
             {model.renewals.length ? (
               <ul className="space-y-2">
@@ -417,7 +418,7 @@ export default function PlatformOverview() {
           </Glass>
         </div>
       </div>
-      <Glass className="mt-4 p-5">
+      <Glass data-guide="pov-adoption" className="mt-4 p-5">
         <CardHeader title="Module adoption" subtitle="How many universities have each module switched on" Icon={Layers} action={<CardLink to="/admin/universities/defaults">Defaults</CardLink>} />
         <div className="grid gap-x-8 gap-y-3 md:grid-cols-2 xl:grid-cols-3">
           {model.adoption.map((row) => (
@@ -426,8 +427,8 @@ export default function PlatformOverview() {
         </div>
       </Glass>
 
-      <SectionTitle id="content" title="Content library" subtitle="Everything PeerPrep shares with universities" />
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+      <SectionTitle id="content" info="pov-content" title="Content library" subtitle="Everything PeerPrep shares with universities" />
+      <div data-guide="pov-content" className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <Glass className="p-5">
           <CardHeader title="Coding problems" subtitle="Published problems by difficulty" Icon={Code2} action={<CardLink to="/admin/library/coding/problems">Manage</CardLink>} />
           {problems ? (
@@ -454,9 +455,9 @@ export default function PlatformOverview() {
         </Glass>
       </div>
 
-      <SectionTitle id="scoring" title="Prep Score & Prep Coins" subtitle="Ranking policy, top students and the coin economy" />
+      <SectionTitle id="scoring" info="pov-coins" title="Prep Score & Prep Coins" subtitle="Ranking policy, top students and the coin economy" />
       <div className="grid gap-4 xl:grid-cols-12">
-        <Glass className="p-5 xl:col-span-4">
+        <Glass data-guide="pov-prep-score" className="p-5 xl:col-span-4">
           <CardHeader title="Prep Score" subtitle={central?.prepScore.version ? `Policy v${central.prepScore.version} · published ${relativeTime(central.prepScore.publishedAt)}` : 'Default policy · not yet published'} Icon={Gauge} action={<CardLink to="/admin/settings/prep-score-adjustment">Adjust</CardLink>} />
           <div className="grid grid-cols-3 gap-2">
             <MiniStat label="Average" value={ws?.prepScore?.average ?? '—'} tone="text-sky-700 dark:text-sky-300" />
@@ -471,7 +472,7 @@ export default function PlatformOverview() {
           ) : null}
           {central?.prepScore.calculating ? <p className="mt-3 rounded-lg bg-sky-50 px-3 py-2 text-[11px] font-medium text-sky-700 dark:bg-sky-400/10 dark:text-sky-200">Scores are being recalculated for a new policy.</p> : null}
         </Glass>
-        <Glass className="p-5 xl:col-span-3">
+        <Glass data-guide="pov-top" className="p-5 xl:col-span-3">
           <CardHeader title="Top students" subtitle="Main database, by Prep Score" Icon={Trophy} />
           {ws?.prepScore?.top?.length ? (
             <ol className="space-y-1">
@@ -487,7 +488,7 @@ export default function PlatformOverview() {
             </ol>
           ) : <EmptyHint>No Prep Scores yet.</EmptyHint>}
         </Glass>
-        <Glass className="p-5 xl:col-span-5">
+        <Glass data-guide="pov-coins" className="p-5 xl:col-span-5">
           <CardHeader title="Prep Coin flow" subtitle="Daily coin movements, last 30 days" Icon={Coins} action={<CardLink to="/admin/wallet">Wallet</CardLink>} />
           {central ? <StackedBars data={central.coins.trend} series={COIN_SERIES} height={170} /> : <SkeletonRows rows={3} />}
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -501,7 +502,7 @@ export default function PlatformOverview() {
 
       <SectionTitle id="activity" title="Activity" subtitle="Latest changes and system health" />
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        <Glass className="p-5">
+        <Glass data-guide="pov-changes" className="p-5">
           <CardHeader title="Platform changes" subtitle="Universities, policies and prices" Icon={Activity} action={<CardLink to="/admin/universities/activity">All</CardLink>} />
           {!overview ? <SkeletonRows /> : overview.audit?.length ? (
             <ul className="space-y-2.5">
@@ -514,7 +515,7 @@ export default function PlatformOverview() {
             </ul>
           ) : <EmptyHint>No changes yet.</EmptyHint>}
         </Glass>
-        <Glass className="p-5">
+        <Glass data-guide="pov-actions" className="p-5">
           <CardHeader title="Admin and coordinator actions" subtitle="Main database" Icon={Users} action={<CardLink to="/admin/activity">All</CardLink>} />
           {ws?.recent?.length ? (
             <ul className="space-y-2.5">
@@ -527,7 +528,7 @@ export default function PlatformOverview() {
             </ul>
           ) : showSkeleton ? <SkeletonRows /> : <EmptyHint>No recent actions.</EmptyHint>}
         </Glass>
-        <Glass className="p-5">
+        <Glass data-guide="pov-system" className="p-5">
           <CardHeader title="System health" subtitle="Email delivery and upcoming work" Icon={Mail} action={<CardLink to="/admin/email-queue">Email queue</CardLink>} />
           <div className="grid grid-cols-3 gap-2">
             <MiniStat label="Sent · 30 days" value={formatNumber(central?.mail.sent)} tone="text-emerald-600 dark:text-emerald-300" />

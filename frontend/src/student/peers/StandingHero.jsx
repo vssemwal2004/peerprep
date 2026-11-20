@@ -8,12 +8,13 @@ import { YOU_COLOR } from './circleViz';
 import { PERIODS } from './circleMath';
 import { useWidth } from './useWidth';
 import { focusRing, Skeleton } from '../dashboard/ui';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const firstName = (name) => String(name || '').trim().split(/\s+/)[0] || 'Student';
 const binLabel = (bin) => (bin.from === bin.to ? String(bin.from) : `${bin.from}–${bin.to}`);
 
 export function PeriodTabs({ period, onPeriod }) {
-  return <div className="flex shrink-0 rounded-xl bg-white/70 p-0.5 ring-1 ring-inset ring-black/[0.05] backdrop-blur dark:bg-white/[0.06] dark:ring-white/[0.06]" role="tablist" aria-label="Ranking period">
+  return <div data-guide="pm-period" className="flex shrink-0 rounded-xl bg-white/70 p-0.5 ring-1 ring-inset ring-black/[0.05] backdrop-blur dark:bg-white/[0.06] dark:ring-white/[0.06]" role="tablist" aria-label="Ranking period">
     {PERIODS.map((item) => <button key={item.key} type="button" role="tab" aria-selected={period === item.key} onClick={() => onPeriod(item.key)}
       className={`rounded-[10px] px-3 py-1.5 text-[12px] font-semibold transition ${focusRing} ${period === item.key ? 'bg-slate-900 text-white shadow-sm dark:bg-white dark:text-zinc-900' : 'text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-zinc-100'}`}>{item.label}</button>)}
   </div>;
@@ -92,12 +93,12 @@ export default function StandingHero({ circle, summary }) {
   const practisedShare = data?.mates ? (data.practisedToday / data.mates) * 100 : 0;
   const ring = 2 * Math.PI * 15;
 
-  return <section className="relative overflow-hidden rounded-3xl border border-[#ece6dc] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-[#242424]" aria-labelledby="standing-title">
+  return <section data-guide="pm-standing" className="relative overflow-hidden rounded-3xl border border-[#ece6dc] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-[#242424]" aria-labelledby="standing-title">
     <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(55%_90%_at_0%_0%,rgba(245,158,11,0.16),transparent_65%),radial-gradient(50%_90%_at_100%_10%,rgba(14,165,233,0.12),transparent_65%)]" aria-hidden="true" />
     <div className="relative grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       <div className="p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="standing-title" className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.12em] text-amber-800 dark:text-amber-300"><CrestGlyph className="h-4 w-4" />Your standing</h2>
+          <h2 id="standing-title" className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.12em] text-amber-800 dark:text-amber-300"><CrestGlyph className="h-4 w-4" />Your standing<GuideInfo step="pm-standing" /></h2>
           <PeriodTabs period={circle.period} onPeriod={circle.setPeriod} />
         </div>
         {!data ? <Skeleton className="mt-5 h-40" /> : <>
@@ -109,7 +110,7 @@ export default function StandingHero({ circle, summary }) {
             </div>
           </div>
           <p className="mt-3 text-[13px] text-slate-500 dark:text-zinc-400">You solved <b className="text-slate-900 dark:text-white">{you?.solved ?? 0}</b> {period.phrase} · median <b className="text-slate-900 dark:text-white">{data.median}</b></p>
-          <ol className="relative mt-4 space-y-1" aria-label="Who is around you">
+          <ol className="relative mt-4 space-y-1" aria-label="Who is around you" data-guide="pm-around">
             <span className="absolute bottom-6 left-[27px] top-6 w-px bg-gradient-to-b from-amber-300 via-sky-300 to-slate-200 dark:from-amber-500/40 dark:via-sky-500/40 dark:to-white/10" aria-hidden="true" />
             {data.ahead ? <LadderRow person={data.ahead} label={data.ahead.name} compare
               chip={<span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">{data.ahead.toPass} to pass</span>} />
@@ -121,17 +122,18 @@ export default function StandingHero({ circle, summary }) {
         </>}
       </div>
 
-      <div className="border-t border-black/[0.05] p-5 sm:p-6 lg:border-l lg:border-t-0 dark:border-white/[0.06]">
+      <div data-guide="pm-distribution" className="border-t border-black/[0.05] p-5 sm:p-6 lg:border-l lg:border-t-0 dark:border-white/[0.06]">
         <div className="flex items-center gap-2">
           <SpectrumGlyph className="h-4 w-4 text-sky-600 dark:text-sky-400" />
           <h3 className="text-[13px] font-semibold uppercase tracking-[0.12em] text-sky-800 dark:text-sky-300">Where everyone stands</h3>
+          <GuideInfo step="pm-distribution" />
         </div>
         <p className="mt-1 text-[12.5px] text-slate-500 dark:text-zinc-400">Prep Mates grouped by problems solved {period.phrase}</p>
         <div className="mt-3">{data ? <Distribution distribution={data.distribution} phrase={period.phrase} /> : <Skeleton className="h-40" />}</div>
       </div>
     </div>
 
-    <dl className="relative grid grid-cols-1 border-t border-black/[0.05] bg-white/55 backdrop-blur sm:grid-cols-3 dark:border-white/[0.06] dark:bg-white/[0.02]">
+    <dl data-guide="pm-counts" className="relative grid grid-cols-1 border-t border-black/[0.05] bg-white/55 backdrop-blur sm:grid-cols-3 dark:border-white/[0.06] dark:bg-white/[0.02]">
       <Link to="/student/peers#my-prep-mates" className={`flex items-center gap-3 px-5 py-3.5 transition hover:bg-white/70 dark:hover:bg-white/[0.03] ${focusRing}`}>
         <span className="flex -space-x-2" aria-hidden="true">
           {faces.length ? faces.map((row) => <PeerAvatar key={row.id} name={row.name} url={row.avatarUrl} size="sm" className="!h-8 !w-8 !rounded-full ring-2 ring-white dark:ring-[#242424]" />)

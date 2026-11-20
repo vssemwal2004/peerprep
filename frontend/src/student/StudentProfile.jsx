@@ -998,10 +998,10 @@ export default function StudentProfile() {
 
           {/* Summary and Coding keep their existing design. Activity is immediately below them. */}
           <main className="min-w-0 space-y-4">
-            {canRanking && <PrepScoreSummary ranking={ranking} loading={loadingRanking && !ranking} />}
+            {canRanking && <div data-guide="pf-score"><PrepScoreSummary ranking={ranking} loading={loadingRanking && !ranking} /></div>}
 
             <div className="grid gap-4 xl:grid-cols-2">
-              {canQuestions && <StudentSummary
+              {canQuestions && <div data-guide="pf-summary"><StudentSummary
                 className="h-full"
                 firstName={firstName}
                 coding={codingSummary}
@@ -1010,23 +1010,23 @@ export default function StudentProfile() {
                 assessments={assessments}
                 mostUsedLanguage={mostUsedLanguage}
                 languagesCount={languages.length}
-              />}
-              {canQuestions && <CodingProgress
+              /></div>}
+              {canQuestions && <div data-guide="pf-coding"><CodingProgress
                 className="h-full"
                 {...codingTotals}
                 loading={!metricsReady && loading}
                 attemptedProblems={attemptedProblems}
                 streak={streakSummary}
                 activity={activity}
-              />}
+              /></div>}
             </div>
 
-            {(canQuestions || canQuickPrep) && <ActivitySection activity={engagement.data?.activity?.activityByDate || (canQuestions ? activity : {})}
+            {(canQuestions || canQuickPrep) && <div data-guide="pf-activity"><ActivitySection activity={engagement.data?.activity?.activityByDate || (canQuestions ? activity : {})}
               activityStats={engagement.data?.activity?.stats || (canQuestions ? activityStats : null)} loading={engagement.loading || loadingActivity}
-              breakdown={engagement.data?.activity?.breakdownByDate} domains={engagement.data?.domains} verified={engagement.data?.version === 2} />}
+              breakdown={engagement.data?.activity?.breakdownByDate} domains={engagement.data?.domains} verified={engagement.data?.version === 2} /></div>}
 
             <div className="grid gap-4 xl:grid-cols-2">
-              {canEngage && <BadgesCard
+              {canEngage && <div data-guide="pf-badges"><BadgesCard
                 className="h-full"
                 level={performanceTitle}
                 awards={awards}
@@ -1035,28 +1035,28 @@ export default function StudentProfile() {
                 onRetry={loadRanking}
                 learnerProgress={engagement.data?.learnerProgress || learnerProgress}
                 onOpenGallery={setBadgesGallery}
-              />}
-              {canAnalysis && (canAssessments || canInterviews || canEvents || canLearning) && <PeerPrepProgress
+              /></div>}
+              {canAnalysis && (canAssessments || canInterviews || canEvents || canLearning) && <div data-guide="pf-progress"><PeerPrepProgress
                 className="h-full"
                 assessments={assessments}
                 interviews={interviews}
                 learning={learning}
                 content={learningContent}
                 visible={{ assessments: canAssessments, interviews: canInterviews || canEvents, learning: canLearning }}
-              />}
+              /></div>}
             </div>
 
-            {canEngage && <div className="grid items-start gap-4 xl:grid-cols-2">
+            {canEngage && <div className="grid items-start gap-4 xl:grid-cols-2" data-guide="pf-daily">
               <DailyChallengeCard section={engagement} onRetry={loadRanking} autoRefresh={false} />
               {canQuestions && <QuestsCard />}
             </div>}
 
-            {canQuestions && <PracticeHistory
+            {canQuestions && <div data-guide="pf-history"><PracticeHistory
               solved={stats?.recentSolvedProblems}
               submissions={stats?.recentSubmissions}
               statusBreakdown={stats?.statusBreakdown}
               languages={languages}
-            />}
+            /></div>}
           </main>
         </div>
       </MotionDiv>

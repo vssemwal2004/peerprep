@@ -6,6 +6,8 @@ import AccountQuotaNotice from '../components/AccountQuotaNotice';
 import { useToast } from '../components/CustomToast';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
 import { defaultCoordinatorPermissions } from './coordinatorPermissions';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 const PREVIEW_COLUMNS = [['row', 'Row'], ['name', 'Name'], ['email', 'Email'], ['coordinatorId', 'Coordinator ID'], ['department', 'Department'], ['college', 'College'], ['access', 'Access'], ['result', 'Result']];
 
@@ -241,44 +243,44 @@ export default function CoordinatorOnboarding() {
     <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
       <div className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
+          <div data-guide="co-title">
             <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200">
               <UserPlus className="h-3.5 w-3.5" />
               Coordinator Management
             </div>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">Add Coordinator</h1>
+            <h1 className="mt-3 flex items-center gap-2 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">Add Coordinator <PageGuideButton /></h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
               Create a coordinator account, capture ownership details, and choose whether they start with default platform access.
             </p>
           </div>
-          <Link to="/admin/coordinator-access" className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:-translate-y-0.5 hover:border-sky-200 hover:text-sky-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200">
+          <Link to="/admin/coordinator-access" data-guide="co-access-link" className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:-translate-y-0.5 hover:border-sky-200 hover:text-sky-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200">
             <ShieldCheck className="h-4 w-4" />
             Manage Access
           </Link>
         </div>
 
-        <AccountQuotaNotice role="coordinator" />
-        <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-white/10 dark:bg-gray-900">
+        <div data-guide="co-quota"><AccountQuotaNotice role="coordinator" /></div>
+        <div data-guide="co-mode" className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-white/10 dark:bg-gray-900">
           {[['bulk', 'Bulk CSV Upload'], ['single', 'Individual Coordinator']].map(([value, label]) => <button key={value} type="button" onClick={() => setMode(value)} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${mode === value ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/[0.04]'}`}>{label}</button>)}
         </div>
 
         {mode === 'bulk' && (
           <div className="space-y-5">
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5 dark:border-sky-400/20 dark:bg-sky-400/10">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="font-bold text-sky-950 dark:text-sky-100">Coordinator CSV guidelines</h2><p className="mt-1 text-sm text-sky-800/80 dark:text-sky-200/80">Required: Name, Email. Teacher IDs are generated automatically; the password defaults to that generated ID. Optional: Password, Phone, Department, College, GrantDefaultAccess.</p></div><button type="button" onClick={downloadTemplate} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-500"><Download className="h-4 w-4" />Download template</button></div>
+            <div data-guide="co-guidelines" className="rounded-2xl border border-sky-200 bg-sky-50 p-5 dark:border-sky-400/20 dark:bg-sky-400/10">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="flex items-center gap-1.5 font-bold text-sky-950 dark:text-sky-100">Coordinator CSV guidelines <GuideInfo step="co-guidelines" /></h2><p className="mt-1 text-sm text-sky-800/80 dark:text-sky-200/80">Required: Name, Email. Teacher IDs are generated automatically; the password defaults to that generated ID. Optional: Password, Phone, Department, College, GrantDefaultAccess.</p></div><button type="button" onClick={downloadTemplate} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-500"><Download className="h-4 w-4" />Download template</button></div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
+            <div data-guide="co-upload" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
               <label className="relative flex min-h-52 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center transition hover:border-sky-400 hover:bg-sky-50 dark:border-white/15 dark:bg-white/[0.03] dark:hover:border-sky-400/50"><input type="file" accept=".csv,text/csv" onChange={(event) => readBulkFile(event.target.files?.[0])} className="absolute inset-0 cursor-pointer opacity-0" /><span className="flex h-12 w-12 items-center justify-center rounded-xl bg-sky-600 text-white"><Upload className="h-5 w-5" /></span><span className="mt-4 text-sm font-bold text-slate-900 dark:text-white">Drop or select coordinator CSV</span><span className="mt-1 text-xs text-slate-500">Maximum 500 coordinator rows</span></label>
               {bulkFile && <div className="mt-3 flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200"><FileText className="h-4 w-4" />{bulkFile.name}<span className="text-xs opacity-70">({(bulkFile.size / 1024).toFixed(1)} KB)</span></div>}
             </div>
-            {bulkErrors.length > 0 && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><div className="font-bold">Fix these CSV problems before upload</div><ul className="mt-2 list-disc space-y-1 pl-5">{bulkErrors.slice(0, 20).map((error) => <li key={error}>{error}</li>)}</ul></div>}
-            {bulkRows.length > 0 && <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10"><div><h3 className="font-bold text-slate-950 dark:text-white">Upload preview</h3><p className="text-sm text-slate-500">{bulkRows.length} coordinator rows ready for server validation</p></div><button type="button" onClick={uploadBulk} disabled={bulkErrors.length > 0 || bulkLoading || Boolean(bulkResult)} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 dark:bg-white dark:text-slate-950">{bulkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{bulkLoading ? 'Uploading...' : bulkResult ? 'Upload processed' : 'Upload coordinators'}</button></div><div className="overflow-x-auto"><table className="min-w-[900px] w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-400 dark:bg-white/[0.03]"><tr>{PREVIEW_COLUMNS.map(([key, heading]) => <SortHeader key={key} sortKey={key} sort={previewTable.sort} onSort={previewTable.toggleSort} className="px-4 py-3">{heading}</SortHeader>)}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-white/10">{previewTable.pageRows.map((row) => { const rowResult = resultsByRow.get(row.row); return <tr key={row.row}><td className="px-4 py-3 font-bold text-slate-500">{row.row}</td><td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">{row.name}</td><td className="px-4 py-3 text-slate-600 dark:text-slate-300">{row.email}</td><td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">{row.coordinatorId}</td><td className="px-4 py-3 text-slate-500">{row.department || '-'}</td><td className="px-4 py-3 text-slate-500">{row.college || '-'}</td><td className="px-4 py-3 text-slate-500">{row.grantDefaultAccess ? 'Default' : 'None'}</td><td className={`px-4 py-3 text-xs font-bold ${rowResult?.status === 'created' ? 'text-emerald-600' : rowResult ? 'text-rose-600' : 'text-slate-400'}`}>{rowResult ? (rowResult.status === 'created' ? 'Created' : rowResult.errors?.join(', ')) : 'Ready'}</td></tr>; })}</tbody></table></div><TablePager {...previewTable.pager} noun="rows" /></div>}
-            {bulkResult && <div className="grid gap-3 sm:grid-cols-4">{[['Created', bulkResult.created], ['Failed', bulkResult.failed], ['Emails sent', bulkResult.emailSent], ['Email failures', bulkResult.emailFailed]].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-gray-900"><div className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</div><div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{value || 0}</div></div>)}</div>}
+            {bulkErrors.length > 0 && <div data-guide="co-errors" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><div className="font-bold">Fix these CSV problems before upload</div><ul className="mt-2 list-disc space-y-1 pl-5">{bulkErrors.slice(0, 20).map((error) => <li key={error}>{error}</li>)}</ul></div>}
+            {bulkRows.length > 0 && <div data-guide="co-preview" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10"><div><h3 className="font-bold text-slate-950 dark:text-white">Upload preview</h3><p className="text-sm text-slate-500">{bulkRows.length} coordinator rows ready for server validation</p></div><button type="button" onClick={uploadBulk} disabled={bulkErrors.length > 0 || bulkLoading || Boolean(bulkResult)} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 dark:bg-white dark:text-slate-950">{bulkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{bulkLoading ? 'Uploading...' : bulkResult ? 'Upload processed' : 'Upload coordinators'}</button></div><div className="overflow-x-auto"><table className="min-w-[900px] w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-400 dark:bg-white/[0.03]"><tr>{PREVIEW_COLUMNS.map(([key, heading]) => <SortHeader key={key} sortKey={key} sort={previewTable.sort} onSort={previewTable.toggleSort} className="px-4 py-3">{heading}</SortHeader>)}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-white/10">{previewTable.pageRows.map((row) => { const rowResult = resultsByRow.get(row.row); return <tr key={row.row}><td className="px-4 py-3 font-bold text-slate-500">{row.row}</td><td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">{row.name}</td><td className="px-4 py-3 text-slate-600 dark:text-slate-300">{row.email}</td><td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">{row.coordinatorId}</td><td className="px-4 py-3 text-slate-500">{row.department || '-'}</td><td className="px-4 py-3 text-slate-500">{row.college || '-'}</td><td className="px-4 py-3 text-slate-500">{row.grantDefaultAccess ? 'Default' : 'None'}</td><td className={`px-4 py-3 text-xs font-bold ${rowResult?.status === 'created' ? 'text-emerald-600' : rowResult ? 'text-rose-600' : 'text-slate-400'}`}>{rowResult ? (rowResult.status === 'created' ? 'Created' : rowResult.errors?.join(', ')) : 'Ready'}</td></tr>; })}</tbody></table></div><TablePager {...previewTable.pager} noun="rows" /></div>}
+            {bulkResult && <div data-guide="co-results" className="grid gap-3 sm:grid-cols-4">{[['Created', bulkResult.created], ['Failed', bulkResult.failed], ['Emails sent', bulkResult.emailSent], ['Email failures', bulkResult.emailFailed]].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-gray-900"><div className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</div><div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{value || 0}</div></div>)}</div>}
           </div>
         )}
 
         <div className={`${mode === 'single' ? 'grid' : 'hidden'} gap-5 xl:grid-cols-[minmax(0,1fr)_360px]`}>
-          <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
+          <form onSubmit={submit} data-guide="co-form" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
             <div className="mb-5 flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200">
                 <Users className="h-5 w-5" />
@@ -324,14 +326,14 @@ export default function CoordinatorOnboarding() {
               </div>
             </div>
 
-            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-              <label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Data visibility</label>
+            <div data-guide="co-scope" className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+              <span className="flex items-center gap-1"><label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Data visibility</label><GuideInfo step="co-scope" /></span>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {[['own', 'Own data', 'Only assigned students and records created by this coordinator.'], ['all', 'Whole data', 'Institution-wide records for every enabled feature.']].map(([value, title, description]) => <label key={value} className={`cursor-pointer rounded-xl border p-3 ${form.dataScope === value ? 'border-sky-400 bg-sky-50 dark:bg-sky-400/10' : 'border-slate-200 bg-white dark:border-white/10 dark:bg-gray-950'}`}><input type="radio" name="dataScope" value={value} checked={form.dataScope === value} onChange={() => update('dataScope', value)} className="mr-2" /><span className="text-sm font-bold text-slate-950 dark:text-white">{title}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{description}</span></label>)}
               </div>
             </div>
 
-            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+            <div data-guide="co-default-access" className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
               <label className="flex cursor-pointer items-start gap-3">
                 <input
                   type="checkbox"
@@ -359,7 +361,7 @@ export default function CoordinatorOnboarding() {
             </div>
           </form>
 
-          <aside className="space-y-4">
+          <aside className="space-y-4" data-guide="co-flow">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
               <h3 className="text-sm font-bold text-slate-950 dark:text-white">Access Flow</h3>
               <div className="mt-4 space-y-3">

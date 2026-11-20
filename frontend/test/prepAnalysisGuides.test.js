@@ -6,7 +6,7 @@ import { pageTourSteps } from '../src/admin/prepAnalysis/guide/content/page.js';
 import { glossaryParts } from '../src/admin/prepAnalysis/guide/glossary.js';
 import { KPI_EXPLAIN } from '../src/admin/prepAnalysis/guide/explain.js';
 import { CHECKLIST } from '../src/admin/prepAnalysis/guide/checklist.js';
-import { placeCard } from '../src/admin/prepAnalysis/guide/targets.js';
+import { placeCard } from '../src/guide/engine/targets.js';
 
 // The server's chart and headline-card catalogue: the guides must cover every one.
 const server = await import('../../backend/src/modules/prepAnalysis/charts.js');

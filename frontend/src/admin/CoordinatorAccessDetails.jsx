@@ -5,6 +5,8 @@ import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
 import { coordinatorPermissionCategories, coordinatorPermissions, defaultCoordinatorPermissions, normalizePermissions } from './coordinatorPermissions';
+import PageGuideButton from '../guide/platform/PageGuideButton';
+import GuideInfo from '../guide/platform/GuideInfo';
 
 function formatDate(value) {
   if (!value) return 'Not available';
@@ -240,7 +242,7 @@ export default function CoordinatorAccessDetails() {
       <div className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <Link to="/admin/coordinator-access" className="mb-3 inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-sky-700 dark:text-slate-400">
+            <Link to="/admin/coordinator-access" data-guide="cad-back" className="mb-3 inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-sky-700 dark:text-slate-400">
               <ArrowLeft className="h-4 w-4" />
               Back to Coordinator Access
             </Link>
@@ -248,12 +250,12 @@ export default function CoordinatorAccessDetails() {
               <ShieldCheck className="h-3.5 w-3.5" />
               Coordinator Permission Control
             </div>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">{coordinator?.name || 'Coordinator Access'}</h1>
+            <h1 data-guide="cad-title" className="mt-3 flex items-center gap-2 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">{coordinator?.name || 'Coordinator Access'} <PageGuideButton /></h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
               Admin can enable or restrict each PeerPrep coordinator feature by phase. Default access is all current coordinator-capable admin features.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2" data-guide="cad-actions">
             <button onClick={() => setShowHistory(true)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200">
               <History className="h-4 w-4" />
               History
@@ -265,7 +267,7 @@ export default function CoordinatorAccessDetails() {
           </div>
         </div>
 
-        <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4" data-guide="cad-stats">
           <Stat label="Coordinator ID" value={coordinator?.coordinatorId || '-'} />
           <Stat label="Status" value={coordinator?.status || (coordinator?.isActive === false ? 'disabled' : 'active')} />
           <Stat label="Enabled Permissions" value={`${enabledCount} / ${totalCount}`} />
@@ -273,24 +275,24 @@ export default function CoordinatorAccessDetails() {
         </div>
 
         <section className="mb-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900">
-          <div className="mb-5 rounded-xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-400/20 dark:bg-sky-400/10">
-            <h2 className="text-sm font-bold text-slate-950 dark:text-white">Data visibility for enabled features</h2>
+          <div data-guide="cad-scope" className="mb-5 rounded-xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-400/20 dark:bg-sky-400/10">
+            <h2 className="flex items-center gap-1.5 text-sm font-bold text-slate-950 dark:text-white">Data visibility for enabled features <GuideInfo step="cad-scope" /></h2>
             <div className="mt-3 flex flex-wrap gap-2">{[['own', 'Own data only'], ['all', 'Whole institution data']].map(([value, label]) => <button key={value} type="button" onClick={() => setDataScope(value)} className={`rounded-xl px-4 py-2 text-sm font-bold ${dataScope === value ? 'bg-sky-600 text-white' : 'border border-slate-200 bg-white text-slate-700 dark:border-white/10 dark:bg-gray-950 dark:text-slate-200'}`}>{label}</button>)}</div>
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">This scope applies to every feature permission enabled below.</p>
           </div>
           <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <h2 className="text-base font-bold text-slate-950 dark:text-white">Access Phases</h2>
+              <h2 className="flex items-center gap-1.5 text-base font-bold text-slate-950 dark:text-white">Access Phases <GuideInfo step="cad-phases" /></h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Pick one phase to edit. Use All Modules for a full access matrix.</p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2" data-guide="cad-bulk">
               <button onClick={() => setConfirm({ type: 'select-all', title: 'Select all permissions?', text: 'This enables every current coordinator-capable admin feature.' })} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:border-sky-200 hover:text-sky-700 dark:border-white/10 dark:bg-gray-950 dark:text-slate-200">Select All</button>
               <button onClick={() => setConfirm({ type: 'reset', title: 'Reset permissions?', text: 'This restores the last saved permission state.' })} className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:border-sky-200 hover:text-sky-700 dark:border-white/10 dark:bg-gray-950 dark:text-slate-200"><RotateCcw className="h-3.5 w-3.5" />Reset</button>
               <button onClick={() => setConfirm({ type: 'clear', title: 'Disable all permissions?', text: 'The coordinator will lose access to all feature routes after save.' })} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200">Clear</button>
             </div>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5" data-guide="cad-phases">
             <button
               onClick={() => setActivePhase('all')}
               className={`rounded-xl border p-3 text-left transition ${activePhase === 'all' ? 'border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-100' : 'border-slate-200 bg-white text-slate-700 hover:border-sky-200 dark:border-white/10 dark:bg-gray-950 dark:text-slate-200'}`}
@@ -317,7 +319,7 @@ export default function CoordinatorAccessDetails() {
           </div>
         </section>
 
-        <section className="mb-5 grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900 lg:grid-cols-[1fr_180px]">
+        <section data-guide="cad-search" className="mb-5 grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900 lg:grid-cols-[1fr_180px]">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search permission name, usage, route, or access type..." className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-9 text-sm font-semibold text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-white/10 dark:bg-gray-950 dark:text-white dark:focus:ring-sky-400/10" />
@@ -330,7 +332,7 @@ export default function CoordinatorAccessDetails() {
           </select>
         </section>
 
-        <div className="space-y-5">
+        <div className="space-y-5" data-guide="cad-matrix">
           {visibleCategories.length ? visibleCategories.map((category) => {
             const categoryKeys = category.permissions.map((permission) => permission.key);
             const enabledInCategory = category.permissions.filter((permission) => selectedSet.has(permission.key)).length;

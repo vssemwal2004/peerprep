@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { api } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, AlertCircle, Calendar, Link as LinkIcon, MessageSquare, X, Search } from "lucide-react";
+import PageGuideButton from "../guide/platform/PageGuideButton";
 
 export default function SessionAndFeedback() {
   const [events, setEvents] = useState([]);
@@ -106,9 +107,9 @@ export default function SessionAndFeedback() {
             transition={{ duration: 0.5, ease: "easeOut" }}
             className="hidden lg:block lg:w-80"
           >
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-6 h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-              <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Scheduled Sessions</h2>
-              <div className="relative mb-4">
+            <div data-guide="ses-sidebar" className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-6 h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+              <h2 className="flex items-center gap-2 text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Scheduled Sessions<PageGuideButton size="sm" /></h2>
+              <div className="relative mb-4" data-guide="ses-search">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400" />
                 <input
                   type="text"
@@ -142,6 +143,7 @@ export default function SessionAndFeedback() {
                 <div className="space-y-4">
                   {filteredPairs.map((p, idx) => (
                     <motion.div
+                      data-guide="ses-item"
                       key={p._id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -187,6 +189,7 @@ export default function SessionAndFeedback() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
+            data-guide="ses-sidebar"
             className="lg:hidden sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 py-4 px-4 flex items-center justify-between"
           >
             <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Scheduled Sessions</h2>
@@ -287,7 +290,7 @@ export default function SessionAndFeedback() {
             transition={{ duration: 0.5, ease: "easeOut" }}
             className="flex-1"
           >
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-6 md:p-8 lg:p-10 h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+            <div data-guide="ses-detail" className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-6 md:p-8 lg:p-10 h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
               {activePair ? (
                 <div className="space-y-6">
                   <motion.div
@@ -308,7 +311,7 @@ export default function SessionAndFeedback() {
                       <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                     </motion.button>
                   </motion.div>
-                  <div className="space-y-4">
+                  <div className="space-y-4" data-guide="ses-time">
                     <div className="flex items-center gap-2">
                       <Calendar className="w-5 h-5 text-blue-500 dark:text-blue-400" />
                       <span className="text-sm text-gray-600 dark:text-gray-300">Time: {new Date(activePair.scheduledAt).toLocaleString()}</span>
@@ -355,6 +358,7 @@ export default function SessionAndFeedback() {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.2 }}
+                            data-guide="ses-received"
                             className="bg-purple-50 dark:bg-purple-900/30 p-6 rounded-xl border border-purple-200 dark:border-purple-700"
                           >
                             <h3 className="text-xl font-semibold text-purple-800 dark:text-purple-300 mb-2">Feedback Received</h3>
@@ -401,6 +405,7 @@ export default function SessionAndFeedback() {
                           initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: 0.3 }}
+                          data-guide="ses-feedback-form"
                           className="bg-gray-50 dark:bg-gray-700 p-6 rounded-xl border border-gray-200 dark:border-gray-600"
                         >
                           <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Session Feedback</h3>

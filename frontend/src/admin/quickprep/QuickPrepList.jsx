@@ -11,6 +11,8 @@ import { isControlDeployment as central, QUICKPREP_ANALYSIS_PATH } from '../../p
 import { DataTable } from '../../components/table';
 import WindowChip from '../../student/quests/WindowChip';
 import { hasWindow, windowText } from '../../student/quests/questWindow';
+import PageGuideButton from '../../guide/platform/PageGuideButton';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const STATUS_TABS = ['all', 'published', 'draft', 'archived'];
 
@@ -79,14 +81,14 @@ export default function QuickPrepList() {
   ], [actionsFor]);
 
   return <Page>
-    <PageHeader icon={Zap} title="QuickPrep" crumbs={[{ label: 'Admin', to: '/admin/dashboard' }, { label: 'QuickPrep' }]}
+    <PageHeader icon={Zap} title="QuickPrep" guide="qpl-header" info={<PageGuideButton />} crumbs={[{ label: 'Admin', to: '/admin/dashboard' }, { label: 'QuickPrep' }]}
       description="Curated question sets for focused practice, such as company sets, topic tracks or a 75 Hard plan. Students earn the badge and XP when they solve every question."
       actions={<>
-        <Link to={QUICKPREP_ANALYSIS_PATH} className={secondaryButton}><BarChart3 className="h-4 w-4" />Analysis</Link>
-        <Link to={`${QUICKPREP_ROOT}/new`} className={primaryButton}><Plus className="h-4 w-4" />Create QuickPrep</Link>
+        <Link to={QUICKPREP_ANALYSIS_PATH} data-guide="qpl-analysis" className={secondaryButton}><BarChart3 className="h-4 w-4" />Analysis</Link>
+        <Link to={`${QUICKPREP_ROOT}/new`} data-guide="qpl-create" className={primaryButton}><Plus className="h-4 w-4" />Create QuickPrep</Link>
       </>} />
 
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div data-guide="qpl-stats" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <StatCard icon={Layers} label="QuickPreps" value={counts.all} hint={`${counts.archived} archived`} tone="sky" />
       <StatCard icon={Rocket} label="Published" value={counts.published} hint="Visible to students" tone="emerald" />
       <StatCard icon={FilePen} label="Drafts" value={counts.draft} hint="Not visible yet" tone="amber" />
@@ -97,9 +99,10 @@ export default function QuickPrepList() {
     {message && <Notice tone={message.tone} onClose={() => setMessage(null)}>{message.text}</Notice>}
     {state.error && <Notice tone="error">{state.error} <button type="button" className="font-semibold underline" onClick={load}>Retry</button></Notice>}
 
-    <section className={card} aria-labelledby="quickprep-table-title">
-      <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4 dark:border-zinc-800">
+    <section data-guide="qpl-table" className={card} aria-labelledby="quickprep-table-title">
+      <div data-guide="qpl-filters" className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4 dark:border-zinc-800">
         <h2 id="quickprep-table-title" className="sr-only">All QuickPreps</h2>
+        <GuideInfo step="qpl-filters" />
         <Segmented label="Status" value={status} onChange={setStatus} options={STATUS_TABS.map((tab) => ({ value: tab, label: tab === 'all' ? 'All' : tab[0].toUpperCase() + tab.slice(1), count: counts[tab] }))} />
         <label className="sr-only" htmlFor="quickprep-type">Type</label>
         <select id="quickprep-type" value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900">

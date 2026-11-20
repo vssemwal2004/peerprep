@@ -14,7 +14,7 @@ export function Suggestions({ title = 'Classmates you may know', subtitle = 'Act
   useEffect(() => { load(); }, [load]);
   const patch = (id, relation) => setState((current) => ({ ...current, items: current.items.map((item) => (item.id === id ? { ...item, relation } : item)) }));
   if (!state.loading && !state.items.length) return null;
-  return <section className={`${card} p-5 sm:p-6`} aria-labelledby="suggestions-title">
+  return <section className={`${card} p-5 sm:p-6`} aria-labelledby="suggestions-title" data-guide="pm-suggestions">
     <PanelTitle id="suggestions-title" glyph={SparkGlyph} tone="violet" title={title} subtitle={subtitle} />
     {state.loading ? <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map((key) => <Skeleton key={key} className="h-40" />)}</div>
       : <ul className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
@@ -37,7 +37,7 @@ export function CircleWelcome({ onFind }) {
     { Glyph: MatesGlyph, title: 'They accept', text: 'You both see each other in your ranking.' },
     { Glyph: DuelGlyph, title: 'Compare and push', text: 'Week by week charts, streaks, topics and badges.' },
   ];
-  return <section className="relative overflow-hidden rounded-3xl border border-[#ece6dc] bg-white dark:border-white/[0.07] dark:bg-[#242424]" aria-labelledby="welcome-title">
+  return <section data-guide="pm-welcome" className="relative overflow-hidden rounded-3xl border border-[#ece6dc] bg-white dark:border-white/[0.07] dark:bg-[#242424]" aria-labelledby="welcome-title">
     <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_100%_at_0%_0%,rgba(245,158,11,0.16),transparent_65%),radial-gradient(55%_100%_at_100%_100%,rgba(14,165,233,0.14),transparent_65%)]" aria-hidden="true" />
     <div className="relative grid items-center gap-6 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div>

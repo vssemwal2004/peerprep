@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { SortHeader, TablePager, useClientTable } from '../../components/table';
 import { formatDateTime, formatDuration } from './ReportComponents';
+import GuideInfo from '../../guide/platform/GuideInfo';
 import {
   ACADEMIC_DIMENSIONS, DISTRIBUTION_BUCKETS, formatRelativeAge, groupBreakdown, rowEvaluationState,
   rowPercentage, rowViolationCount,
@@ -183,7 +184,7 @@ export default function ReportOverview({
   return (
     <div className="space-y-3">
       {/* Assessment summary: one compact card */}
-      <section className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <section data-guide="ar-summary" className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -212,7 +213,7 @@ export default function ReportOverview({
       </section>
 
       {/* Headline numbers: every one is a count of candidates, and they add up (see the sub-lines) */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
+      <div data-guide="ar-tiles" className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
         <Tile label="Candidates" value={stats.total} sub="Assigned + attempted" onClick={() => onShowCandidates('all')} title="Everyone assigned this test, plus anyone who attempted it" />
         <Tile label="Attempted" value={stats.started} sub={`${stats.notStarted} not started`} tone="sky" delta={deltas.started} title="Started the test: in progress + finished" />
         <Tile label="In progress" value={stats.inProgress} sub="Writing now" tone="sky" delta={deltas.inProgress} onClick={() => onShowCandidates('in_progress')} />
@@ -224,9 +225,9 @@ export default function ReportOverview({
       </div>
 
       {/* Progress: one slim bar */}
-      <section className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <section data-guide="ar-completion" className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-[13px] font-semibold text-slate-900 dark:text-white">Completion</h3>
+          <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-900 dark:text-white">Completion<GuideInfo step="ar-completion" /></h3>
           <span className="text-xs text-slate-500 dark:text-gray-400">{stats.finished} of {stats.total} finished · <span className="font-semibold text-slate-700 dark:text-gray-200">{completion}%</span></span>
         </div>
         <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800" role="img" aria-label={segments.map((segment) => `${segment.label} ${segment.count}`).join(', ')}>
@@ -244,7 +245,7 @@ export default function ReportOverview({
         </div>
       </section>
 
-      <div className="grid gap-3 xl:grid-cols-3">
+      <div data-guide="ar-panels" className="grid gap-3 xl:grid-cols-3">
         {/* Score distribution */}
         <Panel icon={LineChart} title="Score distribution" action={<span className="text-[11px] text-slate-400">{stats.graded} graded</span>}>
           <div className="grid flex-1 grid-cols-4 items-end gap-2.5 px-4 pb-1 pt-3">

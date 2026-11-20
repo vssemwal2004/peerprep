@@ -4,11 +4,11 @@ import { motion, useReducedMotion } from "framer-motion";
 const EASE = [0.22, 1, 0.36, 1];
 
 /** A block that rises into place; children marked <RevealItem> follow one after another. */
-export function Reveal({ children, className = "", delay = 0, stagger = 0.05, as = "div" }) {
+export function Reveal({ children, className = "", delay = 0, stagger = 0.05, as = "div", ...props }) {
   const reduce = useReducedMotion();
   const Component = motion[as] || motion.div;
   return (
-    <Component className={className} initial={reduce ? false : "hidden"} animate="shown"
+    <Component {...props} className={className} initial={reduce ? false : "hidden"} animate="shown"
       variants={{ hidden: {}, shown: { transition: { delayChildren: delay, staggerChildren: stagger } } }}>
       {children}
     </Component>

@@ -15,6 +15,7 @@ import { hideGlobalLoader } from './utils/globalLoader';
 import { useAuth } from './context/AuthContext';
 import { hasPermission } from './admin/coordinatorPermissions';
 import PopupDismissManager from './components/PopupDismissManager';
+import PlatformGuideProvider from './guide/platform/PlatformGuideProvider';
 import { STUDENT_SIDEBAR_PANEL_WIDTH, STUDENT_SIDEBAR_RAIL_WIDTH } from './components/sidebarLayout';
 
 // Shells are role-specific and should not delay the public landing/login bundle.
@@ -373,6 +374,7 @@ function AppContent() {
   // boundary per navigation remounted the whole shell and hid the sidebar on every click.
   const routeBoundaryKey = isAdmin ? 'admin' : isCoordinator ? 'coordinator' : navigationKey;
   return (
+    <PlatformGuideProvider>
     <div
       data-app-shell={isStudentShell ? true : undefined}
       className={`${isStudentShell ? 'h-screen overflow-hidden' : 'min-h-screen'} w-full flex flex-col`}
@@ -656,6 +658,7 @@ function AppContent() {
         <Suspense fallback={null}><Footer /></Suspense>
       )}
     </div>
+    </PlatformGuideProvider>
   );
 }
 

@@ -6,7 +6,7 @@ import { CardHeader, EmptyHint, Glass, Segmented, SkeletonRows } from '../../ove
 import { relativeTime } from '../../overview/overviewModel';
 import UniversityBadge from '../universities/UniversityBadge';
 import PrepCoinIcon from '../../components/prepCoin/PrepCoinIcon';
-import { CoinAmount, CoinPage } from './shared';
+import { CoinAmount, CoinPage, InfoTitle } from './shared';
 import { buttonClass, formatCoins, inputClass } from './coinModel';
 
 const TARGETS = [
@@ -103,11 +103,11 @@ export default function IssueCoins() {
       actions={<Link to="/admin/prep-coins/ledger?kind=issued" className={buttonClass.secondary}><ReceiptText className="h-4 w-4" />Issue history</Link>}>
       <div className="grid gap-4 xl:grid-cols-12">
         <Glass as="form" onSubmit={issue} className="p-5 xl:col-span-8">
-          <CardHeader title="1. Who receives the coins" subtitle="Universities pass their wallet on to coordinators and students" Icon={Send}
-            action={<Segmented label="Recipient type" value={target} onChange={switchTarget} options={TARGETS} />} />
+          <CardHeader title={<InfoTitle title="1. Who receives the coins" step="ic-type" />} subtitle="Universities pass their wallet on to coordinators and students" Icon={Send}
+            action={<div data-guide="ic-type"><Segmented label="Recipient type" value={target} onChange={switchTarget} options={TARGETS} /></div>} />
 
           {target === 'university' ? (
-            <div>
+            <div data-guide="ic-who">
               <label className="relative block">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
                 <input className={`${inputClass} pl-9`} value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter universities by name or ID" aria-label="Filter universities" />
@@ -129,7 +129,7 @@ export default function IssueCoins() {
               ) : <div className="mt-3"><EmptyHint action={universities.length ? null : <Link to="/admin/universities/new" className="text-xs font-semibold text-sky-700">Add a university</Link>}>{universities.length ? 'No university matches.' : 'No universities yet.'}</EmptyHint></div>}
             </div>
           ) : (
-            <div>
+            <div data-guide="ic-who">
               <div className="flex gap-2">
                 <label className="relative block flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
@@ -156,7 +156,7 @@ export default function IssueCoins() {
             </div>
           )}
 
-          <div className="mt-6 border-t border-slate-100 pt-5 dark:border-white/5">
+          <div data-guide="ic-amount" className="mt-6 border-t border-slate-100 pt-5 dark:border-white/5">
             <CardHeader title="2. How many coins" Icon={Building2} />
             <div className="flex flex-wrap items-center gap-2">
               <label className="relative w-48">
@@ -176,8 +176,8 @@ export default function IssueCoins() {
         </Glass>
 
         <div className="grid content-start gap-4 xl:col-span-4">
-          <Glass className="p-5">
-            <CardHeader title="3. Review" subtitle="Check before you issue" Icon={CheckCircle2} />
+          <Glass data-guide="ic-review" className="p-5">
+            <CardHeader title={<InfoTitle title="3. Review" step="ic-review" />} subtitle="Check before you issue" Icon={CheckCircle2} />
             {selected ? (
               <div className="space-y-3">
                 <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{selected.name}</p>
@@ -188,13 +188,13 @@ export default function IssueCoins() {
                 </div>
               </div>
             ) : <p className="text-xs text-slate-500 dark:text-slate-400">Choose a recipient and an amount.</p>}
-            <button type="button" onClick={issue} disabled={busy || !selected || !validAmount} className={`${buttonClass.primary} mt-4 h-10 w-full justify-center`}>
+            <button type="button" data-guide="ic-issue" onClick={issue} disabled={busy || !selected || !validAmount} className={`${buttonClass.primary} mt-4 h-10 w-full justify-center`}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{validAmount ? `Issue ${formatCoins(count)} coins` : 'Issue coins'}
             </button>
             <p className="mt-2 text-[11px] text-slate-400">Each issue is recorded in the ledger and the activity log. A retried click never issues twice.</p>
           </Glass>
-          <Glass className="p-5">
-            <CardHeader title="Recently issued" Icon={ReceiptText} />
+          <Glass data-guide="ic-recent" className="p-5">
+            <CardHeader title={<InfoTitle title="Recently issued" step="ic-recent" />} Icon={ReceiptText} />
             {!recent ? <SkeletonRows rows={3} /> : recent.length ? (
               <ul className="space-y-2.5">
                 {recent.map((row) => (

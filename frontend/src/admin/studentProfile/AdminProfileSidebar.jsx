@@ -20,6 +20,7 @@ import { focusRing } from '../../student/profile/format';
 // Level visuals come from the student profile so both views stay identical.
 import { levelTheme } from '../../student/profile/levelTheme';
 import { fmtDate, normalizeHref } from './utils';
+import GuideInfo from '../../guide/platform/GuideInfo';
 
 const SOCIAL_ICONS = { LinkedIn: Linkedin, GitHub: Github, Portfolio: Globe };
 
@@ -171,7 +172,7 @@ export default function AdminProfileSidebar({
             {bio}
           </p>
 
-          <div className="mt-4 flex w-full gap-2">
+          <div className="mt-4 flex w-full gap-2" data-guide="sp-contact">
             {onViewResume && <button
               type="button"
               onClick={onViewResume}
@@ -193,8 +194,8 @@ export default function AdminProfileSidebar({
           </div>
         </div>
 
-        <section aria-labelledby="admin-identity-title" className="mt-5 border-t border-slate-100 pt-4 dark:border-zinc-800">
-          <SectionTitle id="admin-identity-title">Student details</SectionTitle>
+        <section aria-labelledby="admin-identity-title" data-guide="sp-details" className="mt-5 border-t border-slate-100 pt-4 dark:border-zinc-800">
+          <SectionTitle id="admin-identity-title"><span className="inline-flex items-center gap-1">Student details <GuideInfo step="sp-details" /></span></SectionTitle>
           <dl className="divide-y divide-slate-100 dark:divide-zinc-800/80">
             <DetailRow icon={<Hash className="h-3.5 w-3.5" />} label="Student ID" value={student?.studentId} />
             <DetailRow icon={<Mail className="h-3.5 w-3.5" />} label="Email" value={student?.email} />

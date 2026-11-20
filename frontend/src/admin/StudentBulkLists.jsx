@@ -5,6 +5,7 @@ import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { useAuth } from '../context/AuthContext';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
+import PageGuideButton from '../guide/platform/PageGuideButton';
 
 const timeValue = (value) => {
   const time = value ? new Date(value).getTime() : Number.NaN;
@@ -117,24 +118,24 @@ export default function StudentBulkLists() {
         <section className="relative mb-5 overflow-hidden rounded-2xl border border-sky-100 bg-gradient-to-br from-white via-sky-50/70 to-indigo-50 p-5 shadow-sm dark:border-sky-900/40 dark:from-gray-900 dark:via-sky-950/30 dark:to-indigo-950/20 sm:p-6">
           <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full bg-sky-200/30 blur-3xl dark:bg-sky-600/10" />
           <div className="relative flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-            <div className="flex items-start gap-4">
+            <div className="flex items-start gap-4" data-guide="bl-title">
               <span className="rounded-2xl bg-sky-600 p-3 text-white shadow-lg shadow-sky-600/20"><UploadCloud className="h-6 w-6" /></span>
-              <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-400">Student management</p><h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-3xl">Bulk student lists</h1><p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-gray-400">Manage every CSV upload, open its student roster, and perform controlled actions from one workspace.</p></div>
+              <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-400">Student management</p><h1 className="mt-1 flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-3xl">Bulk student lists <PageGuideButton /></h1><p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-gray-400">Manage every CSV upload, open its student roster, and perform controlled actions from one workspace.</p></div>
             </div>
-            <div className="relative w-full lg:w-80">
+            <div className="relative w-full lg:w-80" data-guide="bl-search">
               <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
               <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search list or file name" className="h-10 w-full rounded-xl border border-white/80 bg-white/90 pl-9 pr-3 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900/90 dark:text-white" />
             </div>
           </div>
         </section>
 
-        <div className="mb-5 grid gap-3 sm:grid-cols-3">
+        <div className="mb-5 grid gap-3 sm:grid-cols-3" data-guide="bl-stats">
           {[{ label: 'Saved bulk lists', value: batches.length, Icon: FileSpreadsheet, toneClass: 'bg-sky-50 text-sky-600 dark:bg-sky-950/30' }, { label: 'Students represented', value: totalStudents, Icon: Users, toneClass: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30' }, { label: 'Latest upload', value: latestUpload, Icon: CalendarDays, toneClass: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/30' }].map(({ label, value, Icon, toneClass }) => (
             <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"><div className="flex items-center gap-3"><span className={`rounded-xl p-2.5 ${toneClass}`}><Icon className="h-5 w-5" /></span><div><p className="text-xs font-semibold text-slate-500 dark:text-gray-400">{label}</p><p className="mt-0.5 text-xl font-bold text-slate-950 dark:text-white">{value}</p></div></div></div>
           ))}
         </div>
 
-        <div className="overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div className="overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900" data-guide="bl-table">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">

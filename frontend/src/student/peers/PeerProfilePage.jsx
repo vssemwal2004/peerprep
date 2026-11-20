@@ -72,6 +72,7 @@ export default function PeerProfilePage() {
         <button
           type="button"
           onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/student/peers'))}
+          data-guide="pp-back"
           className="mb-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-white"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back
@@ -109,7 +110,7 @@ export default function PeerProfilePage() {
                   {/* Practice only: coding, badges, recent solves, Quick Prep sheets and learning. */}
                   <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">
                     {coding ? (
-                      <CodingProgress
+                      <div data-guide="pp-coding"><CodingProgress
                         className="h-full"
                         totalSolved={coding.solved}
                         totalProblems={coding.total}
@@ -121,21 +122,21 @@ export default function PeerProfilePage() {
                         description="Practice problems solved by difficulty."
                         action={canOpenProblems ? undefined : null}
                         showActivity={false}
-                      />
+                      /></div>
                     ) : null}
-                    <PeerBadgesCard name={profile.name} progress={progress} />
+                    <div data-guide="pp-badges"><PeerBadgesCard name={profile.name} progress={progress} /></div>
                   </div>
 
                   {/* Practice-only heat map (no logins, tests or interviews), same card as the own profile. */}
                   {progress?.activity ? (
-                    <ActivitySection
+                    <div data-guide="pp-activity"><ActivitySection
                       activity={progress.activity.byDate}
                       activityStats={{ totalActiveDays: progress.activity.activeDays }}
                       loading={false}
-                    />
+                    /></div>
                   ) : null}
 
-                  <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">
+                  <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0" data-guide="pp-recent">
                     {coding ? <RecentSolvedCard name={profile.name} coding={progress?.coding} canOpen={canOpenProblems} /> : null}
                     {hasQuickPrep ? <QuickPrepSheetsCard name={profile.name} sheets={progress?.quickPrepSheets} canOpen={canOpenQuickPrep} /> : null}
                     {hasLearning ? <PeerModulesCard modules={progress?.modules} /> : null}
