@@ -11,7 +11,7 @@ import {
   ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
   Pencil, Copy, X, MoreVertical, Lock, Unlock, Globe, ShieldOff,
   RotateCcw, CheckCircle2, AlertTriangle, FileCheck2, Mail, Send, Loader2,
-  Users, UserMinus, UserPlus, BarChart3, ArrowDown, ArrowUp, ArrowUpDown,
+  Users, UserMinus, UserPlus, BarChart3, ArrowDown, ArrowUp, ArrowUpDown, FolderClosed, ChevronRight, ArrowLeft,
 } from 'lucide-react';
 import AssessmentLifecycleSidebar from './assessment/components/AssessmentLifecycleSidebar';
 import PageGuideButton from '../guide/platform/PageGuideButton';
@@ -121,7 +121,7 @@ const getStudentAddedBadgeClass = (createdAt) => {
   return 'border-slate-200 bg-slate-50 text-slate-500';
 };
 
-function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onAddStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers }) {
+function ThreeDotsMenu({ assessment, isMock, onOpen, onPreview, onViewReport, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onAddStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers, onPublishMock, onUnpublishMock, onResetMock }) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState(null);
   const [menuDirection, setMenuDirection] = useState('down');
@@ -223,28 +223,31 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
           style={menuStyle}
           className="fixed z-[1000] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
         >
-          {item(<ClipboardList className="h-3.5 w-3.5" />, assessment.status === 'Completed' || assessment.manuallyCompletedAt ? 'View Report' : 'View Assessment', onOpen)}
-          {item(<Eye className="h-3.5 w-3.5" />, 'Preview Assessment', onPreview)}
+          {item(<ClipboardList className="h-3.5 w-3.5" />, isMock && assessment.lifecycleStatus === 'draft' ? 'Publish Mock' : assessment.status === 'Completed' || assessment.manuallyCompletedAt ? 'View Report' : isMock ? 'View Mock' : 'View Assessment', onOpen)}
+          {item(<Eye className="h-3.5 w-3.5" />, isMock ? 'Preview Mock' : 'Preview Assessment', onPreview)}
           {item(<BarChart3 className="h-3.5 w-3.5" />, 'View Report', onViewReport)}
           {!assessment.shared && <>
-          {item(<Copy className="h-3.5 w-3.5" />, 'Copy Assessment', onDuplicate)}
+          {item(<Copy className="h-3.5 w-3.5" />, isMock ? 'Copy Mock' : 'Copy Assessment', onDuplicate)}
           <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
-          {item(<Pencil className="h-3.5 w-3.5" />, 'Edit Assessment', onEdit)}
+          {item(<Pencil className="h-3.5 w-3.5" />, isMock ? 'Edit Mock Questions' : 'Edit Assessment', onEdit)}
+          {isMock && assessment.lifecycleStatus === 'draft' && item(<Send className="h-3.5 w-3.5" />, 'Publish Mock', onPublishMock)}
+          {isMock && assessment.lifecycleStatus === 'published' && item(<EyeOff className="h-3.5 w-3.5" />, 'Unpublish Mock', onUnpublishMock)}
+          {isMock && item(<RotateCcw className="h-3.5 w-3.5" />, 'Reset Mock', onResetMock, true)}
           {item(<Lock className="h-3.5 w-3.5" />, 'Edit Password', onEditPassword)}
           {assessment.lifecycleStatus !== 'draft' && item(<Users className="h-3.5 w-3.5" />, 'View Students & Sets', onEligibleStudents)}
           {assessment.lifecycleStatus !== 'draft' && item(<UserPlus className="h-3.5 w-3.5" />, 'Add Student', onAddStudents)}
           {assessment.lifecycleStatus !== 'draft' && item(<Mail className="h-3.5 w-3.5" />, 'Send Mail to Eligible Students', onSendInvitations)}
-          {item(
+          {!isMock && item(
             isVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />,
             isVisible ? 'Archive Assessment' : 'Restore Assessment',
             onToggleVisibility,
           )}
           <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
-          {item(<RotateCcw className="h-3.5 w-3.5" />, 'Reset Test Submissions', onResetSubmissions)}
-          {item(<CheckCircle2 className="h-3.5 w-3.5" />, 'Mark as Complete', onMarkComplete)}
+          {!isMock && item(<RotateCcw className="h-3.5 w-3.5" />, 'Reset Test Submissions', onResetSubmissions)}
+          {!isMock && item(<CheckCircle2 className="h-3.5 w-3.5" />, 'Mark as Complete', onMarkComplete)}
           {item(<FileCheck2 className="h-3.5 w-3.5" />, 'Generate Answers', onReleaseAnswers)}
           <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
-          {item(<Trash2 className="h-3.5 w-3.5" />, 'Delete Assessment', onDelete, true)}
+          {item(<Trash2 className="h-3.5 w-3.5" />, isMock ? 'Delete Mock' : 'Delete Assessment', onDelete, true)}
           </>}
         </motion.div>
       )}
@@ -1213,6 +1216,8 @@ export default function AssessmentDashboard() {
   const location = useLocation();
   const { user } = useAuth();
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+  const isMock = location.pathname.startsWith('/admin/prepmock');
+  const assessmentRoot = isMock ? '/admin/prepmock' : `${rolePrefix}/assessment`;
   const canCreateAssessments = hasPermission(user, 'coordinator.assessment.create');
   const toast = useToast();
   const [assessments, setAssessments] = useState([]);
@@ -1224,6 +1229,7 @@ export default function AssessmentDashboard() {
   const [eligibleTarget, setEligibleTarget] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
+  const [selectedCompanyFolder, setSelectedCompanyFolder] = useState('');
   const [filters, setFilters] = useState({
     search: '',
     creationWindow: 'any',
@@ -1237,7 +1243,7 @@ export default function AssessmentDashboard() {
     setLoading(true);
     setError('');
     try {
-      const data = await api.listAssessments();
+      const data = await api.listAssessments(isMock ? { kind: 'mock' } : {});
       setAssessments(data.assessments || []);
     } catch (err) {
       setError(err.message || 'Failed to load assessments');
@@ -1278,7 +1284,7 @@ export default function AssessmentDashboard() {
             : 'ongoing';
       const matchesTab = activeTab === 'all' || bucket === activeTab;
 
-      const searchable = [assessment.title, assessment.testType, assessment.assessmentType, assessment.assessmentId]
+      const searchable = [assessment.title, assessment.company, assessment.testType, assessment.assessmentType, assessment.assessmentId]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
@@ -1317,13 +1323,27 @@ export default function AssessmentDashboard() {
     });
   }, [assessments, filters, activeTab]);
   // Column headers sort on top of the "Sort" menu's order; picking a menu order clears the column sort.
-  const assessmentTable = useClientTable(filtered, { getValue: assessmentValue, resetKey: `${activeTab}|${JSON.stringify(filters)}` });
+  const companyFolders = useMemo(() => {
+    const map = new Map();
+    filtered.forEach((assessment) => {
+      const name = String(assessment.company || 'Uncategorized').trim() || 'Uncategorized';
+      const key = name.toLocaleLowerCase();
+      const folder = map.get(key) || { name, count: 0 };
+      folder.count += 1;
+      map.set(key, folder);
+    });
+    return [...map.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }, [filtered]);
+  const visibleAssessments = isMock && selectedCompanyFolder
+    ? filtered.filter((assessment) => (assessment.company || 'Uncategorized').toLocaleLowerCase() === selectedCompanyFolder.toLocaleLowerCase())
+    : filtered;
+  const assessmentTable = useClientTable(visibleAssessments, { getValue: assessmentValue, resetKey: `${activeTab}|${selectedCompanyFolder}|${JSON.stringify(filters)}` });
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this assessment and all submissions?')) return;
+    if (!confirm(`Delete this ${isMock ? 'mock' : 'assessment'} and all submissions?`)) return;
     try {
       await api.deleteAssessment(id);
-      toast.success('Assessment deleted');
+      toast.success(isMock ? 'Mock deleted' : 'Assessment deleted');
       loadAssessments();
     } catch (err) {
       toast.error(err.message || 'Failed to delete');
@@ -1334,7 +1354,7 @@ export default function AssessmentDashboard() {
     try {
       const data = await api.getAssessmentById(id);
       const a = data.assessment;
-      await api.createAssessment({ ...a, title: `${a.title} (Copy)`, lifecycleStatus: 'draft' });
+      await api.createAssessment({ ...a, kind: isMock ? 'mock' : 'assessment', title: `${a.title} (Copy)`, lifecycleStatus: 'draft' });
       toast.success('Duplicated as draft');
       loadAssessments();
     } catch (err) {
@@ -1364,6 +1384,20 @@ export default function AssessmentDashboard() {
     });
   };
 
+  const openResetMock = (assessment) => setConfirmAction({
+    type: 'resetMock', tone: 'warning', assessment,
+    title: 'Reset mock?',
+    message: 'All assigned students and the schedule will be removed. Students will no longer see or attempt this mock. Prior attempts and scores remain in admin reports.',
+    confirmLabel: 'Reset Mock',
+  });
+
+  const openUnpublishMock = (assessment) => setConfirmAction({
+    type: 'unpublishMock', tone: 'warning', assessment,
+    title: 'Unpublish mock?',
+    message: 'Students will no longer see or attempt this mock. Its schedule, student selection, and prior reports will be kept for publishing again.',
+    confirmLabel: 'Unpublish Mock',
+  });
+
   const openMarkComplete = (assessment) => {
     setConfirmAction({
       type: 'complete',
@@ -1388,7 +1422,13 @@ export default function AssessmentDashboard() {
 
   const handleConfirmAction = async (action) => {
     try {
-      if (action.type === 'reset') {
+      if (action.type === 'resetMock') {
+        await api.resetMock(action.assessment._id);
+        toast.success('Mock reset. Student access and schedule removed.');
+      } else if (action.type === 'unpublishMock') {
+        await api.unpublishMock(action.assessment._id);
+        toast.success('Mock unpublished');
+      } else if (action.type === 'reset') {
         const result = await api.resetAssessmentSubmissions(action.assessment._id);
         toast.success(`Test reset. ${result.deletedSubmissions || 0} submission${Number(result.deletedSubmissions || 0) === 1 ? '' : 's'} deleted.`);
       } else if (action.type === 'complete') {
@@ -1411,11 +1451,11 @@ export default function AssessmentDashboard() {
         <header data-page-header className="shrink-0 border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950">
           <div className="mx-auto flex min-h-16 max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
             <div data-guide="as-title">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Assessments</p>
-              <h1 className="mt-0.5 flex items-center gap-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white">All Assessments <PageGuideButton /></h1>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{isMock ? 'PrepMock' : 'Assessments'}</p>
+              <h1 className="mt-0.5 flex items-center gap-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white">All {isMock ? 'Mocks' : 'Assessments'} {!isMock && <PageGuideButton />}</h1>
             </div>
-            {canCreateAssessments && <button type="button" data-guide="as-create" onClick={() => navigate(`${rolePrefix}/assessment/create`)} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500">
-              <Plus className="h-4 w-4" /> Create Assessment
+            {canCreateAssessments && <button type="button" data-guide="as-create" onClick={() => navigate(`${assessmentRoot}/create`)} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500">
+              <Plus className="h-4 w-4" /> Create {isMock ? 'Mock' : 'Assessment'}
             </button>}
           </div>
         </header>
@@ -1442,12 +1482,12 @@ export default function AssessmentDashboard() {
                 <input
                   value={filters.search}
                   onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
-                  placeholder="Search by assessment name, ID or type"
+                  placeholder={isMock ? 'Search company, mock name, ID or type' : 'Search by assessment name, ID or type'}
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/30"
                 />
               </div>
               <div data-guide="as-sort" className="flex shrink-0 items-center gap-2">
-                <span className="whitespace-nowrap rounded-lg bg-slate-100 px-2.5 py-2 text-xs font-medium text-slate-600 dark:bg-gray-800 dark:text-gray-300">{filtered.length} assessment{filtered.length === 1 ? '' : 's'}</span>
+                <span className="whitespace-nowrap rounded-lg bg-slate-100 px-2.5 py-2 text-xs font-medium text-slate-600 dark:bg-gray-800 dark:text-gray-300">{visibleAssessments.length} {isMock ? 'mock' : 'assessment'}{visibleAssessments.length === 1 ? '' : 's'}</span>
                 <select value={filters.sort} onChange={(event) => { assessmentTable.setSort(null); setFilters((current) => ({ ...current, sort: event.target.value })); }} aria-label="Sort assessments" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-600 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
                   <option value="updated">Recently updated</option>
                   <option value="oldest">Oldest created</option>
@@ -1461,6 +1501,7 @@ export default function AssessmentDashboard() {
             </div>
 
           <section data-guide="as-list" className="pt-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pb-4" aria-label="Assessment list">
+            {isMock && selectedCompanyFolder && <button type="button" onClick={() => setSelectedCompanyFolder('')} className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300"><ArrowLeft className="h-4 w-4" /> All companies <ChevronRight className="h-3 w-3 text-slate-400" /> {selectedCompanyFolder}</button>}
             {loading ? (
               <div className="flex min-h-56 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm text-slate-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading assessments...</div>
             ) : error ? (
@@ -1468,10 +1509,20 @@ export default function AssessmentDashboard() {
             ) : filtered.length === 0 ? (
               <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-6 py-10 text-center dark:border-gray-700 dark:bg-gray-900">
                 <ClipboardList className="h-7 w-7 text-slate-300" />
-                <h3 className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">No assessments found</h3>
+                <h3 className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">No {isMock ? 'mocks' : 'assessments'} found</h3>
                 <p className="mt-1 max-w-sm text-xs text-slate-500 dark:text-gray-400">Try another status, date, type, or search term.</p>
                 <button type="button" onClick={() => { setActiveTab('all'); setFilters({ search: '', creationWindow: 'any', startDate: '', endDate: '', testType: 'all', sort: 'updated' }); }} className="mt-4 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Clear filters</button>
               </div>
+            ) : isMock && !selectedCompanyFolder ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Company folders">
+                {companyFolders.map((folder) => <button key={folder.name} type="button" onClick={() => setSelectedCompanyFolder(folder.name)} className="group flex min-h-28 items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-sky-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-900">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-950/40"><FolderClosed className="h-6 w-6" /></span>
+                  <span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900 dark:text-white">{folder.name}</strong><span className="mt-1 block text-xs text-slate-500">{folder.count} mock{folder.count === 1 ? '' : 's'}</span></span>
+                  <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-sky-600" />
+                </button>)}
+              </div>
+            ) : visibleAssessments.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500 dark:border-gray-700 dark:bg-gray-900">No mocks in this company match the filters.</div>
             ) : (
               <div role="list" className="space-y-2.5">
                 <div data-guide="as-columns" className="sticky top-0 z-20 -mx-1 isolate hidden grid-cols-[minmax(190px,1.5fr)_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px] items-center gap-x-3 bg-slate-50 px-5 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 shadow-[0_1px_0_0_rgb(226,232,240)] xl:grid dark:bg-gray-950 dark:text-gray-500 dark:shadow-[0_1px_0_0_rgb(31,41,55)]">
@@ -1487,9 +1538,11 @@ export default function AssessmentDashboard() {
                     ? Math.min(100, Math.round((completedCount / assignedCount) * 100))
                     : 0;
                   const lifecycleStatus = assessmentLifecycleLabel(assessment);
-                  const openPath = assessment.lifecycleStatus !== 'draft' && (assessment.status === 'Completed' || assessment.manuallyCompletedAt)
-                    ? `${rolePrefix}/assessment/reports?assessmentId=${encodeURIComponent(assessment._id)}`
-                    : `${rolePrefix}/assessment/${assessment._id}`;
+                  const openPath = isMock && assessment.lifecycleStatus === 'draft'
+                    ? `${assessmentRoot}/${assessment._id}/edit?publish=1`
+                    : assessment.lifecycleStatus !== 'draft' && (assessment.status === 'Completed' || assessment.manuallyCompletedAt)
+                    ? `${assessmentRoot}/reports?assessmentId=${encodeURIComponent(assessment._id)}`
+                    : `${assessmentRoot}/${assessment._id}`;
 
                   return (
                     <article
@@ -1529,8 +1582,8 @@ export default function AssessmentDashboard() {
                       </div>
 
                       <div className="min-w-0 text-xs">
-                        <div className="font-semibold text-slate-700 dark:text-gray-200">{assessment.startTime ? formatShortDate(assessment.startTime) : 'Not scheduled'}</div>
-                        <div className="mt-0.5 text-[11px] text-slate-400 dark:text-gray-500">{assessment.endTime ? `Ends ${formatShortDate(assessment.endTime)}` : 'End date not set'}</div>
+                        <div className="font-semibold text-slate-700 dark:text-gray-200">{isMock && assessment.availabilityMode === 'always' && assessment.lifecycleStatus !== 'draft' ? 'Always on' : assessment.startTime ? formatShortDate(assessment.startTime) : 'Not scheduled'}</div>
+                        <div className="mt-0.5 text-[11px] text-slate-400 dark:text-gray-500">{isMock && assessment.availabilityMode === 'always' && assessment.lifecycleStatus !== 'draft' ? 'Until unpublished or reset' : assessment.endTime ? `Ends ${formatShortDate(assessment.endTime)}` : 'End date not set'}</div>
                       </div>
 
                       <div className="min-w-0 text-xs">
@@ -1554,9 +1607,9 @@ export default function AssessmentDashboard() {
                       </div>
 
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-medium ${assessment.isVisible !== false ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>
-                          {assessment.isVisible !== false ? <Globe className="h-3 w-3" /> : <ShieldOff className="h-3 w-3" />}
-                          {assessment.isVisible !== false ? 'Visible' : 'Hidden'}
+                        <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-medium ${assessment.isVisible !== false && assessment.lifecycleStatus !== 'draft' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>
+                          {assessment.isVisible !== false && assessment.lifecycleStatus !== 'draft' ? <Globe className="h-3 w-3" /> : <ShieldOff className="h-3 w-3" />}
+                          {assessment.isVisible !== false && assessment.lifecycleStatus !== 'draft' ? 'Visible' : 'Hidden'}
                         </span>
                         {assessment.shared && <span className="rounded-md border border-sky-200 bg-sky-50 px-1.5 py-1 text-[10px] font-medium text-sky-700">Shared</span>}
                       </div>
@@ -1571,10 +1624,11 @@ export default function AssessmentDashboard() {
                       <div className="justify-self-start md:justify-self-end">
                         <ThreeDotsMenu
                             assessment={assessment}
+                            isMock={isMock}
                             onOpen={() => navigate(openPath)}
-                            onPreview={() => navigate(`${rolePrefix}/assessment/preview/${assessment._id}`)}
-                            onViewReport={() => navigate(`${rolePrefix}/assessment/reports?assessmentId=${encodeURIComponent(assessment._id)}`)}
-                            onEdit={() => navigate(`${rolePrefix}/assessment/${assessment._id}/edit`)}
+                            onPreview={() => navigate(`${assessmentRoot}/preview/${assessment._id}`)}
+                            onViewReport={() => navigate(`${assessmentRoot}/reports?assessmentId=${encodeURIComponent(assessment._id)}`)}
+                            onEdit={() => navigate(`${assessmentRoot}/${assessment._id}/edit`)}
                             onDuplicate={() => handleDuplicate(assessment._id)}
                             onDelete={() => handleDelete(assessment._id)}
                             onToggleVisibility={() => handleToggleVisibility(assessment)}
@@ -1585,6 +1639,9 @@ export default function AssessmentDashboard() {
                             onResetSubmissions={() => openResetSubmissions(assessment)}
                             onMarkComplete={() => openMarkComplete(assessment)}
                             onReleaseAnswers={() => openReleaseAnswers(assessment)}
+                            onPublishMock={() => navigate(`${assessmentRoot}/${assessment._id}/edit?publish=1`)}
+                            onUnpublishMock={() => openUnpublishMock(assessment)}
+                            onResetMock={() => openResetMock(assessment)}
                         />
                       </div>
                     </article>
@@ -1661,8 +1718,8 @@ export default function AssessmentDashboard() {
                 </div>
 
                 <div className="flex flex-wrap gap-2 pt-2">
-                  {!selected.shared && <button type="button" onClick={() => { setSelected(null); navigate(`${rolePrefix}/assessment/${selected._id}/edit`); }} className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500">
-                    <Pencil className="h-3.5 w-3.5" /> Edit Assessment
+                  {!selected.shared && <button type="button" onClick={() => { setSelected(null); navigate(`${assessmentRoot}/${selected._id}/edit`); }} className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500">
+                    <Pencil className="h-3.5 w-3.5" /> Edit {isMock ? 'Mock' : 'Assessment'}
                   </button>}
                   {!selected.shared && <button type="button" onClick={() => { setPasswordTarget(selected); setSelected(null); }} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200">
                     <Lock className="h-3.5 w-3.5" /> Edit Password

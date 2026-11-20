@@ -291,7 +291,7 @@ export function attachStoredScores(rows, stored, { features = {}, points = { Eas
  * facts.days: Map(id -> Map(day -> { attempts, accepted })). problems: indexed meta map.
  */
 export function buildStudentRows({
-  students, facts, problems, batchNames = new Map(), now = new Date(), learning = null, quickprep = null, assessment = null, interview = null, range = null,
+  students, facts, problems, batchNames = new Map(), now = new Date(), learning = null, quickprep = null, assessment = null, prepmock = null, interview = null, range = null,
   efforts = null,
 }) {
   const learningTotals = new Map();
@@ -370,6 +370,7 @@ export function buildStudentRows({
       learning: learning ? learningRow(student, learning, now, learningTotals) : null,
       quickprep: quickprepRow,
       assessment: assessment ? assessmentRow(student, assessment, now, range) : null,
+      prepmock: prepmock ? assessmentRow(student, prepmock, now, range) : null,
       interview: interview ? interviewRow(student, interview, now) : null,
       entries,
       days,

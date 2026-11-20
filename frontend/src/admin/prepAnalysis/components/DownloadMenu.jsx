@@ -18,7 +18,8 @@ const AREA_GROUPS = {
   learning: ["Student details", "Prep Learning"],
   interview: ["Student details", "Prep Interview"],
   assessment: ["Student details", "Prep Assessment"],
-  all: ["Student details", "Prep Coding", "Quick Prep", "Prep Learning", "Prep Interview", "Prep Assessment"],
+  prepmock: ["Student details", "PrepMock"],
+  all: ["Student details", "Prep Coding", "Quick Prep", "Prep Learning", "Prep Interview", "Prep Assessment", "PrepMock"],
 };
 
 function ExportDialog({ open, initialFormat, onClose, catalog, area, areaLabel, state, fieldMap, matched, table, focus }) {

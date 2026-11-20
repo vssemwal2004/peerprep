@@ -98,6 +98,7 @@ const MAIN_FIELDS = new Set([
   "learning.status", "learning.progress", "learning.subjects",
   "interview.status", "interview.done", "interview.mockScore", "interview.aiCompleted",
   "assessment.status", "assessment.averageScore", "assessment.missed", "assessment.takenTests",
+  "prepmock.status", "prepmock.averageScore", "prepmock.missed", "prepmock.takenTests",
 ]);
 export const isMainField = (field) => MAIN_FIELDS.has(field.key);
 
@@ -110,6 +111,7 @@ const QUICK_FILTERS = {
   learning: [...QUICK_STUDENT, ["learning.status", "Status"], ["learning.subjects", "Subject"]],
   interview: [...QUICK_STUDENT, ["interview.status", "Status"]],
   assessment: [...QUICK_STUDENT, ["assessment.status", "Test status"]],
+  prepmock: [...QUICK_STUDENT, ["prepmock.status", "Mock status"]],
   all: [...QUICK_STUDENT, ["student.course", "Course"]],
 };
 /** The filters on the filter line for an area ({ field, label }), only those this catalog has. */
@@ -437,6 +439,10 @@ const KPI_RULES = Object.freeze({
   "assessment.students": { field: "assessment.taken", operator: "gte", value: "1" },
   "assessment.missed": { field: "assessment.missed", operator: "gte", value: "1" },
   "assessment.never": { field: "assessment.status", operator: "anyOf", value: ["never"] },
+  "prepmock.students": { field: "prepmock.taken", operator: "gte", value: "1" },
+  "prepmock.passedStudents": { field: "prepmock.passed", operator: "gte", value: "1" },
+  "prepmock.missed": { field: "prepmock.missed", operator: "gte", value: "1" },
+  "prepmock.never": { field: "prepmock.status", operator: "anyOf", value: ["never"] },
 });
 
 const same = (left, right) => JSON.stringify([].concat(left).map(String).sort()) === JSON.stringify([].concat(right).map(String).sort());

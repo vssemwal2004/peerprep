@@ -4,8 +4,11 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import Problem from '../src/models/Problem.js';
 import QuestionLibrary from '../src/models/QuestionLibrary.js';
-import { listLibraryQuestions } from '../src/controllers/questionLibraryController.js';
-import { listProblems } from '../src/controllers/problemController.js';
+import Assessment from '../src/models/Assessment.js';
+import { createLibraryQuestion, getLibraryQuestion, listLibraryQuestions, resolveLibraryQuestions } from '../src/controllers/questionLibraryController.js';
+import { createAssessment, getAssessmentReports, listAssessments, resetMock, updateAssessment } from '../src/controllers/assessmentController.js';
+import { Publication, University } from '../src/platform/models.js';
+import { listMockProblemCompanies, listProblems } from '../src/controllers/problemController.js';
 import { applyNumberKind } from '../src/utils/problemSerial.js';
 import {
   buildLibrarySearchMatch,
@@ -13,13 +16,15 @@ import {
   libraryQuestionMatchesTerm,
   librarySearchTermClause,
   librarySearchTerms,
+  syncAssessmentQuestionsToLibrary,
+  syncProblemToLibrary,
 } from '../src/services/questionLibraryService.js';
 
 // Comma-separated question search: the union of every term's matches, in typed order,
 // with the terms that matched nothing reported back. Single-term search is unchanged.
 let mongo;
 const adminId = new mongoose.Types.ObjectId();
-const admin = { _id: adminId, role: 'admin' };
+const admin = { _id: adminId, role: 'admin', email: 'mock-test@example.com' };
 
 const rows = [
   { title: 'Two Sum', displayOrder: 722, sourceNumber: 1 },
@@ -160,4 +165,133 @@ test('admin problem list: union in typed order, unmatched terms, single term unc
   const res = capture();
   await listProblems({ query: { search: 'merge, two sum' }, user: { _id: new mongoose.Types.ObjectId(), role: 'student' } }, res);
   assert.equal('unmatchedTerms' in (res.state.body || {}), false);
+});
+
+test('PrepMock records and questions stay out of regular assessment and library lists', async () => {
+  const importedMainQuestion = await QuestionLibrary.create({
+    sourceKey: 'main:import-into-mock', sourceType: 'manual', scope: 'main', questionType: 'mcq',
+    questionText: 'Imported from main?', status: 'published', visibility: 'public',
+    questionData: { type: 'mcq', questionText: 'Imported from main?', options: ['Yes', 'No'], correctOptionIndex: 0 },
+    createdBy: adminId,
+  });
+  const mainAssessment = await Assessment.create({ title: 'Regular assessment', createdBy: adminId, lifecycleStatus: 'draft' });
+  const mock = await Assessment.create({ title: 'Mock assessment', kind: 'mock', createdBy: adminId, lifecycleStatus: 'draft', sections: [{
+    sectionName: 'Questions', type: 'mcq', questions: [
+      { questionId: 'mock-q', type: 'mcq', questionText: 'Mock only?', options: ['Yes', 'No'], correctOptionIndex: 0 },
+      { questionId: 'main-import', librarySourceId: String(importedMainQuestion._id), type: 'mcq', questionText: 'Imported from main?', options: ['Yes', 'No'], correctOptionIndex: 0 },
+    ],
+  }] });
+  await syncAssessmentQuestionsToLibrary(mock);
+
+  const mainList = capture();
+  await listAssessments({ query: { view: 'dashboard' }, user: admin }, mainList);
+  assert.equal(mainList.state.statusCode, 200, JSON.stringify(mainList.state.body));
+  assert.ok(mainList.state.body.assessments.some((item) => String(item._id) === String(mainAssessment._id)));
+  assert.ok(mainList.state.body.assessments.every((item) => String(item._id) !== String(mock._id)));
+
+  const mockList = capture();
+  await listAssessments({ query: { kind: 'mock', view: 'dashboard' }, user: admin }, mockList);
+  assert.equal(mockList.state.statusCode, 200, JSON.stringify(mockList.state.body));
+  assert.deepEqual(mockList.state.body.assessments.map((item) => String(item._id)), [String(mock._id)]);
+
+  const mainQuestions = await library({ type: 'mcq', includeMeta: 'false' });
+  assert.equal(mainQuestions.questions.some((item) => item.questionText === 'Mock only?'), false);
+  const mockQuestions = await library({ type: 'mcq', scope: 'mock', status: 'draft', includeMeta: 'false' });
+  assert.deepEqual(mockQuestions.questions.map((item) => item.questionText), ['Mock only?']);
+  assert.equal(await QuestionLibrary.countDocuments({ scope: 'mock', sourceAssessmentId: mock._id }), 1, 'importing a main-library question must not copy it into Mock Library');
+
+  const created = capture();
+  await createLibraryQuestion({ query: { scope: 'mock' }, user: admin, body: { question: { type: 'short', questionText: 'Mock authored question', status: 'published' } } }, created);
+  assert.equal(created.state.statusCode, 200, JSON.stringify(created.state.body));
+  const questionId = created.state.body.question._id;
+  const mainRead = capture();
+  await getLibraryQuestion({ query: {}, params: { id: questionId }, user: admin }, mainRead);
+  assert.equal(mainRead.state.statusCode, 404);
+  const mockRead = capture();
+  await getLibraryQuestion({ query: { scope: 'mock' }, params: { id: questionId }, user: admin }, mockRead);
+  assert.equal(mockRead.state.statusCode, 200);
+  const mainResolve = capture();
+  await resolveLibraryQuestions({ query: {}, body: { ids: [questionId] }, user: admin }, mainResolve);
+  assert.deepEqual(mainResolve.state.body.questions, []);
+
+  const coding = await Problem.create({ title: 'Mock coding only', libraryScope: 'mock', difficulty: 'Easy', status: 'draft', supportedLanguages: ['python'], createdBy: adminId });
+  await syncProblemToLibrary(coding);
+  const mainCoding = await library({ search: 'Mock coding only', type: 'coding', status: 'draft', includeMeta: 'false' });
+  assert.equal(mainCoding.questions.length, 0);
+  const mockCoding = await library({ search: 'Mock coding only', type: 'coding', status: 'draft', scope: 'mock', includeMeta: 'false' });
+  assert.deepEqual(mockCoding.questions.map((item) => item.questionText), ['Mock coding only']);
+  assert.equal((await problems({ search: 'Mock coding only' })).problems.length, 0);
+
+  await Assessment.updateMany({ _id: { $in: [mainAssessment._id, mock._id] } }, { $set: { lifecycleStatus: 'published' } });
+  const regularReports = capture();
+  await getAssessmentReports({ query: { view: 'dashboard' }, user: admin }, regularReports);
+  assert.equal(regularReports.state.statusCode, 200, JSON.stringify(regularReports.state.body));
+  assert.ok(regularReports.state.body.assessments.some((item) => String(item._id) === String(mainAssessment._id)));
+  assert.ok(regularReports.state.body.assessments.every((item) => String(item._id) !== String(mock._id)));
+  const mockReports = capture();
+  await getAssessmentReports({ query: { view: 'dashboard', kind: 'mock' }, user: admin }, mockReports);
+  assert.equal(mockReports.state.statusCode, 200, JSON.stringify(mockReports.state.body));
+  assert.deepEqual(mockReports.state.body.assessments.map((item) => String(item._id)), [String(mock._id)]);
+});
+
+test('creating a mock draft persists its kind and syncs authored questions into Mock Library', async () => {
+  const response = capture();
+  await createAssessment({ user: admin, ip: '127.0.0.1', get: () => 'test', body: {
+    kind: 'mock', company: 'Amazon', title: 'Created through mock flow', lifecycleStatus: 'draft',
+    sections: [{ sectionName: 'MCQ', type: 'mcq', questions: [{ questionId: 'created-mock-q', type: 'mcq', questionText: 'Created mock question?', options: ['A', 'B'], correctOptionIndex: 0 }] }],
+  } }, response);
+  assert.equal(response.state.statusCode, 201, JSON.stringify(response.state.body));
+  const saved = await Assessment.findById(response.state.body.assessmentId).lean();
+  assert.equal(saved.kind, 'mock');
+  assert.equal(saved.company, 'Amazon');
+  const mockQuestions = await library({ type: 'mcq', status: 'draft', scope: 'mock', search: 'Created mock question', includeMeta: 'false' });
+  assert.deepEqual(mockQuestions.questions.map((item) => item.questionText), ['Created mock question?']);
+  const regularQuestions = await library({ type: 'mcq', status: 'draft', search: 'Created mock question', includeMeta: 'false' });
+  assert.equal(regularQuestions.questions.length, 0);
+});
+
+test('mock company choices include company tags from draft Problems', async () => {
+  await Problem.create({ title: 'Amazon draft problem', companyTags: ['Amazon'], difficulty: 'Easy', status: 'draft', supportedLanguages: ['python'], createdBy: adminId });
+  const response = capture();
+  await listMockProblemCompanies({ query: {}, user: admin }, response);
+  assert.equal(response.state.statusCode, 200);
+  assert.ok(response.state.body.companies.some((item) => item.company === 'Amazon'));
+});
+
+test('publishing a university mock assigns the university and reset removes access', async () => {
+  const originalRole = process.env.PEERPREP_DEPLOYMENT_ROLE;
+  process.env.PEERPREP_DEPLOYMENT_ROLE = 'control';
+  try {
+    await University.create({ universityId: 'mock-test-uni', name: 'Mock Test University' });
+    const mock = await Assessment.create({
+      kind: 'mock', company: 'Amazon', title: 'University mock', createdBy: adminId,
+      lifecycleStatus: 'draft', sections: [{ sectionName: 'Questions', type: 'mcq', questions: [
+        { questionId: 'uni-mock-q', type: 'mcq', questionText: 'University question?', options: ['Yes', 'No'], correctOptionIndex: 0 },
+      ] }],
+    });
+    const published = capture();
+    await updateAssessment({ user: admin, socket: { remoteAddress: '127.0.0.1' }, params: { id: String(mock._id) }, body: {
+      lifecycleStatus: 'published', availabilityMode: 'always', duration: 30, targetType: 'selected',
+      mockAudienceMode: 'universities', mockUniversityIds: ['mock-test-uni'], assignedStudents: [],
+    } }, published);
+    assert.equal(published.state.statusCode, 200, JSON.stringify(published.state.body));
+    const publication = await Publication.findOne({ kind: 'assessment', contentId: mock._id }).lean();
+    assert.equal(publication.published, true);
+    assert.deepEqual(publication.universityIds, ['mock-test-uni']);
+    assert.deepEqual((await Assessment.findById(mock._id).lean()).assignedStudents, []);
+
+    const reset = capture();
+    await resetMock({ user: admin, params: { id: String(mock._id) } }, reset);
+    assert.equal(reset.state.statusCode, 200, JSON.stringify(reset.state.body));
+    const afterReset = await Assessment.findById(mock._id).lean();
+    const afterPublication = await Publication.findOne({ kind: 'assessment', contentId: mock._id }).lean();
+    assert.equal(afterReset.lifecycleStatus, 'draft');
+    assert.deepEqual(afterReset.mockUniversityIds, []);
+    assert.equal(afterPublication.published, false);
+    assert.deepEqual(afterPublication.universityIds, []);
+    assert.deepEqual(afterPublication.everUniversityIds, ['mock-test-uni']);
+  } finally {
+    if (originalRole === undefined) delete process.env.PEERPREP_DEPLOYMENT_ROLE;
+    else process.env.PEERPREP_DEPLOYMENT_ROLE = originalRole;
+  }
 });

@@ -553,6 +553,20 @@ function AppContent() {
         <Route path="/admin/assessment/:id/edit" element={<AdminShell><CreateAssessment /></AdminShell>} />
         <Route path="/admin/assessment/reports" element={<AdminShell><AssessmentReports /></AdminShell>} />
         <Route path="/admin/assessment-feedback" element={<AdminShell><AssessmentFeedback /></AdminShell>} />
+        <Route path="/admin/prepmock" element={<AdminShell><AssessmentDashboard /></AdminShell>} />
+        <Route path="/admin/prepmock/create" element={<AdminShell><CreateAssessment /></AdminShell>} />
+        <Route path="/admin/prepmock/analysis" element={<Navigate to="/admin/analysis?area=prepmock" replace />} />
+        <Route path="/admin/prepmock/reports" element={<AdminShell><AssessmentReports /></AdminShell>} />
+        <Route path="/admin/prepmock/preview/:id" element={<AdminShell layout={false}><AdminAssessmentPreview /></AdminShell>} />
+        <Route path="/admin/prepmock/:id/edit" element={<AdminShell><CreateAssessment /></AdminShell>} />
+        <Route path="/admin/prepmock/:id" element={<AdminShell><CreateAssessment viewOnly /></AdminShell>} />
+        <Route path="/admin/prepmock/library" element={<AdminShell><LibraryWorkspace view="questions" /></AdminShell>} />
+        <Route path="/admin/prepmock/library/create" element={<AdminShell><LibraryWorkspace view="create-question" /></AdminShell>} />
+        <Route path="/admin/prepmock/library/add-question" element={<AdminShell><LibraryWorkspace view="create-question" /></AdminShell>} />
+        <Route path="/admin/prepmock/library/question/:id/edit" element={<AdminShell><LibraryWorkspace view="edit-question" /></AdminShell>} />
+        <Route path="/admin/prepmock/library/coding/create" element={<AdminShell><LibraryWorkspace view="create-coding" /></AdminShell>} />
+        <Route path="/admin/prepmock/library/coding/:id/edit" element={<AdminShell><LibraryWorkspace view="edit-coding" /></AdminShell>} />
+        <Route path="/admin/prepmock/library/coding/:id/preview" element={<AdminShell><LibraryWorkspace view="preview-coding" /></AdminShell>} />
         <Route path="/admin/library" element={<AdminShell><LibraryWorkspace view="questions" /></AdminShell>} />
         <Route path="/admin/library/create" element={<AdminShell><LibraryWorkspace view="create-question" /></AdminShell>} />
         <Route path="/admin/library/add-question" element={<AdminShell><LibraryWorkspace view="create-question" /></AdminShell>} />

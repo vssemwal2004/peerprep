@@ -57,7 +57,7 @@ function describeChanges(previousRows, nextRows, changedKeys, at) {
  * If the roster endpoint is missing (404) the hook falls back to paging the
  * legacy reports endpoint and mapping its rows (no not-started students there).
  */
-export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessment = null, intervalMs = DEFAULT_REFRESH_INTERVAL_MS } = {}) {
+export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessment = null, intervalMs = DEFAULT_REFRESH_INTERVAL_MS, kind = 'assessment' } = {}) {
   const [rows, setRows] = useState([]);
   const [assessment, setAssessment] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -115,7 +115,7 @@ export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessme
     const collected = [];
     let total = Infinity;
     for (let page = 1; page <= LEGACY_MAX_PAGES && collected.length < total; page += 1) {
-      const data = await api.getAssessmentReports({ assessmentId: id, page, limit: LEGACY_PAGE_LIMIT, sortKey: 'attemptDate', sortDir: 'desc' });
+      const data = await api.getAssessmentReports({ assessmentId: id, kind, page, limit: LEGACY_PAGE_LIMIT, sortKey: 'attemptDate', sortDir: 'desc' });
       if (signal.aborted) return null;
       const batch = Array.isArray(data?.students) ? data.students : Array.isArray(data?.reports) ? data.reports : [];
       total = Number(data?.pagination?.total ?? data?.total ?? batch.length) || 0;
@@ -123,7 +123,7 @@ export default function useLiveAssessmentRoster(assessmentId, { fallbackAssessme
       if (batch.length < LEGACY_PAGE_LIMIT) break;
     }
     return collected.map((row) => legacyReportRowToRoster(row, fallbackAssessmentRef.current || {}));
-  }, []);
+  }, [kind]);
 
   const fetchRoster = useCallback(async ({ full = false } = {}) => {
     const id = assessmentId;

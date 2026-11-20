@@ -116,11 +116,16 @@ const assessmentSettingsSchema = new mongoose.Schema({
 }, { _id: false, strict: false });
 
 const assessmentSchema = new mongoose.Schema({
+  kind: { type: String, enum: ['assessment', 'mock'], default: 'assessment', index: true },
+  company: { type: String, trim: true, maxlength: 120, default: '' },
+  mockAudienceMode: { type: String, enum: ['students', 'universities'], default: 'students' },
+  mockUniversityIds: { type: [String], default: [] },
   title: { type: String },
   description: { type: String, default: '' },
   instructions: { type: String, default: '' },
   startTime: { type: Date },
   endTime: { type: Date },
+  availabilityMode: { type: String, enum: ['scheduled', 'always'], default: 'scheduled' },
   duration: { type: Number }, // minutes
   allowLateSubmission: { type: Boolean, default: false },
   attemptLimit: { type: Number, default: 1 },
@@ -131,6 +136,7 @@ const assessmentSchema = new mongoose.Schema({
   draftTargetMode: { type: String, enum: ['all', 'csv', 'individual'], default: 'all' },
   draftAssignedStudents: { type: [mongoose.Schema.Types.Mixed], default: [] },
   lifecycleStatus: { type: String, enum: ['draft', 'published'], default: 'published' },
+  mockHasHistory: { type: Boolean, default: false },
   manuallyCompletedAt: { type: Date },
   version: { type: Number, default: 1 },
   versionUpdatedAt: { type: Date },
@@ -155,6 +161,7 @@ const assessmentSchema = new mongoose.Schema({
 
 assessmentSchema.index({ startTime: 1, endTime: 1 });
 assessmentSchema.index({ createdBy: 1, createdAt: -1 });
+assessmentSchema.index({ kind: 1, createdAt: -1 });
 assessmentSchema.index({ lifecycleStatus: 1, startTime: 1, endTime: 1 });
 assessmentSchema.index({ assignedStudents: 1, lifecycleStatus: 1, startTime: 1 });
 

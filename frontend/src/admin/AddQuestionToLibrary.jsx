@@ -222,6 +222,9 @@ function AuthoringPreview({ type, questions, activeQuestionIndex, onQuestionChan
 export default function AddQuestionToLibrary({ embedded = false, editQuestionId = '' }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const mockLibrary = location.pathname.startsWith('/admin/prepmock/library');
+  const libraryRoot = mockLibrary ? '/admin/prepmock/library' : (location.pathname.startsWith('/coordinator') ? '/coordinator/library' : '/admin/library');
+  const libraryScope = mockLibrary ? 'mock' : 'main';
   const [searchParams] = useSearchParams();
   const toast = useToast();
   const fileInputRef = useRef(null);
@@ -234,7 +237,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
 
   const initialType = ['mcq', 'short', 'one_line'].includes(searchParams.get('type')) ? searchParams.get('type') : 'mcq';
   const type = initialType;
-  const authoringDraftKey = `peerprep_question_authoring_draft:${assessmentKey}:${type}`;
+  const authoringDraftKey = `peerprep_question_authoring_draft:${libraryScope}:${assessmentKey}:${type}`;
   const storedDraftRef = useRef(undefined);
   if (storedDraftRef.current === undefined) {
     try {
@@ -257,7 +260,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
   const [isLoadingQuestion, setIsLoadingQuestion] = useState(Boolean(editQuestionId));
   const [libraryMeta, setLibraryMeta] = useState(storedDraft?.libraryMeta || { visibility: 'public', status: 'draft' });
   const [saveToLibrary, setSaveToLibrary] = useState(() => (
-    assessmentCreateMode ? storedDraft?.saveToLibrary === true : true
+    assessmentCreateMode ? mockLibrary || storedDraft?.saveToLibrary === true : true
   ));
   const [importState, setImportState] = useState({ status: 'idle', message: '', imported: 0, errors: [] });
   const [importPreview, setImportPreview] = useState(null);
@@ -323,7 +326,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
     if (!editQuestionId) return undefined;
     let active = true;
     setIsLoadingQuestion(true);
-    api.getLibraryQuestion(editQuestionId)
+    api.getLibraryQuestion(editQuestionId, libraryScope)
       .then((response) => {
         if (!active) return;
         const storedQuestion = response.question;
@@ -359,7 +362,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
       .catch((error) => toast.error(error.message || 'Failed to load question.'))
       .finally(() => { if (active) setIsLoadingQuestion(false); });
     return () => { active = false; };
-  }, [editQuestionId, toast, type]);
+  }, [editQuestionId, libraryScope, toast, type]);
 
   const isUntouchedQuestion = (question) => !question?.questionText?.trim()
     && !(question?.options || []).some((option) => option?.trim())
@@ -762,8 +765,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
         visibility: libraryMeta.visibility,
       }));
 
-      const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
-      if (assessmentCreateMode && addToAssessment && !saveToLibrary) {
+      if (assessmentCreateMode && addToAssessment && !mockLibrary && !saveToLibrary) {
         const assessmentOnlyQuestions = createAssessmentOnlyQuestionSelections(payload);
         const grouped = new Map();
         assessmentOnlyQuestions.forEach((createdQuestion) => {
@@ -796,16 +798,16 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           difficulty: question.difficulty || '',
           visibility: libraryMeta.visibility,
           status: targetStatus,
-        });
+        }, libraryScope);
         toast.success(targetStatus === 'draft' ? 'Draft updated successfully.' : 'Question updated successfully.');
         localStorage.removeItem(authoringDraftKey);
         authoringBaselineRef.current = JSON.stringify({ questions, libraryMeta, saveToLibrary, activeStage });
         setDirty(false);
         setDraftStatus('Draft saved');
         const requestedReturn = location.state?.returnTo;
-        const returnTo = typeof requestedReturn === 'string' && requestedReturn.startsWith(`${rolePrefix}/library`)
+        const returnTo = typeof requestedReturn === 'string' && requestedReturn.startsWith(libraryRoot)
           ? requestedReturn
-          : `${rolePrefix}/library?type=${type}`;
+          : `${libraryRoot}?type=${type}`;
         if (navigateAfterSave) navigate(returnTo);
         return true;
       }
@@ -816,7 +818,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
         totalRows: importState.imported + (importState.errors?.length || 0),
         failedCount: importState.errors?.length || 0,
         errors: importState.errors || [],
-      } : undefined);
+      } : undefined, libraryScope);
       localStorage.removeItem(authoringDraftKey);
       authoringBaselineRef.current = JSON.stringify({ questions, libraryMeta, saveToLibrary, activeStage });
       setDirty(false);
@@ -830,7 +832,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           grouped.get(targetSet).push(createdQuestion);
         });
         grouped.forEach((createdQuestions, targetSet) => queueQuestionSelection(assessmentKey, { questions: createdQuestions, createdForAssessment: true, questionSet: targetSet }));
-        toast.success(`${validQuestions.length} question${validQuestions.length === 1 ? '' : 's'} published and added to the assessment.`);
+        toast.success(`${validQuestions.length} question${validQuestions.length === 1 ? '' : 's'} saved to the ${mockLibrary ? 'Mock Library and added to the mock' : 'library and added to the assessment'}.`);
         if (navigateAfterSave) navigate(assessmentReturnTo);
         return true;
       }
@@ -839,8 +841,8 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
         : `Published ${validQuestions.length} questions as ${payload.length} library item${payload.length === 1 ? '' : 's'}${passageSetCount ? `, including ${passageSetCount} passage set${passageSetCount === 1 ? '' : 's'}` : ''}.`);
       if (navigateAfterSave) {
         navigate(targetStatus === 'draft'
-          ? `${rolePrefix}/library?status=draft`
-          : `${rolePrefix}/library?type=${type}`);
+          ? `${libraryRoot}?status=draft`
+          : `${libraryRoot}?type=${type}`);
       }
       return true;
     } catch (err) {
@@ -852,8 +854,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
   };
 
   const requestExit = () => {
-    const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
-    const target = assessmentCreateMode ? assessmentReturnTo : `${rolePrefix}/library`;
+    const target = assessmentCreateMode ? assessmentReturnTo : libraryRoot;
     if (!dirty) {
       navigate(target);
       return;
@@ -870,7 +871,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
   };
 
   const saveQuestionDraftAndExit = async () => {
-    if (assessmentCreateMode && !saveToLibrary) {
+    if (assessmentCreateMode && !mockLibrary && !saveToLibrary) {
       setDirty(false);
       const target = exitTarget;
       setExitTarget('');
@@ -1033,7 +1034,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
             </div>
             <div data-guide="qe-tools" className="flex items-center gap-2">
               {assessmentCreateMode && !editQuestionId && <button type="button" onClick={() => handleSaveAll('published', { addToAssessment: true })} disabled={isSubmitting || !questions.length} className="inline-flex h-9 items-center gap-2 rounded-xl bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50">
-                <Plus className="h-4 w-4" />{isSubmitting ? 'Adding...' : 'Add to assessment'}
+                <Plus className="h-4 w-4" />{isSubmitting ? 'Adding...' : mockLibrary ? 'Add to mock' : 'Add to assessment'}
               </button>}
               {!editQuestionId && <button type="button" onClick={() => setImportOpen((open) => !open)} title="Bulk import questions" className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition ${importOpen ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
                 <FileSpreadsheet className="h-4 w-4" /><span className="hidden sm:inline">Import</span>
@@ -1044,7 +1045,12 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
             </div>
           </div>
 
-          {assessmentCreateMode && !editQuestionId && (
+          {assessmentCreateMode && !editQuestionId && mockLibrary && (
+            <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-xs font-medium text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+              New questions are saved to the Mock Library and added to this mock.
+            </p>
+          )}
+          {assessmentCreateMode && !editQuestionId && !mockLibrary && (
             <section data-guide="qe-library-copy" className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-gray-700 dark:bg-gray-800/70 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-900 dark:text-white">Save these questions to the library?</p>
@@ -1295,7 +1301,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
               <button type="button" onClick={() => setPreviewOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" /><span className="hidden sm:inline">Preview</span></button>
               {!editQuestionId && !assessmentCreateMode && <button type="button" onClick={() => handleSaveAll('draft')} disabled={isSubmitting || !questions.length} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><Save className="h-4 w-4" /><span className="hidden sm:inline">Save draft</span></button>}
               {isFinalStage ? (
-                <button type="button" onClick={() => assessmentCreateMode ? handleSaveAll('published', { addToAssessment: true }) : handleSaveAll(libraryMeta.status)} disabled={isSubmitting || !questions.length} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50">{assessmentCreateMode ? <Plus className="h-4 w-4" /> : <Save className="h-4 w-4" />}{isSubmitting ? (assessmentCreateMode ? 'Adding...' : 'Saving...') : assessmentCreateMode ? 'Add to assessment' : editQuestionId ? 'Save changes' : libraryMeta.status === 'draft' ? 'Save draft' : 'Publish'}</button>
+                <button type="button" onClick={() => assessmentCreateMode ? handleSaveAll('published', { addToAssessment: true }) : handleSaveAll(libraryMeta.status)} disabled={isSubmitting || !questions.length} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50">{assessmentCreateMode ? <Plus className="h-4 w-4" /> : <Save className="h-4 w-4" />}{isSubmitting ? (assessmentCreateMode ? 'Adding...' : 'Saving...') : assessmentCreateMode ? mockLibrary ? 'Add to mock' : 'Add to assessment' : editQuestionId ? 'Save changes' : libraryMeta.status === 'draft' ? 'Save draft' : 'Publish'}</button>
               ) : (
                 <button type="button" onClick={() => moveStage(1)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-500">Next<ChevronRight className="h-4 w-4" /></button>
               )}

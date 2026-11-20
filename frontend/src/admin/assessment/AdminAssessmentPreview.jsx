@@ -63,12 +63,13 @@ export default function AdminAssessmentPreview() {
   const toast = useToast();
   const { user } = useAuth();
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+  const assessmentRoot = location.pathname.startsWith('/admin/prepmock') ? '/admin/prepmock' : `${rolePrefix}/assessment`;
   const canExecutePreview = Boolean(user) && hasPermission(user, 'coordinator.compiler.manage');
   const previewParams = new URLSearchParams(location.search);
   const draftKey = previewParams.get('draftKey');
   const requestedReturnTo = previewParams.get('return');
-  const returnTo = requestedReturnTo?.startsWith(`${rolePrefix}/assessment/`)
-    ? requestedReturnTo : `${rolePrefix}/assessment/${id}/edit`;
+  const returnTo = requestedReturnTo?.startsWith(`${assessmentRoot}/`)
+    ? requestedReturnTo : `${assessmentRoot}/${id}/edit`;
   const [assessment, setAssessment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState(0);
@@ -143,7 +144,7 @@ export default function AdminAssessmentPreview() {
     navigate(returnTo);
   }, [navigate, returnTo]);
   const editCurrentQuestion = () => {
-    navigate(id === 'draft' ? returnTo : `${rolePrefix}/assessment/${id}/edit`, { state: { editQuestion: { sectionIndex: activeSection, questionIndex: activeQuestion } } });
+    navigate(id === 'draft' ? returnTo : `${assessmentRoot}/${id}/edit`, { state: { editQuestion: { sectionIndex: activeSection, questionIndex: activeQuestion } } });
   };
 
   const questionStatus = useCallback((sectionIndex, questionIndex) => {

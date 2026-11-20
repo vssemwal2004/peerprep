@@ -226,6 +226,7 @@ export async function getAssessmentInvitationTemplate(assessment = {}) {
 export function renderAssessmentInvitationEmail({ to, assessment, student, password = '', accountPassword = '', assessmentOnly = false, template }) {
   const start = assessment.startTime ? new Date(assessment.startTime) : null;
   const end = assessment.endTime ? new Date(assessment.endTime) : null;
+  const alwaysOnMock = assessment.kind === 'mock' && assessment.availabilityMode === 'always';
   const assessmentUrl = `${getDashboardUrl()}student/assessments`;
   const studentId = String(student?.studentId || '').trim();
   const usesStudentIdPassword = assessment?.settings?.candidateCredentialMode === 'student_id';
@@ -246,8 +247,8 @@ export function renderAssessmentInvitationEmail({ to, assessment, student, passw
     assessmentId: escapeHtml(assessment.assessmentId || String(assessment._id || '')),
     testType: escapeHtml(assessment.testType || assessment.assessmentType || 'Assessment'),
     description: escapeHtml(assessment.description || 'Please review the instructions in your PeerPrep dashboard before starting.'),
-    startLabel: start ? start.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }) : '-',
-    endLabel: end ? end.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }) : '-',
+    startLabel: alwaysOnMock ? 'Available now' : start ? start.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }) : '-',
+    endLabel: alwaysOnMock ? 'Until unpublished or reset' : end ? end.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }) : '-',
     duration: assessment.duration ? `${assessment.duration} minutes` : '-',
     attemptLimit: Number(assessment.attemptLimit || 1),
     passwordSection,

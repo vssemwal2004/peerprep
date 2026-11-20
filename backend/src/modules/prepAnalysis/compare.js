@@ -70,7 +70,8 @@ export function activeInPeriod(row, modules) {
     || (modules.has('quickprep') && row.quickprep?.days?.size > 0)
     || (modules.has('learning') && (row.learning?.days?.size > 0 || row.learning?.completedTopics > 0))
     || (modules.has('interview') && row.interview?.done > 0)
-    || (modules.has('assessment') && row.assessment?.taken > 0));
+    || (modules.has('assessment') && row.assessment?.taken > 0)
+    || (modules.has('prepmock') && row.prepmock?.taken > 0));
 }
 
 // `better`: which way is good ('high' / 'low'), or null when neither (no best / worst marked).
@@ -109,19 +110,27 @@ const METRICS = [
   { key: 'passRate', label: 'Pass rate (%)', module: 'assessment', format: 'percent', better: 'high', get: (rows) => percent(sum(rows, (row) => row.assessment?.passed), sum(rows, (row) => row.assessment?.taken)) },
   { key: 'testsMissed', label: 'Tests missed', module: 'assessment', format: 'count', better: 'low', get: (rows) => sum(rows, (row) => row.assessment?.missed) },
 ];
+METRICS.push(...METRICS.filter((metric) => metric.module === 'assessment').map((metric) => ({
+  ...metric,
+  key: `mock${metric.key[0].toUpperCase()}${metric.key.slice(1)}`,
+  label: metric.label.replace(/tests?/gi, (match) => match.toLowerCase().endsWith('s') ? 'mocks' : 'mock'),
+  module: 'prepmock',
+  get: (rows) => metric.get(rows.map((row) => ({ ...row, assessment: row.prepmock }))),
+})));
 
-const MODULE_LABELS = { student: 'Students', coding: 'Prep Coding', quickprep: 'Quick Prep', learning: 'Prep Learning', interview: 'Prep Interview', assessment: 'Prep Assessment' };
+const MODULE_LABELS = { student: 'Students', coding: 'Prep Coding', quickprep: 'Quick Prep', learning: 'Prep Learning', interview: 'Prep Interview', assessment: 'Prep Assessment', prepmock: 'PrepMock' };
 
 // Grouped bar charts: one group of bars per compared value, one bar per measure.
 const CHARTS = [
   { id: 'students', title: 'Students and active students', metrics: ['students', 'active'] },
   { id: 'scores', title: 'Average Prep Score', metrics: ['prepScore', 'codingScore'] },
   { id: 'solved', title: 'Problems solved by difficulty', metrics: ['solvedEasy', 'solvedMedium', 'solvedHard'], stack: true },
-  { id: 'rates', title: 'Rates and averages (%)', metrics: ['activeShare', 'accuracy', 'sheetProgress', 'learningProgress', 'mockScore', 'testAverage', 'passRate'] },
+  { id: 'rates', title: 'Rates and averages (%)', metrics: ['activeShare', 'accuracy', 'sheetProgress', 'learningProgress', 'mockScore', 'testAverage', 'passRate', 'mockTestAverage', 'mockPassRate'] },
   { id: 'quickprep', title: 'Quick Prep sheets', metrics: ['sheetStarters', 'sheetFinishers'] },
   { id: 'learning', title: 'Topics completed', metrics: ['topicsCompleted'] },
   { id: 'interview', title: 'Interviews', metrics: ['interviewed', 'interviewsDone'] },
   { id: 'assessment', title: 'Tests', metrics: ['testTakers', 'testsTaken'] },
+  { id: 'prepmock', title: 'Mocks', metrics: ['mockTestTakers', 'mockTestsTaken'] },
 ];
 
 /** The measures for an area: student measures, then each licensed feature of the area. */

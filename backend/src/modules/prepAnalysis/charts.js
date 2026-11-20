@@ -1415,6 +1415,7 @@ export const SECTIONS = Object.freeze({
   learning: { label: 'Prep Learning', module: 'learning' },
   interview: { label: 'Prep Interview', module: 'interview' },
   assessment: { label: 'Prep Assessment', module: 'assessment' },
+  prepmock: { label: 'PrepMock', module: 'prepmock' },
 });
 
 export const CHARTS = [
@@ -1423,6 +1424,14 @@ export const CHARTS = [
   ...LEARNING_CHARTS.map((chart) => ({ module: 'learning', section: 'learning', ...chart })),
   ...INTERVIEW_CHARTS.map((chart) => ({ module: 'interview', section: 'interview', ...chart })),
   ...ASSESSMENT_CHARTS.map((chart) => ({ module: 'assessment', section: 'assessment', ...chart })),
+  ...ASSESSMENT_CHARTS.map((chart) => ({
+    ...chart,
+    id: chart.id.replace(/^assessment-/, 'prepmock-'),
+    module: 'prepmock', section: 'prepmock',
+    title: chart.title.replace(/tests?/gi, (match) => match.toLowerCase().endsWith('s') ? 'Mocks' : 'Mock'),
+    question: chart.question?.replace(/tests?/gi, (match) => match.toLowerCase().endsWith('s') ? 'mocks' : 'mock'),
+    build: (context) => chart.build({ ...context, tests: context.mocks, rows: context.rows.map((row) => ({ ...row, assessment: row.prepmock })) }),
+  })),
 ];
 
 export const CHART_BY_ID = new Map(CHARTS.map((chart) => [chart.id, chart]));
@@ -1450,7 +1459,9 @@ const LAYOUTS = {
     'interview-needs-attention', 'interview-spread'],
   assessment: ['assessment-calendar', 'assessment-tests', 'assessment-funnel', 'assessment-trend:full', 'assessment-leaders', 'assessment-needs-attention',
     'assessment-by-class', 'assessment-class-spread', 'assessment-score-time', 'assessment-spread:sm', 'assessment-scores'],
-  all: ['top-students', 'practice-funnel:sm', 'quickprep-sheet-health', 'learning-subjects', 'learning-funnel', 'interview-trend', 'interview-funnel', 'assessment-tests', 'assessment-funnel'],
+  prepmock: ['assessment-calendar', 'assessment-tests', 'assessment-funnel', 'assessment-trend:full', 'assessment-leaders', 'assessment-needs-attention',
+    'assessment-by-class', 'assessment-class-spread', 'assessment-score-time', 'assessment-spread:sm', 'assessment-scores'].map((entry) => entry.replace(/^assessment-/, 'prepmock-')),
+  all: ['top-students', 'practice-funnel:sm', 'quickprep-sheet-health', 'learning-subjects', 'learning-funnel', 'interview-trend', 'interview-funnel', 'assessment-tests', 'assessment-funnel', 'prepmock-tests', 'prepmock-funnel'],
 };
 const layoutEntry = (entry) => { const [id, size] = entry.split(':'); return { id, size }; };
 const perArea = (pick) => Object.freeze(Object.fromEntries(Object.entries(LAYOUTS).map(([area, list]) => [area, pick(list.map(layoutEntry))])));
@@ -1461,7 +1472,7 @@ export const DEFAULT_SIZES = perArea((entries) => Object.freeze(Object.fromEntri
 
 // Raise an area's number when its default layout is redesigned: a layout this browser saved
 // under an older number is replaced by the new default once; changes made after that stay.
-export const DEFAULT_LAYOUT_VERSION = Object.freeze({ coding: 3, quickprep: 3, learning: 2, interview: 2, assessment: 2, all: 2 });
+export const DEFAULT_LAYOUT_VERSION = Object.freeze({ coding: 3, quickprep: 3, learning: 2, interview: 2, assessment: 2, prepmock: 1, all: 2 });
 
 // Headline numbers: a few actionable student counts per feature. Prep Coding also
 // includes accepted / total submissions because it is the clearest cohort-level
@@ -1655,6 +1666,10 @@ export function buildKpiGroups(area, modules, rows, range = null, now = new Date
     learning: (list) => learningKpis(list, range, now),
     interview: (list) => interviewKpis(list, range, now),
     assessment: (list) => assessmentKpis(list, range, now),
+    prepmock: (list) => assessmentKpis(list.map((row) => ({ ...row, assessment: row.prepmock })), range, now).map((kpi) => ({
+      ...kpi,
+      label: kpi.label.replace(/tests?/gi, (match) => match.toLowerCase().endsWith('s') ? 'Mocks' : 'Mock'),
+    })),
   };
   return Object.entries(SECTIONS)
     .filter(([, section]) => modules.has(section.module) && (area === 'all' || section.module === area))

@@ -483,8 +483,10 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const editorTopRef = useRef(null);
   const assessmentKey = finalAssessmentContext?.assessmentKey || 'new';
   const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+  const mockLibrary = location.pathname.startsWith('/admin/prepmock/library');
+  const libraryRoot = mockLibrary ? '/admin/prepmock/library' : `${rolePrefix}/library`;
   const assessmentReturnTo = finalAssessmentContext?.returnTo || `${rolePrefix}/assessment`;
-  const authoringDraftKey = `peerprep_coding_authoring_draft:${rolePrefix}`;
+  const authoringDraftKey = `peerprep_coding_authoring_draft:${libraryRoot}`;
 
   useEffect(() => {
     formRef.current = form;
@@ -874,6 +876,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     if (silent) setAutoSaveStatus('Saving draft...');
     try {
       const payload = buildProblemFormData(form, status);
+      if (mockLibrary) payload.append('libraryScope', 'mock');
       const response = currentProblemId
         ? await api.updateCompilerProblem(currentProblemId, payload)
         : await api.createCompilerProblem(payload);
@@ -927,9 +930,9 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
       }
 
       if (redirectToPreview) {
-        navigate(`${rolePrefix}/library/coding/${response._id}/preview${isAssessment ? location.search : ''}`);
+        navigate(`${libraryRoot}/coding/${response._id}/preview${isAssessment ? location.search : ''}`);
       } else if (!currentProblemId && !isAssessment) {
-        navigate(`${rolePrefix}/library/coding/${response._id}/edit`, { replace: true });
+        navigate(`${libraryRoot}/coding/${response._id}/edit`, { replace: true });
       }
 
       if (silent) setAutoSaveStatus('Draft auto-saved');
@@ -1087,7 +1090,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
       await api.deleteCompilerProblem(currentProblemId);
       toast.success('Problem deleted successfully.');
       setDeleteConfirmOpen(false);
-      navigate(`${rolePrefix}/library/coding/problems`);
+      navigate(libraryRoot);
     } catch (error) {
       toast.error(error.message || 'Failed to delete problem.');
     } finally {
@@ -1164,7 +1167,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
     } else {
       // If not in assessment mode, redirect to problem library to select assessment
       toast.success('Question published! You can now add it to an assessment from the problem library.');
-      navigate(`${rolePrefix}/library`);
+      navigate(libraryRoot);
     }
   };
 

@@ -326,6 +326,12 @@ const COLUMNS = {
     { label: "Tests", sort: "testStatus", render: (row) => <StatusPill status={row.assessment?.status} /> },
   ],
 };
+COLUMNS.prepmock = COLUMNS.assessment.map((column) => ({
+  ...column,
+  label: column.label.replace(/Tests?/g, (match) => match.endsWith('s') ? 'Mocks' : 'Mock'),
+  sort: ({ testScore: 'mockTestScore', testsTaken: 'mocksTaken', testsPassed: 'mocksPassed', testsMissed: 'mocksMissed', testStatus: 'mockTestStatus' })[column.sort] || column.sort,
+  render: (row) => column.render({ ...row, assessment: row.prepmock }),
+}));
 const scoreCell = (value) => (value === null || value === undefined ? "—" : (
   <b className="tabular-nums text-slate-900 dark:text-white">{formatScore(value?.score ?? value)}</b>
 ));
@@ -352,9 +358,15 @@ const SCOPED_ASSESSMENT_COLUMNS = [
   } },
   { label: "Status", sort: "testStatus", render: (row) => <StatusPill status={row.assessment?.status} /> },
 ];
+const SCOPED_MOCK_COLUMNS = SCOPED_ASSESSMENT_COLUMNS.map((column) => ({
+  ...column,
+  label: column.label.replace(/Test/g, 'Mock'),
+  sort: ({ testScore: 'mockTestScore', testResult: 'mockTestResult', testStatus: 'mockTestStatus' })[column.sort] || column.sort,
+  render: (row) => column.render({ ...row, assessment: row.prepmock }),
+}));
 // Sorts that start A–Z (or place 1 first) on the first click; figures start high-to-low.
 const ASC_FIRST = new Set(["position", "name", "className", "practiceStatus", "languages", "sheetStatus", "sheetLastActive", "learningStatus", "interviewStatus", "testStatus"]);
-const POSITION_HINT = { coding: "Prep Score", quickprep: "sheet progress", learning: "course completed", interview: "Prep Score", assessment: "Prep Score", all: "overall Prep Score" };
+const POSITION_HINT = { coding: "Prep Score", quickprep: "sheet progress", learning: "course completed", interview: "Prep Score", assessment: "Prep Score", prepmock: "mock score", all: "overall Prep Score" };
 
 /**
  * The students on the page, sorted and paged on the server. `title` and `actions` (e.g. a
@@ -409,7 +421,7 @@ export function StudentTable({ table, area, loading, onChange, onOpen, title = "
   if (!table) return null;
   const selectable = Boolean(requestBody);
   const pageIds = selectable ? table.rows.map((row) => String(row.id)) : [];
-  const columns = scoped && area === "assessment" ? SCOPED_ASSESSMENT_COLUMNS : (COLUMNS[area] || COLUMNS.coding);
+  const columns = scoped && area === "assessment" ? SCOPED_ASSESSMENT_COLUMNS : scoped && area === 'prepmock' ? SCOPED_MOCK_COLUMNS : (COLUMNS[area] || COLUMNS.coding);
   // The server always has a sort (the area's default when none is picked), so a header click flips
   // the active column or starts a new one: high-to-low for figures, A–Z / place 1 first for the rest.
   const sortBy = (key) => onChange({

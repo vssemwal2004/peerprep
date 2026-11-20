@@ -130,7 +130,8 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const [questionCounts, setQuestionCounts] = useState({ all: 0, draft: 0, coding: 0, mcq: 0, short: 0, one_line: 0 });
   const [compilerProblemCount, setCompilerProblemCount] = useState(null);
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
-  const libraryRoot = `${rolePrefix}/library`;
+  const mockLibrary = location.pathname.startsWith('/admin/prepmock/library');
+  const libraryRoot = mockLibrary ? '/admin/prepmock/library' : `${rolePrefix}/library`;
   const selectedType = searchParams.get('type') || 'coding';
   const selectedStatus = searchParams.get('status') || '';
   const mode = searchParams.get('mode') || 'library';
@@ -190,7 +191,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   useEffect(() => {
     if (!canViewQuestions || view === 'questions' || isDrawerView) return undefined;
     let active = true;
-    api.listLibraryQuestions({ page: 1, limit: 1, skipCache: true })
+    api.listLibraryQuestions({ page: 1, limit: 1, skipCache: true, ...(mockLibrary ? { scope: 'mock' } : {}) })
       .then((data) => {
         if (active) updateQuestionCounts({
           categories: data.filters?.categories || [],
@@ -199,10 +200,10 @@ export default function LibraryWorkspace({ view = 'questions' }) {
       })
       .catch(() => {});
     return () => { active = false; };
-  }, [canViewQuestions, isDrawerView, updateQuestionCounts, view]);
+  }, [canViewQuestions, isDrawerView, mockLibrary, updateQuestionCounts, view]);
 
   useEffect(() => {
-    if (!canManageCoding || isDrawerView) return undefined;
+    if (!canManageCoding || isDrawerView || mockLibrary) return undefined;
     let active = true;
     api.listCompilerProblems({ page: 1, limit: 1, skipCache: true })
       .then((data) => {
@@ -210,7 +211,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
       })
       .catch(() => {});
     return () => { active = false; };
-  }, [canManageCoding, isDrawerView, view]);
+  }, [canManageCoding, isDrawerView, mockLibrary, view]);
 
   const assessmentContext = useMemo(() => {
     if (mode !== 'assessment' && mode !== 'assessment-create') return undefined;
@@ -224,7 +225,9 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   }, [mode, searchParams]);
 
   const codingItems = [
-    rolePrefix === '/admin'
+    mockLibrary
+      ? { id: 'mock-analysis', label: 'Mock Analysis', Icon: BarChart3, to: '/admin/prepmock/analysis' }
+      : rolePrefix === '/admin'
       ? { id: 'admin-analysis', label: 'Prep Analysis', Icon: BarChart3, to: '/admin/analysis' }
       : canViewCodingAnalytics && { id: 'coding-analytics', label: 'Coding analytics', Icon: BarChart3, to: `${libraryRoot}/coding/analytics` },
   ].filter(Boolean);
@@ -283,12 +286,12 @@ export default function LibraryWorkspace({ view = 'questions' }) {
     : quickprepMode
       ? 'Add questions to QuickPrep'
     : assessmentCreationMode
-      ? 'Create question for assessment'
+      ? `Create question for ${mockLibrary ? 'mock' : 'assessment'}`
     : view === 'coding-analytics'
         ? 'Coding analytics'
         : view === 'questions' && selectedStatus === 'draft'
           ? 'Draft questions'
-          : 'Question library';
+          : mockLibrary ? 'Mock Library' : 'Question library';
   const selectedQuestionLabel = questionTypes.find((item) => item.type === selectedType)?.label || 'Question';
   const drawerTitle = view === 'create-question'
     ? `Create ${selectedQuestionLabel.toLowerCase()} question`
@@ -331,8 +334,8 @@ export default function LibraryWorkspace({ view = 'questions' }) {
     <div className="min-h-screen bg-white pt-[var(--app-navbar-height,5rem)] font-['Manrope'] dark:bg-gray-900">
       <div className="grid min-h-[calc(100vh-var(--app-navbar-height,5rem))] md:grid-cols-[60px_minmax(0,1fr)]">
         <LibraryRail
-          title={pickerMode ? 'Choose questions' : assessmentCreationMode ? 'Create for assessment' : 'Question Library'}
-          subtitle={assessmentSelectionMode ? `Select content for ${assessmentTitle}.` : quickprepMode ? `Select coding questions for ${quickprepTitle}.` : assessmentCreationMode ? `Create and attach content to ${assessmentTitle}.` : 'Create, organize and reuse assessment content.'}
+          title={pickerMode ? 'Choose questions' : assessmentCreationMode ? `Create for ${mockLibrary ? 'mock' : 'assessment'}` : mockLibrary ? 'Mock Library' : 'Question Library'}
+          subtitle={assessmentSelectionMode ? `Select content for ${assessmentTitle}.` : quickprepMode ? `Select coding questions for ${quickprepTitle}.` : assessmentCreationMode ? `Create and attach content to ${assessmentTitle}.` : mockLibrary ? 'Create, organize and reuse mock questions.' : 'Create, organize and reuse assessment content.'}
           canViewQuestions={canViewQuestions}
           questionTypes={navigableQuestionTypes}
           isTypeActive={(type) => view === 'questions' && !selectedStatus && selectedType === type}
@@ -370,7 +373,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
           {view !== 'coding-analytics' && <header data-page-header data-guide="lib-header" className="sticky top-0 z-40 border-b border-slate-200 bg-white px-4 sm:px-5 lg:px-6 dark:border-gray-800 dark:bg-gray-900">
             <div className="flex min-h-16 items-center justify-between gap-4">
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400"><BookOpenCheck className="h-3.5 w-3.5" /> Library <ChevronRight className="h-3 w-3" /> <span className="truncate text-slate-600 dark:text-gray-300">{title}</span></div>
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400"><BookOpenCheck className="h-3.5 w-3.5" /> {mockLibrary ? 'Mock Library' : 'Library'} <ChevronRight className="h-3 w-3" /> <span className="truncate text-slate-600 dark:text-gray-300">{title}</span></div>
                 <div className="mt-0.5 flex min-w-0 items-center gap-2">
                   <h1 className="truncate text-lg font-bold leading-tight text-slate-950 dark:text-white">{title}</h1>
                   {/* Editor drawers carry their own ⓘ; only one per page. */}

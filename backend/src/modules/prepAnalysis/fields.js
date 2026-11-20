@@ -25,10 +25,11 @@ export const MODULES = Object.freeze({
   learning: { label: 'Prep Learning', permission: 'learning' },
   interview: { label: 'Prep Interview', permission: ['events', 'interviews'] },
   assessment: { label: 'Prep Assessment', permission: 'assessments' },
+  prepmock: { label: 'PrepMock', permission: 'assessments' },
 });
 
 // Which module each "Only count" set belongs to.
-const QUALIFIER_MODULE = Object.freeze({ coding: 'coding', quickprep: 'quickprep', learning: 'learning', assessment: 'assessment' });
+const QUALIFIER_MODULE = Object.freeze({ coding: 'coding', quickprep: 'quickprep', learning: 'learning', assessment: 'assessment', prepmock: 'prepmock' });
 
 export const KIND_OPERATORS = Object.freeze({
   enum: ['anyOf', 'noneOf', 'is', 'isNot'],
@@ -54,6 +55,7 @@ export const QUALIFIER_SETS = Object.freeze({
   learning: { subjects: { label: 'Subject', options: 'subjects' } },
   quickprep: { sheets: { label: 'Sheet', options: 'sheets' } },
   assessment: { tests: { label: 'Test', options: 'tests' } },
+  prepmock: { tests: { label: 'Mock', options: 'mocks' } },
 });
 
 const codingMetric = (metric, fixed) => (row, qualifiers) => qualifiedCodingMetric(row, metric, fixed ? { ...(qualifiers || {}), ...fixed } : qualifiers);
@@ -162,9 +164,20 @@ const FIELD_LIST = [
   { key: 'assessment.daysSinceActive', module: 'assessment', group: 'Activity', label: 'Days since last test', kind: 'number', unit: 'days', get: (row) => row.assessment?.daysSinceActive ?? null },
 ];
 
+// Mock assessments use the same measures and operators, with a separate fact row and picker.
+FIELD_LIST.push(...FIELD_LIST.filter((field) => field.module === 'assessment' && field.key !== 'assessment.prepScore').map((field) => ({
+  ...field,
+  key: field.key.replace(/^assessment\./, 'prepmock.'),
+  module: 'prepmock',
+  label: field.label.replace(/tests?/gi, (match) => match.toLowerCase().endsWith('s') ? 'Mocks' : 'Mock'),
+  options: field.options === 'tests' ? 'mocks' : field.options === 'assessmentStatuses' ? 'mockStatuses' : field.options,
+  qualifiers: field.qualifiers === 'assessment' ? 'prepmock' : field.qualifiers,
+  get: (row, qualifiers) => field.get({ ...row, assessment: row.prepmock }, qualifiers),
+})));
+
 // The measure "Who to show: Top / Bottom N" ranks by in each area.
 export const DEFAULT_RANK_METRIC = Object.freeze({
-  coding: 'coding.prepScore', quickprep: 'quickprep.progress', learning: 'learning.progress', interview: 'interview.prepScore', assessment: 'assessment.prepScore', all: 'student.prepScore',
+  coding: 'coding.prepScore', quickprep: 'quickprep.progress', learning: 'learning.progress', interview: 'interview.prepScore', assessment: 'assessment.prepScore', prepmock: 'prepmock.averageScore', all: 'student.prepScore',
 });
 
 export const FIELDS = new Map(FIELD_LIST.map((field) => [field.key, field]));
@@ -196,6 +209,11 @@ export const STATIC_OPTIONS = Object.freeze({
     { value: 'active', label: `Took a test (last ${INACTIVE_AFTER_DAYS} days)` },
     { value: 'inactive', label: `No test for ${INACTIVE_AFTER_DAYS}+ days` },
     { value: 'never', label: 'Never took a test' },
+  ],
+  mockStatuses: [
+    { value: 'active', label: `Took a mock (last ${INACTIVE_AFTER_DAYS} days)` },
+    { value: 'inactive', label: `No mock for ${INACTIVE_AFTER_DAYS}+ days` },
+    { value: 'never', label: 'Never took a mock' },
   ],
   quickprepStatuses: [
     { value: 'finished', label: 'Finished a sheet' },

@@ -162,7 +162,7 @@ export async function getPrepAnalysisStudent(req, res) {
     permissions: req.platformPermissions,
     studentId: req.params.studentId,
     range: studentRange(req.query),
-    scope: scopeFromQueryString(req.query.assessmentIds),
+    scope: scopeFromQueryString(req.query.assessmentIds, req.query.kind),
   }));
 }
 
@@ -172,7 +172,7 @@ export async function exportPrepAnalysisStudent(req, res) {
     permissions: req.platformPermissions,
     studentId: req.params.studentId,
     range: studentRange(req.query),
-    scope: scopeFromQueryString(req.query.assessmentIds),
+    scope: scopeFromQueryString(req.query.assessmentIds, req.query.kind),
     format: String(req.query.format || ''),
   });
   res.set({
@@ -208,6 +208,6 @@ export async function listPrepAnalysisOptions(req, res) {
     permissions: req.platformPermissions,
     optionsKey: String(req.query.list || ''),
     q: req.query.q,
-    scope: scopeFromQueryString(req.query.assessmentIds),
+    scope: scopeFromQueryString(req.query.assessmentIds, req.query.kind),
   }));
 }

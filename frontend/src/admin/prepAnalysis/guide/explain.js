@@ -27,6 +27,11 @@ export const KPI_EXPLAIN = Object.freeze({
   "assessment.missed": "Students who did not attempt a test that was assigned to them and has ended.",
   "assessment.never": "Students assigned at least one test who have not taken any.",
   "assessment.passRate": "Tests passed (40% or more) out of tests taken, all students together.",
+  "prepmock.students": "Students who submitted at least one mock.",
+  "prepmock.passedStudents": "Students who scored 40% or more in at least one mock.",
+  "prepmock.missed": "Students who did not attempt an assigned mock that has ended.",
+  "prepmock.never": "Students assigned at least one mock who have not taken any.",
+  "prepmock.passRate": "Mocks passed (40% or more) out of mocks taken, all students together.",
 });
 
 export const COVERAGE_EXPLAIN = "How many of the students in view this chart is about, out of everyone in view (after the page's filters and period), and that share in %.";

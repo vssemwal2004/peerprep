@@ -248,6 +248,9 @@ export default function AssessmentReports() {
   const navigate = useNavigate();
   const location = useLocation();
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+  const isMock = location.pathname.startsWith('/admin/prepmock');
+  const reportKind = isMock ? 'mock' : 'assessment';
+  const assessmentRoot = isMock ? '/admin/prepmock' : `${rolePrefix}/assessment`;
   const initialAssessmentId = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('assessmentId') || ''
     : '';
@@ -330,7 +333,7 @@ export default function AssessmentReports() {
     [allAssessments, assessments, selectedAssessmentId]
   );
 
-  const roster = useLiveAssessmentRoster(selectedAssessmentId, { fallbackAssessment: selectedAssessment, intervalMs: refreshIntervalMs });
+  const roster = useLiveAssessmentRoster(selectedAssessmentId, { fallbackAssessment: selectedAssessment, intervalMs: refreshIntervalMs, kind: reportKind });
 
   /* Shell metadata merged with the roster's authoritative assessment summary. */
   const reportAssessment = useMemo(() => {
@@ -392,7 +395,7 @@ export default function AssessmentReports() {
     let active = true;
     const loadAssessments = async () => {
       try {
-        const data = await api.listAssessments();
+        const data = await api.listAssessments({ kind: reportKind, ...(reportKind === 'mock' ? { includeHistorical: 'true' } : {}) });
         if (!active) return;
         setAllAssessments(Array.isArray(data?.assessments) ? data.assessments : []);
       } catch (err) {
@@ -401,7 +404,7 @@ export default function AssessmentReports() {
     };
     void loadAssessments();
     return () => { active = false; };
-  }, [toast]);
+  }, [reportKind, toast]);
 
   /* ── Page shell: assessment list from the reports endpoint, loaded once (and on manual refresh) ── */
   useEffect(() => {
@@ -409,7 +412,7 @@ export default function AssessmentReports() {
     const loadShell = async () => {
       setShellLoading(true);
       try {
-        const data = await api.getAssessmentReports({ page: 1, limit: 25 });
+        const data = await api.getAssessmentReports({ page: 1, limit: 25, kind: reportKind });
         if (!active) return;
         setAssessments(Array.isArray(data?.assessments) ? data.assessments : []);
       } catch (err) {
@@ -423,7 +426,7 @@ export default function AssessmentReports() {
     };
     void loadShell();
     return () => { active = false; };
-  }, [shellVersion, toast]);
+  }, [reportKind, shellVersion, toast]);
 
   useEffect(() => {
     // Validate only against the full assessment list; the shell list may be partial.
@@ -558,11 +561,11 @@ export default function AssessmentReports() {
 
   // submissionId always travels with the export so the file can be limited to the candidates on screen.
   const buildExportParams = useCallback((selectedDefs) => {
-    const params = {};
+    const params = { kind: reportKind };
     if (selectedAssessmentId) params.assessmentId = selectedAssessmentId;
     params.columns = [...selectedDefs.map(({ key }) => key), 'submissionId'].join(',');
     return params;
-  }, [selectedAssessmentId]);
+  }, [reportKind, selectedAssessmentId]);
 
   // "Current view" = every candidate the filters and quick view leave (not only the visible page).
   // Candidates who never started have no attempt, so they are in the on-screen count but not in a file.
@@ -1137,9 +1140,9 @@ export default function AssessmentReports() {
         <div className="flex min-h-[52px] flex-wrap items-center gap-x-3 gap-y-0 px-3 sm:px-4">
           <button
             type="button"
-            onClick={() => navigate(`${rolePrefix}/assessment`)}
-            aria-label="Back to assessments"
-            title="Back to assessments"
+            onClick={() => navigate(assessmentRoot)}
+            aria-label={`Back to ${isMock ? 'mocks' : 'assessments'}`}
+            title={`Back to ${isMock ? 'mocks' : 'assessments'}`}
             className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-sky-300 hover:bg-sky-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -1149,7 +1152,7 @@ export default function AssessmentReports() {
               <BarChart3 className="h-4 w-4" />
             </span>
             <div className="min-w-0">
-              <h1 className="flex min-w-0 items-center gap-1.5 text-sm font-semibold leading-tight text-slate-950 dark:text-white"><span className="truncate">Assessment Reports</span><PageGuideButton size="sm" /></h1>
+              <h1 className="flex min-w-0 items-center gap-1.5 text-sm font-semibold leading-tight text-slate-950 dark:text-white"><span className="truncate">{isMock ? 'Mock Reports' : 'Assessment Reports'}</span><PageGuideButton size="sm" /></h1>
               <p className="max-w-[16rem] truncate text-[11px] leading-tight text-slate-500 dark:text-gray-400" title={selectedAssessment?.title}>
                 {selectedAssessment ? `${selectedAssessment.title} · ${roster.rows.length} candidates` : 'Choose an assessment'}
               </p>
@@ -1279,7 +1282,7 @@ export default function AssessmentReports() {
         {analysisOpened && selectedAssessment && (
           <div className={activeTab === 'analytics' ? 'block' : 'hidden'}>
             <Suspense fallback={<div className="flex h-64 items-center justify-center text-xs text-slate-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading analysis…</div>}>
-              <ReportAnalysis assessmentId={String(selectedAssessmentId)} title={selectedAssessment.title} />
+              <ReportAnalysis assessmentId={String(selectedAssessmentId)} kind={reportKind} title={selectedAssessment.title} />
             </Suspense>
           </div>
         )}

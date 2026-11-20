@@ -69,12 +69,14 @@ export function resetSharedQuestCache() {
   questionCacheUntil = 0;
 }
 
-export async function sharedAssessments() {
+export async function sharedAssessments(kind = 'assessment', { includeHistorical = false } = {}) {
   if (!isUniversity()) return [];
   const policy = await universityPolicy();
   if (!policy.permissions?.assessments) return [];
-  const { assessments } = await controlRequest('assessments');
-  return assessments.map((assessment) => ({ ...Assessment.hydrate(assessment).toObject(), platformShared: true, platformPublished: true }));
+  const { assessments } = await controlRequest(includeHistorical && kind === 'mock' ? 'assessments/history' : 'assessments');
+  return assessments
+    .filter((assessment) => kind === 'mock' ? assessment.kind === 'mock' : assessment.kind !== 'mock')
+    .map((assessment) => ({ ...Assessment.hydrate(assessment).toObject(), platformShared: true, platformPublished: assessment.platformPublished !== false }));
 }
 
 export async function sharedAssessment(id) {

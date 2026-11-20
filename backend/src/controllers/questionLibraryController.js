@@ -462,10 +462,16 @@ function searchTermsResponse(searchList, matchedTerms) {
   };
 }
 
+// Legacy rows have no scope field and belong to the main library.
+const libraryScopeQuery = (req) => req.query?.scope === 'mock'
+  ? { scope: 'mock' }
+  : { scope: { $ne: 'mock' } };
+const isMockLibrary = (req) => req.query?.scope === 'mock';
+
 export async function listLibraryQuestions(req, res) {
   try {
-    const central = await sharedQuestions();
-    await ensureQuestionLibrarySynchronized();
+    const central = isMockLibrary(req) ? null : await sharedQuestions();
+    if (!isMockLibrary(req)) await ensureQuestionLibrarySynchronized();
     // The picker's PeerPrep/LeetCode toggle decides what a bare number means ("2" → "pp 2" / "lc 2").
     const listQuery = { ...(req.query || {}), search: applyNumberKind(String(req.query?.search || ''), req.query?.numberKind) };
 
@@ -511,6 +517,7 @@ export async function listLibraryQuestions(req, res) {
 
     const baseMatch = {
       ...buildLibrarySearchMatch(search),
+      ...libraryScopeQuery(req),
     };
 
     const selectedTypes = queryList(types || type).filter((entry) => entry !== 'all');
@@ -583,7 +590,7 @@ export async function listLibraryQuestions(req, res) {
           from: QuestionLibrary.collection.name,
           let: { problemId: { $cond: [{ $eq: ['$questionType', 'coding'] }, { $ifNull: ['$sourceProblemId', '__none__'] }, '__none__'] } },
           pipeline: [
-            { $match: { $expr: { $eq: ['$sourceProblemId', '$$problemId'] }, sourceType: 'assessment', sourceAssessmentTitle: { $nin: [null, ''] } } },
+            { $match: { $expr: { $eq: ['$sourceProblemId', '$$problemId'] }, sourceType: 'assessment', sourceAssessmentTitle: { $nin: [null, ''] }, ...libraryScopeQuery(req) } },
             { $group: { _id: '$sourceAssessmentTitle' } },
           ],
           as: '__usage',
@@ -701,7 +708,7 @@ export async function listLibraryQuestions(req, res) {
       });
       const problemIds = rows.map((question) => question.sourceProblemId).filter(Boolean);
       const usageQuestions = problemIds.length
-        ? await QuestionLibrary.find({ sourceType: 'assessment', sourceProblemId: { $in: problemIds } })
+        ? await QuestionLibrary.find({ sourceType: 'assessment', sourceProblemId: { $in: problemIds }, ...libraryScopeQuery(req) })
           .select('sourceProblemId sourceAssessmentTitle').lean()
         : [];
       const assessmentUsage = new Map();
@@ -718,8 +725,8 @@ export async function listLibraryQuestions(req, res) {
       // instead so large draft and published banks do not exhaust memory or hit
       // the request timeout.
       const scopeMatch = req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all'
-        ? { createdBy: req.user._id }
-        : {};
+        ? { createdBy: req.user._id, ...libraryScopeQuery(req) }
+        : libraryScopeQuery(req);
       const metadataIdentity = {
         $cond: [
           { $and: [{ $eq: ['$questionType', 'coding'] }, { $ne: [{ $ifNull: ['$sourceProblemId', null] }, null] }] },
@@ -814,8 +821,8 @@ export async function listLibraryQuestions(req, res) {
     }
 
     const scopeMatch = req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all'
-      ? { createdBy: req.user._id }
-      : {};
+      ? { createdBy: req.user._id, ...libraryScopeQuery(req) }
+      : libraryScopeQuery(req);
     const [baseQuestions, scopeQuestions, tags, difficulties] = await Promise.all([
       QuestionLibrary.find(baseMatch)
         .select(searchList.multi ? `${LIBRARY_SUMMARY_PROJECTION} searchPrefixes` : LIBRARY_SUMMARY_PROJECTION)
@@ -912,14 +919,14 @@ export async function listLibraryQuestions(req, res) {
 
 export async function getLibraryQuestion(req, res) {
   try {
-    const central = await sharedQuestions();
-    await ensureQuestionLibrarySynchronized();
+    const central = isMockLibrary(req) ? null : await sharedQuestions();
+    if (!isMockLibrary(req)) await ensureQuestionLibrarySynchronized();
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ error: 'Invalid library question id' });
     }
 
-    const query = { _id: id };
+    const query = { _id: id, ...libraryScopeQuery(req) };
     if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       query.createdBy = req.user._id;
     }
@@ -946,7 +953,7 @@ export async function getLibraryQuestion(req, res) {
 }
 
 function buildLibraryQuestionQuery(req, id) {
-  const query = { _id: id };
+  const query = { _id: id, ...libraryScopeQuery(req) };
   if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
     query.createdBy = req.user._id;
   }
@@ -1085,15 +1092,15 @@ export async function deleteLibraryQuestion(req, res) {
 
 export async function resolveLibraryQuestions(req, res) {
   try {
-    const central = await sharedQuestions();
-    await ensureQuestionLibrarySynchronized();
+    const central = isMockLibrary(req) ? null : await sharedQuestions();
+    if (!isMockLibrary(req)) await ensureQuestionLibrarySynchronized();
     const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
     const validIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
     if (!validIds.length) {
       return res.json({ questions: [] });
     }
 
-    const query = { _id: { $in: validIds } };
+    const query = { _id: { $in: validIds }, ...libraryScopeQuery(req) };
     if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       query.createdBy = req.user._id;
     }
@@ -1134,6 +1141,7 @@ export async function createLibraryQuestion(req, res) {
     const searchPrefixes = buildSearchPrefixes(getQuestionSearchValues({ ...question, questionText, tags, keywords }));
 
     const newQuestion = new QuestionLibrary({
+      scope: isMockLibrary(req) ? 'mock' : 'main',
       sourceKey,
       sourceType: 'manual',
       sourceAssessmentTitle: 'Direct Added',
@@ -1202,6 +1210,7 @@ export async function createLibraryQuestionsBulk(req, res) {
       const searchPrefixes = buildSearchPrefixes(getQuestionSearchValues({ ...libraryQuestion, questionText, tags, keywords }));
 
       return {
+        scope: isMockLibrary(req) ? 'mock' : 'main',
         sourceKey,
         sourceType: 'manual',
         sourceAssessmentTitle: 'Direct Added',

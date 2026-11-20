@@ -110,6 +110,14 @@ export const EXPORT_COLUMNS = [
   { key: 'daysSinceTest', label: 'Days since last test', group: 'Prep Assessment', module: 'assessment', kind: 'number', width: 11, get: (row) => row.assessment?.daysSinceActive ?? null },
 ];
 
+EXPORT_COLUMNS.push(...EXPORT_COLUMNS.filter((column) => column.module === 'assessment' && column.key !== 'assessmentPrepScore').map((column) => ({
+  ...column,
+  key: `mock${column.key[0].toUpperCase()}${column.key.slice(1)}`,
+  group: 'PrepMock', module: 'prepmock',
+  label: column.label.replace(/tests?/gi, (match) => match.toLowerCase().endsWith('s') ? 'Mocks' : 'Mock'),
+  get: (row) => column.get({ ...row, assessment: row.prepmock }),
+})));
+
 export const COLUMN_BY_KEY = new Map(EXPORT_COLUMNS.map((column) => [column.key, column]));
 
 // Ticked when the download popup opens; the admin can add or remove any column.
@@ -120,6 +128,7 @@ export const DEFAULT_EXPORT_COLUMNS = Object.freeze({
   learning: ['position', 'name', 'studentId', 'semester', 'branch', 'learningPrepScore', 'learningProgress', 'topicsCompleted', 'topicsAvailable', 'videoMinutes', 'learningStatus', 'daysSinceLesson'],
   interview: ['position', 'name', 'studentId', 'semester', 'branch', 'interviewPrepScore', 'interviewsDone', 'mockDone', 'mockScore', 'bestMockScore', 'aiInterviews', 'interviewStatus'],
   assessment: ['position', 'name', 'studentId', 'semester', 'branch', 'assessmentPrepScore', 'testsTaken', 'testsPassed', 'testsMissed', 'testScore', 'bestTestScore', 'testStatus'],
+  prepmock: ['position', 'name', 'studentId', 'semester', 'branch', 'mockTestsTaken', 'mockTestsPassed', 'mockTestsMissed', 'mockTestScore', 'mockBestTestScore', 'mockTestStatus'],
   all: ['position', 'name', 'studentId', 'semester', 'branch', 'overallPrepScore', 'prepScore', 'sheetProgress', 'learningProgress', 'mockScore', 'testScore', 'practiceStatus'],
 });
 
@@ -128,7 +137,7 @@ export function publicExportColumns(permissions) {
   return EXPORT_COLUMNS.filter((column) => modules.has(column.module)).map(({ get, ...column }) => column);
 }
 
-const AREA_LABELS = { all: 'All features', coding: 'Prep Coding', quickprep: 'Quick Prep', learning: 'Prep Learning', interview: 'Prep Interview', assessment: 'Prep Assessment' };
+const AREA_LABELS = { all: 'All features', coding: 'Prep Coding', quickprep: 'Quick Prep', learning: 'Prep Learning', interview: 'Prep Interview', assessment: 'Prep Assessment', prepmock: 'PrepMock' };
 const PERIOD_LABELS = { '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days', '180d': 'Last 6 months', '365d': 'Last year', all: 'All time' };
 const cleanText = (value, max = 240) => String(value ?? '').replace(/[\u0000-\u001f]+/g, ' ').trim().slice(0, max);
 export const periodText = (range) => (range.preset === 'custom'

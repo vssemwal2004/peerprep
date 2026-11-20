@@ -10,7 +10,12 @@ import { TYPE_GUIDES } from "./content/types.js";
 import { MAIN_CHART_GUIDES } from "./content/charts.main.js";
 import { OTHER_CHART_GUIDES } from "./content/charts.others.js";
 
-export const CHART_GUIDES = Object.freeze({ ...MAIN_CHART_GUIDES, ...OTHER_CHART_GUIDES });
+export const CHART_GUIDES = Object.freeze({
+  ...MAIN_CHART_GUIDES, ...OTHER_CHART_GUIDES,
+  ...Object.fromEntries(Object.entries(OTHER_CHART_GUIDES)
+    .filter(([id]) => id.startsWith('assessment-'))
+    .map(([id, guide]) => [id.replace(/^assessment-/, 'prepmock-'), guide])),
+});
 // Bumped when a chart's "what's new" changes, so admins see the new notes once.
 const NEW_VERSION = "2026-11-19";
 

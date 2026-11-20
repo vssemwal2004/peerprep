@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { requireAuth, requireAdmin, requireCoordinatorPermission } from '../middleware/auth.js';
 import { isUniversity } from '../platform/deployment.js';
+import { listMockProblemCompanies } from '../controllers/problemController.js';
 import { universityPolicy } from '../platform/client.js';
 import { bulkOperationLimiter, uploadLimiter, compilerExecutionLimiter } from '../middleware/rateLimiter.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
@@ -11,6 +12,8 @@ import {
   listAssessments,
   getAssessment,
   updateAssessment,
+  resetMock,
+  unpublishMock,
   deleteAssessment,
   resetAssessmentSubmissions,
   listAssessmentEligibleStudents,
@@ -73,6 +76,7 @@ const questionAssetUpload = multer({
 });
 
 router.post('/assessment/students/preview', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), previewAssessmentStudents);
+router.get('/assessment/mock-companies', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), listMockProblemCompanies);
 router.post('/assessment/create', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), invalidateResponseCache('assessments'), createAssessment);
 router.post('/assessment/test-email', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), sendAssessmentTestEmail);
 router.get('/assessment/list', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), cacheJsonResponse({ namespace: 'assessments', ttlSeconds: Number(process.env.RESPONSE_CACHE_ASSESSMENTS_TTL_SECONDS || 30) }), listAssessments);
@@ -105,6 +109,8 @@ router.delete('/library/questions/:id', requireAuth, requireCoordinatorPermissio
 router.get('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), cacheJsonResponse({ namespace: 'assessments', ttlSeconds: Number(process.env.RESPONSE_CACHE_ASSESSMENTS_TTL_SECONDS || 30) }), getAssessment);
 router.get('/assessment/:id/eligible-students', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), listAssessmentEligibleStudents);
 router.post('/assessment/:id/reset-submissions', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), resetAssessmentSubmissions);
+router.post('/assessment/:id/reset-mock', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), resetMock);
+router.post('/assessment/:id/unpublish-mock', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), unpublishMock);
 router.post('/assessment/:id/students', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), addAssessmentEligibleStudents);
 router.patch('/assessment/:id/students/sets', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), updateAssessmentStudentSets);
 router.post('/assessment/:id/students/remove', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), removeAssessmentEligibleStudents);

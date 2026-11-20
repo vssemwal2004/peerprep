@@ -48,8 +48,8 @@ async function saveResponse(response, fallbackName) {
 // the same analysis for one test. Without a scope nothing is added, so Prep Analysis is unchanged.
 const hasScope = (scope) => Boolean(scope?.assessmentIds?.length);
 // `scope: "chart"` already means "download one chart", so the assessments travel as `assessmentScope`.
-const withScope = (body, scope) => (hasScope(scope) ? { ...body, assessmentScope: { assessmentIds: scope.assessmentIds } } : body);
-const scopeQuery = (scope) => (hasScope(scope) ? { assessmentIds: scope.assessmentIds.join(",") } : {});
+const withScope = (body, scope) => (hasScope(scope) ? { ...body, assessmentScope: { assessmentIds: scope.assessmentIds, kind: scope.kind } } : body);
+const scopeQuery = (scope) => (hasScope(scope) ? { assessmentIds: scope.assessmentIds.join(","), ...(scope.kind === 'mock' ? { kind: 'mock' } : {}) } : {});
 
 export function createPrepAnalysisApi(scope = null) {
   return {

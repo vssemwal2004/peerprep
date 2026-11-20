@@ -82,11 +82,11 @@ export function usePrepAnalysis({ scope = null } = {}) {
   const stored = useMemo(readStored, []);
   const [catalog, setCatalog] = useState(null);
   const [catalogError, setCatalogError] = useState(null);
-  const [state, setState] = useState(() => (scoped ? defaultFilterState("assessment") : prepAnalysisStateFromSearch(window.location.search)));
+  const [state, setState] = useState(() => (scoped ? defaultFilterState(scope?.kind === 'mock' ? 'prepmock' : 'assessment') : prepAnalysisStateFromSearch(window.location.search)));
   const [layouts, setLayouts] = useState(stored.layouts || {});
   // Which version of each area's default layout the saved layouts were made under.
   const [layoutVersions, setLayoutVersions] = useState(stored.versions || {});
-  const baseTable = scoped ? SCOPED_TABLE : DEFAULT_TABLE;
+  const baseTable = scoped ? { ...SCOPED_TABLE, sort: scope?.kind === 'mock' ? 'mockTestScore' : 'testScore' } : DEFAULT_TABLE;
   const [table, setTableState] = useState(baseTable);
   // "Only these students": the students behind one part of a chart, chosen from its popup.
   const [focus, setFocusState] = useState(null);
@@ -130,7 +130,7 @@ export function usePrepAnalysis({ scope = null } = {}) {
   const fieldMap = useMemo(() => new Map((catalog?.fields || []).map((field) => [field.key, field])), [catalog]);
   const areas = useMemo(() => catalog?.areas || [], [catalog]);
   const area = scoped
-    ? (areas.some((entry) => entry.key === "assessment") ? "assessment" : null)
+    ? (areas.some((entry) => entry.key === (scope?.kind === 'mock' ? 'prepmock' : 'assessment')) ? (scope?.kind === 'mock' ? 'prepmock' : 'assessment') : null)
     : areas.some((entry) => entry.key === state.area) ? state.area : areas[0]?.key || null;
 
   // Only charts the catalog still offers for this area; a fresh area starts from its default layout.

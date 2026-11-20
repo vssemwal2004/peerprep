@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { AlertCircle, Crosshair, EyeOff, HelpCircle, LayoutGrid, Loader2, RefreshCw, Users, X } from "lucide-react";
 import { AnalysisScopeContext } from "./analysisScope";
 import { focusOn } from "./chartActions";
@@ -303,13 +303,15 @@ function PrepAnalysisView({ scope, embedded }) {
 }
 
 export default function PrepAnalysisPage({ scope = null, embedded = false }) {
+  const location = useLocation();
+  const pageKey = `${scope?.kind || 'assessment'}:${scope?.assessmentIds?.join(",") || "all"}:${location.search}`;
   // A new scope is a new analysis: start clean instead of carrying filters over.
   return (
     <AnalysisScopeContext.Provider value={scope}>
       {/* Guides (page tour, chart guides, checklist) on the Prep Analysis page itself, not inside a report. */}
       {embedded
-        ? <PrepAnalysisView key={scope?.assessmentIds?.join(",") || "all"} scope={scope} embedded={embedded} />
-        : <TourProvider><PrepAnalysisView key={scope?.assessmentIds?.join(",") || "all"} scope={scope} embedded={embedded} /></TourProvider>}
+        ? <PrepAnalysisView key={pageKey} scope={scope} embedded={embedded} />
+        : <TourProvider><PrepAnalysisView key={pageKey} scope={scope} embedded={embedded} /></TourProvider>}
     </AnalysisScopeContext.Provider>
   );
 }

@@ -217,6 +217,9 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const assessmentTitle = params.get('assessmentTitle') || 'this assessment';
   const questionSet = Math.max(1, Number(params.get('questionSet')) || 1);
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+  const mockLibrary = location.pathname.startsWith('/admin/prepmock/library');
+  const libraryRoot = mockLibrary ? '/admin/prepmock/library' : `${rolePrefix}/library`;
+  const libraryScope = mockLibrary ? 'mock' : 'main';
   const returnTo = params.get('return') || `${rolePrefix}/assessment/create`;
   const initialStatus = params.get('status') || '';
   const initialType = params.get('type') || (initialStatus || selectionMode ? 'all' : 'coding');
@@ -417,6 +420,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
       setLoading(true);
       try {
         const data = await api.listLibraryQuestions({
+          ...(mockLibrary ? { scope: 'mock' } : {}),
           type: filters.type === 'all' ? '' : filters.type,
           search: filters.search,
           numberKind: filters.numberKind,
@@ -456,7 +460,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     };
     loadQuestions();
     return () => { mounted = false; };
-  }, [filters, page, pageSize, reloadKey, toast]);
+  }, [filters, mockLibrary, page, pageSize, reloadKey, toast]);
 
   useEffect(() => {
     if (filters.type !== 'coding' || filters.viewMode !== 'folders') {
@@ -499,6 +503,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     try {
       const byTags = filters.folderBy === 'tags';
       const data = await api.listLibraryQuestions({
+        ...(mockLibrary ? { scope: 'mock' } : {}),
         type: 'coding',
         search: allInFolder ? '' : filters.search,
         numberKind: filters.numberKind,
@@ -687,6 +692,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   };
 
   const fetchAllMatchingQuestions = () => api.listLibraryQuestions({
+    ...(mockLibrary ? { scope: 'mock' } : {}),
     type: filters.type === 'all' ? '' : filters.type,
     search: filters.search,
     numberKind: filters.numberKind,
@@ -748,7 +754,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const openQuestion = async (questionId) => {
     setDetailLoading(true);
     try {
-      const data = await api.getLibraryQuestion(questionId);
+      const data = await api.getLibraryQuestion(questionId, libraryScope);
       setActiveQuestion(data.question || null);
     } catch (error) {
       toast.error(error.message || 'Failed to load question details.');
@@ -760,7 +766,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const previewQuestion = (question) => {
     setActionMenuId('');
     if (question?.questionType === 'coding' && question.platformShared && question.sourceProblemId) {
-      navigate(`${rolePrefix}/library/coding/shared/${question._id}/preview`, {
+      navigate(`${libraryRoot}/coding/shared/${question._id}/preview`, {
         state: { returnTo: `${location.pathname}${location.search}` },
       });
       return;
@@ -770,7 +776,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         toast.error('This coding question has no linked problem preview.');
         return;
       }
-      navigate(`${rolePrefix}/library/coding/${question.sourceProblemId}/preview`, {
+      navigate(`${libraryRoot}/coding/${question.sourceProblemId}/preview`, {
         state: { returnTo: `${location.pathname}${location.search}` },
       });
       return;
@@ -792,7 +798,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         clearSelection();
         return;
       }
-      const data = await api.resolveLibraryQuestions(selectableIds);
+      const data = await api.resolveLibraryQuestions(selectableIds, libraryScope);
       queueQuestionSelection(assessmentKey, { questions: data.questions || [], lockType, questionSet });
       toast.success('Selected library questions added to the assessment draft.');
       navigate(returnTo);
@@ -880,7 +886,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     if (question?.questionType === 'coding') {
       const problemId = question.sourceProblemId;
       if (problemId) {
-        navigate(`${rolePrefix}/library/coding/${problemId}/edit`, {
+        navigate(`${libraryRoot}/coding/${problemId}/edit`, {
           state: { returnTo: `${location.pathname}${location.search}` },
         });
         return;
@@ -890,7 +896,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
       return;
     }
 
-    navigate(`${rolePrefix}/library/question/${question._id}/edit?type=${question.questionType}`, {
+    navigate(`${libraryRoot}/question/${question._id}/edit?type=${question.questionType}`, {
       state: { returnTo: `${location.pathname}${location.search}` },
     });
   };
@@ -901,8 +907,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
       const copy = await api.copySharedQuestion(question._id);
       toast.success('Local draft created. You can now edit it.');
       const route = copy.problemId
-        ? `${rolePrefix}/library/coding/${copy.problemId}/edit`
-        : `${rolePrefix}/library/question/${copy.questionId}/edit?type=${copy.questionType}`;
+        ? `${libraryRoot}/coding/${copy.problemId}/edit`
+        : `${libraryRoot}/question/${copy.questionId}/edit?type=${copy.questionType}`;
       navigate(route, { state: { returnTo: `${location.pathname}${location.search}` } });
     } catch (error) {
       toast.error(error.message || 'Could not make a local copy.');
@@ -931,7 +937,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         difficulty: String(form.get('difficulty') || '').trim(),
         status: String(form.get('status') || 'published').trim(),
         visibility: String(form.get('visibility') || 'public').trim(),
-      });
+      }, libraryScope);
       toast.success('Question updated.');
       setEditModal({ open: false, question: null, saving: false });
       refreshLibrary();
@@ -959,7 +965,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
   const updateQuestionBySource = async (question, body) => {
     if (question?.platformShared) throw new Error('Shared questions are managed by the super admin.');
-    if (question?.questionType === 'coding' && question.sourceProblemId) {
+    if (!mockLibrary && question?.questionType === 'coding' && question.sourceProblemId) {
       const operations = [];
       if (body.visibility) operations.push(api.updateCompilerProblemVisibility(question.sourceProblemId, body.visibility));
       if (body.status) {
@@ -968,7 +974,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
       }
       if (operations.length) return Promise.all(operations);
     }
-    return api.updateLibraryQuestion(question._id, body);
+    return api.updateLibraryQuestion(question._id, body, libraryScope);
   };
 
   const toggleVisibility = async (question) => {
@@ -1045,7 +1051,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
       tone: 'danger',
       onConfirm: async () => {
         try {
-          await api.deleteLibraryQuestion(question._id);
+          await api.deleteLibraryQuestion(question._id, libraryScope);
           toast.success('Question deleted.');
           setQuestions((prev) => prev.filter((item) => item._id !== question._id));
           refreshLibrary();
@@ -1106,7 +1112,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
       tone: 'danger',
       onConfirm: async () => {
         try {
-          await Promise.all(ids.map((id) => api.deleteLibraryQuestion(id)));
+          await Promise.all(ids.map((id) => api.deleteLibraryQuestion(id, libraryScope)));
           toast.success('Selected questions deleted.');
           clearSelection();
           setQuestions((prev) => prev.filter((item) => !ids.includes(item._id)));
@@ -1120,7 +1126,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
   const openImportQuestions = () => {
     setBulkMenuOpen(false);
-    navigate(`${rolePrefix}/library/add-question`);
+    navigate(`${libraryRoot}/add-question`);
   };
 
   const toggleQuestionActions = (question, event) => {

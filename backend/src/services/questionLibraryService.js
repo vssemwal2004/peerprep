@@ -332,6 +332,7 @@ export async function syncAssessmentQuestionsToLibrary(assessmentInput) {
   const assessment = typeof assessmentInput.toObject === 'function'
     ? assessmentInput.toObject()
     : assessmentInput;
+  const scope = assessment.kind === 'mock' ? 'mock' : 'main';
 
   const operations = [];
   const sourceKeys = [];
@@ -355,6 +356,7 @@ export async function syncAssessmentQuestionsToLibrary(assessmentInput) {
           sectionIndex,
           questionIndex,
         });
+        payload.scope = scope;
         sourceKeys.push(payload.sourceKey);
         operations.push({
           updateOne: {
@@ -374,6 +376,7 @@ export async function syncAssessmentQuestionsToLibrary(assessmentInput) {
   await QuestionLibrary.deleteMany({
     sourceType: 'assessment',
     sourceAssessmentId: assessment._id,
+    scope,
     ...(sourceKeys.length ? { sourceKey: { $nin: sourceKeys } } : {}),
   });
 }
@@ -391,6 +394,7 @@ export async function syncProblemToLibrary(problemInput) {
     hiddenTestCaseCount: context.hiddenTestCaseCount,
     hiddenTestCaseTotalMarks: context.hiddenTestCaseTotalMarks,
   });
+  payload.scope = context.problem.libraryScope === 'mock' ? 'mock' : 'main';
 
   await QuestionLibrary.findOneAndUpdate(
     { sourceKey: payload.sourceKey },
@@ -461,7 +465,7 @@ export async function ensureQuestionLibrarySynchronized({ force = false, blockin
   // bank contains thousands of questions, so only auto-backfill an empty bank.
   // Maintenance/admin callers can still request an explicit force rebuild.
   if (!force) {
-    const existingCount = await QuestionLibrary.estimatedDocumentCount();
+    const existingCount = await QuestionLibrary.countDocuments({ scope: { $ne: 'mock' } });
     if (existingCount > 0) {
       lastFullSyncAt = now;
       return;

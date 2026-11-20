@@ -6,8 +6,8 @@ import PrepAnalysisPage from '../prepAnalysis/PrepAnalysisPage';
  * inside its report. Same components as the Prep Analysis page; the scope limits every request
  * to this test and the students assigned to it or who attempted it.
  */
-export default function ReportAnalysis({ assessmentId }) {
-  const scope = useMemo(() => ({ assessmentIds: [assessmentId] }), [assessmentId]);
+export default function ReportAnalysis({ assessmentId, kind = 'assessment' }) {
+  const scope = useMemo(() => ({ assessmentIds: [assessmentId], kind }), [assessmentId, kind]);
   return (
     <div data-no-serial>
       <PrepAnalysisPage scope={scope} embedded />

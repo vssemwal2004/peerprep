@@ -10,7 +10,7 @@ import { placeCard } from '../src/guide/engine/targets.js';
 
 // The server's chart and headline-card catalogue: the guides must cover every one.
 const server = await import('../../backend/src/modules/prepAnalysis/charts.js');
-const MODULES = new Set(['coding', 'quickprep', 'learning', 'interview', 'assessment']);
+const MODULES = new Set(['coding', 'quickprep', 'learning', 'interview', 'assessment', 'prepmock']);
 
 // A small, realistic sample per chart type (shapes as the server builds them).
 const SAMPLE = {
@@ -53,7 +53,7 @@ function checkGuide(guide, label) {
 
 test('every chart on the server has a guide, and every chart type has reading steps', () => {
   const ids = server.CHARTS.filter((chart) => MODULES.has(chart.module)).map((chart) => chart.id);
-  assert.equal(ids.length, 61);
+  assert.equal(ids.length, 72);
   assert.deepEqual(ids.filter((id) => !CHART_GUIDES[id]), [], 'charts without content');
   assert.deepEqual(Object.keys(CHART_GUIDES).filter((id) => !ids.includes(id)), [], 'content for charts that do not exist');
   for (const type of new Set(server.CHARTS.map((chart) => chart.type))) assert.ok(TYPE_GUIDES[type]?.read?.length, `${type} has reading steps`);

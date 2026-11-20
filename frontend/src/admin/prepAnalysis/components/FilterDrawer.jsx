@@ -17,6 +17,7 @@ const AREA_HINTS = {
   learning: "Course topics and subjects",
   interview: "Mock and AI interviews",
   assessment: "Tests and their results",
+  prepmock: "Mocks and their results",
 };
 
 function Step({ number, title, hint, aside, children }) {
@@ -124,7 +125,7 @@ export function FilterDrawer({ open, state, catalog, fieldMap, matched, onApply,
           {/* Inside an assessment report the area is fixed: switching it would drop the test filters. */}
           {scoped ? (
             <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-[12px] text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
-              This analysis covers only {scope.assessmentIds.length === 1 ? "this assessment" : `these ${scope.assessmentIds.length} assessments`}. Choose students below.
+              This analysis covers only {scope.assessmentIds.length === 1 ? `this ${scope.kind === 'mock' ? 'mock' : 'assessment'}` : `these ${scope.assessmentIds.length} ${scope.kind === 'mock' ? 'mocks' : 'assessments'}`}. Choose students below.
             </p>
           ) : (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" role="radiogroup" aria-label="Feature">

@@ -195,7 +195,7 @@ function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-async function ensureUniqueProblemTitle(title, excludeProblemId = null) {
+async function ensureUniqueProblemTitle(title, excludeProblemId = null, libraryScope = 'main') {
   const normalizedTitle = normalizeProblemTitleText(title);
   if (!normalizedTitle) {
     return;
@@ -203,6 +203,7 @@ async function ensureUniqueProblemTitle(title, excludeProblemId = null) {
 
   const duplicate = await Problem.findOne({
     ...(excludeProblemId ? { _id: { $ne: excludeProblemId } } : {}),
+    libraryScope: libraryScope === 'mock' ? 'mock' : { $ne: 'mock' },
     title: { $regex: `^${escapeRegex(normalizedTitle)}$`, $options: 'i' },
   }).select('_id title');
 
@@ -1449,7 +1450,7 @@ export async function listProblems(req, res) {
       : { status: { $in: ['published', 'Active', 'active'] }, $or: [{ visibility: 'public' }, { visibility: { $exists: false } }] };
   // Assessment-owned compiler copies are private implementation records. They
   // are loaded by their assessment/problem ID, never shown as library items.
-  const query = { ...accessQuery, assessmentSourceProblemId: { $exists: false } };
+  const query = { ...accessQuery, assessmentSourceProblemId: { $exists: false }, libraryScope: req.query.libraryScope === 'mock' && staffPicker ? 'mock' : { $ne: 'mock' } };
 
   if (req.query.ids !== undefined) {
     query._id = { $in: idFilters.map((id) => new mongoose.Types.ObjectId(id)) };
@@ -1629,16 +1630,17 @@ export async function listProblems(req, res) {
   });
 }
 
-export async function listStudentProblemCompanies(req, res) {
+async function listProblemCompanies(req, res, { allProblems = false } = {}) {
   const search = sanitizeSearchQuery(String(req.query.search || '').trim());
   const requestedLimit = Number.parseInt(req.query.limit, 10);
-  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
+  const maxLimit = allProblems ? 1000 : 100;
+  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), maxLimit) : (allProblems ? maxLimit : 50);
   const publicProblemQuery = {
     status: { $in: ['published', 'Active', 'active'] },
     $or: [{ visibility: 'public' }, { visibility: { $exists: false } }],
   };
   const pipeline = [
-    { $match: publicProblemQuery },
+    { $match: allProblems ? { companyTags: { $exists: true, $ne: [] } } : publicProblemQuery },
     { $unwind: '$companyTags' },
     { $set: { normalizedCompany: { $trim: { input: '$companyTags' } } } },
     { $match: { normalizedCompany: { $ne: '' } } },
@@ -1655,6 +1657,14 @@ export async function listStudentProblemCompanies(req, res) {
 
   const companies = await Problem.aggregate(pipeline);
   res.json({ companies });
+}
+
+export async function listStudentProblemCompanies(req, res) {
+  return listProblemCompanies(req, res);
+}
+
+export async function listMockProblemCompanies(req, res) {
+  return listProblemCompanies(req, res, { allProblems: true });
 }
 
 export async function getProblemDetail(req, res) {
@@ -1699,7 +1709,7 @@ export async function getProblemDetail(req, res) {
 export async function createProblem(req, res) {
   const payload = prepareHiddenTestCasePersistence(buildProblemPayload(req));
   await attachCodingClassification(payload.problem);
-  await ensureUniqueProblemTitle(payload.problem.title);
+  await ensureUniqueProblemTitle(payload.problem.title, null, req.body?.libraryScope);
 
   if (payload.problem.status === 'published') {
     throw new HttpError(400, 'Preview testing is required before publishing a problem.');
@@ -1708,11 +1718,14 @@ export async function createProblem(req, res) {
   // Imported LeetCode questions keep their fixed external serial numbers.
   // New admin-authored questions always continue after the highest number in
   // the current catalogue instead of falling back to the schema sentinel.
-  const lastProblem = await Problem.findOne({}).sort({ displayOrder: -1 }).select('displayOrder').lean();
+  const lastProblem = await Problem.findOne(req.body?.libraryScope === 'mock'
+    ? { libraryScope: 'mock' }
+    : { libraryScope: { $ne: 'mock' } }).sort({ displayOrder: -1 }).select('displayOrder').lean();
   const nextDisplayOrder = Math.max(0, Number(lastProblem?.displayOrder || 0)) + 1;
 
   const problem = await Problem.create({
     ...payload.problem,
+    libraryScope: req.body?.libraryScope === 'mock' ? 'mock' : 'main',
     displayOrder: nextDisplayOrder,
     previewValidated: false,
     previewTested: false,
@@ -1813,7 +1826,7 @@ export async function updateProblem(req, res) {
   }));
   await attachCodingClassification(payload.problem);
   if (!existingProblem.assessmentOwnerId && existingProblem.visibility !== 'assessment') {
-    await ensureUniqueProblemTitle(payload.problem.title, existingProblem._id);
+    await ensureUniqueProblemTitle(payload.problem.title, existingProblem._id, existingProblem.libraryScope);
   }
   const {
     referenceSolutions: payloadReferenceSolutions,

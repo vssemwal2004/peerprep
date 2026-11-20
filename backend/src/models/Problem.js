@@ -48,6 +48,7 @@ const statefulOperationSchema = new mongoose.Schema({
 }, { _id: false });
 
 const problemSchema = new mongoose.Schema({
+  libraryScope: { type: String, enum: ['main', 'mock'], default: 'main', index: true },
   title: {
     type: String,
     required: true,

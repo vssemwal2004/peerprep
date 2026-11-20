@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../utils/api';
+import { isControlDeployment } from '../platform/universityPermissions';
 import { useToast } from '../components/CustomToast';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from './coordinatorPermissions';
@@ -94,7 +95,7 @@ function generateUniqueAssessmentId() {
   return id;
 }
 
-const steps = [
+const ASSESSMENT_STEPS = [
   { id: 'basic', label: 'Basics', description: 'Assessment identity and candidate-facing information.' },
   { id: 'sections', label: 'Question set', description: 'Create or select questions and configure delivery rules.' },
   { id: 'schedule', label: 'Schedule', description: 'Set the assessment duration and availability window.' },
@@ -105,7 +106,7 @@ const steps = [
 const SETTINGS_GROUP_IDS = ['access', 'allocation', 'proctoring', 'behavior', 'results'];
 
 const normalizeBuilderStep = (step) => {
-  return steps.some((item) => item.id === step) ? step : 'basic';
+  return ASSESSMENT_STEPS.some((item) => item.id === step) ? step : 'basic';
 };
 
 const emptyCsvState = {
@@ -363,13 +364,32 @@ export default function CreateAssessment({ viewOnly = false }) {
   const { user } = useAuth();
 
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+  const isMock = location.pathname.startsWith('/admin/prepmock');
+  const isMockPublishing = isMock && new URLSearchParams(location.search).get('publish') === '1';
+  const steps = isMock
+    ? isMockPublishing
+      ? [
+        { id: 'schedule', label: 'Availability', description: 'Choose a time window or keep the mock always on.' },
+        { id: 'target', label: 'Students', description: 'Choose students who can attempt this mock.' },
+        { id: 'settings', label: 'Settings', description: 'Configure attempt duration and delivery settings.' },
+        { id: 'preview', label: 'Review', description: 'Review and publish the mock.' },
+      ]
+      : [
+        { id: 'basic', label: 'Basic details', description: 'Name and describe the mock.' },
+        { id: 'sections', label: 'Add questions', description: 'Create or import mock questions.' },
+        { id: 'preview', label: 'Review', description: 'Review and save the mock.' },
+      ]
+    : ASSESSMENT_STEPS;
+  const assessmentRoot = isMock ? '/admin/prepmock' : `${rolePrefix}/assessment`;
+  const mockLibraryRoot = '/admin/prepmock/library';
+  const sessionKey = isMock ? 'peerprep_current_mock_session' : 'peerprep_current_assessment_session';
   const isCoordinator = rolePrefix === '/coordinator';
   const managerLabel = isCoordinator ? 'coordinator' : 'admin';
   const canCreateAssessmentCandidates = hasPermission(user, 'coordinator.assessment.candidates');
   const requestedAudience = 'platform_students';
 
   const [currentId, setCurrentId] = useState(id || null);
-  const [activeStep, setActiveStep] = useState(location.state?.editQuestion ? 'sections' : 'basic');
+  const [activeStep, setActiveStep] = useState(location.state?.editQuestion ? 'sections' : isMockPublishing ? 'schedule' : 'basic');
   const [completedSteps, setCompletedSteps] = useState([]);
   const [form, setForm] = useState({
     title: '',
@@ -377,6 +397,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     instructions: '',
     startTime: '',
     endTime: '',
+    availabilityMode: 'scheduled',
     duration: 60,
     allowLateSubmission: false,
     attemptLimit: 1,
@@ -385,6 +406,9 @@ export default function CreateAssessment({ viewOnly = false }) {
     audienceType: requestedAudience,
     lifecycleStatus: 'draft',
     testType: '',
+    company: '',
+    mockAudienceMode: 'students',
+    mockUniversityIds: [],
     assessmentId: generateUniqueAssessmentId(),
     isVisible: true,
     customInstructions: [],
@@ -408,6 +432,9 @@ export default function CreateAssessment({ viewOnly = false }) {
     }));
   };
   const [selectedStudents, setSelectedStudents] = useState([]);
+  const [mockCompanies, setMockCompanies] = useState([]);
+  const [universities, setUniversities] = useState([]);
+  const [universityLoadError, setUniversityLoadError] = useState('');
   const [studentEntryMode, setStudentEntryMode] = useState('');
   const [csvState, setCsvState] = useState(emptyCsvState);
   const [loading, setLoading] = useState(false);
@@ -438,25 +465,48 @@ export default function CreateAssessment({ viewOnly = false }) {
   const isSavingRef = useRef(false);
   const publishRequestRef = useRef(false);
 
+  useEffect(() => {
+    if (!isMock) return undefined;
+    let active = true;
+    api.listMockCompanies().then((result) => {
+      if (active) setMockCompanies((result.companies || []).map((row) => row.company).filter(Boolean));
+    }).catch((error) => { if (active) toast.error(error.message || 'Could not load problem companies.'); });
+    return () => { active = false; };
+  }, [isMock, toast]);
+
+  useEffect(() => {
+    if (!isMock || !isMockPublishing) return undefined;
+    let active = true;
+    const load = isControlDeployment ? api.platformOverview() : api.universityPolicy();
+    load.then((result) => {
+      if (!active) return;
+      setUniversities(isControlDeployment
+        ? (result.universities || []).filter((row) => row.active !== false && row.permissions?.assessments !== false)
+        : [{ universityId: result.universityId, name: result.name || result.universityId, active: true }]);
+      setUniversityLoadError('');
+    }).catch((error) => { if (active) setUniversityLoadError(error.message || 'Could not load universities.'); });
+    return () => { active = false; };
+  }, [isMock, isMockPublishing]);
+
   // Generate a unique session key for new assessments so drafts don't leak across sessions
   const sessionIdRef = useRef(null);
   if (!id && !sessionIdRef.current) {
-    const stored = sessionStorage.getItem('peerprep_current_assessment_session');
+    const stored = sessionStorage.getItem(sessionKey);
     if (stored && stored.startsWith('new_')) {
       sessionIdRef.current = stored;
     } else {
       sessionIdRef.current = `new_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      sessionStorage.setItem('peerprep_current_assessment_session', sessionIdRef.current);
+      sessionStorage.setItem(sessionKey, sessionIdRef.current);
     }
   }
-  const assessmentKey = currentId || sessionIdRef.current || 'new';
+  const assessmentKey = currentId || (isMock ? `mock_${sessionIdRef.current || 'new'}` : sessionIdRef.current || 'new');
   const isEditMode = Boolean(id);
-  const isPublishedEdit = isEditMode && form.lifecycleStatus === 'published';
+  const isPublishedEdit = isEditMode && form.lifecycleStatus === 'published' && !isMockPublishing;
   const openStudentPreview = () => {
     saveAssessmentDraft(assessmentKey, { form, sections, questionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
-    const returnTo = `${rolePrefix}/assessment/${currentId ? `${currentId}/edit` : 'create'}`;
+    const returnTo = `${assessmentRoot}/${currentId ? `${currentId}/edit` : 'create'}`;
     const query = new URLSearchParams({ draftKey: assessmentKey, return: returnTo });
-    navigate(`${rolePrefix}/assessment/preview/${currentId || 'draft'}?${query.toString()}`);
+    navigate(`${assessmentRoot}/preview/${currentId || 'draft'}?${query.toString()}`);
   };
 
   useEffect(() => {
@@ -727,7 +777,7 @@ export default function CreateAssessment({ viewOnly = false }) {
       status: existingDraft?.status || ((problemData?.previewValidated ?? problemData?.previewTested) ? 'Validated' : 'Draft'),
     });
 
-    const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
+    const returnTo = currentId ? `${assessmentRoot}/${currentId}/edit` : `${assessmentRoot}/create`;
     const query = new URLSearchParams({
       mode: 'assessment',
       tempId: editorId,
@@ -738,13 +788,13 @@ export default function CreateAssessment({ viewOnly = false }) {
       questionSet: String(activeQuestionSet + 1),
       questionSetCount: String(configuredSetCount),
     });
-    navigate(`${rolePrefix}/library/coding/create?${query.toString()}`);
+    navigate(`${isMock ? mockLibraryRoot : `${rolePrefix}/library`}/coding/create?${query.toString()}`);
   };
 
-  const handleOpenProblemLibrary = async (sectionType = '') => {
+  const handleOpenProblemLibrary = async (sectionType = '', source = 'mock') => {
     // Save current draft before navigating to library so data is preserved when returning
     await saveAssessmentDraft(assessmentKey, { form, sections, questionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
-    const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
+    const returnTo = currentId ? `${assessmentRoot}/${currentId}/edit` : `${assessmentRoot}/create`;
     const query = new URLSearchParams({
       mode: 'select',
       assessment: assessmentKey,
@@ -757,12 +807,12 @@ export default function CreateAssessment({ viewOnly = false }) {
       query.set('type', sectionType);
       query.set('lockType', sectionType);
     }
-    navigate(`${rolePrefix}/library?${query.toString()}`);
+    navigate(`${isMock && source === 'mock' ? mockLibraryRoot : `${rolePrefix}/library`}?${query.toString()}`);
   };
 
   const handleCreateQuestion = async () => {
     await saveAssessmentDraft(assessmentKey, { form, sections, questionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
-    const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
+    const returnTo = currentId ? `${assessmentRoot}/${currentId}/edit` : `${assessmentRoot}/create`;
     const query = new URLSearchParams({
       mode: 'assessment-create',
       assessment: assessmentKey,
@@ -773,7 +823,7 @@ export default function CreateAssessment({ viewOnly = false }) {
       questionSet: String(activeQuestionSet + 1),
       questionSetCount: String(configuredSetCount),
     });
-    navigate(`${rolePrefix}/library?${query.toString()}`);
+    navigate(`${isMock ? mockLibraryRoot : `${rolePrefix}/library`}?${query.toString()}`);
   };
 
   useEffect(() => {
@@ -807,7 +857,7 @@ export default function CreateAssessment({ viewOnly = false }) {
         if (draft.version) {
           setVersion(draft.version);
         }
-        if (draft.activeStep) setActiveStep((previous) => previous === 'sections' ? previous : normalizeBuilderStep(draft.activeStep));
+        if (draft.activeStep && steps.some((step) => step.id === draft.activeStep)) setActiveStep((previous) => previous === 'sections' ? previous : normalizeBuilderStep(draft.activeStep));
         if (Array.isArray(draft.completedSteps)) setCompletedSteps(draft.completedSteps.filter((step) => steps.some((item) => item.id === step)));
         if (Array.isArray(draft.visitedSettingsGroups)) setVisitedSettingsGroups(draft.visitedSettingsGroups.filter((group) => SETTINGS_GROUP_IDS.includes(group)));
       }
@@ -819,6 +869,7 @@ export default function CreateAssessment({ viewOnly = false }) {
       try {
         const data = await api.getAssessmentById(id);
         const assessment = data.assessment || {};
+        if ((assessment.kind === 'mock') !== isMock) throw new Error('This item belongs to a different section.');
         const isDraft = assessment.lifecycleStatus === 'draft';
         const draftAssigned = Array.isArray(assessment.draftAssignedStudents) ? assessment.draftAssignedStudents : [];
         const savedSessionDraft = loadAssessmentDraft(id);
@@ -837,6 +888,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           instructions: assessment.instructions || '',
           startTime: assessment.startTime ? toLocalIsoMinutes(assessment.startTime) : '',
           endTime: assessment.endTime ? toLocalIsoMinutes(assessment.endTime) : '',
+          availabilityMode: assessment.availabilityMode || 'scheduled',
           duration: assessment.duration || 60,
           allowLateSubmission: Boolean(assessment.allowLateSubmission),
           attemptLimit: Math.max(1, Number(assessment.attemptLimit) || 1),
@@ -845,6 +897,9 @@ export default function CreateAssessment({ viewOnly = false }) {
           sendEmail: false,
           audienceType: assessment.audienceType || 'platform_students',
           testType: assessment.testType || '',
+          company: assessment.company || '',
+          mockAudienceMode: assessment.mockAudienceMode || 'students',
+          mockUniversityIds: Array.isArray(assessment.mockUniversityIds) ? assessment.mockUniversityIds : [],
           assessmentId: assessment.assessmentId || '',
           isVisible: assessment.isVisible !== false,
           customInstructions: Array.isArray(assessment.customInstructions) ? assessment.customInstructions : [],
@@ -873,7 +928,7 @@ export default function CreateAssessment({ viewOnly = false }) {
         }
         setCsvState(draftCsvState ? { ...emptyCsvState, ...draftCsvState } : emptyCsvState);
 
-        if (draftStep) setActiveStep((previous) => previous === 'sections' ? previous : normalizeBuilderStep(draftStep));
+        if (draftStep && !isMockPublishing && steps.some((step) => step.id === draftStep)) setActiveStep((previous) => previous === 'sections' ? previous : normalizeBuilderStep(draftStep));
         if (Array.isArray(sessionDraft?.completedSteps)) setCompletedSteps(sessionDraft.completedSteps.filter((step) => steps.some((item) => item.id === step)));
         else if (assessment.lifecycleStatus === 'published') setCompletedSteps(steps.slice(0, -1).map((step) => step.id));
         if (Array.isArray(sessionDraft?.visitedSettingsGroups)) setVisitedSettingsGroups(sessionDraft.visitedSettingsGroups.filter((group) => SETTINGS_GROUP_IDS.includes(group)));
@@ -955,7 +1010,7 @@ export default function CreateAssessment({ viewOnly = false }) {
       }
     };
     loadAssessment();
-  }, [id, toast, viewOnly]);
+  }, [id, isMock, toast, viewOnly]);
 
   useEffect(() => {
     const drafts = listCodingDrafts(assessmentKey);
@@ -1023,11 +1078,15 @@ export default function CreateAssessment({ viewOnly = false }) {
   }, [assessmentKey, viewOnly]);
 
   const assignedSummary = useMemo(() => {
+    if (isMock && form.mockAudienceMode === 'universities') return {
+      count: form.mockUniversityIds.length,
+      accountSummary: `All students in ${form.mockUniversityIds.length} selected universit${form.mockUniversityIds.length === 1 ? 'y' : 'ies'}`,
+    };
     return {
       count: selectedStudents.length,
       accountSummary: 'Individually selected students',
     };
-  }, [selectedStudents]);
+  }, [form.mockAudienceMode, form.mockUniversityIds, isMock, selectedStudents]);
 
   const assessmentValidation = useMemo(() => {
     const configuredSets = form.settings?.questionSetEnabled ? questionSets : questionSets.slice(0, 1);
@@ -1119,8 +1178,9 @@ export default function CreateAssessment({ viewOnly = false }) {
 
   const buildPayload = (statusOverride) => {
     const lifecycleStatus = statusOverride || form.lifecycleStatus || 'draft';
-    const normalizedTargetType = 'selected';
-    const assignedStudents = candidateAssignments;
+    const universityMock = isMock && form.mockAudienceMode === 'universities';
+    const normalizedTargetType = universityMock && !isControlDeployment ? 'all' : 'selected';
+    const assignedStudents = universityMock ? [] : candidateAssignments;
 
     const normalizeSectionsForPayload = (sourceSections = []) => (sourceSections || []).map((section) => {
       const questions = (section.questions || []).map((question) => {
@@ -1177,6 +1237,7 @@ export default function CreateAssessment({ viewOnly = false }) {
       // selected calendar date/time during persistence.
       startTime: toUtcISOString(form.startTime),
       endTime: toUtcISOString(form.endTime),
+      availabilityMode: isMock ? form.availabilityMode : 'scheduled',
       duration: form.duration,
       allowLateSubmission: form.allowLateSubmission,
       attemptLimit: Math.max(1, Number(form.attemptLimit) || 1),
@@ -1188,9 +1249,12 @@ export default function CreateAssessment({ viewOnly = false }) {
         ? normalizedQuestionSets.slice(0, normalizedSettings.questionSetCount)
         : normalizedQuestionSets.slice(0, 1),
       lifecycleStatus,
-      sendEmail: lifecycleStatus === 'published' && Boolean(form.sendEmail),
+      sendEmail: lifecycleStatus === 'published' && !universityMock && Boolean(form.sendEmail),
       audienceType: form.audienceType || 'platform_students',
       testType: form.testType || '',
+      company: isMock ? form.company : undefined,
+      mockAudienceMode: isMock ? form.mockAudienceMode : undefined,
+      mockUniversityIds: isMock ? form.mockUniversityIds : undefined,
       assessmentId: form.assessmentId || '',
       isVisible: form.isVisible !== false,
       customInstructions: form.customInstructions || [],
@@ -1204,7 +1268,8 @@ export default function CreateAssessment({ viewOnly = false }) {
     if (isSavingRef.current) return false;
     isSavingRef.current = true;
     setAutoSaveStatus(isPublishedEdit ? 'Saving changes...' : 'Saving draft...');
-    const payload = buildPayload(isPublishedEdit ? 'published' : 'draft');
+      const payload = buildPayload(isPublishedEdit ? 'published' : 'draft');
+      if (isMock) payload.kind = 'mock';
     if (isPublishedEdit) payload.sendEmail = false;
     try {
       if (currentId) {
@@ -1236,7 +1301,7 @@ export default function CreateAssessment({ viewOnly = false }) {
       setDirty(false);
       setAutoSaveStatus(isPublishedEdit ? 'Changes saved' : 'Draft saved');
       clearAssessmentDraft(assessmentKey);
-      sessionStorage.removeItem('peerprep_current_assessment_session');
+      sessionStorage.removeItem(sessionKey);
       return true;
     } catch (err) {
       setAutoSaveStatus(isPublishedEdit ? 'Could not save changes' : 'Draft save failed');
@@ -1249,8 +1314,8 @@ export default function CreateAssessment({ viewOnly = false }) {
 
   const publishAssessment = async () => {
     if (isSavingRef.current) return;
-    if (!form.title || !form.startTime || !form.endTime || !form.duration) {
-      toast.error('Please complete title, start/end time, and duration before publishing.');
+    if (!form.title || (!(isMock && form.availabilityMode === 'always') && (!form.startTime || !form.endTime)) || !form.duration) {
+      toast.error(isMock && form.availabilityMode === 'always' ? 'Please complete the mock title and attempt duration before publishing.' : 'Please complete title, start/end time, and duration before publishing.');
       return false;
     }
     if (form.passwordEnabled && !currentId && !String(form.passwordValue || '').trim()) {
@@ -1278,12 +1343,14 @@ export default function CreateAssessment({ viewOnly = false }) {
       return false;
     }
     if (assignedSummary.count === 0) {
-      toast.error('Select at least one student before publishing.');
+      toast.error(isMock && form.mockAudienceMode === 'universities' ? 'Select at least one university before publishing.' : 'Select at least one student before publishing.');
       return false;
     }
     isSavingRef.current = true;
     try {
       const payload = buildPayload('published');
+      if (isMock) payload.kind = 'mock';
+      if (isMock) payload.isVisible = true;
       let publishedId = currentId;
       if (currentId) {
         await api.updateAssessment(currentId, payload);
@@ -1305,11 +1372,11 @@ export default function CreateAssessment({ viewOnly = false }) {
           targetMode: 'individual',
         },
       }).catch(() => { });
-      toast.success('Assessment published');
+      toast.success(isMock ? 'Mock published' : 'Assessment published');
       clearAssessmentDraft(assessmentKey);
-      sessionStorage.removeItem('peerprep_current_assessment_session');
+      sessionStorage.removeItem(sessionKey);
       setDirty(false);
-      navigate(`${rolePrefix}/assessment`);
+      navigate(assessmentRoot);
       return true;
     } catch (err) {
       toast.error(err.message || 'Failed to publish assessment');
@@ -1340,13 +1407,14 @@ export default function CreateAssessment({ viewOnly = false }) {
   };
 
   const handleSendTestEmail = async () => {
-    if (!form.title || !form.startTime || !form.endTime) {
+    if (!form.title || (!(isMock && form.availabilityMode === 'always') && (!form.startTime || !form.endTime))) {
       toast.error('Complete the title and schedule before sending a test email.');
       return;
     }
     setSendingTestEmail(true);
     try {
       const payload = buildPayload('published');
+      if (isMock) payload.kind = 'mock';
       const result = await api.sendAssessmentTestEmail(payload);
       toast.success(result.message || 'Test email sent.');
     } catch (error) {
@@ -1356,7 +1424,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     }
   };
 
-  const requestExit = (target = `${rolePrefix}/assessment`) => {
+  const requestExit = (target = assessmentRoot) => {
     if (!dirty) {
       navigate(target);
       return;
@@ -1366,9 +1434,9 @@ export default function CreateAssessment({ viewOnly = false }) {
 
   const discardAndExit = () => {
     clearAssessmentDraft(assessmentKey);
-    sessionStorage.removeItem('peerprep_current_assessment_session');
+    sessionStorage.removeItem(sessionKey);
     setDirty(false);
-    const target = exitTarget || `${rolePrefix}/assessment`;
+    const target = exitTarget || assessmentRoot;
     setExitTarget('');
     navigate(target);
   };
@@ -1378,19 +1446,31 @@ export default function CreateAssessment({ viewOnly = false }) {
     const saved = await saveDraft(false);
     setExitSaving(false);
     if (!saved) return;
-    const target = exitTarget || `${rolePrefix}/assessment`;
+    const target = exitTarget || assessmentRoot;
     setExitTarget('');
     navigate(target);
   };
 
+  const saveMock = async () => {
+    if (!form.title.trim() || !form.testType || !form.company.trim() || !phaseCompletion.sections) {
+      toast.error('Choose a company, complete basic details, and add at least one valid question before saving.');
+      return;
+    }
+    const saved = await saveDraft(false);
+    if (saved) navigate(assessmentRoot);
+  };
+
   const stepIndex = steps.findIndex((step) => step.id === activeStep);
   const singleScheduleValid = Boolean(
-    form.startTime
+    Number(form.duration) > 0
+    && ((isMock && form.availabilityMode === 'always') || (form.startTime
     && form.endTime
-    && Number(form.duration) > 0
-    && new Date(form.endTime).getTime() > new Date(form.startTime).getTime(),
+    && new Date(form.endTime).getTime() > new Date(form.startTime).getTime()
+    && (!isMockPublishing || new Date(form.startTime).getTime() >= Date.now() - 60000))),
   );
-  const candidateSelectionValid = selectedStudents.length > 0 && (
+  const candidateSelectionValid = isMock && form.mockAudienceMode === 'universities'
+    ? form.mockUniversityIds.length > 0 && (!form.settings?.questionSetEnabled || form.settings?.automaticSetAssignment !== false)
+    : selectedStudents.length > 0 && (
     !form.settings?.questionSetEnabled
     || form.settings?.automaticSetAssignment !== false
     || selectedStudents.every((student) => {
@@ -1443,7 +1523,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     return totals.length > 1 && totals.every((total) => total > 0 && total === totals[0]);
   })();
   const phaseCompletion = {
-    basic: Boolean(form.title.trim() && form.testType),
+    basic: Boolean(form.title.trim() && form.testType && (!isMock || form.company.trim())),
     sections: assessmentValidation.totalQuestions > 0 && !assessmentValidation.emptySection && questionDeliveryValid && multiSetParityValid,
     schedule: singleScheduleValid,
     target: candidateSelectionValid,
@@ -1646,8 +1726,16 @@ export default function CreateAssessment({ viewOnly = false }) {
 
         <div data-guide="ae-details"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">Assessment details<GuideInfo step="ae-details" /></span>} subtitle="Fields marked with * are required before you can continue.">
           <div className="grid gap-4 md:grid-cols-2">
+            {isMock && <div className="md:col-span-2">
+              <label htmlFor="mock-company" className="text-xs font-semibold text-slate-700 dark:text-gray-300">Company <span className="text-rose-500">*</span></label>
+              <select id="mock-company" required value={form.company} onChange={(event) => updateForm({ company: event.target.value })} className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                <option value="">Select company</option>
+                {form.company && !mockCompanies.includes(form.company) && <option value={form.company}>{form.company}</option>}
+                {mockCompanies.map((company) => <option key={company} value={company}>{company}</option>)}
+              </select>
+            </div>}
             <div>
-              <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">Assessment name <span className="text-rose-500">*</span></label>
+              <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">{isMock ? 'Mock name' : 'Assessment name'} <span className="text-rose-500">*</span></label>
               <input
                 required
                 value={form.title}
@@ -1772,7 +1860,22 @@ export default function CreateAssessment({ viewOnly = false }) {
     ),
     target: (
       <div className="space-y-4">
-        <div data-guide="ae-students"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">Students<GuideInfo step="ae-students" /></span>} subtitle="Choose how to add students to this assessment.">
+        <div data-guide="ae-students"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">{isMock ? 'Who can attempt this mock?' : 'Students'}{!isMock && <GuideInfo step="ae-students" />}</span>} subtitle={isMock ? 'Choose individual students or every student in a university.' : 'Choose how to add students to this assessment.'}>
+          {isMock && <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Mock audience">
+            <button type="button" aria-pressed={form.mockAudienceMode !== 'universities'} onClick={() => updateForm({ mockAudienceMode: 'students', mockUniversityIds: [] })} className={`rounded-lg border px-4 py-2 text-xs font-semibold ${form.mockAudienceMode !== 'universities' ? 'border-sky-500 bg-sky-50 text-sky-800' : 'border-slate-200 text-slate-600 dark:border-gray-700 dark:text-gray-300'}`}>Selected students</button>
+            <button type="button" aria-pressed={form.mockAudienceMode === 'universities'} onClick={() => updateForm({ mockAudienceMode: 'universities' })} className={`rounded-lg border px-4 py-2 text-xs font-semibold ${form.mockAudienceMode === 'universities' ? 'border-sky-500 bg-sky-50 text-sky-800' : 'border-slate-200 text-slate-600 dark:border-gray-700 dark:text-gray-300'}`}>University students</button>
+          </div>}
+          {isMock && form.mockAudienceMode === 'universities' ? <div className="space-y-3">
+            <p className="text-xs text-slate-500 dark:text-gray-400">All current and future students in each selected university can attempt the published mock.</p>
+            {universityLoadError && <p role="alert" className="text-xs text-rose-600">{universityLoadError}</p>}
+            <div className="grid gap-2 sm:grid-cols-2">
+              {universities.map((university) => <label key={university.universityId} className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                <input type="checkbox" checked={form.mockUniversityIds.includes(university.universityId)} onChange={(event) => updateForm({ mockUniversityIds: event.target.checked ? [...form.mockUniversityIds, university.universityId] : form.mockUniversityIds.filter((id) => id !== university.universityId) })} />
+                {university.name || university.universityId}
+              </label>)}
+            </div>
+            {!universities.length && !universityLoadError && <p className="text-xs text-slate-500">No universities are available for assessments.</p>}
+          </div> : <>
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-3">
               {[
@@ -1794,13 +1897,20 @@ export default function CreateAssessment({ viewOnly = false }) {
             </div>}
             {selectedStudents.length > 0 && <p className="text-xs font-medium text-slate-600 dark:text-gray-300">{selectedStudents.length} student{selectedStudents.length === 1 ? '' : 's'} selected for this assessment</p>}
           </div>
+          </>}
         </SectionCard></div>
-        {selectedStudents.length > 0 && form.settings?.questionSetEnabled && <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800 dark:border-sky-900 dark:bg-sky-950/20 dark:text-sky-200"><strong>{selectedStudents.length} students ready.</strong> Review the formula, set counts, filters and manual overrides in <strong>Settings → Set allocation</strong>.</div>}
+        {selectedStudents.length > 0 && form.mockAudienceMode !== 'universities' && form.settings?.questionSetEnabled && <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800 dark:border-sky-900 dark:bg-sky-950/20 dark:text-sky-200"><strong>{selectedStudents.length} students ready.</strong> Review the formula, set counts, filters and manual overrides in <strong>Settings → Set allocation</strong>.</div>}
       </div>
     ),
     schedule: (
-      <div data-guide="ae-schedule"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">Assessment schedule<GuideInfo step="ae-schedule" /></span>} subtitle="Define the duration and availability window. Fields marked with * are required.">
+      <div data-guide="ae-schedule"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">{isMock ? 'Mock availability' : 'Assessment schedule'}{!isMock && <GuideInfo step="ae-schedule" />}</span>} subtitle={isMock ? 'Choose when the selected audience can access this mock.' : 'Define the duration and availability window. Fields marked with * are required.'}>
+        {isMock && <div className="mb-4 flex flex-wrap gap-3" role="group" aria-label="Mock availability">
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-gray-700"><input type="radio" name="mockAvailability" checked={form.availabilityMode !== 'always'} onChange={() => updateForm({ availabilityMode: 'scheduled' })} /> Start and end time</label>
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-gray-700"><input type="radio" name="mockAvailability" checked={form.availabilityMode === 'always'} onChange={() => updateForm({ availabilityMode: 'always', startTime: '', endTime: '' })} /> Always on</label>
+          {form.availabilityMode === 'always' && <p className="w-full text-xs text-slate-500">Students can attempt this mock until you unpublish or reset it. Each attempt still has a duration.</p>}
+        </div>}
         <div className="grid gap-4 md:grid-cols-2">
+          {(!isMock || form.availabilityMode !== 'always') && <>
           <div>
             <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">Start date & time <span className="text-rose-500">*</span></label>
             <div className="mt-1">
@@ -1839,7 +1949,8 @@ export default function CreateAssessment({ viewOnly = false }) {
               />
             </div>
           </div>
-          <div>
+          </>}
+          {!isMock && <div>
             <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">Duration <span className="text-rose-500">*</span></label>
             <input
               type="number"
@@ -1848,17 +1959,17 @@ export default function CreateAssessment({ viewOnly = false }) {
               onChange={(e) => updateForm({ duration: Number(e.target.value) })}
               className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
             />
-          </div>
+          </div>}
         </div>
 
-        <div className="mt-4 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+        {(!isMock || form.availabilityMode !== 'always') && <div className="mt-4 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
           <input
             type="checkbox"
             checked={form.allowLateSubmission}
             onChange={(e) => updateForm({ allowLateSubmission: e.target.checked })}
           />
           Allow late submission (after window closes)
-        </div>
+        </div>}
 
       </SectionCard></div>
     ),
@@ -1886,15 +1997,19 @@ export default function CreateAssessment({ viewOnly = false }) {
 
           <div className="px-4 py-5 text-center">
             <div><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-600">Set {activeQuestionSet + 1} of {configuredSetCount}</p><h3 className="mt-1 text-base font-bold text-slate-950 dark:text-white">Add questions to Set {activeQuestionSet + 1}</h3><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Create new questions or select reusable questions from the library.</p></div>
-          <div data-guide="ae-add-questions" className="mx-auto mt-4 grid max-w-2xl gap-3 sm:grid-cols-2">
+          <div data-guide="ae-add-questions" className="mx-auto mt-4 grid max-w-3xl gap-3 sm:grid-cols-2">
             <button type="button" onClick={handleCreateQuestion} className="group flex min-h-24 items-center gap-4 rounded-xl border border-sky-200 bg-sky-50/70 px-5 py-4 text-left transition hover:border-sky-400 hover:bg-sky-100/70 hover:shadow-sm dark:border-sky-900 dark:bg-sky-950/25 dark:hover:border-sky-700">
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm"><FilePlus2 className="h-5 w-5" /></span>
               <span><strong className="block text-sm text-sky-900 dark:text-sky-100">Create questions</strong><span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-gray-400">Independent, passage-based, MCQ, short answer or coding</span></span>
             </button>
             <button type="button" onClick={() => handleOpenProblemLibrary()} className="group flex min-h-24 items-center gap-4 rounded-xl border border-sky-200 bg-sky-50/70 px-5 py-4 text-left transition hover:border-sky-400 hover:bg-sky-100/70 hover:shadow-sm dark:border-sky-900 dark:bg-sky-950/25 dark:hover:border-sky-700">
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm"><BookOpen className="h-5 w-5" /></span>
-              <span><strong className="block text-sm text-sky-900 dark:text-sky-100">Add from library</strong><span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-gray-400">Search, filter and select multiple published questions</span></span>
+              <span><strong className="block text-sm text-sky-900 dark:text-sky-100">{isMock ? 'Import from Mock Library' : 'Add from library'}</strong><span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-gray-400">Search, filter and select multiple published questions</span></span>
             </button>
+            {isMock && <button type="button" onClick={() => handleOpenProblemLibrary('', 'main')} className="group flex min-h-24 items-center gap-4 rounded-xl border border-sky-200 bg-sky-50/70 px-5 py-4 text-left transition hover:border-sky-400 hover:bg-sky-100/70 hover:shadow-sm dark:border-sky-900 dark:bg-sky-950/25 dark:hover:border-sky-700">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm"><BookOpen className="h-5 w-5" /></span>
+              <span><strong className="block text-sm text-sky-900 dark:text-sky-100">Import from Library</strong><span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-gray-400">Choose questions from the main library</span></span>
+            </button>}
           </div>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-[11px] font-medium text-slate-500 dark:text-gray-400"><span>{sections.length} section{sections.length !== 1 ? 's' : ''} &middot; {questionSetStats[activeQuestionSet]?.questions || 0} question{questionSetStats[activeQuestionSet]?.questions !== 1 ? 's' : ''}</span>{(questionSetStats[activeQuestionSet]?.questions || 0) > 0 && <button type="button" onClick={openStudentPreview} className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"><Eye className="h-3.5 w-3.5" />Student view</button>}{activeQuestionSet > 0 && sections.length === 0 && <button type="button" onClick={copyPreviousQuestionSet} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300"><Copy className="h-3.5 w-3.5" />Copy Set {activeQuestionSet}</button>}</div>
           </div>
@@ -2007,6 +2122,10 @@ export default function CreateAssessment({ viewOnly = false }) {
 
       return (
         <div className="space-y-3">
+          {isMock && <SectionCard compact title="Attempt duration" subtitle="Each student gets this many minutes after starting the mock.">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-gray-300" htmlFor="mock-attempt-duration">Minutes per attempt</label>
+            <input id="mock-attempt-duration" type="number" min="1" value={form.duration} onChange={(event) => updateForm({ duration: Number(event.target.value) })} className="mt-1 w-full max-w-48 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+          </SectionCard>}
           <div data-guide="ae-settings-tabs" className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm sm:grid-cols-5 dark:border-gray-800 dark:bg-gray-900" role="tablist" aria-label="Assessment setting categories">
             {settingsGroups.map(({ id: groupId, label, description, Icon }, groupIndex) => {
               const locked = groupIndex > maxSettingsGroupIndex;
@@ -2423,14 +2542,14 @@ export default function CreateAssessment({ viewOnly = false }) {
         </div>
         <aside className="space-y-3 lg:sticky lg:top-3">
           <section data-guide="ae-readiness" className={`rounded-xl border p-4 ${publishReady ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/20' : 'border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/20'}`}>
-            <div className="flex items-center gap-2"><span className={`flex h-7 w-7 items-center justify-center rounded-full text-white ${publishReady ? 'bg-emerald-500' : 'bg-amber-500'}`}>{publishReady ? <Check className="h-4 w-4" /> : <Clock className="h-4 w-4" />}</span><div><p className={`text-sm font-bold ${publishReady ? 'text-emerald-900 dark:text-emerald-200' : 'text-amber-900 dark:text-amber-200'}`}>{isPublishedEdit ? 'Published assessment' : publishReady ? 'Ready to publish' : 'Review required'}</p><p className={`text-[10px] ${publishReady ? 'text-emerald-700/80 dark:text-emerald-300/70' : 'text-amber-700/80 dark:text-amber-300/70'}`}>{isPublishedEdit ? 'Changes to this assessment can be saved here' : publishReady ? 'All required phases are complete' : 'Return to any incomplete phase before publishing'}</p></div></div>
+            <div className="flex items-center gap-2"><span className={`flex h-7 w-7 items-center justify-center rounded-full text-white ${publishReady ? 'bg-emerald-500' : 'bg-amber-500'}`}>{publishReady ? <Check className="h-4 w-4" /> : <Clock className="h-4 w-4" />}</span><div><p className={`text-sm font-bold ${publishReady ? 'text-emerald-900 dark:text-emerald-200' : 'text-amber-900 dark:text-amber-200'}`}>{isMock && !isMockPublishing ? publishReady ? 'Ready to save' : 'Review required' : isPublishedEdit ? 'Published assessment' : publishReady ? 'Ready to publish' : 'Review required'}</p><p className={`text-[10px] ${publishReady ? 'text-emerald-700/80 dark:text-emerald-300/70' : 'text-amber-700/80 dark:text-amber-300/70'}`}>{isMock && !isMockPublishing ? 'Save now, then publish from All Mocks' : isPublishedEdit ? 'Changes to this assessment can be saved here' : publishReady ? 'All required phases are complete' : 'Return to any incomplete phase before publishing'}</p></div></div>
             <div className="mt-3 grid grid-cols-3 divide-x divide-emerald-200 text-center dark:divide-emerald-900">
               <div><strong className="block text-sm text-slate-900 dark:text-white">{assessmentValidation.totalQuestions}</strong><span className="text-[9px] uppercase text-slate-500">Questions</span></div>
-              <div><strong className="block text-sm text-slate-900 dark:text-white">{assignedSummary.count}</strong><span className="text-[9px] uppercase text-slate-500">Candidates</span></div>
+              <div><strong className="block text-sm text-slate-900 dark:text-white">{assignedSummary.count}</strong><span className="text-[9px] uppercase text-slate-500">{isMock && form.mockAudienceMode === 'universities' ? 'Universities' : 'Candidates'}</span></div>
               <div><strong className="block text-sm text-slate-900 dark:text-white">{form.duration}m</strong><span className="text-[9px] uppercase text-slate-500">Duration</span></div>
             </div>
           </section>
-          <SectionCard compact title={isPublishedEdit ? 'Assessment checklist' : 'Publish checklist'} subtitle="Final configuration summary.">
+          <SectionCard compact title={isMock && !isMockPublishing ? 'Save checklist' : isPublishedEdit ? 'Assessment checklist' : 'Publish checklist'} subtitle="Final configuration summary.">
             <div className="space-y-1.5">
               {steps.slice(0, -1).map((step) => {
                 const complete = completedSteps.includes(step.id) && phaseCompletion[step.id];
@@ -2486,7 +2605,7 @@ export default function CreateAssessment({ viewOnly = false }) {
         basic: 'Complete the required assessment name and type.',
         sections: 'Add at least one valid question and check the delivery rules.',
         schedule: 'Complete the required assessment schedule.',
-        target: 'Select who can take this assessment.',
+        target: isMock ? 'Select students or universities for this mock.' : 'Select who can take this assessment.',
       };
       toast.error(messages[activeStep] || 'Complete this phase before continuing.');
       return;
@@ -2497,7 +2616,7 @@ export default function CreateAssessment({ viewOnly = false }) {
   };
 
   if (assessmentLoading) return <div className="flex min-h-[60vh] items-center justify-center text-sm text-slate-500 dark:text-gray-400">Loading assessment...</div>;
-  if (assessmentLoadError) return <div className="mx-auto max-w-3xl p-8"><p role="alert" className="text-sm text-rose-700">{assessmentLoadError}</p><button type="button" onClick={() => navigate(`${rolePrefix}/assessment`)} className="mt-4 text-sm font-semibold text-sky-700">Back to assessments</button></div>;
+  if (assessmentLoadError) return <div className="mx-auto max-w-3xl p-8"><p role="alert" className="text-sm text-rose-700">{assessmentLoadError}</p><button type="button" onClick={() => navigate(assessmentRoot)} className="mt-4 text-sm font-semibold text-sky-700">Back to {isMock ? 'mocks' : 'assessments'}</button></div>;
 
   return (
     <div className="min-h-screen bg-slate-50/70 dark:bg-gray-950">
@@ -2511,30 +2630,30 @@ export default function CreateAssessment({ viewOnly = false }) {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => viewOnly ? navigate(`${rolePrefix}/assessment`) : requestExit(isEditMode ? `${rolePrefix}/assessment/${id}` : `${rolePrefix}/assessment`)}
+              onClick={() => viewOnly ? navigate(assessmentRoot) : requestExit(isEditMode ? `${assessmentRoot}/${id}` : assessmentRoot)}
               className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:hover:bg-gray-800"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Assessments / {viewOnly ? 'View' : isEditMode ? 'Edit' : 'Create'}</p>
-              <h1 className="mt-0.5 flex items-center gap-2 text-lg font-bold text-slate-950 dark:text-white">{viewOnly ? form.title || 'Assessment' : isEditMode ? 'Edit Assessment' : 'Create Assessment'}<PageGuideButton /></h1>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{isMock ? 'PrepMock' : 'Assessments'} / {viewOnly ? 'View' : isEditMode ? 'Edit' : 'Create'}</p>
+              <h1 className="mt-0.5 flex items-center gap-2 text-lg font-bold text-slate-950 dark:text-white">{viewOnly ? form.title || (isMock ? 'Mock' : 'Assessment') : isEditMode ? `Edit ${isMock ? 'Mock' : 'Assessment'}` : `Create ${isMock ? 'Mock' : 'Assessment'}`}{!isMock && <PageGuideButton />}</h1>
               <p data-guide="ae-status" className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-gray-400">
                 {!viewOnly && <><span className={`h-1.5 w-1.5 rounded-full ${dirty ? 'bg-amber-400' : 'bg-emerald-500'}`} />{autoSaveStatus || (dirty ? 'Unsaved changes' : 'All changes saved')}<span aria-hidden="true">&middot;</span></>}
                 {form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}
                 <span aria-hidden="true">&middot;</span>
-                <span className="font-semibold text-sky-600 dark:text-sky-300">Students</span>
+                <span className="font-semibold text-sky-600 dark:text-sky-300">{isMock && !isMockPublishing ? 'Questions' : 'Students'}</span>
               </p>
             </div>
           </div>
           <div data-guide="ae-actions" className="flex flex-wrap items-center gap-2">
             {currentId && (
-              <button type="button" onClick={viewOnly ? () => navigate(`${rolePrefix}/assessment/preview/${id}?return=${encodeURIComponent(`${rolePrefix}/assessment/${id}`)}`) : openStudentPreview} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+              <button type="button" onClick={viewOnly ? () => navigate(`${assessmentRoot}/preview/${id}?return=${encodeURIComponent(`${assessmentRoot}/${id}`)}`) : openStudentPreview} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
                 <Eye className="h-3.5 w-3.5" /> Preview
               </button>
             )}
-            {viewOnly && hasPermission(user, 'coordinator.assessment.edit') && <button type="button" onClick={() => navigate(`${rolePrefix}/assessment/${id}/edit`)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500">Edit assessment</button>}
-            {!viewOnly && <button
+            {viewOnly && hasPermission(user, 'coordinator.assessment.edit') && <button type="button" onClick={() => navigate(`${assessmentRoot}/${id}/edit`)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500">Edit {isMock ? 'mock' : 'assessment'}</button>}
+            {!viewOnly && (!isMock || isMockPublishing || isPublishedEdit) && <button
               type="button"
               onClick={() => saveDraft(false)}
               disabled={loading}
@@ -2543,7 +2662,7 @@ export default function CreateAssessment({ viewOnly = false }) {
               <Save className="h-3.5 w-3.5" />
               {isPublishedEdit ? 'Save Changes' : 'Save Draft'}
             </button>}
-            {!viewOnly && !isPublishedEdit && <button
+            {!viewOnly && (!isMock || isMockPublishing) && !isPublishedEdit && <button
               type="button"
               onClick={() => setShowPublishModal(true)}
               disabled={loading || !publishReady}
@@ -2551,14 +2670,14 @@ export default function CreateAssessment({ viewOnly = false }) {
               className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
             >
               <Send className="h-3.5 w-3.5" />
-              Publish Assessment
+              Publish {isMock ? 'Mock' : 'Assessment'}
             </button>}
           </div>
         </header>
 
         <nav data-guide="ae-progress" className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white px-2 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-label="Assessment creation progress">
-          <ol className="relative grid min-w-[760px] grid-cols-6">
-            <span className="absolute left-[8.33%] right-[8.33%] top-4 h-0.5 bg-slate-200 dark:bg-gray-700" aria-hidden="true">
+          <ol className="relative grid min-w-[760px]" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+            <span className="absolute left-[8%] right-[8%] top-4 h-0.5 bg-slate-200 dark:bg-gray-700" aria-hidden="true">
               <span className="block h-full bg-sky-500 transition-all duration-500" style={{ width: `${(Math.max(0, maxUnlockedStepIndex) / (steps.length - 1)) * 100}%` }} />
             </span>
             {steps.map((step, index) => {
@@ -2592,7 +2711,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           >
             Previous
           </button>
-          {stepIndex < steps.length - 1 ? <button type="button" onClick={goNext} className="rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500">{viewOnly ? 'Next' : activeStep === 'settings' && SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) < SETTINGS_GROUP_IDS.length - 1 ? `Next: ${SETTINGS_GROUP_IDS[SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) + 1].charAt(0).toUpperCase()}${SETTINGS_GROUP_IDS[SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) + 1].slice(1)}` : 'Continue'}</button> : viewOnly ? <button type="button" onClick={() => navigate(`${rolePrefix}/assessment`)} className="rounded-lg border border-slate-200 px-5 py-2 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:text-gray-200">Back to assessments</button> : isPublishedEdit ? <button type="button" onClick={() => saveDraft(false)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" /> Save Changes</button> : <button type="button" onClick={() => setShowPublishModal(true)} disabled={loading || !publishReady} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Send className="h-3.5 w-3.5" /> Publish Assessment</button>}
+          {stepIndex < steps.length - 1 ? <button type="button" onClick={goNext} className="rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500">{viewOnly ? 'Next' : activeStep === 'settings' && SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) < SETTINGS_GROUP_IDS.length - 1 ? `Next: ${SETTINGS_GROUP_IDS[SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) + 1].charAt(0).toUpperCase()}${SETTINGS_GROUP_IDS[SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) + 1].slice(1)}` : 'Continue'}</button> : viewOnly ? <button type="button" onClick={() => navigate(assessmentRoot)} className="rounded-lg border border-slate-200 px-5 py-2 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:text-gray-200">Back to {isMock ? 'mocks' : 'assessments'}</button> : isMock && !isMockPublishing && !isPublishedEdit ? <button type="button" onClick={saveMock} disabled={loading || !publishReady} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" /> Save Mock</button> : isPublishedEdit ? <button type="button" onClick={() => saveDraft(false)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" /> Save Changes</button> : <button type="button" onClick={() => setShowPublishModal(true)} disabled={loading || !publishReady} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Send className="h-3.5 w-3.5" /> Publish {isMock ? 'Mock' : 'Assessment'}</button>}
         </div>
 
         {showPublishModal && !isPublishedEdit && (
@@ -2600,7 +2719,7 @@ export default function CreateAssessment({ viewOnly = false }) {
             <div aria-busy={loading} className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Publish Assessment</h2>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Publish {isMock ? 'Mock' : 'Assessment'}</h2>
                   <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Review summary and validation before publishing.</p>
                 </div>
                 <button
@@ -2615,7 +2734,7 @@ export default function CreateAssessment({ viewOnly = false }) {
 
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Total Students</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{isMock && form.mockAudienceMode === 'universities' ? 'Universities' : 'Total Students'}</div>
                   <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-white">{assignedSummary.count}</div>
                   <div className="mt-1 text-[11px] text-slate-500">{assignedSummary.accountSummary}</div>
                 </div>
@@ -2637,13 +2756,13 @@ export default function CreateAssessment({ viewOnly = false }) {
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Assignment</div>
-                  <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-white">Direct selection</div>
-                  <div className="mt-1 text-[11px] text-slate-500">Only selected students receive access</div>
+                  <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-white">{isMock && form.mockAudienceMode === 'universities' ? 'University wide' : 'Direct selection'}</div>
+                  <div className="mt-1 text-[11px] text-slate-500">{isMock && form.mockAudienceMode === 'universities' ? 'Every student in each selected university can access the mock' : 'Only selected students receive access'}</div>
                 </div>
               </div>
 
               <div className="mt-4 space-y-2 text-xs text-slate-600 dark:text-gray-300">
-                <div className="rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-slate-700 dark:border-sky-900/40 dark:bg-sky-900/10 dark:text-gray-200">
+                {(!isMock || form.mockAudienceMode !== 'universities') && <div className="rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-slate-700 dark:border-sky-900/40 dark:bg-sky-900/10 dark:text-gray-200">
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <div className="text-sm font-semibold text-slate-900 dark:text-white">Email assessment access</div>
@@ -2659,7 +2778,7 @@ export default function CreateAssessment({ viewOnly = false }) {
                       {sendingTestEmail ? 'Sending…' : 'Send test email'}
                     </button>
                   </div>
-                </div>
+                </div>}
                 <div className={`rounded-lg border px-3 py-2 ${assessmentValidation.totalQuestions > 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300' : 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300'}`}>
                   At least one question required.
                 </div>
@@ -2674,7 +2793,7 @@ export default function CreateAssessment({ viewOnly = false }) {
               {loading && (
                 <div role="status" aria-live="polite" className="mt-4 flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
                   <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
-                  <div><p className="font-semibold">Publishing assessment…</p><p className="mt-0.5 text-[11px] opacity-80">Creating student access and saving assessment settings. Please keep this window open.</p></div>
+                  <div><p className="font-semibold">Publishing {isMock ? 'mock' : 'assessment'}…</p><p className="mt-0.5 text-[11px] opacity-80">Creating student access and saving settings. Please keep this window open.</p></div>
                 </div>
               )}
 

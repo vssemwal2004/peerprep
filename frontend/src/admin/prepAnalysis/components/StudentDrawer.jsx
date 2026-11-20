@@ -320,18 +320,18 @@ function InterviewSection({ interview }) {
   );
 }
 
-function AssessmentSection({ assessment }) {
+function AssessmentSection({ assessment, mock = false }) {
   return (
-    <Section section="assessment" title="Prep Assessment" aside={<StatusPill status={assessment.status} />}>
+    <Section section={mock ? "prepmock" : "assessment"} title={mock ? "PrepMock" : "Prep Assessment"} aside={<StatusPill status={assessment.status} />}>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat label="Test score (their average)" value={assessment.taken ? `${assessment.averageScore}%` : "—"} hint={assessment.taken ? `best ${assessment.bestScore}% · latest ${assessment.lastScore}%` : "no test yet"} />
-        <Stat label="Tests passed" value={`${assessment.passed} of ${assessment.taken}`} hint={`pass mark ${assessment.passPercent}%`} />
-        <Stat label="Tests missed" value={assessment.missed} />
-        <Stat label="Last test" value={lastSeenText(assessment.daysSinceActive)} />
+        <Stat label={mock ? "Mock score (their average)" : "Test score (their average)"} value={assessment.taken ? `${assessment.averageScore}%` : "—"} hint={assessment.taken ? `best ${assessment.bestScore}% · latest ${assessment.lastScore}%` : mock ? "no mock yet" : "no test yet"} />
+        <Stat label={mock ? "Mocks passed" : "Tests passed"} value={`${assessment.passed} of ${assessment.taken}`} hint={`pass mark ${assessment.passPercent}%`} />
+        <Stat label={mock ? "Mocks missed" : "Tests missed"} value={assessment.missed} />
+        <Stat label={mock ? "Last mock" : "Last test"} value={lastSeenText(assessment.daysSinceActive)} />
       </div>
       {assessment.tests.length > 0 && (
         <div className="space-y-2.5">
-          <p className="text-[12px] font-bold text-slate-800 dark:text-slate-100">Their tests</p>
+          <p className="text-[12px] font-bold text-slate-800 dark:text-slate-100">{mock ? "Their mocks" : "Their tests"}</p>
           {assessment.tests.map((test) => (
             <Bar key={test.id} label={test.title} value={test.percent} max={100} color={test.passed ? "#10b981" : "#f43f5e"}
               sub={`${shortDate(test.at)} · ${test.passed ? "passed" : "not passed"}`}
@@ -483,6 +483,7 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
           {profile.learning && <LearningSection learning={profile.learning} />}
           {profile.interview && <InterviewSection interview={profile.interview} />}
           {profile.assessment && <AssessmentSection assessment={profile.assessment} />}
+          {profile.prepmock && <AssessmentSection assessment={profile.prepmock} mock />}
           <p className="text-center text-[10.5px] text-slate-400">Only this student's own work in {normalizeDateRange(range).preset === "custom" ? period : period.toLowerCase()} is shown. Students are never compared with each other here.</p>
         </div>
       )}

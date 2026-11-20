@@ -112,6 +112,9 @@ const SUMMARIES = {
     return summary(rows.length, rows.filter((row) => row.coding.solved.total > 0).length, 'solved a problem', { total, totalLabel: 'problems solved', average: perStudent(total, rows.length), averageLabel: 'solved per student' });
   },
 };
+for (const [id, build] of Object.entries(SUMMARIES)) {
+  if (id.startsWith('assessment-')) SUMMARIES[id.replace(/^assessment-/, 'prepmock-')] = (rows, data) => build(rows.map((row) => ({ ...row, assessment: row.prepmock })), data);
+}
 
 /** n of N (and a total and an average where they mean something) for one chart. */
 export function chartSummary(chartId, rows, data) {

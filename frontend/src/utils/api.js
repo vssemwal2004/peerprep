@@ -1195,6 +1195,7 @@ export const api = {
   // Assessments (Admin)
   previewAssessmentStudents: (students) =>
     request("/admin/assessment/students/preview", { method: "POST", body: { students } }),
+  listMockCompanies: ({ search = '', limit = 1000 } = {}) => request(`/admin/assessment/mock-companies?${new URLSearchParams({ search, limit: String(limit) })}`, { skipCache: true }),
   createAssessment: (body) =>
     request("/admin/assessment/create", { method: "POST", body }),
   sendAssessmentTestEmail: (assessment) =>
@@ -1204,6 +1205,8 @@ export const api = {
     if (options.page) params.set("page", options.page);
     if (options.limit) params.set("limit", options.limit);
     if (options.view) params.set("view", options.view);
+    if (options.kind === "mock") params.set("kind", "mock");
+    if (options.includeHistorical === "true") params.set("includeHistorical", "true");
     const query = params.toString();
     return request(`/admin/assessment/list${query ? `?${query}` : ""}`);
   },
@@ -1216,6 +1219,8 @@ export const api = {
     request(`/admin/assessment/${id}`, { method: "DELETE" }),
   resetAssessmentSubmissions: (id) =>
     request(`/admin/assessment/${id}/reset-submissions`, { method: "POST" }),
+  resetMock: (id) => request(`/admin/assessment/${id}/reset-mock`, { method: "POST" }),
+  unpublishMock: (id) => request(`/admin/assessment/${id}/unpublish-mock`, { method: "POST" }),
   listAssessmentEligibleStudents: (id) =>
     request(`/admin/assessment/${id}/eligible-students`, { skipCache: true }),
   addAssessmentEligibleStudents: (id, studentIds = [], students = []) =>
@@ -1400,10 +1405,10 @@ export const api = {
   },
   createCodingTag: (body) =>
     request("/admin/library/coding-tags", { method: "POST", body }),
-  createLibraryQuestion: (question) =>
-    request("/admin/library/questions", { method: "POST", body: { question } }),
-  createLibraryQuestionsBulk: (questions, uploadMetadata) =>
-    request("/admin/library/questions/bulk", {
+  createLibraryQuestion: (question, scope = "main") =>
+    request(`/admin/library/questions${scope === "mock" ? "?scope=mock" : ""}`, { method: "POST", body: { question } }),
+  createLibraryQuestionsBulk: (questions, uploadMetadata, scope = "main") =>
+    request(`/admin/library/questions/bulk${scope === "mock" ? "?scope=mock" : ""}`, {
       method: "POST",
       body: { questions, uploadMetadata },
     }),
@@ -1416,14 +1421,14 @@ export const api = {
       timeoutMs: 30 * 1000,
     });
   },
-  getLibraryQuestion: (id) =>
-    request(`/admin/library/questions/${id}`, { skipCache: true }),
-  updateLibraryQuestion: (id, body) =>
-    request(`/admin/library/questions/${id}`, { method: "PATCH", body }),
-  deleteLibraryQuestion: (id) =>
-    request(`/admin/library/questions/${id}`, { method: "DELETE" }),
-  resolveLibraryQuestions: (ids = []) =>
-    request("/admin/library/questions/resolve", {
+  getLibraryQuestion: (id, scope = "main") =>
+    request(`/admin/library/questions/${id}${scope === "mock" ? "?scope=mock" : ""}`, { skipCache: true }),
+  updateLibraryQuestion: (id, body, scope = "main") =>
+    request(`/admin/library/questions/${id}${scope === "mock" ? "?scope=mock" : ""}`, { method: "PATCH", body }),
+  deleteLibraryQuestion: (id, scope = "main") =>
+    request(`/admin/library/questions/${id}${scope === "mock" ? "?scope=mock" : ""}`, { method: "DELETE" }),
+  resolveLibraryQuestions: (ids = [], scope = "main") =>
+    request(`/admin/library/questions/resolve${scope === "mock" ? "?scope=mock" : ""}`, {
       method: "POST",
       body: { ids },
     }),

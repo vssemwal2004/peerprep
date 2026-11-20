@@ -669,7 +669,7 @@ router.delete('/admin/universities/:id', masterOnly, asyncRoute(async (req, res)
 router.get('/admin/publications', masterOnly, asyncRoute(async (req, res) => {
   const [publications, assessments] = await Promise.all([
     Publication.find({ kind: 'assessment' }).lean(),
-    Assessment.find().select('_id title lifecycleStatus startTime endTime').sort({ createdAt: -1 }).lean(),
+    Assessment.find({ kind: { $ne: 'mock' } }).select('_id title lifecycleStatus startTime endTime').sort({ createdAt: -1 }).lean(),
   ]);
   res.json({ publications, assessments });
 }));
@@ -677,7 +677,7 @@ router.get('/admin/publications', masterOnly, asyncRoute(async (req, res) => {
 router.put('/admin/publications/:kind/:id', masterOnly, asyncRoute(async (req, res) => {
   const { kind, id } = req.params;
   if (kind !== 'assessment' || !mongoose.isValidObjectId(id)) throw new HttpError(400, 'Invalid assessment');
-  if (!(await Assessment.exists({ _id: id }))) throw new HttpError(404, 'Assessment not found');
+  if (!(await Assessment.exists({ _id: id, kind: { $ne: 'mock' } }))) throw new HttpError(404, 'Assessment not found');
   if (typeof req.body?.published !== 'boolean' || !Array.isArray(req.body?.universityIds)) throw new HttpError(400, 'published and universityIds are required');
   const ids = [...new Set(req.body.universityIds.map(String))];
   if (ids.some((value) => !idPattern.test(value))) throw new HttpError(400, 'Invalid university ID');
@@ -713,6 +713,12 @@ router.get('/tenant/assessments', requireModule('assessments'), asyncRoute(async
   const ids = await Publication.find({ kind: 'assessment', published: true, universityIds: req.platformUniversity.universityId }).distinct('contentId');
   const assessments = await Assessment.find({ _id: { $in: ids }, lifecycleStatus: { $ne: 'draft' }, isVisible: { $ne: false } }).lean();
   res.json({ assessments: assessments.map((item) => ({ ...item, targetType: 'all', assignedStudents: [], draftAssignedStudents: [] })) });
+}));
+router.get('/tenant/assessments/history', requireModule('assessments'), asyncRoute(async (req, res) => {
+  const publications = await Publication.find({ kind: 'assessment', everUniversityIds: req.platformUniversity.universityId }).lean();
+  const published = new Set(publications.filter((item) => item.published && item.universityIds.includes(req.platformUniversity.universityId)).map((item) => String(item.contentId)));
+  const assessments = await Assessment.find({ _id: { $in: publications.map((item) => item.contentId) }, kind: 'mock', $or: [{ mockHasHistory: true }, { _id: { $in: [...published] } }] }).lean();
+  res.json({ assessments: assessments.map((item) => ({ ...item, targetType: 'all', assignedStudents: [], draftAssignedStudents: [], platformPublished: published.has(String(item._id)) })) });
 }));
 router.get('/tenant/assessments/:id', requireModule('assessments'), asyncRoute(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) throw new HttpError(400, 'Invalid assessment ID');

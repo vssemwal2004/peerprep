@@ -126,10 +126,10 @@ export function buildStudentReport({ row, profile, times = new Map(), range, gen
         ...RATINGS.map(({ key, label }) => `${label} ${interview.ratings.find((rating) => rating.key === key)?.value ?? '—'}`)].join(' · '),
     });
   }
-  if (profile.assessment) {
-    const assessment = profile.assessment;
+  for (const [assessment, mock] of [[profile.assessment, false], [profile.prepmock, true]]) {
+    if (!assessment) continue;
     sections.push({
-      title: 'Prep Assessment', columns: [col('Test', 'text', 30), col('Score %', 'percent'), col('Marks', 'decimal'), col('Out of', 'decimal'), col(`Passed (${PASS_PERCENT}%+)`, 'text', 10), col('Taken on', 'text', 12)],
+      title: mock ? 'PrepMock' : 'Prep Assessment', columns: [col(mock ? 'Mock' : 'Test', 'text', 30), col('Score %', 'percent'), col('Marks', 'decimal'), col('Out of', 'decimal'), col(`Passed (${PASS_PERCENT}%+)`, 'text', 10), col('Taken on', 'text', 12)],
       rows: [...assessment.tests.map((test) => [test.title, test.percent, test.score, test.maxMarks, test.passed ? 'Yes' : 'No', day(test.at)]),
         ...assessment.missedTests.map((title) => [title, null, null, null, 'Missed', null])],
     });

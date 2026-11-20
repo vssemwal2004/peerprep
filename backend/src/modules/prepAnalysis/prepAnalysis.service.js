@@ -57,6 +57,11 @@ const TABLE_SORTS = {
   testScore: (row) => row.assessment?.averageScore ?? -1,
   testsTaken: (row) => row.assessment?.taken ?? -1,
   testsMissed: (row) => row.assessment?.missed ?? -1,
+  mockTestScore: (row) => row.prepmock?.averageScore ?? -1,
+  mocksTaken: (row) => row.prepmock?.taken ?? -1,
+  mocksPassed: (row) => row.prepmock?.passed ?? -1,
+  mocksMissed: (row) => row.prepmock?.missed ?? -1,
+  mockTestStatus: (row) => row.prepmock?.status || '',
   overallScore: (row) => row.scores?.total ?? 0,
   featureScore: (row, area) => row.scores?.features[area]?.score ?? 0,
   // Every other column of the student table sorts too (the shared table format: every header sorts).
@@ -84,6 +89,7 @@ const TABLE_SORTS = {
     if (test?.awaiting) return 2;
     return test?.missed ? 1 : 0;
   },
+  mockTestResult: (row) => TABLE_SORTS.testResult({ ...row, assessment: row.prepmock }),
 };
 const textCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 const compareSortValues = (left, right) => (typeof left === 'number' && typeof right === 'number'
@@ -104,9 +110,10 @@ const POSITION_BY = {
   learning: (row) => row.learning?.progress ?? 0,
   interview: (row) => row.scores?.features.interview?.score ?? 0,
   assessment: (row) => row.scores?.features.assessment?.score ?? 0,
+  prepmock: (row) => row.prepmock?.averageScore ?? 0,
   all: (row) => row.scores?.total ?? 0,
 };
-const DEFAULT_SORT = { coding: 'prepScore', quickprep: 'sheetProgress', learning: 'learningProgress', interview: 'featureScore', assessment: 'featureScore', all: 'overallScore' };
+const DEFAULT_SORT = { coding: 'prepScore', quickprep: 'sheetProgress', learning: 'learningProgress', interview: 'featureScore', assessment: 'featureScore', prepmock: 'mockTestScore', all: 'overallScore' };
 
 /** Which interview data a university may see: mock interviews ("events") and AI interviews ("interviews"). */
 export const interviewParts = (permissions) => ({ peer: !permissions || permissions.events === true, ai: !permissions || permissions.interviews === true });
@@ -200,7 +207,7 @@ export function normalizeScope(input) {
   if (raw.length > QUERY_LIMITS.maxScopeAssessments) throw new HttpError(400, `Choose up to ${QUERY_LIMITS.maxScopeAssessments} assessments.`);
   if (!raw.length) return null;
   const ids = new Set(raw.filter((id) => typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id.trim())).map((id) => id.trim().toLowerCase()));
-  return { assessmentIds: [...ids].sort() };
+  return { assessmentIds: [...ids].sort(), ...(input.kind === 'mock' ? { kind: 'mock' } : {}) };
 }
 
 /**
@@ -210,9 +217,9 @@ export function normalizeScope(input) {
 const scopeFromBody = (body) => normalizeScope(body.assessmentScope ?? (body.scope && typeof body.scope === 'object' ? body.scope : null));
 
 /** `?assessmentIds=a,b` (or repeated) from a query string. */
-export function scopeFromQueryString(value) {
+export function scopeFromQueryString(value, kind) {
   const list = [].concat(value ?? []).flatMap((part) => String(part).split(',')).map((part) => part.trim()).filter(Boolean);
-  return normalizeScope({ assessmentIds: list });
+  return normalizeScope({ assessmentIds: list, kind });
 }
 
 /** `module` is the analysis area: 'all' or one licensed module. */
@@ -283,7 +290,7 @@ export function cacheKey(user, range, modules, parts, assessmentScope = null) {
   const scope = user?.role === 'coordinator' && user.coordinatorDataScope !== 'all' ? `c:${user.coordinatorId}` : user?.role === 'coordinator' ? `ca:${user.coordinatorId}` : 'all';
   const period = range.preset === 'custom' ? `${range.from?.toISOString() || ''}..${range.to?.toISOString() || ''}` : range.preset;
   // A scoped context holds other tests and a narrower cohort: it must never be served for an unscoped request.
-  const assessments = assessmentScope ? `|as:${[...assessmentScope.assessmentIds].sort().join(',') || 'none'}` : '';
+  const assessments = assessmentScope ? `|${assessmentScope.kind || 'assessment'}:${[...assessmentScope.assessmentIds].sort().join(',') || 'none'}` : '';
   return `${currentTenant()?.universityId || 'platform'}|${scope}|${period}|${[...modules].sort().join(',')}|${parts.peer ? 'p' : ''}${parts.ai ? 'a' : ''}${assessments}`;
 }
 
@@ -291,25 +298,29 @@ async function buildContext(user, range, modules, parts, assessmentScope) {
   const loaded = await loadCohort(user);
   let cohort = loaded;
   let tests = null;
+  let mocks = null;
   if (assessmentScope) {
     // Only the requested tests this admin can see, and only the students who were given or took one.
-    tests = scopeAssessmentDefinitions(await loadAssessmentDefinitions(user), assessmentScope.assessmentIds);
-    cohort = { ...loaded, students: await scopeStudentsToAssessments(loaded.students, tests) };
+    const selected = scopeAssessmentDefinitions(await loadAssessmentDefinitions(user, new Date(), assessmentScope.kind), assessmentScope.assessmentIds);
+    if (assessmentScope.kind === 'mock') mocks = selected;
+    else tests = selected;
+    cohort = { ...loaded, students: await scopeStudentsToAssessments(loaded.students, selected) };
   }
   const studentIds = cohort.students.map((student) => String(student._id));
   const empty = { byStudent: new Map(), days: new Map(), problems: new Map(), topics: new Map() };
-  const [coding, learning, quickprep, assessment, interview, stored, efforts] = await Promise.all([
+  const [coding, learning, quickprep, assessment, prepmock, interview, stored, efforts] = await Promise.all([
     modules.has('coding') ? loadCodingFacts({ studentIds, range }) : empty,
     modules.has('learning') ? loadLearningFacts({ studentIds, range }) : null,
     modules.has('quickprep') ? loadQuickPrepFacts({ studentIds, range }) : null,
-    modules.has('assessment') ? loadAssessmentFacts({ user, studentIds, range, tests }) : null,
+    modules.has('assessment') && assessmentScope?.kind !== 'mock' ? loadAssessmentFacts({ user, studentIds, range, tests }) : null,
+    modules.has('prepmock') && (!assessmentScope || assessmentScope.kind === 'mock') ? (mocks ? loadAssessmentFacts({ user, studentIds, range, tests: mocks }) : loadAssessmentDefinitions(user, new Date(), 'mock').then((mockTests) => loadAssessmentFacts({ user, studentIds, range, tests: mockTests }))) : null,
     modules.has('interview') ? loadInterviewFacts({ studentIds, range, ...parts }) : null,
     storedScoresFor(studentIds),
     // "Own work": first solves with start time, active time and outside pastes.
     modules.has('coding') || modules.has('quickprep') ? loadSolveEfforts({ studentIds, includeShared: modules.has('quickprep') }) : null,
   ]);
   const rows = buildStudentRows({
-    students: cohort.students, facts: coding, problems: coding.problems, batchNames: cohort.batchNames, learning, quickprep, assessment, interview, range, efforts,
+    students: cohort.students, facts: coding, problems: coding.problems, batchNames: cohort.batchNames, learning, quickprep, assessment, prepmock, interview, range, efforts,
     // "Days since active" and statuses are measured at the end of the period: for the previous
     // period's comparison that is its own end, not today (else everyone looked inactive then).
     now: range.to ? new Date(range.to) : new Date(),
@@ -322,7 +333,7 @@ async function buildContext(user, range, modules, parts, assessmentScope) {
   });
   return {
     rows, scoreVersion: stored.version, topics: coding.topics, batchNames: cohort.batchNames, truncated: cohort.truncated, loadedAt: new Date(),
-    curriculum: learning?.curriculum || [], sheets: quickprep?.sheets || new Map(), tests: assessment?.tests || new Map(),
+    curriculum: learning?.curriculum || [], sheets: quickprep?.sheets || new Map(), tests: assessment?.tests || new Map(), mocks: prepmock?.tests || new Map(),
   };
 }
 
@@ -352,13 +363,13 @@ function selectRows(rows, filter, rank) {
 
 /** The page's students narrowed by a chart's own filter. */
 const chartRows = (selected, filter) => (filter.children.length ? selected.filter((row) => evaluateFilterTree(filter, row)) : selected);
-const buildChart = (chart, rows, options, range, context) => chart.build({ rows, options, range, topics: context.topics, sheets: context.sheets, tests: context.tests });
+const buildChart = (chart, rows, options, range, context) => chart.build({ rows, options, range, topics: context.topics, sheets: context.sheets, tests: context.tests, mocks: context.mocks });
 
 /** The ids of the students behind the focused part, among the page's students. */
 function focusIds(context, selected, focus) {
   const chart = CHART_BY_ID.get(focus.chartId);
   const rows = chartRows(selected, focus.filter);
-  return new Set(drillStudents(chart, rows, focus.key, focus.options, [], { sheets: context.sheets, tests: context.tests }).items.map((item) => item.id));
+  return new Set(drillStudents(chart, rows, focus.key, focus.options, [], { sheets: context.sheets, tests: context.tests, mocks: context.mocks }).items.map((item) => item.id));
 }
 
 /**
@@ -426,7 +437,7 @@ export function validateDrill(body = {}) {
 /** The students behind a chart or one part of it, searched, sorted and a page at a time. */
 export async function drillPrepAnalysis({ user, query, drill }) {
   const { context, entry, chart, rows } = await chartContext({ user, query, chartId: drill.chartId });
-  const catalogues = { sheets: context.sheets, tests: context.tests };
+  const catalogues = { sheets: context.sheets, tests: context.tests, mocks: context.mocks };
   const students = drillStudents(chart, rows, drill.key, entry.options, genericColumns(chart.module), catalogues);
   const detail = drill.view === 'detail' ? drillDetail(chart, rows, drill.key, entry.options, catalogues) : null;
   if (drill.view === 'detail' && !detail) throw new HttpError(400, 'This chart has no detail table.');
@@ -459,7 +470,7 @@ export async function drillPrepAnalysis({ user, query, drill }) {
 export async function exportPrepAnalysisChart({ user, query, drill, options }) {
   const { context, entry, chart, rows } = await chartContext({ user, query, chartId: drill.chartId });
   const data = buildChart(chart, rows, { ...entry.options, everything: true }, query.range, context);
-  const catalogues = { sheets: context.sheets, tests: context.tests };
+  const catalogues = { sheets: context.sheets, tests: context.tests, mocks: context.mocks };
   const students = drillStudents(chart, rows, drill.key, entry.options, genericColumns(chart.module), catalogues);
   sortItems(students.items, students.columns, students.sort, students.direction);
   const detail = options.format === 'xlsx' ? drillDetail(chart, rows, drill.key, entry.options, catalogues) : null;
@@ -509,6 +520,10 @@ function tableRow(row, position) {
     assessment: row.assessment ? {
       taken: row.assessment.taken, passed: row.assessment.passed, missed: row.assessment.missed, awaiting: row.assessment.awaiting || 0, averageScore: row.assessment.averageScore,
       bestScore: row.assessment.bestScore, status: row.assessment.status, daysSinceActive: row.assessment.daysSinceActive,
+    } : null,
+    prepmock: row.prepmock ? {
+      taken: row.prepmock.taken, passed: row.prepmock.passed, missed: row.prepmock.missed, awaiting: row.prepmock.awaiting || 0, averageScore: row.prepmock.averageScore,
+      bestScore: row.prepmock.bestScore, status: row.prepmock.status, daysSinceActive: row.prepmock.daysSinceActive,
     } : null,
     scores: {
       total: row.scores?.total ?? 0,
@@ -673,7 +688,7 @@ export async function comparePrepAnalysisStudents({ user, query, compareBy, valu
   const generic = genericColumns(query.module).filter((column) => query.modules.has(column.module));
   // "All features" lists the overall Prep Score (the Quick Prep drill column), one area its own score.
   const scoreModule = query.module === 'all' ? 'quickprep' : query.module;
-  const students = drillStudents({ id: 'compare', module: scoreModule }, bucket.rows, ALL_STUDENTS, {}, generic, { sheets: context.sheets, tests: context.tests });
+  const students = drillStudents({ id: 'compare', module: scoreModule }, bucket.rows, ALL_STUDENTS, {}, generic, { sheets: context.sheets, tests: context.tests, mocks: context.mocks });
   sortItems(students.items, students.columns, students.sort, students.direction);
   return {
     label: bucket.label, total: students.items.length, truncated: students.items.length > COMPARE_LIMITS.maxStudents,
@@ -724,7 +739,7 @@ export function validateComparisonExport(body = {}) {
 export async function matchingStudentIds({ user, query, drill = null }) {
   if (drill?.chartId) {
     const { context, entry, chart, rows } = await chartContext({ user, query, chartId: drill.chartId });
-    const students = drillStudents(chart, rows, drill.key, entry.options, genericColumns(chart.module), { sheets: context.sheets, tests: context.tests });
+    const students = drillStudents(chart, rows, drill.key, entry.options, genericColumns(chart.module), { sheets: context.sheets, tests: context.tests, mocks: context.mocks });
     const items = drill.search
       ? students.items.filter((item) => `${item.row.name} ${item.row.studentId} ${item.row.email}`.toLowerCase().includes(drill.search))
       : students.items;
@@ -851,8 +866,8 @@ function interviewProfile(row, range) {
   };
 }
 
-function assessmentProfile(row, tests, range) {
-  const { assessment } = row;
+function assessmentProfile(row, tests, range, key = 'assessment') {
+  const assessment = row[key];
   return {
     status: assessment.status, taken: assessment.taken, passed: assessment.passed, failed: assessment.failed, missed: assessment.missed,
     averageScore: assessment.averageScore, bestScore: assessment.bestScore, lastScore: assessment.lastScore, passRate: assessment.passRate,
@@ -867,7 +882,7 @@ function assessmentProfile(row, tests, range) {
 }
 
 /** One student's profile from their row: only their own work, never compared with anyone else. */
-export function buildStudentProfile(row, { range, modules, sheets = new Map(), tests = new Map() }) {
+export function buildStudentProfile(row, { range, modules, sheets = new Map(), tests = new Map(), mocks = new Map() }) {
   const { semester, course, branch, college, group, section, batchNames, status } = row.student;
   return {
     range: { preset: range.preset, from: range.from?.toISOString() || null, to: range.to?.toISOString() || null },
@@ -877,6 +892,7 @@ export function buildStudentProfile(row, { range, modules, sheets = new Map(), t
     learning: modules.has('learning') && row.learning ? learningProfile(row, range) : null,
     interview: modules.has('interview') && row.interview ? interviewProfile(row, range) : null,
     assessment: modules.has('assessment') && row.assessment ? assessmentProfile(row, tests, range) : null,
+    prepmock: modules.has('prepmock') && row.prepmock ? assessmentProfile(row, mocks, range, 'prepmock') : null,
     prepScore: row.scores || { total: 0, features: {} },
   };
 }
@@ -945,7 +961,7 @@ async function submissionHistory(row, range, sheets, modules) {
 /** Everything Prep Analysis knows about one student in the admin's own scope, for the period. */
 export async function getStudentProfile(input) {
   const { row, range, modules, context } = await studentInScope(input);
-  const profile = buildStudentProfile(row, { range, modules, sheets: context.sheets, tests: context.tests });
+  const profile = buildStudentProfile(row, { range, modules, sheets: context.sheets, tests: context.tests, mocks: context.mocks });
   if (modules.has('coding') || modules.has('quickprep')) profile.submissions = await submissionHistory(row, range, context.sheets, modules);
   return profile;
 }
@@ -955,7 +971,7 @@ export async function exportStudentReport({ format, ...input }) {
   const type = STUDENT_REPORT_TYPES[format];
   if (!type) throw new HttpError(400, 'Choose Excel or PDF.');
   const { row, range, modules, context } = await studentInScope(input);
-  const profile = buildStudentProfile(row, { range, modules, sheets: context.sheets, tests: context.tests });
+  const profile = buildStudentProfile(row, { range, modules, sheets: context.sheets, tests: context.tests, mocks: context.mocks });
   const times = modules.has('coding') ? await loadProblemTimes({ studentId: row.id, range }) : new Map();
   const report = buildStudentReport({ row, profile, times, range });
   const slug = `${row.name}-${row.studentId || row.id}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
@@ -969,7 +985,7 @@ export async function exportStudentReport({ format, ...input }) {
 // ---------------------------------------------------------------- option lists
 
 const OPTION_LIMIT = 60;
-const QUALIFIER_LISTS = { topics: 'coding', tags: 'coding', companies: 'coding', languages: 'coding', difficulties: 'coding', subjects: 'learning', sheets: 'quickprep', tests: 'assessment' };
+const QUALIFIER_LISTS = { topics: 'coding', tags: 'coding', companies: 'coding', languages: 'coding', difficulties: 'coding', subjects: 'learning', sheets: 'quickprep', tests: 'assessment', mocks: 'prepmock' };
 
 function distinctFromRows(rows, read) {
   const counts = new Map();
@@ -1026,9 +1042,9 @@ export async function listFieldOptions({ user, permissions, optionsKey, q = '', 
     const { curriculum } = await context();
     options = [...new Set(curriculum.flatMap((semester) => semester.subjects.filter((subject) => subject.topics > 0).map((subject) => subject.name)))]
       .sort((left, right) => left.localeCompare(right)).map((name) => ({ value: name, label: name }));
-  } else if (optionsKey === 'tests') {
-    const { tests } = await context();
-    options = [...tests.values()].sort((left, right) => new Date(right.startTime || 0) - new Date(left.startTime || 0) || left.title.localeCompare(right.title))
+  } else if (optionsKey === 'tests' || optionsKey === 'mocks') {
+    const loaded = await context();
+    options = [...loaded[optionsKey].values()].sort((left, right) => new Date(right.startTime || 0) - new Date(left.startTime || 0) || left.title.localeCompare(right.title))
       .map((test) => ({ value: test.id, label: test.title }));
   } else if (optionsKey === 'sheets') {
     // Most-started sheets first (one pass over the rows), so a long catalogue opens on the useful ones.

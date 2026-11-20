@@ -75,13 +75,13 @@ function interviewLines(interview) {
   return lines;
 }
 
-function assessmentLines(assessment) {
+function assessmentLines(assessment, noun = "test") {
   if (!assessment) return [];
   const lines = [];
-  if (assessment.missed) lines.push({ tone: "warn", text: `Missed ${plural(assessment.missed, "test")} meant for them.` });
-  if (assessment.status === "never") return [...lines, { tone: "warn", text: "Has not taken a test yet." }];
-  if (assessment.failed) lines.push({ tone: "warn", text: `Below the ${assessment.passPercent}% pass mark in ${plural(assessment.failed, "test")}.` });
-  else if (assessment.taken) lines.push({ tone: "good", text: `Passed every test taken (${assessment.taken}).` });
+  if (assessment.missed) lines.push({ tone: "warn", text: `Missed ${plural(assessment.missed, noun)} meant for them.` });
+  if (assessment.status === "never") return [...lines, { tone: "warn", text: `Has not taken a ${noun} yet.` }];
+  if (assessment.failed) lines.push({ tone: "warn", text: `Below the ${assessment.passPercent}% pass mark in ${plural(assessment.failed, noun)}.` });
+  else if (assessment.taken) lines.push({ tone: "good", text: `Passed every ${noun} taken (${assessment.taken}).` });
   return lines;
 }
 
@@ -103,6 +103,7 @@ export function studentHighlights(profile, limit = 7) {
     ...learningLines(profile.learning),
     ...interviewLines(profile.interview),
     ...assessmentLines(profile.assessment),
+    ...assessmentLines(profile.prepmock, "mock"),
   ];
   const order = { warn: 0, tip: 1, good: 2 };
   return lines.map((line, index) => ({ ...line, index })).sort((left, right) => order[left.tone] - order[right.tone] || left.index - right.index)

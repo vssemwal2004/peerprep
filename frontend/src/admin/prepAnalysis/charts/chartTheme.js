@@ -32,7 +32,7 @@ export const OUTCOME_COLORS = Object.freeze({
 
 // One accent for every feature: the app's primary sky.
 const SKY = "#0284c7";
-export const SECTION_ACCENTS = Object.freeze({ coding: SKY, quickprep: SKY, learning: SKY, interview: SKY, assessment: SKY });
+export const SECTION_ACCENTS = Object.freeze({ coding: SKY, quickprep: SKY, learning: SKY, interview: SKY, assessment: SKY, prepmock: SKY });
 
 /** `color` (#rgb, #rrggbb, rgb() or rgba()) with its opacity multiplied by `opacity`. */
 export function alpha(color, opacity) {

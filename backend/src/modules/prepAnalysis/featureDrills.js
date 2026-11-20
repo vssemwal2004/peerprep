@@ -450,9 +450,19 @@ export const FEATURE_DRILLS = {
 // a difficulty ring lists who solved a question of that difficulty, like "Solve rate by difficulty".
 FEATURE_DRILLS['quickprep-sheet-bubbles'] = FEATURE_DRILLS['quickprep-sheet-health'];
 FEATURE_DRILLS['quickprep-difficulty-rings'] = FEATURE_DRILLS['quickprep-difficulty-mix'];
+// Reuse assessment drill membership and detail columns against mock-only rows.
+for (const [id, drill] of Object.entries(FEATURE_DRILLS)) {
+  if (!id.startsWith('assessment-')) continue;
+  FEATURE_DRILLS[id.replace(/^assessment-/, 'prepmock-')] = {
+    ...drill,
+    label: (key, rows, context) => drill.label(key, rows.map((row) => ({ ...row, assessment: row.prepmock })), { ...context, tests: context.mocks }),
+    students: (rows, key, options, context) => drill.students(rows.map((row) => ({ ...row, assessment: row.prepmock })), key, options, { ...context, tests: context.mocks }),
+    ...(drill.detail ? { detail: (rows, key, options, context) => drill.detail(rows.map((row) => ({ ...row, assessment: row.prepmock })), key, options, { ...context, tests: context.mocks }) } : {}),
+  };
+}
 
 // Which detail table each feature drill's second tab shows.
 export const FEATURE_DETAIL_LABELS = Object.freeze({
-  'learning-subjects': 'Subjects', 'quickprep-sheets': 'Sheets', 'quickprep-matrix': 'Sheets', 'quickprep-sheet-health': 'Sheets', 'quickprep-sheet-bubbles': 'Sheets', 'assessment-tests': 'Tests', 'assessment-scores': 'Tests',
+  'learning-subjects': 'Subjects', 'quickprep-sheets': 'Sheets', 'quickprep-matrix': 'Sheets', 'quickprep-sheet-health': 'Sheets', 'quickprep-sheet-bubbles': 'Sheets', 'assessment-tests': 'Tests', 'assessment-scores': 'Tests', 'prepmock-tests': 'Mocks', 'prepmock-scores': 'Mocks',
   'interview-ratings': 'Mock interviews', 'interview-mix': 'Mock interviews',
 });

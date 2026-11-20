@@ -2,6 +2,7 @@ import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const questionLibrarySchema = new mongoose.Schema({
+  scope: { type: String, enum: ['main', 'mock'], default: 'main', index: true },
   sourceKey: { type: String, required: true, unique: true, trim: true },
   sourceType: {
     type: String,
@@ -44,6 +45,7 @@ questionLibrarySchema.index({ searchPrefixes: 1 });
 // Compound index for the hot query path: status+visibility filter + sort by updatedAt
 questionLibrarySchema.index({ status: 1, visibility: 1, updatedAt: -1 });
 questionLibrarySchema.index({ status: 1, visibility: 1, questionType: 1, updatedAt: -1 });
+questionLibrarySchema.index({ scope: 1, status: 1, questionType: 1, updatedAt: -1 });
 // Compound index for coordinator-scoped queries
 questionLibrarySchema.index({ createdBy: 1, status: 1, visibility: 1, updatedAt: -1 });
 questionLibrarySchema.index({ questionType: 1, topicIds: 1, updatedAt: -1 });

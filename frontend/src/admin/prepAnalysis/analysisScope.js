@@ -13,7 +13,7 @@ export function useAnalysisScope() {
 
 export function useAnalysisApi() {
   const scope = useContext(AnalysisScopeContext);
-  const key = scope?.assessmentIds?.join(",") || "";
+  const key = `${scope?.kind || 'assessment'}:${scope?.assessmentIds?.join(",") || ""}`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(() => createPrepAnalysisApi(scope), [key]);
 }

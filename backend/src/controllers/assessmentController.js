@@ -16,6 +16,9 @@ import { deleteAssessmentAttemptData } from '../services/assessmentDataCleanupSe
 import { loadAssessmentDefinition } from '../services/assessmentDefinitionService.js';
 import { sharedAssessment, sharedAssessments, assessmentDefinitionById } from '../platform/sharedContent.js';
 import { isUniversity } from '../platform/deployment.js';
+import { isControlPlane } from '../platform/deployment.js';
+import { currentTenant } from '../platform/tenantContext.js';
+import { Publication, University } from '../platform/models.js';
 import { readPresenceCheckpoint, writePresenceCheckpoint } from '../services/assessmentPresenceService.js';
 import { networkPauseCreditFields } from '../services/assessmentHeartbeatPolicy.js';
 import { createAssessmentEvidenceUpload, verifyAssessmentEvidenceUpload, normalizeLegacyEvidence, signAssessmentEvidenceRead } from '../services/assessmentEvidenceService.js';
@@ -24,8 +27,10 @@ import TestCase from '../models/TestCase.js';
 import Submission from '../models/Submission.js';
 import User from '../models/User.js';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
+import Notification from '../models/Notification.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
 import { syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
+import { resetMockDefinition, unpublishMockDefinition } from '../services/prepMockLifecycle.js';
 import { deleteAssessmentQuestionArtifacts } from '../services/assessmentQuestionCleanupService.js';
 import { logActivity } from './adminActivityController.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
@@ -2366,6 +2371,38 @@ export async function sendAssessmentTestEmail(req, res) {
   }
 }
 
+async function validateMockAudience({ kind, mode, universityIds, user, requireSelection = false }) {
+  if (kind !== 'mock' || mode !== 'universities') return { mode: 'students', universityIds: [] };
+  if (user?.role !== 'admin') throw new AssessmentWriteError(403, 'MOCK_UNIVERSITY_FORBIDDEN', 'Only an administrator can publish a university-wide mock.');
+  if (isUniversity()) {
+    const id = currentTenant()?.universityId || process.env.PEERPREP_UNIVERSITY_ID;
+    if (!id) throw new AssessmentWriteError(400, 'MOCK_UNIVERSITY_MISSING', 'University context is required.');
+    return { mode: 'universities', universityIds: [id] };
+  }
+  if (!isControlPlane()) throw new AssessmentWriteError(400, 'MOCK_UNIVERSITY_UNAVAILABLE', 'University publishing is unavailable.');
+  const ids = [...new Set((Array.isArray(universityIds) ? universityIds : []).map(String))];
+  if ((requireSelection && !ids.length) || ids.some((id) => !/^[a-z0-9][a-z0-9-]{1,62}$/.test(id))) {
+    throw new AssessmentWriteError(400, 'MOCK_UNIVERSITY_REQUIRED', 'Select at least one valid university.');
+  }
+  const count = await University.countDocuments({ universityId: { $in: ids }, active: true, deletedAt: null, 'permissions.assessments': { $ne: false } });
+  if (count !== ids.length) throw new AssessmentWriteError(400, 'MOCK_UNIVERSITY_INVALID', 'One or more universities cannot use assessments.');
+  return { mode: 'universities', universityIds: ids };
+}
+
+async function syncMockPublication(assessment, actorId) {
+  if (!isControlPlane() || assessment.kind !== 'mock') return;
+  const previous = await Publication.findOne({ kind: 'assessment', contentId: assessment._id }).lean();
+  const activeIds = assessment.lifecycleStatus === 'published' && assessment.mockAudienceMode === 'universities'
+    ? assessment.mockUniversityIds || [] : [];
+  if (!previous && !activeIds.length) return;
+  const everUniversityIds = [...new Set([...(previous?.everUniversityIds || previous?.universityIds || []), ...activeIds])];
+  await Publication.findOneAndUpdate(
+    { kind: 'assessment', contentId: assessment._id },
+    { $set: { published: activeIds.length > 0, universityIds: activeIds, everUniversityIds, publishedBy: actorId } },
+    { upsert: true, new: true },
+  );
+}
+
 export async function createAssessment(req, res) {
   try {
     const {
@@ -2374,6 +2411,7 @@ export async function createAssessment(req, res) {
       instructions,
       startTime,
       endTime,
+      availabilityMode,
       duration,
       targetType,
       assignedStudents,
@@ -2392,7 +2430,14 @@ export async function createAssessment(req, res) {
       passwordEnabled,
       password,
       audienceType,
+      company,
+      mockAudienceMode,
+      mockUniversityIds,
     } = req.body || {};
+
+    const mockKind = req.body?.kind === 'mock';
+    if (mockKind && !String(company || '').trim()) return res.status(400).json({ error: 'Choose a company for this mock.' });
+    const mockAudience = await validateMockAudience({ kind: mockKind ? 'mock' : 'assessment', mode: mockAudienceMode, universityIds: mockUniversityIds, user: req.user, requireSelection: lifecycleStatus !== 'draft' });
 
     if (req.user?.role === 'coordinator'
       && !hasCoordinatorPermission(req.user, 'coordinator.assessment.candidates')
@@ -2429,19 +2474,20 @@ export async function createAssessment(req, res) {
     let end = null;
     let durationNum = null;
 
+    const alwaysOnMock = req.body?.kind === 'mock' && availabilityMode === 'always';
     if (!isDraft) {
-      if (!title || !startTime || !endTime || !duration) {
+      if (!title || (!alwaysOnMock && (!startTime || !endTime)) || !duration) {
         return res.status(400).json({ error: 'Title, startTime, endTime, and duration are required.' });
       }
-      start = parseDate(startTime);
-      end = parseDate(endTime);
+      start = alwaysOnMock ? new Date() : parseDate(startTime);
+      end = alwaysOnMock ? new Date('9999-12-31T23:59:59.000Z') : parseDate(endTime);
       if (!start || !end) {
         return res.status(400).json({ error: 'Invalid startTime or endTime.' });
       }
       if (end <= start) {
         return res.status(400).json({ error: 'End time must be after start time.' });
       }
-      if (start.getTime() < Date.now() - (60 * 1000)) {
+      if (!alwaysOnMock && start.getTime() < Date.now() - (60 * 1000)) {
         return res.status(400).json({ error: 'Start time must be the current time or a future time.' });
       }
 
@@ -2459,7 +2505,8 @@ export async function createAssessment(req, res) {
       durationNum = duration !== undefined ? Number(duration) : null;
     }
 
-    const normalizedTarget = targetType === 'selected' ? 'selected' : 'all';
+    const normalizedTarget = mockAudience.mode === 'universities'
+      ? (isUniversity() ? 'all' : 'selected') : targetType === 'selected' ? 'selected' : 'all';
     const normalizedDraftTarget = normalizedTarget === 'all'
       ? 'all'
       : (draftTargetMode || 'individual');
@@ -2470,7 +2517,7 @@ export async function createAssessment(req, res) {
       ? []
       : (Array.isArray(assignedStudents) ? assignedStudents : []);
 
-    if (!isDraft) {
+    if (!isDraft && mockAudience.mode !== 'universities') {
       const resolved = await resolveAssignedStudents({
         targetType: normalizedTarget,
         assignedStudents,
@@ -2501,11 +2548,16 @@ export async function createAssessment(req, res) {
 
     const assessment = new Assessment({
       _id: newAssessmentId,
+      kind: mockKind ? 'mock' : 'assessment',
+      company: mockKind ? String(company).trim() : '',
+      mockAudienceMode: mockAudience.mode,
+      mockUniversityIds: mockAudience.universityIds,
       title: title || '',
       description: description || '',
       instructions: instructions || '',
       startTime: start || null,
       endTime: end || null,
+      availabilityMode: alwaysOnMock ? 'always' : 'scheduled',
       duration: durationNum,
       createdBy: req.user._id,
       targetType: normalizedTarget,
@@ -2551,6 +2603,7 @@ export async function createAssessment(req, res) {
 
     await assessment.save();
     await syncAssessmentCandidateBatch(assessment);
+    await syncMockPublication(assessment, req.user._id);
 
     if (!isDraft && (sendEmail || created.length)) {
       await queueAssessmentAudienceEmails({ assessment, users, created, requestedBy: req.user, newOnly: !sendEmail });
@@ -2614,13 +2667,14 @@ export async function createAssessment(req, res) {
     });
   } catch (err) {
     console.error('Error creating assessment:', err);
-    res.status(500).json({ error: err.message || 'Failed to create assessment' });
+    res.status(err instanceof AssessmentWriteError ? err.status : 500).json({ error: err.message || 'Failed to create assessment' });
   }
 }
 
 export async function listAssessments(req, res) {
   try {
-    const query = {};
+    const mock = req.query.kind === 'mock';
+    const query = { kind: mock ? 'mock' : { $ne: 'mock' } };
     if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       query.createdBy = req.user._id;
     }
@@ -2641,7 +2695,7 @@ export async function listAssessments(req, res) {
       paginated ? Assessment.countDocuments(query) : Promise.resolve(null),
     ]);
     const remoteAssessments = isUniversity() && req.user?.role === 'admin'
-      ? (await sharedAssessments()).map((item) => ({ ...item, shared: true })) : [];
+      ? (await sharedAssessments(mock ? 'mock' : 'assessment', { includeHistorical: mock && req.query.includeHistorical === 'true' })).map((item) => ({ ...item, shared: true })) : [];
     const combined = [...localAssessments, ...remoteAssessments].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     const total = isUniversity() ? combined.length : localTotal;
     const assessments = paginated && isUniversity()
@@ -2775,6 +2829,39 @@ export async function getAssessment(req, res) {
   }
 }
 
+export async function resetMock(req, res) {
+  try {
+    const assessment = await Assessment.findById(req.params.id);
+    if (!assessment || assessment.kind !== 'mock') return res.status(404).json({ error: 'Mock not found' });
+    resetMockDefinition(assessment);
+    assessment.mockUniversityIds = [];
+    await assessment.save();
+    await syncMockPublication(assessment, req.user._id);
+    await Notification.deleteMany({ referenceId: assessment._id, type: 'ASSESSMENT' });
+    await syncAssessmentCandidateBatch(assessment);
+    return res.json({ message: 'Mock reset. Student access and schedule removed; prior submissions retained.' });
+  } catch (error) {
+    console.error('Error resetting mock:', error);
+    return res.status(500).json({ error: 'Failed to reset mock' });
+  }
+}
+
+export async function unpublishMock(req, res) {
+  try {
+    const assessment = await Assessment.findById(req.params.id);
+    if (!assessment || assessment.kind !== 'mock') return res.status(404).json({ error: 'Mock not found' });
+    unpublishMockDefinition(assessment);
+    await assessment.save();
+    await syncMockPublication(assessment, req.user._id);
+    await syncAssessmentCandidateBatch(assessment);
+    await Notification.deleteMany({ referenceId: assessment._id, type: 'ASSESSMENT' });
+    return res.json({ message: 'Mock unpublished. Students can no longer access it.' });
+  } catch (error) {
+    console.error('Error unpublishing mock:', error);
+    return res.status(500).json({ error: 'Failed to unpublish mock' });
+  }
+}
+
 export async function updateAssessment(req, res) {
   try {
     const { id } = req.params;
@@ -2784,6 +2871,7 @@ export async function updateAssessment(req, res) {
       instructions,
       startTime,
       endTime,
+      availabilityMode,
       duration,
       targetType,
       assignedStudents,
@@ -2802,6 +2890,9 @@ export async function updateAssessment(req, res) {
       passwordEnabled,
       password,
       audienceType,
+      company,
+      mockAudienceMode,
+      mockUniversityIds,
     } = req.body || {};
 
     if (req.user?.role === 'coordinator'
@@ -2820,6 +2911,16 @@ export async function updateAssessment(req, res) {
 
     const assessment = await Assessment.findById(id).select('+passwordEncrypted');
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    const nextCompany = company === undefined ? assessment.company : String(company || '').trim();
+    if (assessment.kind === 'mock' && lifecycleStatus === 'published' && !nextCompany) return res.status(400).json({ error: 'Choose a company for this mock.' });
+    const mockAudience = await validateMockAudience({
+      kind: assessment.kind,
+      mode: mockAudienceMode === undefined ? assessment.mockAudienceMode : mockAudienceMode,
+      universityIds: mockUniversityIds === undefined ? assessment.mockUniversityIds : mockUniversityIds,
+      user: req.user,
+      requireSelection: lifecycleStatus === 'published' || (lifecycleStatus === undefined && assessment.lifecycleStatus === 'published'),
+    });
+    const wasDraft = assessment.lifecycleStatus === 'draft';
     if (
       (audienceType === 'assessment_candidates' || assessment.audienceType === 'assessment_candidates')
       && req.user?.role === 'coordinator'
@@ -2845,10 +2946,18 @@ export async function updateAssessment(req, res) {
     };
 
     if (title !== undefined) assessment.title = title;
+    if (assessment.kind === 'mock') {
+      assessment.company = nextCompany || '';
+      assessment.mockAudienceMode = mockAudience.mode;
+      assessment.mockUniversityIds = mockAudience.universityIds;
+    }
     if (description !== undefined) assessment.description = description;
     if (instructions !== undefined) assessment.instructions = instructions;
     if (lifecycleStatus) {
       assessment.lifecycleStatus = lifecycleStatus === 'draft' ? 'draft' : 'published';
+    }
+    if (assessment.kind === 'mock' && availabilityMode !== undefined) {
+      assessment.availabilityMode = availabilityMode === 'always' ? 'always' : 'scheduled';
     }
     if (allowLateSubmission !== undefined) {
       assessment.allowLateSubmission = Boolean(allowLateSubmission);
@@ -2876,18 +2985,31 @@ export async function updateAssessment(req, res) {
     }
     await applyAssessmentPassword(assessment, { passwordEnabled, password });
 
-    if (startTime) {
+    if (assessment.kind === 'mock' && assessment.lifecycleStatus === 'published' && assessment.availabilityMode === 'always') {
+      assessment.startTime = new Date();
+      assessment.endTime = new Date('9999-12-31T23:59:59.000Z');
+    } else if (startTime) {
       const start = parseDate(startTime);
       if (!start) return res.status(400).json({ error: 'Invalid startTime.' });
       assessment.startTime = start;
     }
-    if (endTime) {
+    if (assessment.kind === 'mock' && assessment.lifecycleStatus === 'published' && assessment.availabilityMode === 'always') {
+      // The effective window stays open until an administrator unpublishes or resets the mock.
+    } else if (endTime) {
       const end = parseDate(endTime);
       if (!end) return res.status(400).json({ error: 'Invalid endTime.' });
       assessment.endTime = end;
     }
 
     const isDraft = assessment.lifecycleStatus === 'draft';
+
+    if (duration !== undefined) {
+      const durationNum = Number(duration);
+      if (Number.isNaN(durationNum) || durationNum <= 0) {
+        return res.status(400).json({ error: 'Duration must be a positive number of minutes.' });
+      }
+      assessment.duration = durationNum;
+    }
 
     if (!isDraft && assessment.passwordEnabled && !assessment.passwordHash) {
       return res.status(400).json({ error: 'Password is required when password protection is enabled.' });
@@ -2900,19 +3022,19 @@ export async function updateAssessment(req, res) {
     if (!isDraft && assessment.endTime <= assessment.startTime) {
       return res.status(400).json({ error: 'End time must be after start time.' });
     }
+    if (!isDraft && wasDraft && assessment.kind === 'mock' && assessment.availabilityMode !== 'always'
+      && assessment.startTime.getTime() < Date.now() - 60000) {
+      return res.status(400).json({ error: 'Mock start time must be now or in the future.' });
+    }
 
     if (duration !== undefined) {
-      const durationNum = Number(duration);
-      if (Number.isNaN(durationNum) || durationNum <= 0) {
-        return res.status(400).json({ error: 'Duration must be a positive number of minutes.' });
-      }
+      const durationNum = assessment.duration;
       if (!isDraft && assessment.startTime && assessment.endTime) {
         const windowMinutes = (assessment.endTime.getTime() - assessment.startTime.getTime()) / (60 * 1000);
         if (durationNum > windowMinutes) {
           return res.status(400).json({ error: 'Duration cannot exceed the assessment time window.' });
         }
       }
-      assessment.duration = durationNum;
     }
 
     if (sections || questionSets) {
@@ -2953,7 +3075,8 @@ export async function updateAssessment(req, res) {
     let resolvedAudienceUsers = [];
     let newlyCreatedAudienceUsers = [];
     if (targetType) {
-      const normalizedTarget = targetType === 'selected' ? 'selected' : 'all';
+      const normalizedTarget = mockAudience.mode === 'universities'
+        ? (isUniversity() ? 'all' : 'selected') : targetType === 'selected' ? 'selected' : 'all';
       assessment.targetType = normalizedTarget;
 
       if (isDraft) {
@@ -2965,7 +3088,9 @@ export async function updateAssessment(req, res) {
         }
         assessment.assignedStudents = [];
       } else {
-        const { ids, users, created } = await resolveAssignedStudents({
+        const { ids, users, created } = mockAudience.mode === 'universities'
+          ? { ids: [], users: [], created: [] }
+          : await resolveAssignedStudents({
           targetType: normalizedTarget,
           assignedStudents,
           audienceType: assessment.audienceType,
@@ -3017,6 +3142,7 @@ export async function updateAssessment(req, res) {
 
     await assessment.save();
     await syncAssessmentCandidateBatch(assessment);
+    await syncMockPublication(assessment, req.user._id);
     if (!isDraft && (sendEmail || newlyCreatedAudienceUsers.length)) {
       const mailUsers = resolvedAudienceUsers.length
         ? resolvedAudienceUsers
@@ -3116,7 +3242,7 @@ export async function updateAssessment(req, res) {
     }
   } catch (err) {
     console.error('Error updating assessment:', err);
-    res.status(500).json({ error: err.message || 'Failed to update assessment' });
+    res.status(err instanceof AssessmentWriteError ? err.status : 500).json({ error: err.message || 'Failed to update assessment' });
   }
 }
 
@@ -3821,7 +3947,7 @@ export async function listStudentAssessments(req, res) {
         { assignedStudents: studentId },
       ],
     }).sort({ startTime: 1 }).lean();
-    const assessments = [...localAssessments, ...await sharedAssessments()]
+    const assessments = [...localAssessments, ...await sharedAssessments(), ...await sharedAssessments('mock')]
       .filter((a) => a.lifecycleStatus !== 'draft' && a.isVisible !== false && a.startTime && a.endTime)
       .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
 
@@ -3886,7 +4012,7 @@ export async function getStudentAssessmentDashboard(req, res) {
           { targetType: 'all' },
           { assignedStudents: req.user._id },
         ],
-      }).sort({ startTime: -1, createdAt: -1 }).lean().then(async (local) => [...local, ...await sharedAssessments()]
+      }).sort({ startTime: -1, createdAt: -1 }).lean().then(async (local) => [...local, ...await sharedAssessments(), ...await sharedAssessments('mock')]
         .filter((a) => a.lifecycleStatus !== 'draft' && a.isVisible !== false && a.startTime && a.endTime)),
       AssessmentSubmission.find({ studentId: req.user._id }).sort({ updatedAt: -1 }).lean(),
     ]);
@@ -4003,9 +4129,12 @@ export async function getStudentAssessmentDashboard(req, res) {
 
 async function requireStudentAssessment(id, student, { metadataOnly = false } = {}) {
   const assessment = await findAssessmentForStudentRoute(id, { lean: true,
-    ...(metadataOnly ? { select: 'settings duration startTime endTime lifecycleStatus targetType assignedStudents passwordEnabled passwordHash manuallyCompletedAt' } : {}),
+    ...(metadataOnly ? { select: 'kind isVisible settings duration startTime endTime lifecycleStatus targetType assignedStudents passwordEnabled passwordHash manuallyCompletedAt' } : {}),
   });
   if (!assessment) throw new AssessmentWriteError(404, 'ASSESSMENT_NOT_FOUND', 'Assessment not found.');
+  if (assessment.kind === 'mock' && (assessment.lifecycleStatus === 'draft' || assessment.isVisible === false)) {
+    throw new AssessmentWriteError(403, 'ASSESSMENT_UNAVAILABLE', 'Mock is no longer available.');
+  }
   if (assessment.platformPublished === false || assessment.lifecycleStatus === 'draft') {
     const existing = await AssessmentSubmission.exists({ assessmentId: assessment._id, studentId: student._id, status: { $in: ['not_started', 'in_progress'] } });
     if (!existing) throw new AssessmentWriteError(403, 'ASSESSMENT_UNAVAILABLE', 'Assessment is no longer available.');
@@ -4253,6 +4382,9 @@ async function persistStudentAnswers(req, res, { autosave = false } = {}) {
     if (!assessmentId) return res.status(400).json({ error: 'assessmentId is required.' });
     const assessment = await loadAssessmentDefinition({ _id: assessmentId });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    if (assessment.kind === 'mock' && (assessment.lifecycleStatus === 'draft' || assessment.isVisible === false)) {
+      return res.status(403).json({ error: 'Mock is no longer available.' });
+    }
     if (assessment.platformPublished === false || assessment.lifecycleStatus === 'draft') {
       const existing = await AssessmentSubmission.exists({ assessmentId: assessment._id, studentId: req.user._id, status: 'in_progress' });
       if (!existing) return res.status(403).json({ error: 'Assessment is no longer available.' });
@@ -4504,7 +4636,7 @@ async function respondSharedAssessmentReports(req, res, assessment) {
   const lifecycleBucket = lifecycleBucketForAssessment(assessment, new Date());
   // Unfiltered requests also count assigned students who never opened the exam.
   const counts = finalizeCounts({ ...emptyTally(), ...stats }, {
-    assignedCount: hasRowFilters(options) ? 0 : await assignedCountForAssessment(assessment), passPercentage,
+    assignedCount: hasRowFilters(options) || (assessment.kind === 'mock' && assessment.lifecycleStatus === 'draft') ? 0 : await assignedCountForAssessment(assessment), passPercentage,
   });
   const summary = { ...attemptCountFields(counts), counts, avgScore: counts.avgScore, maxScore: counts.maxScore,
     minScore: counts.minScore, passPercentage,
@@ -4572,7 +4704,7 @@ async function respondSharedAssessmentExport(req, res, assessment) {
   const sourceById = new Map(submissions.map((submission) => [String(submission._id), submission]));
   const passPercentage = passPercentageOf(assessment.settings);
   const counts = summarizeAttempts(rows.map((row) => sourceById.get(row.submissionId)), {
-    passPercentage, totalMarks, assignedCount: hasRowFilters(options) ? 0 : await assignedCountForAssessment(assessment),
+    passPercentage, totalMarks, assignedCount: hasRowFilters(options) || (assessment.kind === 'mock' && assessment.lifecycleStatus === 'draft') ? 0 : await assignedCountForAssessment(assessment),
   });
   const summary = { ...attemptCountFields(counts), counts, totalAssessments: rows.length ? 1 : 0, totalCandidates: counts.candidates,
     avgScore: counts.avgScore, maxScore: counts.maxScore, minScore: counts.minScore, passPercentage,
@@ -4589,7 +4721,7 @@ async function respondSharedAssessmentExport(req, res, assessment) {
 const REPORT_STATUSES = new Set(['not_started', 'in_progress', 'submitted', 'expired', 'violation', 'incomplete']);
 const REPORT_SORT_KEYS = new Set(['studentName', 'attemptDate', 'attempts', 'score', 'accuracy', 'timeTakenSec', 'violationCount', 'rank']);
 const REPORT_STRING_PARAMS = ['assessmentId', 'assessmentType', 'studentId', 'studentQuery', 'status', 'hasViolations', 'assessmentWindow',
-  'from', 'to', 'scoreMin', 'scoreMax', 'sortKey', 'sortDir', 'page', 'limit', 'passMark', 'view'];
+  'from', 'to', 'scoreMin', 'scoreMax', 'sortKey', 'sortDir', 'page', 'limit', 'passMark', 'view', 'kind'];
 export const REPORT_PAGE_LIMIT_MAX = 200;
 
 function validateReportQuery(query = {}) {
@@ -4602,6 +4734,7 @@ function validateReportQuery(query = {}) {
   if (query.assessmentType && !/^[a-z_]{1,32}$/.test(query.assessmentType)) return 'Invalid assessmentType';
   if (query.sortKey && !REPORT_SORT_KEYS.has(query.sortKey)) return 'Invalid sortKey';
   if (query.sortDir && !['asc', 'desc'].includes(String(query.sortDir).toLowerCase())) return 'Invalid sortDir';
+  if (query.kind && !['assessment', 'mock'].includes(query.kind)) return 'Invalid kind';
   return '';
 }
 
@@ -4618,6 +4751,7 @@ export async function getAssessmentReports(req, res) {
   try {
     releaseReportSlot = acquireAssessmentReportSlot();
     const reportAggregate = createBoundedReportAggregate();
+    const reportKind = req.query?.kind === 'mock' ? 'mock' : { $ne: 'mock' };
     const {
       assessmentId,
       assessmentType,
@@ -4649,13 +4783,13 @@ export async function getAssessmentReports(req, res) {
     }
     if (assessmentId && isUniversity() && !(await Assessment.exists({ _id: assessmentId }))) {
       const shared = await sharedAssessment(assessmentId);
-      if (shared) return await respondSharedAssessmentReports(req, res, shared);
+      if (shared && (req.query?.kind === 'mock' ? shared.kind === 'mock' : shared.kind !== 'mock')) return await respondSharedAssessmentReports(req, res, shared);
     }
 
     // Dashboard callers only need headline metrics and five recent assessments.
     // Keep the full reporting pipeline for the reports workspace.
     if (req.query.view === 'dashboard') {
-      const assessmentScope = { lifecycleStatus: { $ne: 'draft' }, ...buildAssessmentCollectionWindowMatch(assessmentWindow) };
+      const assessmentScope = { kind: reportKind, ...(reportKind === 'mock' ? { $and: [{ $or: [{ lifecycleStatus: { $ne: 'draft' } }, { mockHasHistory: true }] }] } : { lifecycleStatus: { $ne: 'draft' } }), ...buildAssessmentCollectionWindowMatch(assessmentWindow) };
       if (assessmentId) assessmentScope._id = new mongoose.Types.ObjectId(assessmentId);
       if (assessmentType) assessmentScope.assessmentType = assessmentType;
       if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
@@ -4760,7 +4894,8 @@ export async function getAssessmentReports(req, res) {
 
     const now = new Date();
     const postMatch = {
-      'assessment.lifecycleStatus': { $ne: 'draft' },
+      'assessment.kind': reportKind,
+      ...(reportKind === 'mock' ? { $and: [{ $or: [{ 'assessment.lifecycleStatus': { $ne: 'draft' } }, { 'assessment.mockHasHistory': true }] }] } : { 'assessment.lifecycleStatus': { $ne: 'draft' } }),
       ...buildAssessmentWindowMatch(assessmentWindow, now),
     };
     if (assessmentType) postMatch['assessment.assessmentType'] = assessmentType;
@@ -4794,7 +4929,8 @@ export async function getAssessmentReports(req, res) {
       { $unwind: '$student' },
     ];
     const summaryPostMatch = {
-      'assessment.lifecycleStatus': { $ne: 'draft' },
+      'assessment.kind': reportKind,
+      ...(reportKind === 'mock' ? { $and: [{ $or: [{ 'assessment.lifecycleStatus': { $ne: 'draft' } }, { 'assessment.mockHasHistory': true }] }] } : { 'assessment.lifecycleStatus': { $ne: 'draft' } }),
       ...buildAssessmentWindowMatch(assessmentWindow, now),
     };
     if (assessmentType) summaryPostMatch['assessment.assessmentType'] = assessmentType;
@@ -5039,12 +5175,13 @@ export async function getAssessmentReports(req, res) {
     // added) for one unfiltered assessment; multi-assessment totals count students
     // with a submission document.
     const reportedAssessment = assessmentId && !hasRowFilters(req.query)
-      ? await Assessment.findById(assessmentId).select('targetType assignedStudents').lean() : null;
+      ? await Assessment.findOne({ _id: assessmentId, kind: reportKind }).select('targetType assignedStudents').lean() : null;
     const reportCounts = finalizeCounts({ ...emptyTally(), ...summary }, { assignedCount: await assignedCountForAssessment(reportedAssessment) });
     const failCount = reportCounts.failed;
 
     const assessmentSummariesMatch = {
-      lifecycleStatus: { $ne: 'draft' },
+      kind: reportKind,
+      ...(reportKind === 'mock' ? { $and: [{ $or: [{ lifecycleStatus: { $ne: 'draft' } }, { mockHasHistory: true }] }] } : { lifecycleStatus: { $ne: 'draft' } }),
       ...buildAssessmentCollectionWindowMatch(assessmentWindow, now),
     };
     if (assessmentId) assessmentSummariesMatch._id = new mongoose.Types.ObjectId(assessmentId);
@@ -5052,7 +5189,8 @@ export async function getAssessmentReports(req, res) {
     if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') assessmentSummariesMatch.createdBy = req.user._id;
 
     const assessmentCalendarMatch = {
-      lifecycleStatus: { $ne: 'draft' },
+      kind: reportKind,
+      ...(reportKind === 'mock' ? { $and: [{ $or: [{ lifecycleStatus: { $ne: 'draft' } }, { mockHasHistory: true }] }] } : { lifecycleStatus: { $ne: 'draft' } }),
       ...buildAssessmentCollectionWindowMatch(assessmentWindow, now),
     };
     if (assessmentType) assessmentCalendarMatch.assessmentType = assessmentType;
@@ -5371,6 +5509,7 @@ export async function getAssessmentReportsExportData(req, res) {
   try {
     releaseExportSlot = acquireAssessmentReportSlot('export');
     const reportAggregate = createBoundedReportAggregate();
+    const reportKind = req.query?.kind === 'mock' ? 'mock' : { $ne: 'mock' };
     const {
       assessmentId,
       assessmentType,
@@ -5389,7 +5528,7 @@ export async function getAssessmentReportsExportData(req, res) {
     }
     if (assessmentId && isUniversity() && !(await Assessment.exists({ _id: assessmentId }))) {
       const shared = await sharedAssessment(assessmentId);
-      if (shared) return await respondSharedAssessmentExport(req, res, shared);
+      if (shared && (req.query?.kind === 'mock' ? shared.kind === 'mock' : shared.kind !== 'mock')) return await respondSharedAssessmentExport(req, res, shared);
     }
 
     const match = {};
@@ -5421,7 +5560,8 @@ export async function getAssessmentReportsExportData(req, res) {
     ];
 
     const postMatch = {
-      'assessment.lifecycleStatus': { $ne: 'draft' },
+      'assessment.kind': reportKind,
+      ...(reportKind === 'mock' ? { $and: [{ $or: [{ 'assessment.lifecycleStatus': { $ne: 'draft' } }, { 'assessment.mockHasHistory': true }] }] } : { 'assessment.lifecycleStatus': { $ne: 'draft' } }),
       ...buildAssessmentWindowMatch(assessmentWindow, new Date()),
     };
     if (assessmentType) postMatch['assessment.assessmentType'] = assessmentType;
@@ -5667,7 +5807,7 @@ export async function getAssessmentReportsExportData(req, res) {
     // Canonical counts over the raw attempts, each against its own assessment's pass mark.
     // Assigned-but-never-started students are added only for one unfiltered assessment.
     const singleAssessment = assessmentId && !hasRowFilters(req.query)
-      ? await Assessment.findById(assessmentId).select('targetType assignedStudents').lean() : null;
+      ? await Assessment.findOne({ _id: assessmentId, kind: reportKind }).select('targetType assignedStudents').lean() : null;
     const counts = summarizeAttempts(rawRows.map((row) => ({
       studentId: row.studentId, assessmentId: row.assessmentId, status: row.status, evaluationStatus: row.evaluationStatus, score: row.score,
       maxMarks: row.maxMarks, isLate: row.isLate,
@@ -6042,8 +6182,9 @@ export async function logStudentHeartbeat(req, res) {
     if (req.body?.submissionId !== undefined && !mongoose.isValidObjectId(req.body.submissionId)) {
       return res.status(409).json({ error: 'This request belongs to a different assessment attempt.', code: 'ATTEMPT_IDENTITY_CONFLICT' });
     }
-    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'settings duration startTime endTime targetType assignedStudents lifecycleStatus manuallyCompletedAt' });
+    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'kind isVisible settings duration startTime endTime targetType assignedStudents lifecycleStatus manuallyCompletedAt' });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    if (assessment.kind === 'mock' && (assessment.lifecycleStatus === 'draft' || assessment.isVisible === false)) return res.status(403).json({ error: 'Mock is no longer available.' });
     if (!isStudentAssignedToAssessment(assessment, req.user)) return res.status(403).json({ error: 'Not assigned to this assessment.' });
     const settings = assessment.settings || {};
     const now = new Date();

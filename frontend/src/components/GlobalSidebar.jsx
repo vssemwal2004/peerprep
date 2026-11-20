@@ -304,6 +304,19 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       },
     ],
   };
+  const prepMock = {
+    type: 'group',
+    key: 'prepmock',
+    label: 'PrepMock',
+    icon: ClipboardList,
+    items: [
+      { label: 'All Mocks', to: '/admin/prepmock', icon: ClipboardList, match: (loc) => loc.pathname === '/admin/prepmock' },
+      { label: 'Create Mock', to: '/admin/prepmock/create', icon: CalendarPlus },
+      { label: 'Analysis', to: '/admin/analysis?area=prepmock', icon: BarChart3,
+        match: (loc) => loc.pathname === '/admin/analysis' && new URLSearchParams(loc.search).get('area') === 'prepmock' },
+      { label: 'Mock Library', to: '/admin/prepmock/library', icon: Library, match: (loc) => loc.pathname.startsWith('/admin/prepmock/library') },
+    ],
+  };
   const coordinator = {
     type: 'group',
     key: 'coordinator-management',
@@ -438,6 +451,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
     prepAssessment,
     prepAnalysis,
     prepInterview,
+    prepMock,
     quickPrep,
     coordinator,
     students,

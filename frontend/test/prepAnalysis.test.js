@@ -76,6 +76,7 @@ test('direct Prep Analysis visits start on all students and feature links start 
   const learning = prepAnalysisStateFromSearch('?source=learning');
   assert.equal(learning.area, 'learning');
   assert.equal(learning.groups[0].rules.length, 0);
+  assert.equal(prepAnalysisStateFromSearch('?area=prepmock').area, 'prepmock');
 });
 
 // ---------------------------------------------------------------- what to analyse
