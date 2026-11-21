@@ -4,6 +4,7 @@ import { api } from '../utils/api';
 import { configProblem, MODULES } from './prepScore/engine';
 import { card, helperText, inputClass, sectionTitle } from './prepScore/fields';
 import FormulaCard from './prepScore/FormulaCard';
+import PointsCard from './prepScore/PointsCard';
 import ModuleCard from './prepScore/ModuleCard';
 import Simulator from './prepScore/Simulator';
 import ImpactPanel from './prepScore/ImpactPanel';
@@ -75,7 +76,7 @@ export default function PrepScoreAdjustment() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-600">Master Admin settings</p>
           <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold text-slate-950 dark:text-white">Prep Score Adjustment<PageGuideButton /></h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">Prep Score comes from Prep Coding solves. These settings apply across universities; other areas keep their own activity metrics. Prep Coin is separate.</p>
+          <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">Prep Score is a points total: solves, the daily challenge, sheets, daily visits and badges add points; wrong answers and inactivity remove a little. These settings apply across universities. Prep Coin is separate.</p>
         </div>
         <div data-guide="psa-status" className="flex flex-wrap gap-2 text-xs font-semibold">
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">Live: version {workspace.active.version}</span>
@@ -86,6 +87,7 @@ export default function PrepScoreAdjustment() {
       {error && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-200">{error}</p>}
       {notice && <p role="status" className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">{notice}</p>}
 
+      <PointsCard config={config} update={update} />
       <FormulaCard config={config} update={update} />
       <ModuleCard moduleKey="coding" label="Prep Coding" symbol="C" module={config.modules.coding} update={update} />
       <div className="space-y-3">

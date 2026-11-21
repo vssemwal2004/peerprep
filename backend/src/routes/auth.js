@@ -4,7 +4,7 @@ import { getStudentGlobalRanking } from '../services/globalStudentRankingService
 import { forcePasswordChange, me, changePassword, changeAdminPassword, resetPassword, updateMe, updateMyAvatar, acknowledgeLearnerProgress, updatePracticeLanguage } from '../controllers/authController.js';
 import { getStudentActivity, getStudentStats, debugStudentActivity } from '../controllers/activityController.js';
 import { invalidateUserCache, requireAuth, requireStudent, requireFullStudent, requireStudentFeature, requireAnyStudentFeature } from '../middleware/auth.js';
-import { getStudentDashboard, getStudentRanking, recordStudentProblemView, recordStudentTopicView, refreshStudentChallenges, getStudentChallengeBadges } from '../controllers/studentDashboardController.js';
+import { getPrepScoreHistory, getStudentDashboard, getStudentRanking, recordStudentProblemView, recordStudentTopicView, refreshStudentChallenges, getStudentChallengeBadges } from '../controllers/studentDashboardController.js';
 import { authLimiter, passwordResetLimiter, uploadLimiter } from '../middleware/rateLimiter.js';
 import multer from 'multer';
 import { endSession } from '../services/userSessions.js';
@@ -14,6 +14,7 @@ import { currentTenant, runForPlatform, runForTenant } from '../platform/tenantC
 import { getTenant } from '../platform/tenantConnections.js';
 import { dailyCheckIn } from '../services/dailyCheckIn.js';
 import { badgeHistory, evaluateMonthlyBadges } from '../services/monthlyBadges.js';
+import { evaluateLifetimeBadges, lifetimeBadgeBoard } from '../services/lifetimeBadges.js';
 const upload = multer();
 
 function getAuthCookieOptions() {
@@ -73,6 +74,8 @@ router.get('/activity', requireAuth, requireAnyStudentFeature('dashboard', 'anal
 router.get('/stats', requireAuth, requireStudentFeature('prep_coding'), getStudentStats);
 router.get('/dashboard', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('dashboard'), getStudentDashboard);
 router.get('/ranking', requireAuth, requireStudent, requireFullStudent, requireAnyStudentFeature('rankings', 'prep_coins'), getStudentRanking);
+// The student's own Prep Score history (profile graph); same access rule as the score itself.
+router.get('/prep-score/history', requireAuth, requireStudent, requireFullStudent, requireAnyStudentFeature('rankings', 'prep_coins'), getPrepScoreHistory);
 router.get('/global-ranking', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('rankings'), async (req, res, next) => {
   try {
     res.set('Cache-Control', 'private, no-store');
@@ -95,6 +98,14 @@ router.get('/badges/monthly', requireAuth, requireStudent, requireFullStudent, a
     res.set('Cache-Control', 'private, no-store');
     const [current, history] = await Promise.all([evaluateMonthlyBadges(req.user), badgeHistory(req.user._id)]);
     res.json({ ...current, history });
+  } catch (error) { next(error); }
+});
+// Lifetime milestone badges (permanent): progress per track, earned badges. Awards anything newly crossed.
+router.get('/badges/lifetime', requireAuth, requireStudent, requireFullStudent, async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'private, no-store');
+    await evaluateLifetimeBadges(req.user);
+    res.json({ tracks: await lifetimeBadgeBoard(req.user) });
   } catch (error) { next(error); }
 });
 router.post('/dashboard/problem-view', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('prep_coding'), recordStudentProblemView);

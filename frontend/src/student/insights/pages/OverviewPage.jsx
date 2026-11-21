@@ -14,6 +14,7 @@ import GuideInfo from "../../../guide/platform/GuideInfo";
 const ACCENTS = {
   topics: "from-sky-500 to-cyan-400", coding: "from-blue-600 to-sky-400", quickprep: "from-amber-500 to-orange-400", learning: "from-teal-500 to-emerald-400",
   tests: "from-rose-500 to-pink-400", interviews: "from-violet-500 to-fuchsia-400", activity: "from-cyan-500 to-sky-400", badges: "from-amber-400 to-yellow-300", companies: "from-slate-600 to-slate-400",
+  "prep-readiness": "from-violet-600 to-purple-400",
 };
 
 /** What each feature card says in brief: a big number, a caption and an optional bar. */
@@ -32,6 +33,7 @@ function summaryOf(id, insights, badges) {
     case "activity": return { value: formatNumber(activity.streak.current), caption: `day streak · best ${activity.streak.best}` };
     case "badges": return badges.data ? { value: `${badges.data.earned.length}/${badges.data.total}`, caption: badges.data.level ? `badges · Level ${badges.data.level.level}` : "badges earned", bar: (badges.data.earned.length / Math.max(1, badges.data.total)) * 100 } : { value: "—", caption: "badges" };
     case "companies": return { value: "Compare", caption: "your readiness with a company's bar" };
+    case "prep-readiness": return { value: "SBC · PBC", caption: "coding practice targets 70 and 75" };
     default: return { value: "", caption: "" };
   }
 }

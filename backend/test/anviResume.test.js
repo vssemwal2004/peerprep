@@ -134,7 +134,7 @@ test("redaction removes contact details and ids but keeps years, scores and tech
   assert.equal(resumeContextDays({ ANVI_RESUME_CONTEXT_DAYS: "90" }), 60);
 });
 
-test("the Resume Builder resume is stored as redacted text for a practice interview; get, list and delete", async (t) => {
+test("the Prep Resume is stored as redacted text for a practice interview; get, list and delete", async (t) => {
   if (skip(t)) return;
   const interview = await publish("Builder resume", { anvi: { resume: { mode: "optional" } } });
   await builderResume();

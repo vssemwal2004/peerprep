@@ -34,7 +34,7 @@ export default function PeerPrepProgress({ assessments, interviews, learning, co
       icon={<Layers className="h-4 w-4" />}
       className={className}
     >
-      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(190px,1fr))]">
         {visible.assessments !== false && <TrackTile
           icon={<ClipboardList className="h-4 w-4" />}
           title="Assessments"

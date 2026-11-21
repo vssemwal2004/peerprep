@@ -41,6 +41,8 @@ import questionPracticeRoutes from '../platform/questionPractice.js';
 import interviewCompanyRoutes from './interviewCompanies.js';
 import walletRoutes from './wallet.js';
 import prepScoreSettingsRoutes from './prepScoreSettings.js';
+import prepReadinessRoutes from './prepReadiness.js';
+import prepReadinessSettingsRoutes from './prepReadinessSettings.js';
 import coinPricingSettingsRoutes from './coinPricingSettings.js';
 import overviewRoutes from './overview.js';
 import coinAdminRoutes from './coinAdmin.js';
@@ -55,6 +57,8 @@ router.use('/platform/admin/prep-score', prepScoreSettingsRoutes);
 router.use('/platform/admin/coin-pricing', coinPricingSettingsRoutes);
 router.use('/platform/admin/coins', coinAdminRoutes);
 router.use('/student/questions', requireAuth, requireFullStudent, requireStudentFeature('prep_coding'), questionPracticeRoutes);
+router.use('/student/prep-readiness', requireAuth, requireStudent, requireFullStudent, requireStudentFeature('prep_coding'), prepReadinessRoutes);
+router.use('/platform/admin/prep-readiness', prepReadinessSettingsRoutes);
 // Reserved feature routes must precede the interview identifier routes.
 router.use('/ai-interviews/avatars', avatarRoutes);
 router.use('/ai-interviews/reports', anviAdminReportRoutes);

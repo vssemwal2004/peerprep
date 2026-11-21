@@ -22,6 +22,8 @@ const LONG_REQUEST_PATTERNS = [
   /^\/api\/execute/,
   /^\/api\/student\/assessment\/submit/,
   /^\/api\/platform\/admin\/universities$/,
+  // Prep Resume check: PDF read in a child process (queued) and ANVI's Gemini explanation.
+  /^\/api\/resume\/review\/(?:ats|explain)$/,
 ];
 
 function resolveRequestTimeoutMs(req) {

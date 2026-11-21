@@ -21,6 +21,14 @@ import BadgesGallery from '../student/profile/BadgesGallery';
 import AdminProfileSidebar from './studentProfile/AdminProfileSidebar';
 import OverviewStrip from './studentProfile/OverviewStrip';
 import PrepScoreCard from './studentProfile/PrepScoreCard';
+import StaffReadiness from './studentProfile/StaffReadiness';
+import { fromAward, orderBadges } from '../student/badges/badgeModel';
+
+/** Awards ({ awards }) → the badge shelf collection (earned newest first, then locked). */
+function badgeCollectionOf(awards) {
+  const items = (awards?.awards || []).map(fromAward);
+  return { items, ...orderBadges(items), total: items.length };
+}
 import ProfileTabs from './studentProfile/ProfileTabs';
 import OverviewTab from './studentProfile/OverviewTab';
 import CodingTab from './studentProfile/CodingTab';
@@ -496,11 +504,20 @@ export default function AdminStudentProfile() {
               socialLinks={socialLinks}
               onViewResume={visible.resumes ? () => navigate(`${rolePrefix}/students/${studentId}/resume`) : undefined}
               onOpenLevels={() => setBadgesGallery('levels')}
+              prepScore={visible.questions ? prepScore : null}
+              badgeCollection={visible.questions ? badgeCollectionOf(awards) : null}
+              onOpenBadges={() => setBadgesGallery('awards')}
             />
           </StickySidebar>
 
           <main className="min-w-0 space-y-4">
-            <PrepScoreCard prepScore={prepScore} visible={visible} />
+            {/* Prep Score and Prep Readiness (read-only) side by side; either alone spans the row. */}
+            {(prepScore || visible.questions) && (
+              <div className="grid items-stretch gap-4 xl:grid-cols-2 [&>*:only-child]:xl:col-span-2">
+                {prepScore ? <PrepScoreCard prepScore={prepScore} visible={visible} /> : null}
+                {visible.questions ? <StaffReadiness studentId={studentId} studentName={student.name} /> : null}
+              </div>
+            )}
 
             <OverviewStrip
               visible={visible}

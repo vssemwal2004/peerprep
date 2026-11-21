@@ -36,7 +36,7 @@ export const OTHER_LANGUAGE_ACTIONS = Object.freeze([
 
 export const RESUME_MODES = Object.freeze(["none", "optional", "required"]);
 export const RESUME_SOURCES = Object.freeze([
-  { value: "builder", label: "Saved resume from Resume Builder", detail: "The student allows ANVI to read the resume they built on PeerPrep." },
+  { value: "builder", label: "Saved resume from Prep Resume", detail: "The student allows ANVI to read the resume they built on PeerPrep." },
   { value: "upload", label: "Uploaded file (PDF or text)", detail: "The student uploads a resume, up to 5 MB." },
 ]);
 

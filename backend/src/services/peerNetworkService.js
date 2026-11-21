@@ -14,6 +14,7 @@ import { notifyOnce } from './notificationService.js';
 import { studentFeatureQuery, studentHasFeature } from './studentFeatureAccess.js';
 import { getPeerProgressSnapshot, publicCodingProblemStages } from './studentDashboardService.js';
 import { engagementTenant } from './engagementPolicyService.js';
+import { sharedSummaryFor } from './prepReadiness/readiness.js';
 
 export const MATE_REQUEST_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const SEARCH_LIMIT = 8;
@@ -25,7 +26,7 @@ const PROGRESS_CACHE_MAX = 500;
 // The only User fields that ever leave this module for another student. Email, phone, roll number
 // (studentId), section, group, college and coordinator links are deliberately absent.
 const CARD_FIELDS = '_id name avatarUrl course branch semester';
-const PROFILE_FIELDS = `${CARD_FIELDS} bio linkedinUrl githubUrl portfolioUrl featureAccess accessScope role isActive visibleToPeers`;
+const PROFILE_FIELDS = `${CARD_FIELDS} bio linkedinUrl githubUrl portfolioUrl featureAccess accessScope role isActive visibleToPeers sharePrepReadiness college`;
 
 const objectId = (value) => new mongoose.Types.ObjectId(String(value));
 const idString = (value) => String(value?._id ?? value ?? '');
@@ -446,7 +447,14 @@ export async function getPeerProfile(viewer, rawId) {
     networkCounts(peer._id, cohort),
     isSelf ? new Map() : relationsFor(viewer._id, [peer._id]),
   ]);
+  const relation = isSelf ? { self: true } : relations.get(id);
+  // Prep Score + SBC/PBC summary: only to an accepted Prep Mate (or the student), and only after the
+  // student opted in. Re-checked on every request, so ending the Mate link or the opt-in hides it.
+  const canShare = peer.sharePrepReadiness === true && (isSelf || relation?.mate === 'mates');
+  const shared = canShare ? await sharedSummaryFor(peer).catch(() => null) : null;
   return {
+    shared,
+    sharing: peer.sharePrepReadiness === true,
     profile: {
       ...peerCard(peer),
       bio: String(peer.bio || '').slice(0, 280),
@@ -454,7 +462,7 @@ export async function getPeerProfile(viewer, rawId) {
     },
     progress,
     network: { prepMates: network.prepMates },
-    relation: isSelf ? { self: true } : relations.get(id),
+    relation,
   };
 }
 

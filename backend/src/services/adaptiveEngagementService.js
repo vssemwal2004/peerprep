@@ -9,6 +9,7 @@ import { requireEngagementUniqueIndex } from '../utils/engagementIndexes.js';
 import { notifyOnce } from './notificationService.js';
 import { StudentDailyLogin } from '../models/MonthlyBadge.js';
 import { HttpError } from '../utils/errors.js';
+import { rewardDailyChallenge } from './dailyChallengeRewards.js';
 
 const pending = new Map();
 export const engagementScope = (student) => ({ tenantKey: engagementTenant(student), studentId: new mongoose.Types.ObjectId(String(student._id)) });
@@ -115,10 +116,14 @@ async function refresh(student, now) {
       row.earnedAt = earnedAt;
       if (await awardXp(scope, `${row.kind}:${row.periodKey}`, row.rewardPoints, row.kind, earnedAt)) {
         newAwards.push({ kind: row.kind, periodKey: row.periodKey, rewardPoints: row.rewardPoints });
-        notices.push({ key: `done:${row.kind}:${row.periodKey}`, type: 'CHALLENGE', actionUrl: '/student/quests',
+        // The daily challenge also pays Prep Coins, Prep Score points and grows the Prep Streak (once:
+        // only the request that created the XP receipt gets here).
+        const reward = row.kind === 'daily' ? await rewardDailyChallenge(student, row.periodKey, now) : null;
+        const extras = reward ? [reward.points ? `+${reward.points} Prep Score` : '', reward.coins ? `+${reward.coins} Prep Coins` : '', reward.streak?.current ? `Prep Streak ${reward.streak.current} ${reward.streak.current === 1 ? 'day' : 'days'}` : ''].filter(Boolean).join(' · ') : '';
+        notices.push({ key: `done:${row.kind}:${row.periodKey}`, type: 'CHALLENGE', actionUrl: '/student/dashboard',
           title: row.kind === 'daily' ? 'Daily challenge complete' : `${PERIOD_NAMES[row.kind]} reached`,
           message: row.kind === 'daily'
-            ? `+${row.rewardPoints} XP earned. A new challenge arrives at 2 AM.`
+            ? `${extras || `+${row.rewardPoints} XP earned`}. A new challenge arrives at 2 AM.`
             : `+${row.rewardPoints} XP and the ${row.kind === 'weekly' ? 'Weekly Momentum' : 'Monthly Explorer'} badge for ${row.periodKey}.` });
       }
       if (row.kind !== 'daily') {

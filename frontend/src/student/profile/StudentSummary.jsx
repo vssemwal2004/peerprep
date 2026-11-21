@@ -18,17 +18,18 @@ function buildHeadline({ coding, acceptance, streak, mostUsedLanguage }) {
     parts.push('No submissions yet');
   }
   if (mostUsedLanguage) parts.push(`mostly ${languageLabel(mostUsedLanguage)}`);
-  if (streak.current > 0) parts.push(`${plural(streak.current, 'day')} streak`);
+  if (streak.current > 0) parts.push(`${plural(streak.current, 'day')} Prep Streak`);
   return parts.join(' · ');
 }
 
 function buildNextStep({ coding, streak, assessments }) {
   if (coding.totalSolved === 0) return { text: 'Solve your first Easy problem', to: '/problems' };
-  if (streak.current === 0) return { text: 'Submit today to start a streak', to: '/problems' };
+  // The Prep Streak grows with the daily challenge (dashboard: today's challenge card).
+  if (streak.current === 0) return { text: 'Finish today’s daily challenge to start your Prep Streak', to: '/student/dashboard' };
   if (coding.mediumSolved === 0 && coding.easySolved >= 5) return { text: 'Try your first Medium problem', to: '/problems' };
   if (coding.hardSolved === 0 && coding.mediumSolved >= 5) return { text: 'Attempt a Hard problem', to: '/problems' };
   if (assessments.attempts === 0) return { text: 'Take an assessment to benchmark yourself', to: null };
-  return { text: "Keep the streak going with today's challenge", to: '/problems' };
+  return { text: "Keep your Prep Streak going with today's challenge", to: '/student/dashboard' };
 }
 
 function Tile({ icon, label, value, sub }) {
@@ -105,7 +106,7 @@ export default function StudentSummary(props) {
           icon={<CalendarCheck className="h-3 w-3" />}
           label="Active days"
           value={<AnimatedMetric value={streak.activeDays} />}
-          sub="Past year"
+          sub="Any activity, past year"
         />
         <Tile
           icon={<Languages className="h-3 w-3" />}

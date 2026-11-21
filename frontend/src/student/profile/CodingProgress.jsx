@@ -193,7 +193,7 @@ export default function CodingProgress({
       {showActivity ? <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-zinc-800">
         <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-zinc-400">
           <Flame className={`h-4 w-4 ${currentStreak > 0 ? 'text-[#b08c3e]' : 'text-slate-400 dark:text-zinc-500'}`} aria-hidden="true" />
-          <span><strong className="font-semibold tabular-nums text-slate-800 dark:text-zinc-100">{loading ? '—' : currentStreak}</strong> day streak</span>
+          <span title="Days in a row with the daily challenge done"><strong className="font-semibold tabular-nums text-slate-800 dark:text-zinc-100">{loading ? '—' : currentStreak}</strong> day Prep Streak</span>
           <span className="text-slate-300 dark:text-zinc-700" aria-hidden="true">·</span>
           <span>Best <strong className="font-medium tabular-nums text-slate-700 dark:text-zinc-300">{loading ? '—' : bestStreak}</strong></span>
         </div>

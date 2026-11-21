@@ -116,9 +116,12 @@ test('the stored Prep Score leaves out over-limit solves but keeps older solves'
   await Submission.collection.insertMany(problems.map((problemId) => ({ user: studentId, problem: problemId, mode: 'submit', status: 'AC', language: 'python' })));
   for (const problemId of problems.slice(1)) await recordAcceptedSolve({ studentId, source: 'local', problemId });
   const ranking = await getStudentUniversityRanking(await User.findById(studentId).lean());
-  // 1 old + 3 counted = 4 Easy solves; the 4th solve of the day earns nothing.
+  // Activity metric (formula): 1 old + 3 counted = 4 Easy solves; the over-limit solve is left out.
   const expected = calculateModule({ Easy: 4 }, DEFAULT_PREP_SCORE_CONFIG.modules.coding.points, DEFAULT_PREP_SCORE_CONFIG.formula).score;
   assert.equal(ranking.prepScore.features.coding.score, expected);
   assert.equal(ranking.prepScore.features.coding.counts.Easy, 4);
-  assert.equal(ranking.score, expected, 'Prep Score equals the counted coding score');
+  // Prep Score (v6 points): all five are today's Graph solves; only 3 per topic per day pay (Easy 4
+  // each = 12 activity points), shown on the growth curve.
+  const { scale, exponent } = DEFAULT_PREP_SCORE_CONFIG.points.curve;
+  assert.equal(ranking.score, Math.round(scale * (3 * DEFAULT_PREP_SCORE_CONFIG.points.solve.Easy) ** exponent * 100) / 100);
 });

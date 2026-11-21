@@ -13,6 +13,10 @@ const originals = new Map(keys.map((key) => [key, Object.getOwnPropertyDescripto
 const points = () => ({ Easy: 1, Medium: 2, Hard: 4 });
 const activity = (levelSource = 'content') => ({ enabled: true, units: 1, levelSource, level: 'Medium' });
 const CONFIG = {
+  points: {
+    solve: { Easy: 4, Medium: 8, Hard: 14 }, topicLimitFrom: '2026-11-19', login: 1, dailyChallenge: 5, sheetCompleted: 10, monthlyBadgeLevel: 2,
+    lifetimeBadge: [10, 20, 30, 40, 50], wrongSubmission: 0.5, wrongDailyCap: 5, refundSameDay: true, inactivity: { graceDays: 3, perDay: 1, monthlyCap: 15 }, lossFloorShare: 0.75, curve: { scale: 1.3, exponent: 0.4 }, decimalPlaces: 2,
+  },
   formula: { volumeExponent: 0.4, qualityExponent: 1.5, scale: 1, decimalPlaces: 2 },
   modules: {
     coding: { weight: 1, points: points(), dailyTopicLimit: 3, activities: { problemSolved: activity() } },
@@ -62,7 +66,14 @@ test('the Master Admin sees the formula with named variables and every value is 
   await mount();
   const text = document.body.textContent;
   assert.match(text, /Prep Score Adjustment/);
-  assert.match(text, /Prep Score = S × Nα × Qβ/);
+  // Prep Score v6: the points card leads; the formula is now the Prep Coding activity metric.
+  assert.match(text, /Prep Score points/);
+  for (const label of ['Easy solve', 'Daily challenge', 'Sheet completed', 'Daily login', 'Wrong answer', 'Inactivity grace days', 'Inactivity, max a month', 'Protected share of solve points', 'Curve scale', 'Curve exponent']) assert.ok(text.includes(label), label);
+  // The preview shows the curve's effect: 7 solves stay in the earlier range (about 6), not 50+.
+  const preview = [...document.querySelectorAll('caption')].find((node) => node.textContent.startsWith('Preview')).closest('table');
+  const sevenRow = [...preview.querySelectorAll('tbody tr')].find((row) => row.cells[0].textContent === '7');
+  assert.ok(Number(sevenRow.cells[1].textContent) < 8);
+  assert.match(text, /Prep Coding = S × Nα × Qβ/);
   assert.doesNotMatch(text, /Weight/);
   for (const label of ['Volume exponent', 'Difficulty exponent', 'Scale', 'Decimal places', 'Pass mark', 'Video completion', 'Topic difficulty → level']) assert.ok(text.includes(label), label);
   assert.equal(document.querySelectorAll('section[aria-labelledby^="module-"]').length, 4, 'one card per module');

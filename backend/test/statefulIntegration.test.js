@@ -40,6 +40,7 @@ test('tolerance is finite, bounded and restricted to floating-point function val
  for(const absoluteTolerance of [-1,0.02,Infinity,NaN,'0.00001'])assert.throws(()=>normalizeFunctionContract({...ordinary,absoluteTolerance}),/tolerance/i);
  for(const returnType of ['double[]','float[][]'])assert.equal(normalizeFunctionContract({...ordinary,returnType}).absoluteTolerance,1e-5);
  for(const returnType of ['integer','integer[]','string'])assert.throws(()=>normalizeFunctionContract({...ordinary,returnType}),/double or float/);
- assert.throws(()=>normalizeFunctionContract({...contract,absoluteTolerance:1e-5}),/double or float/);
+ // A stateful (class) contract is rejected by the stricter source-contract rule.
+ assert.throws(()=>normalizeFunctionContract({...contract,absoluteTolerance:1e-5}),/double or float|floating source contract/);
  const invalid=new Problem({title:'Tolerance',functionContract:{...ordinary,returnType:'integer'}});assert.ok(invalid.validateSync().errors['functionContract.absoluteTolerance']);
 });

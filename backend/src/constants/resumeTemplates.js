@@ -1,0 +1,43 @@
+// Prep Resume template ids. Templates only change the design of a resume, so
+// the server just validates the id. Keep in sync with
+// frontend/src/features/resume/templates/catalog.js (a frontend test checks).
+export const RESUME_TEMPLATE_IDS = Object.freeze([
+  'iit-bombay-classic',
+  'ledger',
+  'harvard',
+  'compact-pro',
+  'campus',
+  'peerprep-nova',
+  'pristine',
+  'lexicon',
+  'oxford',
+  'boston',
+  'metro',
+  'summit',
+  'precision',
+  'mosaic',
+  'horizon',
+  'aurora',
+  'slate',
+  'pulse',
+  'timeline',
+  'editorial',
+  'peerprep-meridian',
+  'stanford',
+  'scholar',
+  'cambridge',
+  'peerprep-circuit',
+  'terminal',
+  'kepler',
+  'navigator',
+  'cascade',
+  'regent',
+  'vertex',
+  'graphite',
+  'emerald',
+  'monarch',
+  'blueprint',
+  'sterling',
+]);
+
+export const DEFAULT_RESUME_TEMPLATE = 'iit-bombay-classic';

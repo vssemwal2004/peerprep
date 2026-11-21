@@ -18,6 +18,8 @@ export const SECTIONS = Object.freeze([
   { id: "overview", label: "Overview", when: () => true },
   { id: "topics", label: "Topics", when: (data) => Boolean(data.coverage) },
   { id: "coding", label: "Coding", when: (data) => Boolean(data.sections?.coding) },
+  // SBC/PBC coding practice targets (student/readiness/). Needs Prep Coding.
+  { id: "prep-readiness", label: "Prep Readiness", when: (data) => Boolean(data.access?.coding) },
   { id: "quickprep", label: "QuickPrep", when: (data) => Boolean(data.sections?.quickprep) },
   { id: "learning", label: "Learning", when: (data) => Boolean(data.sections?.learning) },
   { id: "tests", label: "Tests", when: (data) => Boolean(data.sections?.assessment) },
@@ -28,7 +30,7 @@ export const SECTIONS = Object.freeze([
 ]);
 
 // Old addresses (/student/analysis/dsa …) still open the right page.
-const SECTION_ALIASES = { dsa: "coding", assessment: "tests", assessments: "tests", interview: "interviews", placement: "companies", readiness: "companies", learn: "learning", coach: "overview", next: "overview", awards: "badges" };
+const SECTION_ALIASES = { dsa: "coding", assessment: "tests", assessments: "tests", interview: "interviews", placement: "companies", readiness: "companies", "practice-readiness": "prep-readiness", sbc: "prep-readiness", pbc: "prep-readiness", learn: "learning", coach: "overview", next: "overview", awards: "badges" };
 export const sectionFromParam = (value) => SECTION_ALIASES[value] || (SECTIONS.some((section) => section.id === value) ? value : "overview");
 export const visibleSections = (insights) => (insights ? SECTIONS.filter((section) => section.when(insights)) : []);
 export const sectionPath = (id) => (id === "overview" ? "/student/analysis" : `/student/analysis/${id}`);

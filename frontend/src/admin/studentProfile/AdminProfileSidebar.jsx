@@ -4,6 +4,7 @@ import {
   CalendarRange,
   ChevronRight,
   FileText,
+  Gauge,
   GitBranch,
   Github,
   Globe,
@@ -21,6 +22,8 @@ import { focusRing } from '../../student/profile/format';
 import { levelTheme } from '../../student/profile/levelTheme';
 import { fmtDate, normalizeHref } from './utils';
 import GuideInfo from '../../guide/platform/GuideInfo';
+import BadgeShowcase from '../../student/badges/BadgeShowcase';
+import { formatScore } from '../../student/prepScore/formatScore';
 
 const SOCIAL_ICONS = { LinkedIn: Linkedin, GitHub: Github, Portfolio: Globe };
 
@@ -28,15 +31,16 @@ function SectionTitle({ id, children }) {
   return <h2 id={id} className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500">{children}</h2>;
 }
 
-function DetailRow({ icon, label, value }) {
+/** One detail, compact: label over value. `wide` spans both columns (long values). */
+function DetailRow({ icon, label, value, wide = false }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5">
-      <dt className="flex shrink-0 items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
-        <span className="text-slate-400 dark:text-zinc-500" aria-hidden="true">{icon}</span>
+    <div className={`min-w-0 rounded-lg px-1.5 py-1.5 ${wide ? 'col-span-2' : ''}`}>
+      <dt className="flex items-center gap-1 text-[9.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-zinc-500">
+        <span aria-hidden="true">{icon}</span>
         {label}
       </dt>
       <dd
-        className={`min-w-0 truncate text-right text-xs ${value ? 'font-medium text-slate-800 dark:text-zinc-200' : 'text-slate-400 dark:text-zinc-500'}`}
+        className={`mt-0.5 truncate text-[12.5px] ${value ? 'font-medium text-slate-800 dark:text-zinc-200' : 'text-slate-400 dark:text-zinc-500'}`}
         title={value || undefined}
       >
         {value || 'Not provided'}
@@ -96,6 +100,9 @@ export default function AdminProfileSidebar({
   socialLinks,
   onViewResume,
   onOpenLevels,
+  prepScore = null,
+  badgeCollection = null,
+  onOpenBadges,
 }) {
   const initial = student?.name ? student.name.charAt(0).toUpperCase() : 'S';
   const hasActiveFlag = typeof student?.isActive === 'boolean';
@@ -109,7 +116,7 @@ export default function AdminProfileSidebar({
         <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/25 blur-2xl" />
       </div>
 
-      <div className="px-5 pb-5">
+      <div className="px-4 pb-4">
         {/* relative z-10: the cover above is positioned, so without this it paints over the avatar. */}
         <div className="relative z-10 -mt-10 flex flex-col items-center text-center">
           <div className="rounded-full bg-gradient-to-br from-sky-400 via-cyan-300 to-indigo-400 p-[3px] shadow-lg shadow-sky-500/20">
@@ -168,9 +175,36 @@ export default function AdminProfileSidebar({
             </p>
           ) : null}
 
-          <p className={`mt-3 text-[13px] leading-relaxed ${hasCustomBio ? 'text-slate-600 dark:text-zinc-300' : 'text-slate-400 dark:text-zinc-500'}`}>
+          {/* Earned badges (same shelf and medals as the student's own profile). */}
+          {badgeCollection?.total ? <BadgeShowcase collection={badgeCollection} onOpen={onOpenBadges} /> : null}
+
+          <p className={`mt-3 line-clamp-4 text-[12.5px] leading-relaxed ${hasCustomBio ? 'text-slate-600 dark:text-zinc-300' : 'text-slate-400 dark:text-zinc-500'}`} title={hasCustomBio ? bio : undefined}>
             {bio}
           </p>
+
+          {/* Prep Score and level at a glance; the full cards are in the main column. */}
+          {prepScore || level ? (
+            <div className="mt-3 grid w-full grid-cols-2 gap-2 text-left [&>*:only-child]:col-span-2" data-guide="sp-glance">
+              {prepScore ? (
+                <div className="flex items-center gap-2.5 rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50 to-white px-2.5 py-2 dark:border-sky-500/15 dark:from-sky-500/[0.08] dark:to-transparent">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white"><Gauge className="h-4 w-4" aria-hidden="true" /></span>
+                  <span className="min-w-0">
+                    <span className="block text-[15px] font-bold leading-tight tabular-nums text-slate-900 dark:text-white">{formatScore(prepScore.total)}</span>
+                    <span className="block truncate text-[10.5px] font-medium text-slate-500 dark:text-zinc-400">Prep Score</span>
+                  </span>
+                </div>
+              ) : null}
+              {level ? (
+                <button type="button" onClick={onOpenLevels} className={`flex items-center gap-2.5 rounded-xl border border-slate-200/80 bg-slate-50/70 px-2.5 py-2 text-left transition hover:border-sky-200 dark:border-zinc-800 dark:bg-zinc-900/40 ${focusRing}`}>
+                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ${theme.soft}`}><LevelIcon className="h-4 w-4" aria-hidden="true" /></span>
+                  <span className="min-w-0">
+                    <span className="block text-[15px] font-bold leading-tight tabular-nums text-slate-900 dark:text-white">Lv {level.level}</span>
+                    <span className="block truncate text-[10.5px] font-medium text-slate-500 dark:text-zinc-400">{level.title}</span>
+                  </span>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="mt-4 flex w-full gap-2" data-guide="sp-contact">
             {onViewResume && <button
@@ -194,25 +228,22 @@ export default function AdminProfileSidebar({
           </div>
         </div>
 
-        <section aria-labelledby="admin-identity-title" data-guide="sp-details" className="mt-5 border-t border-slate-100 pt-4 dark:border-zinc-800">
+        <section aria-labelledby="admin-identity-title" data-guide="sp-details" className="mt-4 border-t border-slate-100 pt-3 dark:border-zinc-800">
           <SectionTitle id="admin-identity-title"><span className="inline-flex items-center gap-1">Student details <GuideInfo step="sp-details" /></span></SectionTitle>
-          <dl className="divide-y divide-slate-100 dark:divide-zinc-800/80">
-            <DetailRow icon={<Hash className="h-3.5 w-3.5" />} label="Student ID" value={student?.studentId} />
-            <DetailRow icon={<Mail className="h-3.5 w-3.5" />} label="Email" value={student?.email} />
-            <DetailRow icon={<GraduationCap className="h-3.5 w-3.5" />} label="College" value={student?.college} />
-            <DetailRow icon={<BookOpen className="h-3.5 w-3.5" />} label="Course" value={student?.course} />
-            <DetailRow icon={<GitBranch className="h-3.5 w-3.5" />} label="Branch" value={student?.branch} />
-            <DetailRow icon={<CalendarRange className="h-3.5 w-3.5" />} label="Semester" value={student?.semester ? `Semester ${student.semester}` : ''} />
-            <DetailRow icon={<Users className="h-3.5 w-3.5" />} label="Section" value={student?.section} />
-            <DetailRow icon={<Users className="h-3.5 w-3.5" />} label="Group" value={student?.group} />
-            <DetailRow icon={<ShieldCheck className="h-3.5 w-3.5" />} label="Coordinator" value={student?.teacherId || 'Not assigned'} />
-            <DetailRow icon={<CalendarClock className="h-3.5 w-3.5" />} label="Joined" value={student?.createdAt ? fmtDate(student.createdAt) : ''} />
+          <dl className="-mx-1.5 grid grid-cols-2 gap-x-1">
+            <DetailRow icon={<Hash className="h-3 w-3" />} label="Student ID" value={student?.studentId} />
+            <DetailRow icon={<CalendarClock className="h-3 w-3" />} label="Joined" value={student?.createdAt ? fmtDate(student.createdAt) : ''} />
+            <DetailRow wide icon={<Mail className="h-3 w-3" />} label="Email" value={student?.email} />
+            <DetailRow wide icon={<GraduationCap className="h-3 w-3" />} label="College" value={student?.college} />
+            <DetailRow icon={<BookOpen className="h-3 w-3" />} label="Course" value={student?.course} />
+            <DetailRow icon={<GitBranch className="h-3 w-3" />} label="Branch" value={student?.branch} />
+            <DetailRow icon={<CalendarRange className="h-3 w-3" />} label="Semester" value={student?.semester ? `Semester ${student.semester}` : ''} />
+            <DetailRow icon={<Users className="h-3 w-3" />} label="Section" value={student?.section} />
+            <DetailRow icon={<Users className="h-3 w-3" />} label="Group" value={student?.group} />
+            <DetailRow icon={<ShieldCheck className="h-3 w-3" />} label="Coordinator" value={student?.teacherId || 'Not assigned'} />
           </dl>
-        </section>
-
-        <section aria-labelledby="admin-links-title" className="mt-4 border-t border-slate-100 pt-4 dark:border-zinc-800">
-          <SectionTitle id="admin-links-title">Links</SectionTitle>
-          <div className="flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-3 dark:border-zinc-800">
+            <span id="admin-links-title" className="mr-auto text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500">Links</span>
             {socialLinks.map((item) => (
               <SocialLink key={item.label} href={item.href} label={item.label} />
             ))}

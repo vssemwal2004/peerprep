@@ -26,7 +26,7 @@ router.get('/me/circle', asyncRoute(async (req, res) => send(res, await getCircl
 router.get('/me/mates', asyncRoute(async (req, res) => send(res, await getMateDirectory(req.user, {
   q: String(req.query.q || ''), sort: String(req.query.sort || 'recent'), page: req.query.page,
 }))));
-router.get('/me/suggestions', peerSearchLimiter, asyncRoute(async (req, res) => send(res, await getSuggestions(req.user))));
+router.get('/me/suggestions', peerSearchLimiter, asyncRoute(async (req, res) => send(res, await getSuggestions(req.user, new Date(), { offset: req.query.offset, limit: req.query.limit }))));
 router.get('/:id/compare', peerSearchLimiter, asyncRoute(async (req, res) => send(res, await compareWithMate(req.user, req.params.id))));
 router.post('/:id/nudge', peerActionLimiter, asyncRoute(async (req, res) => send(res, await nudgeMate(req.user, req.params.id))));
 

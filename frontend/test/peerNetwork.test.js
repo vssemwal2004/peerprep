@@ -158,10 +158,13 @@ test('peer profile renders the own-profile layout with badges, coding, sheets an
     assert.ok(text.includes(expected), `profile shows ${expected}`);
   }
   // Labels of figures that must never appear for another student (the privacy note may name them).
-  for (const hidden of ['Prep Score', 'Coin balance', 'PeerPrep since', 'Prep Assessments', 'AI Interviews', 'Peer Interviews']) {
+  // Prep Score is only named as private here (not shared); its value never appears.
+  assert.match(text, /Ravi’s Prep Score and Prep Readiness are private/);
+  assert.match(text, /PrivatePrep Score/, 'the sidebar tile says Private instead of a number');
+  for (const hidden of ['Coin balance', 'PeerPrep since', 'Prep Assessments', 'AI Interviews', 'Peer Interviews', 'Shared by']) {
     assert.ok(!text.includes(hidden), `profile hides ${hidden}`);
   }
-  assert.match(text, /Contact details, scores and Prep Coins stay private/);
+  assert.match(text, /Contact details and Prep Coins stay private\. Scores show only if shared with Prep Mates/);
   assert.ok(!/follow|pacer|pacing|keep pace/i.test(text), 'one simple term: Prep Mates');
   assert.ok(text.includes('Unstoppable'), 'locked badges are listed too');
   const matesButton = [...document.querySelectorAll('button')].find((button) => /Prep Mates/.test(button.textContent) && /2/.test(button.textContent));

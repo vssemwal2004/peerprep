@@ -1,12 +1,13 @@
 import Resume from '../models/Resume.js';
 import User from '../models/User.js';
 import { HttpError } from '../utils/errors.js';
+import { DEFAULT_RESUME_TEMPLATE, RESUME_TEMPLATE_IDS } from '../constants/resumeTemplates.js';
 
 const FIXED_SECTIONS = ['education', 'experience', 'projects', 'skills', 'achievements'];
 const VISIBILITY_KEYS = ['location', 'email', 'mobile', 'linkedin', 'github', 'portfolio'];
 const MAX_ITEMS = 30;
 const MAX_BULLETS = 20;
-const RESUME_TEMPLATES = new Set(['iit-bombay-classic', 'peerprep-nova', 'peerprep-meridian', 'peerprep-circuit']);
+const RESUME_TEMPLATES = new Set(RESUME_TEMPLATE_IDS);
 
 const cleanText = (value, max = 1000) => String(value ?? '')
   .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
@@ -70,7 +71,7 @@ const normalizeResume = (body = {}) => {
   );
 
   const normalized = {
-    template: RESUME_TEMPLATES.has(body.template) ? body.template : 'iit-bombay-classic',
+    template: RESUME_TEMPLATES.has(body.template) ? body.template : DEFAULT_RESUME_TEMPLATE,
     basics: {
       name: cleanText(body.basics?.name, 160),
       headline: cleanText(body.basics?.headline, 160),
@@ -129,7 +130,7 @@ const getProfileSeed = async (studentId) => {
     .lean();
   return {
     exists: false,
-    template: 'iit-bombay-classic',
+    template: DEFAULT_RESUME_TEMPLATE,
     basics: {
       name: profile?.name || '',
       headline: '',

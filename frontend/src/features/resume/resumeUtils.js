@@ -1,5 +1,8 @@
+import { DEFAULT_TEMPLATE_ID, RESUME_TEMPLATE_CATALOG, RESUME_TEMPLATE_IDS } from './templates/catalog';
+
 export const FIXED_SECTION_META = {
-  education: { title: 'ACADEMIC DETAILS', label: 'Academic Details' },
+  // "Education" (not "Academic Details"): applicant tracking systems look for this heading.
+  education: { title: 'EDUCATION', label: 'Education' },
   experience: { title: 'EXPERIENCE', label: 'Experience' },
   projects: { title: 'PROJECTS', label: 'Projects' },
   skills: { title: 'TECHNICAL SKILLS', label: 'Technical Skills' },
@@ -8,13 +11,9 @@ export const FIXED_SECTION_META = {
 
 export const DEFAULT_SECTION_ORDER = Object.keys(FIXED_SECTION_META);
 
-export const RESUME_TEMPLATES = [
-  { id: 'iit-bombay-classic', name: 'PeerPrep Atlas', caption: 'Structured academic' },
-  { id: 'peerprep-nova', name: 'PeerPrep Nova', caption: 'Clean and minimal' },
-  { id: 'peerprep-meridian', name: 'PeerPrep Meridian', caption: 'Elegant professional' },
-  { id: 'peerprep-circuit', name: 'PeerPrep Circuit', caption: 'Compact software' },
-];
-const RESUME_TEMPLATE_IDS = new Set(RESUME_TEMPLATES.map(({ id }) => id));
+// Templates only change design; content is shared by all of them.
+export const RESUME_TEMPLATES = RESUME_TEMPLATE_CATALOG;
+const TEMPLATE_ID_SET = new Set(RESUME_TEMPLATE_IDS);
 
 export const createEmptyDetailEntry = () => ({
   title: '', subtitle: '', location: '', date: '', link: '', technologies: '', bullets: [],
@@ -22,7 +21,7 @@ export const createEmptyDetailEntry = () => ({
 
 export const createEmptyResume = () => ({
   exists: false,
-  template: 'iit-bombay-classic',
+  template: DEFAULT_TEMPLATE_ID,
   basics: { name: '', headline: '', location: '', email: '', mobile: '', linkedin: '', github: '', portfolio: '' },
   basicsVisibility: { location: true, email: true, mobile: true, linkedin: true, github: true, portfolio: true },
   education: [],
@@ -54,7 +53,7 @@ export const normalizeClientResume = (value = {}) => {
   return {
     ...base,
     ...value,
-    template: RESUME_TEMPLATE_IDS.has(value.template) ? value.template : base.template,
+    template: TEMPLATE_ID_SET.has(value.template) ? value.template : base.template,
     basics: { ...base.basics, ...(value.basics || {}) },
     basicsVisibility: { ...base.basicsVisibility, ...(value.basicsVisibility || {}) },
     education: Array.isArray(value.education) ? value.education : [],
@@ -118,34 +117,15 @@ const estimateEntryUnits = (entry = {}) => 2.4
   + (entry.technologies ? 0.8 : 0)
   + (entry.bullets || []).reduce((sum, bullet) => sum + Math.max(0.9, String(bullet?.text || bullet || '').length / 100), 0);
 
-export const paginateResume = (resume) => {
-  const keys = visibleSectionKeys(resume);
-  if (!keys.length) return [[]];
-  const pages = [];
-  let current = [];
-  let units = 0;
-  // The fixed 10pt IIT Bombay layout is compact enough for the reference
-  // content set to remain on one page while still splitting truly long drafts.
-  const firstLimit = 60;
-  const nextLimit = 66;
-
-  keys.forEach((key) => {
+/** Rough page count used only until the preview has measured the real layout. */
+export const estimatePageCount = (resume) => {
+  const units = visibleSectionKeys(resume).reduce((sum, key) => {
     const data = getSectionData(resume, key);
-    let sectionUnits = 2;
-    if (key === 'education') sectionUnits += data.length * 1.4;
-    else if (key === 'skills') sectionUnits += data.length * 1.2;
-    else sectionUnits += data.reduce((sum, entry) => sum + estimateEntryUnits(entry), 0);
-    const limit = pages.length ? nextLimit : firstLimit;
-    if (current.length && units + sectionUnits > limit) {
-      pages.push(current);
-      current = [];
-      units = 0;
-    }
-    current.push(key);
-    units += sectionUnits;
-  });
-  if (current.length) pages.push(current);
-  return pages.length ? pages : [[]];
+    if (key === 'education') return sum + 2 + data.length * 1.4;
+    if (key === 'skills') return sum + 2 + data.length * 1.2;
+    return sum + 2 + data.reduce((total, entry) => total + estimateEntryUnits(entry), 0);
+  }, 6);
+  return Math.max(1, Math.ceil(units / 62));
 };
 
 export const hasResumeContent = (resume) => {
@@ -156,7 +136,7 @@ export const hasResumeContent = (resume) => {
   return Boolean(visibleBasics || visibleSectionKeys(resume).length);
 };
 
-export const calculateReadiness = (resume) => {
+export const calculateReadiness = (resume, { pageCount: measuredPageCount } = {}) => {
   const checks = [
     Boolean(resume.basics?.name || resume.basics?.email || resume.basics?.mobile),
     resume.education.some((entry) => entry.degree || entry.institute),
@@ -179,7 +159,7 @@ export const calculateReadiness = (resume) => {
   if (weakBullet) suggestions.push('Start achievement bullets with a clear action verb.');
   const measurableBullets = bulletTexts.filter((bullet) => /\d|%|\b(k|m|million|thousand|users|hours|days|teams)\b/i.test(bullet)).length;
   if (bulletTexts.length >= 3 && measurableBullets === 0) suggestions.push('Add a number or measurable result where it is genuinely available.');
-  const pageCount = paginateResume(resume).length;
+  const pageCount = measuredPageCount || estimatePageCount(resume);
   if (pageCount > 2) suggestions.push('Your resume is over two pages; tighten older or less relevant content.');
   return {
     percent,

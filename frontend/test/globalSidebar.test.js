@@ -167,6 +167,50 @@ for (const role of ['admin', 'coordinator']) {
   });
 }
 
+test('hover-out closes an open menu and collapses the sidebar (it never stays stuck open)', async () => {
+  window.localStorage.removeItem('adminSidebarPinned');
+  await mount('admin', AdminLayout);
+  const sidebar = document.querySelector('aside');
+  const wait = (ms) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
+  await act(async () => sidebar.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
+  await wait(120);
+  assert.equal(sidebar.style.width, '13.6rem');
+  await click(titled('Prep Assessment'));
+  assert.equal(titled('Prep Assessment').getAttribute('aria-expanded'), 'true');
+  // Moving onto the open menu keeps everything open.
+  const panel = document.getElementById(titled('Prep Assessment').getAttribute('aria-controls'));
+  await act(async () => panel.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
+  await wait(400);
+  assert.equal(sidebar.style.width, '13.6rem');
+  // Moving out to the page closes the menu and collapses the sidebar.
+  await act(async () => document.body.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
+  await wait(400);
+  assert.equal(sidebar.style.width, '4rem');
+  assert.equal(titled('Prep Assessment').getAttribute('aria-expanded'), 'false');
+});
+
+test('hovering in and out repeatedly opens and closes the sidebar every time', async () => {
+  window.localStorage.removeItem('adminSidebarPinned');
+  await mount('admin', AdminLayout);
+  const sidebar = document.querySelector('aside');
+  const wait = (ms) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
+  // The pointer is out on the page between rounds (as elementFromPoint would report in a browser).
+  document.elementFromPoint = () => document.body;
+  try {
+    for (let round = 1; round <= 4; round += 1) {
+      await act(async () => sidebar.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
+      await wait(150);
+      assert.equal(sidebar.style.width, '13.6rem', `round ${round}: opens`);
+      await act(async () => document.body.dispatchEvent(new dom.window.MouseEvent('mousemove', { bubbles: true, clientX: 700, clientY: 300 })));
+      await act(async () => document.body.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
+      await wait(260);
+      assert.equal(sidebar.style.width, '4rem', `round ${round}: closes`);
+    }
+  } finally {
+    delete document.elementFromPoint;
+  }
+});
+
 test('student assessment module keeps its title outside the content scroller', async () => {
   await act(async () => root.render(h(AssessmentModuleLayout, { title: 'Your Assessments' }, h('div', { id: 'assessment-rows' }, 'Rows'))));
   const shell = document.querySelector('[data-page-header]').parentElement.parentElement;
@@ -347,7 +391,7 @@ test('assessment-only students can open and use their only group', async () => {
 
 test('student sidebar leads with Dashboard, Prep Coding, Quick Prep, Prep Assessment, Resume, Ranking, Prep Coin', async () => {
   await mount('student');
-  const order = ['Dashboard', 'Prep Coding', 'Quick Prep', 'Prep Assessment', 'Resume', 'Ranking', 'Prep Coin'];
+  const order = ['Dashboard', 'Prep Coding', 'Quick Prep', 'Prep Assessment', 'Prep Resume', 'Ranking', 'Prep Coin'];
   const items = [...document.querySelectorAll('nav a, nav button')];
   const positions = order.map((label) => {
     const index = items.findIndex((node) => [node.getAttribute('title'), node.getAttribute('aria-label'), node.textContent.trim()].includes(label));

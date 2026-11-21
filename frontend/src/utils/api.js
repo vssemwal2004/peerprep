@@ -496,6 +496,24 @@ export const api = {
   // Student: first open of the day (heatmap login day + daily coin) and this month's badge ladders.
   dailyCheckIn: () => request('/auth/daily-checkin', { method: 'POST', skipCache: true }),
   monthlyBadges: () => request('/auth/badges/monthly', { skipCache: true }),
+  lifetimeBadges: () => request('/auth/badges/lifetime', { skipCache: true }),
+  // The student's own Prep Score history: range '7d' | '30d' | '90d' | 'all'.
+  getPrepScoreHistory: (range = '30d') => request(`/auth/prep-score/history?range=${encodeURIComponent(range)}`, { skipCache: true }),
+  // Prep Readiness (SBC/PBC coding practice targets): own data.
+  getPrepReadiness: (range = '30d') => request(`/student/prep-readiness?range=${encodeURIComponent(range)}`, { skipCache: true }),
+  getPrepReadinessSummary: () => request('/student/prep-readiness/summary', { skipCache: true }),
+  getPrepReadinessPractice: (track = 'pbc') => request(`/student/prep-readiness/recommendations?track=${encodeURIComponent(track)}`, { skipCache: true }),
+  setPrepReadinessSharing: (share) => request('/student/prep-readiness/sharing', { method: 'PUT', body: { share: Boolean(share) } }),
+  // Staff (admin / coordinator with profile permission), read-only.
+  getStudentPrepReadinessByAdmin: (studentId, { range = '30d', view = '' } = {}) => request(`/students/${encodeURIComponent(studentId)}/prep-readiness?range=${encodeURIComponent(range)}${view ? `&view=${view}` : ''}`, { skipCache: true }),
+  // Master Admin → Prep Topic Priority Adjustment.
+  prepReadinessPolicy: () => request('/platform/admin/prep-readiness', { skipCache: true }),
+  savePrepReadinessDraft: (body) => request('/platform/admin/prep-readiness/draft', { method: 'PUT', body }),
+  discardPrepReadinessDraft: (revision) => request(`/platform/admin/prep-readiness/draft?revision=${encodeURIComponent(revision)}`, { method: 'DELETE' }),
+  previewPrepReadiness: (body) => request('/platform/admin/prep-readiness/preview', { method: 'POST', body, timeoutMs: 60000 }),
+  publishPrepReadiness: (body) => request('/platform/admin/prep-readiness/publish', { method: 'POST', body }),
+  prepReadinessUnmapped: (universityId = 'platform') => request(`/platform/admin/prep-readiness/unmapped?universityId=${encodeURIComponent(universityId)}`, { skipCache: true }),
+  setPrepReadinessMapping: (body) => request('/platform/admin/prep-readiness/mappings', { method: 'PUT', body }),
   platformStudents: (id, page = 1, search = '', { pageSize, sortBy, sortOrder } = {}) => request(`/platform/admin/universities/${encodeURIComponent(id)}/students?${new URLSearchParams({
     page: String(page), search, ...(pageSize ? { pageSize: String(pageSize) } : {}), ...(sortBy ? { sortBy, sortOrder: sortOrder === 'desc' ? 'desc' : 'asc' } : {}),
   }).toString()}`, { skipCache: true }),
@@ -619,6 +637,15 @@ export const api = {
     request("/resume/me", { method: "PUT", body, skipQueue: true }),
   restorePreviousResume: () =>
     request("/resume/me/restore", { method: "POST", skipQueue: true }),
+  // ANVI resume check: the server reads the exported PDF the way an ATS does.
+  checkResumeAts: (pdfBlob, jobDescription = "") => {
+    const formData = new FormData();
+    formData.append("file", pdfBlob, "resume.pdf");
+    if (jobDescription) formData.append("jobDescription", jobDescription);
+    return request("/resume/review/ats", { method: "POST", formData, timeoutMs: 90 * 1000, skipQueue: true });
+  },
+  explainResumeCheck: (body) =>
+    request("/resume/review/explain", { method: "POST", body, timeoutMs: 60 * 1000, skipQueue: true }),
   getStudentResume: (studentId) =>
     request(`/resume/student/${studentId}`, { skipCache: true }),
   updateMyAvatar: (file) => {
@@ -663,7 +690,7 @@ export const api = {
   // Prep Mates circle: leaderboard (week | month | all), activity feed, head-to-head, nudge.
   getPeerCircle: (period = 'week', { page = 1, q = '', limit = 10 } = {}) => request(`/student/peers/me/circle?${new URLSearchParams({ period, page: String(page), limit: String(limit), ...(q ? { q } : {}) })}`, { skipCache: true }),
   getPeerMates: ({ q = '', sort = 'recent', page = 1 } = {}) => request(`/student/peers/me/mates?${new URLSearchParams({ sort, page: String(page), ...(q ? { q } : {}) })}`, { skipCache: true }),
-  getPeerSuggestions: () => request('/student/peers/me/suggestions', { skipCache: true }),
+  getPeerSuggestions: ({ offset = 0, limit = 10 } = {}) => request(`/student/peers/me/suggestions?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`, { skipCache: true }),
   comparePrepMate: (id) => request(`/student/peers/${encodeURIComponent(id)}/compare`, { skipCache: true }),
   nudgePrepMate: (id) => request(`/student/peers/${encodeURIComponent(id)}/nudge`, { method: 'POST' }),
   requestPrepMate: (id) => request(`/student/peers/${encodeURIComponent(id)}/mate`, { method: 'POST' }),

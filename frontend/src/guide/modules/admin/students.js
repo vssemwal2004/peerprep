@@ -174,6 +174,11 @@ export const studentProfileSteps = [
     body: "The student's Prep Score from verified Prep Coding solves, the same number used in rankings and Prep Analysis. Assessment, Interview and Learning show independent activity points.",
   },
   {
+    id: "sp-readiness", target: "sp-readiness", chapter: "parts",
+    title: "Prep Readiness",
+    body: "SBC and PBC coding readiness: progress toward each track's practice target, read-only. View breakdown opens the same growth chart, topic table and explanation the student sees.",
+  },
+  {
     id: "sp-snapshot", target: "sp-snapshot", chapter: "parts", quick: true,
     title: "Performance snapshot",
     body: "Headline numbers for each module the student can use: problems solved, acceptance, assessment average, interview average, learning progress and current streak. A dash means there is no data yet, not a zero score.",
@@ -194,7 +199,7 @@ export const studentResumeSteps = [
   {
     id: "sr-title", target: "sr-title", chapter: "overview", quick: true,
     title: "Student resume",
-    body: "The resume this student built in PeerPrep's resume builder, shown read-only on an A4 page. You see their latest saved version.",
+    body: "The resume this student built in Prep Resume, shown read-only on an A4 page. You see their latest saved version.",
   },
   {
     id: "sr-back", target: "sr-back", chapter: "layout",
@@ -293,7 +298,7 @@ export default [
     title: "Student resume",
     icon: "file",
     summary: "A read-only view of the resume a student built in PeerPrep, with a PDF download.",
-    intro: "This is the resume the student made in PeerPrep's resume builder.\nYou can read it and download it as a PDF, but only the student can change it.",
+    intro: "This is the resume the student made in Prep Resume.\nYou can read it and download it as a PDF, but only the student can change it.",
     openFrom: "admin.students",
     next: "admin.students",
     steps: studentResumeSteps,

@@ -1,0 +1,32 @@
+@media (min-width: 640px) {
+  @supports (grid-template-rows: subgrid) {
+    .quest-card-grid.grid {
+      /* Leave room between card groups without adding a gap to each shared track. */
+      row-gap: 0;
+      margin-block-end: -1rem;
+    }
+
+    .quest-card-grid > li {
+      display: grid;
+      /* The band and seven body rows share their heights across the card group. */
+      grid-row: span 8;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: subgrid;
+      padding-block-end: 1rem;
+    }
+
+    .quest-card-grid > li > .quest-card {
+      display: grid;
+      grid-row: 1 / -1;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: subgrid;
+    }
+
+    .quest-card-grid .quest-card-body {
+      display: grid;
+      grid-row: 2 / -1;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: subgrid;
+    }
+  }
+}

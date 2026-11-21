@@ -2,8 +2,8 @@
 // terms. Field names that the backend is still finalising (the language lock) are read and written only
 // here, so a rename touches this file alone.
 
-/** Where the Resume Builder lives (App.jsx route). */
-export const RESUME_BUILDER_ROUTE = "/student/resume";
+/** Where the Prep Resume lives (App.jsx route). */
+export const RESUME_BUILDER_ROUTE = "/student/resume/create";
 export const RESUME_MAX_BYTES = 5 * 1024 * 1024;
 export const RESUME_PRIVACY_NOTE = "Only the text is used, personal details are removed, and it's deleted after your interview.";
 
@@ -42,7 +42,7 @@ export function termsOf(item) {
 
 /**
  * The resume step: { mode: "none"|"optional"|"required", sources, questionCount, provided, source, providedAt }.
- * A list from before resume uploads only had `requiresResume` (consent to the Resume Builder resume).
+ * A list from before resume uploads only had `requiresResume` (consent to the Prep Resume).
  */
 export function resumeSetupOf(item) {
   const raw = item?.resumeSetup;
@@ -181,7 +181,7 @@ export function joinBlockerOf(setup, state = {}) {
 }
 
 const RESUME_COPY = {
-  RESUME_BUILDER_EMPTY: "Your Resume Builder resume is empty. Add your details in the Resume Builder, or upload a file instead.",
+  RESUME_BUILDER_EMPTY: "Your Prep Resume is empty. Add your details in the Prep Resume, or upload a file instead.",
   RESUME_DOCX_UNSUPPORTED: "Word files can't be read yet. Save your resume as a PDF (File → Save as → PDF) and upload that.",
   RESUME_TYPE_UNSUPPORTED: "Upload your resume as a PDF or a plain-text (.txt) file.",
   NOT_A_RESUME: "This file doesn't look like a resume. Check that you picked the right file and try again.",
@@ -190,14 +190,14 @@ const RESUME_COPY = {
   RATE_LIMITED: "Too many resume uploads in a short time. Wait a few minutes and try again.",
   AI_UNAVAILABLE: "Your resume couldn't be read right now. Please try again in a minute.",
   RESUME_SOURCE_DISABLED: "This interview doesn't accept that kind of resume. Use the other option.",
-  RESUME_SOURCE_REQUIRED: "Choose your Resume Builder resume or upload a file.",
+  RESUME_SOURCE_REQUIRED: "Choose your Prep Resume or upload a file.",
   RESUME_FILE_REQUIRED: "Choose a PDF or .txt file to upload.",
   RESUME_UPLOAD_INVALID: "Upload one PDF or .txt file at a time.",
   RESUME_NOT_USED: "This interview doesn't use a resume, so there is nothing to add.",
   RESUME_NOT_PROVIDED: "No resume has been added for this interview yet.",
 };
 
-/** A resume API failure as { code, message, builderLink }. `builderLink`: offer the Resume Builder page. */
+/** A resume API failure as { code, message, builderLink }. `builderLink`: offer the Prep Resume page. */
 export function resumeErrorOf(cause) {
   const code = cause?.response?.data?.code || cause?.code || "";
   const status = cause?.response?.status;
@@ -234,5 +234,5 @@ export function startErrorOf(cause) {
   return copy || cause?.message || "The interview could not be started. Please try again.";
 }
 
-/** "Resume Builder" / "uploaded file" for a stored resume's source. */
-export const resumeSourceLabel = (source) => (source === "builder" ? "your Resume Builder resume" : source === "upload" ? "your uploaded file" : "your resume");
+/** "Prep Resume" / "uploaded file" for a stored resume's source. */
+export const resumeSourceLabel = (source) => (source === "builder" ? "your Prep Resume" : source === "upload" ? "your uploaded file" : "your resume");

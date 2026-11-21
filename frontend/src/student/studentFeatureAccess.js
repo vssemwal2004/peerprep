@@ -9,7 +9,7 @@ export const STUDENT_FEATURE_CATALOG = Object.freeze([
   { key: 'prep_coding', label: 'Prep Coding', description: 'Coding problems, daily challenge and practice submissions.', icon: ListChecks, path: '/problems' },
   { key: 'quickprep', label: 'Quick Prep', description: 'Curated quests, challenges and guided preparation.', icon: Zap, path: '/student/quickprep' },
   { key: 'assessments', label: 'Prep Assessment', description: 'Available tests, assessment history, reports and feedback.', icon: ClipboardList, path: '/student/assessments' },
-  { key: 'resume', label: 'Resume', description: 'Create and manage a placement-ready resume.', icon: UserCog, path: '/student/resume' },
+  { key: 'resume', label: 'Prep Resume', description: 'Create a placement-ready resume in 30+ professional templates.', icon: UserCog, path: '/student/resume' },
   { key: 'rankings', label: 'Ranking', description: 'University and global leaderboard visibility.', icon: Trophy, path: '/student/rankings' },
   { key: 'prep_coins', label: 'Prep Coin', description: 'Prep Score, Prep Coin wallet, balance, pricing and transaction history.', icon: Coins, path: '/student/wallet' },
   { key: 'analysis', label: 'Prep Analysis', description: 'Topic coverage, progress, strengths and next steps.', icon: BarChart3, path: '/student/analysis' },

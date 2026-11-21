@@ -52,6 +52,7 @@ import {
   Inbox,
   Handshake,
   Briefcase,
+  Target,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { canManageInterviewCompanies, isControlDeployment, isUniversityDeployment, PREP_COIN_PRICING_PATH, QUICKPREP_ANALYSIS_PATH, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
@@ -102,7 +103,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
         ],
       },
       { type: 'link', label: 'Prep Mock', to: '/student/prep-mock', icon: Briefcase, featureKey: 'prep_mock' },
-      { type: 'link', label: 'Resume', to: '/student/resume', icon: UserCog, featureKey: 'resume' },
+      { type: 'link', label: 'Prep Resume', to: '/student/resume', icon: UserCog, featureKey: 'resume' },
       { type: 'link', label: 'Ranking', to: '/student/rankings', icon: Trophy, featureKey: 'rankings' },
       { type: 'link', label: 'Prep Coin', to: '/student/wallet', icon: Wallet, featureKey: 'prep_coins' },
       { type: 'link', label: 'Prep Analysis', to: '/student/analysis', icon: BarChart3, featureKey: 'analysis' },
@@ -411,6 +412,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
         children: [
           ...(isControlDeployment ? [
             { label: 'Prep Score Adjustment', to: '/admin/settings/prep-score-adjustment', icon: SlidersHorizontal },
+            { label: 'Prep Topic Priority', to: '/admin/settings/prep-topic-priority', icon: Target },
           ] : []),
           { label: 'Challenges & Badges', to: '/admin/settings/student-progression', icon: Activity },
         ],
@@ -465,6 +467,17 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
     settings,
   ];
 };
+
+// One look for every role's rail items (student, admin, coordinator).
+// Row height comes from --nav-h (set on the nav) so every item fits on one screen without scrolling.
+const NAV_ITEM = 'group relative flex h-[var(--nav-h,2.5rem)] items-center rounded-xl text-[13px] transition-[background-color,color,box-shadow] duration-200';
+const NAV_ITEM_ACTIVE = 'font-semibold bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200/80 dark:bg-sky-500/10 dark:text-sky-200 dark:ring-sky-400/20';
+const NAV_ITEM_OPEN = 'font-medium bg-slate-100 text-slate-900 dark:bg-white/[0.06] dark:text-white';
+const NAV_ITEM_IDLE = 'font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-300 dark:hover:bg-white/[0.06] dark:hover:text-white';
+const NAV_ICON = 'absolute left-[10px] flex h-[min(2rem,calc(var(--nav-h,2.5rem)-0.25rem))] w-8 items-center justify-center rounded-lg transition-[background-color,color] duration-200';
+const NAV_ICON_ACTIVE = 'bg-sky-600 text-white shadow-[0_4px_10px_-4px_rgba(2,132,199,0.7)]';
+const NAV_ICON_IDLE = 'text-slate-500 group-hover:text-sky-700 dark:text-zinc-400 dark:group-hover:text-sky-300';
+const FOOTER_ROW_HOVER = 'hover:bg-slate-100 dark:hover:bg-white/[0.06]';
 
 // Fixed pages under /admin/universities; any other segment is one university's own page.
 const UNIVERSITY_SECTIONS = new Set(['all', 'new', 'assessments', 'defaults', 'activity']);
@@ -550,20 +563,89 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
     : getSidebarWidth(isExpanded);
 
   // Every role: a short hover intent before opening (passing the cursor over the rail does not flash
-  // it open) and a short grace before closing. Hover expands over the page; pinning keeps it open.
+  // it open). Hover expands over the page; pinning keeps it open.
   const handleSidebarEnter = () => {
     window.clearTimeout(hoverTimerRef.current);
     if (isPinned) { onExpand(); return; }
     hoverTimerRef.current = window.setTimeout(onExpand, 90);
   };
 
+  // Leaving before the hover intent fires cancels the opening. Closing is handled below.
   const handleSidebarLeave = () => {
-    window.clearTimeout(hoverTimerRef.current);
-    if (profileOpenRef.current || openGroup || isPinned) return;
-    hoverTimerRef.current = window.setTimeout(onCollapse, 160);
+    if (!isExpanded) window.clearTimeout(hoverTimerRef.current);
   };
 
   useEffect(() => () => window.clearTimeout(hoverTimerRef.current), []);
+
+  // Hover-out. The sidebar's own mouseleave is not enough: its menus are portals, and a menu that
+  // closes under the cursor (after a click or a page change) fires no leave event, which left the
+  // sidebar stuck open. So while it is hover-open we watch where the pointer really is: outside the
+  // sidebar and its menus for a moment -> close any open menu and collapse.
+  const asideRef = useRef(null);
+  const accountMenuRef = useRef(null);
+  const leaveTimerRef = useRef(null);
+  const lastPointRef = useRef(null);
+  const menusOpen = Boolean(openGroup) || isProfileOpen;
+  const hoverOpen = isExpanded && !isPinned && !isMobileNav;
+  const insideSidebar = (node) => Boolean(node && node.nodeType === 1 && (
+    asideRef.current?.contains(node) || groupPanelRef.current?.contains(node) || accountMenuRef.current?.contains(node)
+  ));
+  const insideRef = useRef(insideSidebar);
+  insideRef.current = insideSidebar;
+  const collapseRef = useRef(() => {});
+  collapseRef.current = () => {
+    setOpenGroup(null);
+    setOpenNestedGroup(null);
+    updateProfileOpen(false);
+    onCollapse();
+  };
+
+  useEffect(() => {
+    if (!hoverOpen) {
+      window.clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+      // Forget the old pointer position: it must never close the sidebar the next time it opens.
+      lastPointRef.current = null;
+      return undefined;
+    }
+    // A menu gets a longer grace, so the pointer can cross the small gap between rail and menu.
+    const grace = menusOpen ? 320 : 180;
+    const cancel = () => { window.clearTimeout(leaveTimerRef.current); leaveTimerRef.current = null; };
+    const schedule = () => {
+      if (leaveTimerRef.current) return;
+      leaveTimerRef.current = window.setTimeout(() => { leaveTimerRef.current = null; collapseRef.current(); }, grace);
+    };
+    const onOver = (event) => { if (insideRef.current(event.target)) cancel(); else schedule(); };
+    const onOut = (event) => { if (!insideRef.current(event.relatedTarget)) schedule(); };
+    const onMove = (event) => { lastPointRef.current = { x: event.clientX, y: event.clientY }; };
+    document.addEventListener('mouseover', onOver, true);
+    document.addEventListener('mouseout', onOut, true);
+    document.addEventListener('mousemove', onMove, { capture: true, passive: true });
+    return () => {
+      document.removeEventListener('mouseover', onOver, true);
+      document.removeEventListener('mouseout', onOut, true);
+      document.removeEventListener('mousemove', onMove, true);
+      cancel();
+    };
+  }, [hoverOpen, menusOpen]);
+
+  // When a menu closes (link clicked, page changed, outside click), re-check the pointer: if it is
+  // already outside, collapse now instead of waiting for the next mouse move.
+  // Only on a real change (a menu that was open just closed, or the page changed) — never on the
+  // sidebar opening, which would re-read a stale pointer position and close it straight away.
+  const hoverNavKey = `${location.pathname}${location.search}`;
+  const lastCheckRef = useRef({ menusOpen, hoverNavKey });
+  useEffect(() => {
+    const previous = lastCheckRef.current;
+    lastCheckRef.current = { menusOpen, hoverNavKey };
+    const menuJustClosed = previous.menusOpen && !menusOpen;
+    const pageChanged = previous.hoverNavKey !== hoverNavKey;
+    if (!hoverOpen || menusOpen || (!menuJustClosed && !pageChanged)) return;
+    const point = lastPointRef.current;
+    if (!point || typeof document.elementFromPoint !== 'function') return;
+    const under = document.elementFromPoint(point.x, point.y);
+    if (under && !insideRef.current(under)) collapseRef.current();
+  }, [hoverOpen, menusOpen, hoverNavKey]);
 
   const updateProfileOpen = (nextValue) => {
     const resolvedValue = typeof nextValue === 'function' ? nextValue(profileOpenRef.current) : nextValue;
@@ -679,51 +761,51 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
 
   return (
     <aside
+      ref={asideRef}
       onMouseEnter={handleSidebarEnter}
       onMouseLeave={handleSidebarLeave}
       // Solid colours and one 300ms width animation on a fixed element: no backdrop blur (Safari
       // repaints the blur on every frame while the width changes) and no page relayout on hover.
-      className={`fixed left-0 top-0 z-[70] h-screen overflow-visible border-r transition-[width,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${isStudent ? 'border-sky-100 bg-[#f8fbff] dark:border-sky-950 dark:bg-slate-950' : 'border-sky-100 bg-[#f1f8fe] dark:border-sky-950 dark:bg-slate-950'} ${isExpanded && !isPinned ? 'shadow-[12px_0_36px_rgba(15,23,42,0.12)] dark:shadow-[12px_0_36px_rgba(0,0,0,0.45)]' : 'shadow-[3px_0_18px_rgba(14,165,233,0.05)] dark:shadow-none'}`}
-      style={{ width: resolvedSidebarWidth }}
+      // Same surface as the page header (white / #202020), so header, menu and footer read as one.
+      // Only the width animates (no animated blur shadow, which repaints every frame); `contain`
+      // keeps each frame's layout inside the sidebar.
+      className="fixed left-0 top-0 z-[70] h-screen overflow-visible bg-[var(--shell-frame)] transition-[width] duration-[280ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
+      style={{ width: resolvedSidebarWidth, contain: 'layout style' }}
     >
-      {!isStudent && <button
-        type="button"
-        onClick={onTogglePin}
-        className="absolute -right-3 top-[68px] z-10 flex h-7 w-7 items-center justify-center rounded-full border bg-white text-slate-500 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-sky-700 dark:hover:text-sky-400"
-        aria-label={isPinned ? 'Unpin sidebar (it opens on hover)' : 'Keep sidebar open'}
-        title={isPinned ? 'Unpin sidebar (it opens on hover)' : 'Keep sidebar open'}
-        aria-pressed={isPinned}
-      >
-        {isPinned ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
-      </button>}
+      {/* Soft edge while it floats over the page: a gradient that only fades (composited). */}
+      <span aria-hidden="true" className={`pointer-events-none absolute inset-y-0 right-0 w-8 translate-x-full bg-gradient-to-r from-slate-900/[0.07] to-transparent transition-opacity duration-300 dark:from-black/40 ${isExpanded && !isPinned ? 'opacity-100' : 'opacity-0'}`} />
       <div className="flex h-full min-h-0 flex-col">
-        <div className={`relative mx-2 shrink-0 border-b border-sky-100 bg-[#f8fbff] dark:border-sky-950 dark:bg-slate-950 ${isStudent ? 'h-[68px]' : 'h-[76px]'}`}>
-          <Link
-            to={homePath}
-            title="PeerPrep home"
-            className={`flex h-full items-center overflow-hidden ${isStudent ? (isExpanded ? 'justify-start px-2 pr-10' : 'justify-center') : ''}`}
-          >
-            <div className="relative h-14 w-full shrink-0 overflow-hidden">
-            {isStudent ? <>
-              <img src="/images/peerprep-mark.png" alt="PeerPrep" className={`absolute left-1/2 top-1/2 h-11 w-11 -translate-x-1/2 -translate-y-1/2 object-contain transition-[opacity,transform] duration-200 ease-out ${isExpanded ? 'scale-90 opacity-0' : 'scale-100 opacity-100'}`} />
-              <img src="/images/peerprep-wordmark.png" alt="PeerPrep" className={`absolute left-1 top-1/2 h-auto w-[158px] -translate-y-1/2 object-contain transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isExpanded ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0'}`} />
-            </> : <img src="/images/logo.png" alt="PeerPrep" className={`absolute -left-5 top-1/2 h-auto w-[187px] max-w-none -translate-y-1/2 transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${isExpanded ? 'translate-x-4' : 'translate-x-0'}`} />}
-            </div>
+        {/* Header: 64px, the same height as the page header beside it; no dividing lines (the
+            frame is one surface, see ShellCorners). */}
+        <div className="relative flex h-16 shrink-0 items-center px-2">
+          <Link to={homePath} title="PeerPrep home" className="relative flex h-full min-w-0 flex-1 items-center overflow-hidden rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500">
+            {/* The mark stays put over the rail's icon column; the name appears beside it. The name is
+                text (not the wordmark image) so it stays readable in the dark theme. */}
+            <img src="/images/peerprep-mark.png" alt="" className="absolute top-1/2 h-9 w-9 -translate-y-1/2 object-contain" style={{ left: `calc((${isStudent ? STUDENT_SIDEBAR_RAIL_WIDTH : getSidebarWidth(false)} - 1rem - 2.25rem) / 2)` }} />
+            <span className={`absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[19px] font-bold tracking-[-0.02em] transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isExpanded ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0'}`} style={{ left: `calc((${isStudent ? STUDENT_SIDEBAR_RAIL_WIDTH : getSidebarWidth(false)} - 1rem - 2.25rem) / 2 + 2.75rem)` }}>
+              <span className="text-sky-600 dark:text-sky-400">Peer</span><span className="text-slate-800 dark:text-white">Prep</span>
+            </span>
+            <span className="sr-only">PeerPrep home</span>
           </Link>
-          {isStudent && isExpanded && (
-            <button
-              type="button"
-              onClick={onTogglePin}
-              className="absolute right-1 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300"
-              aria-label={isPinned ? 'Collapse navigation' : 'Keep navigation open'}
-              title={isPinned ? 'Collapse navigation' : 'Keep navigation open'}
-            >
-              <ChevronsLeft className="h-[18px] w-[18px]" />
-            </button>
-          )}
+          {/* One pin control for every role; shown when the sidebar is open. */}
+          <button
+            type="button"
+            onClick={onTogglePin}
+            tabIndex={isExpanded ? 0 : -1}
+            className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-zinc-500 dark:hover:bg-white/[0.06] dark:hover:text-sky-300 ${isExpanded ? 'relative opacity-100' : 'pointer-events-none absolute right-2 opacity-0'}`}
+            aria-label={isStudent ? (isPinned ? 'Collapse navigation' : 'Keep navigation open') : (isPinned ? 'Unpin sidebar (it opens on hover)' : 'Keep sidebar open')}
+            title={isPinned ? 'Unpin: open on hover' : 'Keep open'}
+            aria-pressed={isPinned}
+          >
+            {isPinned ? <PanelLeftClose className="h-[17px] w-[17px]" /> : <PanelLeftOpen className="h-[17px] w-[17px]" />}
+          </button>
         </div>
 
-        <nav data-guide="app-nav" className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${isStudent ? 'space-y-1 px-2 py-3' : 'space-y-1 px-1.5 py-3'}`} aria-label={`${roleLabel} navigation`}>
+        {/* Rows share the screen height: up to 40px each, down to 30px on short screens, so the whole
+            menu fits without scrolling (it can still scroll on very short windows). 12.5rem is the
+            header (4rem) + footer + padding. */}
+        <nav data-guide="app-nav" className="min-h-0 flex-1 space-y-0.5 overflow-x-hidden overflow-y-auto px-2 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label={`${roleLabel} navigation`}
+          style={{ '--nav-count': Math.max(1, navItems.length), '--nav-h': `clamp(1.875rem, calc((100dvh - ${showPeerCounts ? 13.75 : 11.25}rem) / var(--nav-count) - 2px), 2.5rem)` }}>
         {navItems.map((item) => {
           if (item.type === 'link') {
             const Icon = item.icon;
@@ -733,20 +815,12 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                 key={item.label}
                 to={item.to}
                 title={item.label}
-                className={`group relative flex min-h-10 items-center rounded-xl py-1 text-[13px] transition-[background-color,color,box-shadow,transform] duration-200 ${active ? 'font-semibold' : 'font-medium'} ${
-                  active
-                    ? isStudent ? 'bg-sky-50/90 text-sky-800 shadow-[0_3px_12px_rgba(14,165,233,0.08)] ring-1 ring-sky-200 dark:bg-sky-950/70 dark:text-sky-200 dark:ring-sky-900' : 'bg-sky-50 text-sky-700 shadow-sm dark:bg-sky-900/30 dark:text-sky-300'
-                    : isStudent ? 'text-slate-700 hover:bg-white/80 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/[.06] dark:hover:text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
-                }`}
+                className={`${NAV_ITEM} ${active ? NAV_ITEM_ACTIVE : NAV_ITEM_IDLE}`}
               >
-                <span className={`absolute left-[10px] flex h-8 w-8 items-center justify-center rounded-lg transition-[background-color,color,transform] duration-200 ${
-                  active
-                    ? isStudent ? 'bg-sky-600 text-white shadow-sm' : 'bg-sky-100 text-sky-700 dark:bg-sky-800/40 dark:text-sky-300'
-                    : isStudent ? 'bg-transparent text-slate-700 group-hover:text-sky-700 dark:text-slate-300' : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'
-                }`}>
+                <span className={`${NAV_ICON} ${active ? NAV_ICON_ACTIVE : NAV_ICON_IDLE}`}>
                   <Icon className="h-[18px] w-[18px]" />
                   {item.badge > 0 && !isExpanded && (
-                    <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-950" aria-hidden="true" />
+                    <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#202020]" aria-hidden="true" />
                   )}
                 </span>
                 <span className={`ml-12 min-w-0 flex-1 whitespace-nowrap pr-2 text-left leading-tight transition-[opacity,transform] duration-200 ${isExpanded ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0'}`}>
@@ -781,17 +855,9 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                 aria-expanded={isOpen}
                 aria-controls={groupPanelId}
                 data-platform-disclosure="navigation"
-                className={`relative flex min-h-10 w-full items-center rounded-xl py-1 text-[13px] transition-[background-color,color,box-shadow] duration-200 ${groupActive ? 'font-semibold' : 'font-medium'} ${
-                  groupActive
-                    ? isStudent ? 'bg-sky-50/90 text-sky-800 shadow-[0_3px_12px_rgba(14,165,233,0.08)] ring-1 ring-sky-200 dark:bg-sky-950/70 dark:text-sky-200 dark:ring-sky-900' : 'bg-sky-50 text-sky-700 shadow-sm dark:bg-sky-900/30 dark:text-sky-300'
-                    : isStudent ? 'text-slate-700 hover:bg-white/80 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/[.06] dark:hover:text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
-                }`}
+                className={`${NAV_ITEM} w-full ${groupActive ? NAV_ITEM_ACTIVE : isOpen ? NAV_ITEM_OPEN : NAV_ITEM_IDLE}`}
               >
-                <span className={`absolute left-[10px] flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
-                  groupActive
-                    ? isStudent ? 'bg-sky-600 text-white shadow-sm' : 'bg-sky-100 text-sky-700 dark:bg-sky-800/40 dark:text-sky-300'
-                    : isStudent ? 'bg-transparent text-slate-700 dark:text-slate-300' : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'
-                }`}>
+                <span className={`${NAV_ICON} ${groupActive ? NAV_ICON_ACTIVE : NAV_ICON_IDLE}`}>
                   <GroupIcon className="h-[18px] w-[18px]" />
                 </span>
                 <span className={`ml-12 min-w-0 flex-1 whitespace-nowrap pr-8 text-left leading-tight transition-[opacity,transform] duration-200 ${isExpanded ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0'}`}>
@@ -925,9 +991,11 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
         })}
         </nav>
 
-        <div className={`relative shrink-0 border-t border-sky-100 dark:border-sky-950 ${isStudent ? 'p-2' : 'py-2'}`}>
+        {/* Footer: same padding and row style as the menu; no dividing line. */}
+        <div className="relative shrink-0 space-y-1 px-2 pb-2 pt-1">
           {isProfileOpen && createPortal(
             <div
+              ref={accountMenuRef}
               id={accountMenuId}
               className={`pointer-events-auto fixed bottom-3 z-[9999] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50 duration-300`}
               style={{ left: `calc(${resolvedSidebarWidth} + 0.75rem)` }}
@@ -1003,7 +1071,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
               if (!isExpanded) onExpand();
               updateProfileOpen((open) => !open);
             }}
-            className={`relative flex h-12 w-full items-center overflow-hidden rounded-xl text-left transition ${isProfileOpen ? 'bg-sky-50 shadow-sm ring-1 ring-sky-200 dark:bg-sky-950/60 dark:ring-sky-900' : 'hover:bg-sky-50/80 dark:hover:bg-sky-950/40'}`}
+            className={`relative flex h-11 w-full items-center overflow-hidden rounded-xl text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${isProfileOpen ? 'bg-sky-50 ring-1 ring-inset ring-sky-200/80 dark:bg-sky-500/10 dark:ring-sky-400/20' : FOOTER_ROW_HOVER}`}
             aria-expanded={isProfileOpen}
             aria-controls={accountMenuId}
             aria-label="Open account menu"
@@ -1025,7 +1093,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
             <button
               type="button"
               onClick={() => setMatesOpen(true)}
-              className="mt-1.5 flex w-full items-center gap-2.5 rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-2 text-left transition hover:border-sky-300 hover:bg-sky-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-sky-950 dark:bg-sky-950/30 dark:hover:border-sky-800 dark:hover:bg-sky-950/60"
+              className="flex w-full items-center gap-2.5 rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-2 text-left transition hover:border-sky-300 hover:bg-sky-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-sky-950 dark:bg-sky-950/30 dark:hover:border-sky-800 dark:hover:bg-sky-950/60"
               aria-label={`${peerSummary?.prepMates ?? 0} ${PEER_TERMS.prepMates}${pendingMateRequests ? `, ${pendingMateRequests} ${pendingMateRequests === 1 ? 'request' : 'requests'} waiting` : ''}. Show list`}
             >
               <Handshake className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-300" aria-hidden="true" />

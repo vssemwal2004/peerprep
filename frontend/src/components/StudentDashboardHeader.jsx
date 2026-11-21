@@ -38,7 +38,7 @@ const modules = [
   { label: 'Prep Coding', hint: 'Practice problem solving', to: '/problems', icon: Code2 },
   { label: 'Quick Prep', hint: 'Question sheets prepared by your admin', to: '/student/quickprep', icon: Sparkles },
   { label: 'Prep Assessment', hint: 'Available tests', to: '/student/assessments', icon: ClipboardList },
-  { label: 'Resume', hint: 'Build your placement resume', to: '/student/resume', icon: UserCog },
+  { label: 'Prep Resume', hint: 'Build your resume in 30+ templates', to: '/student/resume', icon: UserCog },
   { label: 'Ranking', hint: 'Your university and global rank', to: '/student/rankings', icon: BarChart3 },
   { label: 'Prep Analysis', hint: 'Progress and skill insights', to: '/student/analysis', icon: BarChart3 },
   { label: 'Interviews', hint: 'Peer interview sessions', to: '/student/interview', icon: User },
@@ -155,7 +155,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   };
 
   return (
-    <header aria-label="Student header" className="sticky top-0 z-[60] border-b border-slate-200 bg-white px-3 dark:border-zinc-800 dark:bg-[#202020] sm:px-5">
+    <header aria-label="Student header" className="sticky top-0 z-[60] border-b border-slate-200 bg-white px-3 dark:border-zinc-800 dark:bg-[#202020] sm:px-5 lg:border-b-0 lg:bg-[var(--shell-frame)]">
       {/* Phones/tablets: the mobile top bar already has the menu and the account, so this row is
           compact and shows only search, challenges, Prep Coins and notifications. */}
       <div className="mx-auto flex h-12 w-full max-w-[1600px] items-center gap-2 sm:gap-3 lg:h-16">

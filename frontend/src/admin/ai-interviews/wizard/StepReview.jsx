@@ -567,7 +567,7 @@ export default function StepReview({
             ],
             ...(resume.mode === "none"
               ? []
-              : [["Shared from", resume.sources.map((s) => (s === "builder" ? "Resume Builder" : RESUME_SOURCES.find((r) => r.value === s)?.label.split(" (")[0] || s)).join(" or ")]]),
+              : [["Shared from", resume.sources.map((s) => (s === "builder" ? "Prep Resume" : RESUME_SOURCES.find((r) => r.value === s)?.label.split(" (")[0] || s)).join(" or ")]]),
             ["Terms", termsText],
           ]}
         />

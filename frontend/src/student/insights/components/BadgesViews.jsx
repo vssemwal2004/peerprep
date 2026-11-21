@@ -1,39 +1,21 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowRight, Award, Loader2, Lock, Sparkles } from "lucide-react";
-import BadgeEmblem from "../../profile/BadgeEmblem";
+import { ArrowRight, Award, Loader2, Sparkles } from "lucide-react";
+import BadgeMedal from "../../badges/BadgeMedal";
+import { FAMILY_LABELS, fromAward, nextLocked } from "../../badges/badgeModel";
+import { useBadgeCollection } from "../../badges/useBadgeCollection";
 import LevelMedallion from "../../profile/LevelMedallion";
-import { awardIcon, awardTone } from "../../profile/awardVisuals";
 import { levelTheme } from "../../profile/levelTheme";
 import { fullDate, sectionPath } from "../insightModel";
 import { Card, CardTitle, Empty, focusRing, ProgressBar } from "./ui";
 
-/** One badge: the adaptive emblem when it has a category, else the classic round medal. */
+const MEDAL_SIZE = { sm: 38, md: 46, lg: 60 };
+
+/** One award as the shared badge medal (locked form when not earned). */
 export function AwardMedal({ award, size = "md" }) {
-  const box = size === "lg" ? "h-16 w-14" : size === "sm" ? "h-10 w-9" : "h-12 w-11";
-  if (award.category) {
-    return (
-      <span className="relative inline-flex">
-        <BadgeEmblem badge={award} className={`${box} drop-shadow-[0_4px_8px_rgba(16,24,40,0.18)]`} />
-        {!award.earned && <LockPip />}
-      </span>
-    );
-  }
-  const Icon = awardIcon(award);
-  const round = size === "lg" ? "h-14 w-14" : size === "sm" ? "h-9 w-9" : "h-11 w-11";
-  return (
-    <span className={`relative flex ${round} items-center justify-center rounded-full bg-gradient-to-br ring-[3px] ring-white dark:ring-[#232325] ${award.earned ? `text-white shadow-md ${awardTone(award)}` : "from-slate-100 to-slate-200 text-slate-400 dark:from-zinc-700 dark:to-zinc-800 dark:text-zinc-500"}`} aria-hidden="true">
-      <Icon className="h-[42%] w-[42%]" strokeWidth={2} />
-      {!award.earned && <LockPip />}
-    </span>
-  );
+  return <BadgeMedal badge={fromAward(award)} size={MEDAL_SIZE[size] || MEDAL_SIZE.md} interactive={award.earned} />;
 }
-
-function LockPip() {
-  return <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white ring-1 ring-slate-200 dark:bg-zinc-900 dark:ring-zinc-700"><Lock className="h-2.5 w-2.5 text-slate-400" aria-hidden="true" /></span>;
-}
-
-const progressOf = (award) => Math.max(0, Math.min(100, Number(award.progress) || (award.target ? ((award.value || 0) / award.target) * 100 : 0)));
 
 /** Level, latest badges and the next badge, for the overview. */
 export function BadgesCard({ badges }) {
@@ -59,9 +41,9 @@ export function BadgesCard({ badges }) {
           </div>
         </div>
       )}
-      <div className="relative flex flex-wrap items-center gap-2">
+      <div className="relative flex flex-wrap items-center gap-1.5">
         {data.earned.slice(0, 6).map((award, index) => (
-          <motion.span key={award.id} title={award.title} initial={reduce ? false : { opacity: 0, scale: 0.6, rotate: -12 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ delay: 0.1 + index * 0.06, type: "spring", stiffness: 320, damping: 18 }} className="transition-transform duration-200 hover:-translate-y-1">
+          <motion.span key={award.id} title={award.title} initial={reduce ? false : { opacity: 0, scale: 0.6, rotateY: -90 }} animate={{ opacity: 1, scale: 1, rotateY: 0 }} transition={{ delay: 0.1 + index * 0.06, type: "spring", stiffness: 320, damping: 18 }} className="transition-transform duration-200 hover:-translate-y-1">
             <AwardMedal award={award} size="sm" />
           </motion.span>
         ))}
@@ -72,35 +54,50 @@ export function BadgesCard({ badges }) {
           <AwardMedal award={next} size="sm" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[12px] font-semibold text-slate-800 dark:text-zinc-100">Next: {next.title}</p>
-            <ProgressBar value={progressOf(next)} label={`Progress to ${next.title}`} />
+            <ProgressBar value={fromAward(next).progress} label={`Progress to ${next.title}`} />
           </div>
-          <span className="text-[11px] font-semibold tabular-nums text-slate-500">{Math.round(progressOf(next))}%</span>
+          <span className="text-[11px] font-semibold tabular-nums text-slate-500">{Math.round(fromAward(next).progress)}%</span>
         </div>
       )}
     </Card>
   );
 }
 
-function BadgeTile({ award, index }) {
+function BadgeTile({ badge, index }) {
   const reduce = useReducedMotion();
+  const earnedText = badge.earnedLabel || (badge.earnedAt ? fullDate(badge.earnedAt) : "");
   return (
     <motion.li initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index, 20) * 0.03, duration: 0.35 }}
-      className={`group flex flex-col items-center rounded-2xl border p-4 text-center transition duration-300 hover:-translate-y-1 ${award.earned ? "border-[#e9eaee] bg-white hover:border-amber-200 hover:shadow-[0_16px_32px_-22px_rgba(217,119,6,0.6)] dark:border-white/[0.07] dark:bg-[#232325]" : "border-dashed border-slate-200 bg-[#fafbfc] dark:border-white/10 dark:bg-white/[0.02]"}`}>
-      <span className="transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-4deg]"><AwardMedal award={award} size="lg" /></span>
-      <p className="mt-2 text-[13px] font-semibold text-slate-900 dark:text-zinc-100">{award.title}</p>
-      {award.description && <p className="mt-0.5 line-clamp-2 text-[11.5px] text-slate-500 dark:text-zinc-400">{award.description}</p>}
-      {award.earned
-        ? <p className="mt-2 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">{award.earnedAt ? `Earned ${fullDate(award.earnedAt)}` : "Earned"}</p>
-        : <div className="mt-2 w-full"><ProgressBar value={progressOf(award)} label={`${award.title} progress`} /><p className="mt-1 text-[10.5px] tabular-nums text-slate-400">{award.target ? `${Math.min(award.value || 0, award.target)}/${award.target}` : `${Math.round(progressOf(award))}%`}</p></div>}
+      className={`group flex flex-col items-center rounded-2xl border p-4 text-center transition duration-300 hover:-translate-y-1 ${badge.earned ? "border-[#e9eaee] bg-white hover:border-amber-200 hover:shadow-[0_16px_32px_-22px_rgba(217,119,6,0.6)] dark:border-white/[0.07] dark:bg-[#232325]" : "border-dashed border-slate-200 bg-[#fafbfc] dark:border-white/10 dark:bg-white/[0.02]"}`}>
+      <BadgeMedal badge={badge} size={64} interactive />
+      <p className="mt-2 text-[13px] font-semibold text-slate-900 dark:text-zinc-100">{badge.title}</p>
+      {badge.description && <p className="mt-0.5 line-clamp-2 text-[11.5px] text-slate-500 dark:text-zinc-400">{badge.description}</p>}
+      <p className="mt-1 text-[10.5px] font-medium text-slate-400 dark:text-zinc-500">{FAMILY_LABELS[badge.family]} · {badge.tier}</p>
+      {badge.earned
+        ? <p className="mt-2 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">{earnedText ? `Earned ${badge.earnedLabel ? "in" : ""} ${earnedText}`.replace("  ", " ") : "Earned"}</p>
+        : <div className="mt-2 w-full"><ProgressBar value={badge.progress} label={`${badge.title} progress`} /><p className="mt-1 text-[10.5px] tabular-nums text-slate-400">{badge.valueText || `${Math.round(badge.progress)}%`}</p></div>}
     </motion.li>
   );
 }
 
-/** Every badge: earned first (newest first), then locked ones closest to unlocking. */
-export function BadgesPage({ badges, milestones }) {
+const FILTERS = ["all", "award", "lifetime", "monthly"];
+
+/**
+ * Every badge — achievements, lifetime milestones and monthly badges, the same set as the profile:
+ * earned first (newest first), then the next ones to unlock. "Show every locked badge" lists all.
+ */
+export function BadgesPage({ badges, milestones, coding = false }) {
+  const collection = useBadgeCollection({ awards: badges.data?.awards, milestones: coding });
+  const [family, setFamily] = useState("all");
+  const [allLocked, setAllLocked] = useState(false);
   if (badges.loading) return <Card className="flex items-center justify-center gap-2 p-10 text-[13px] text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Loading badges…</Card>;
-  if (!badges.data) return <Card><Empty icon={Award} title="Badges could not be loaded." /></Card>;
-  const { earned, locked, level, total } = badges.data;
+  if (!badges.data && !collection.items.length) return <Card><Empty icon={Award} title="Badges could not be loaded." /></Card>;
+  const level = badges.data?.level;
+  const match = (badge) => family === "all" || badge.family === family;
+  const earned = collection.earned.filter(match);
+  const lockedAll = collection.locked.filter(match);
+  const locked = allLocked ? lockedAll : nextLocked(lockedAll);
+  const families = FILTERS.filter((key) => key === "all" || collection.items.some((badge) => badge.family === key));
   return (
     <div className="space-y-4" data-guide="an-badges-page">
       <div className="grid gap-3 md:grid-cols-3">
@@ -121,23 +118,42 @@ export function BadgesPage({ badges, milestones }) {
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-500 dark:bg-amber-500/10" aria-hidden="true"><Sparkles className="h-7 w-7" /></span>
           <div className="min-w-0 flex-1">
             <p className="text-[12px] text-slate-500 dark:text-zinc-400">Badges earned</p>
-            <p className="text-[28px] font-semibold leading-none tracking-[-0.03em] text-slate-950 dark:text-zinc-50">{earned.length}<span className="text-[16px] text-slate-400">/{total}</span></p>
-            <div className="mt-2 max-w-md"><ProgressBar value={earned.length} max={total || 1} height="h-2" color="#f59e0b" label="Badges earned" /></div>
+            <p className="text-[28px] font-semibold leading-none tracking-[-0.03em] text-slate-950 dark:text-zinc-50">{collection.earned.length}<span className="text-[16px] text-slate-400">/{collection.total}</span></p>
+            <div className="mt-2 max-w-md"><ProgressBar value={collection.earned.length} max={collection.total || 1} height="h-2" color="#f59e0b" label="Badges earned" /></div>
           </div>
           {milestones?.next && <div className="hidden text-right sm:block"><p className="text-[11px] text-slate-500 dark:text-zinc-400">Next solve milestone</p><p className="text-[18px] font-semibold text-slate-900 dark:text-zinc-100">{milestones.next.count}</p><p className="text-[11px] text-slate-400">{milestones.next.remaining} to go</p></div>}
         </Card>
       </div>
+
+      {families.length > 2 && (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Badge families">
+          {families.map((key) => (
+            <button key={key} type="button" aria-pressed={family === key} onClick={() => setFamily(key)}
+              className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors ${focusRing} ${family === key ? "bg-slate-900 text-white dark:bg-white dark:text-zinc-900" : "bg-white text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-50 dark:bg-white/[0.04] dark:text-zinc-300 dark:ring-white/10"}`}>
+              {key === "all" ? "All" : FAMILY_LABELS[key]}
+            </button>
+          ))}
+        </div>
+      )}
+
       <section aria-labelledby="earned-title">
         <h2 id="earned-title" className="mb-2 text-[14px] font-semibold text-slate-900 dark:text-zinc-100">Earned · {earned.length}</h2>
-        {earned.length ? <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{earned.map((award, index) => <BadgeTile key={award.id} award={award} index={index} />)}</ul> : <Card><Empty icon={Award} title="No badges yet. Solve, learn or take a test to earn your first." /></Card>}
+        {earned.length ? <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{earned.map((badge, index) => <BadgeTile key={badge.uid} badge={badge} index={index} />)}</ul> : <Card><Empty icon={Award} title="No badges here yet. Solve, learn or take a test to earn your first." /></Card>}
       </section>
-      {locked.length > 0 && (
+      {lockedAll.length > 0 && (
         <section aria-labelledby="locked-title">
-          <h2 id="locked-title" className="mb-2 text-[14px] font-semibold text-slate-900 dark:text-zinc-100">Still to unlock · {locked.length}</h2>
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{locked.map((award, index) => <BadgeTile key={award.id} award={award} index={index} />)}</ul>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 id="locked-title" className="text-[14px] font-semibold text-slate-900 dark:text-zinc-100">{allLocked ? "Still to unlock" : "Up next"} · {locked.length}</h2>
+            {lockedAll.length > locked.length || allLocked ? (
+              <button type="button" onClick={() => setAllLocked((value) => !value)} className={`text-[12px] font-semibold text-sky-700 hover:underline dark:text-sky-300 ${focusRing}`}>
+                {allLocked ? "Show only the next ones" : `Show every locked badge (${lockedAll.length})`}
+              </button>
+            ) : null}
+          </div>
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{locked.map((badge, index) => <BadgeTile key={badge.uid} badge={badge} index={index} />)}</ul>
         </section>
       )}
-      <p className="text-[11.5px] text-slate-500 dark:text-zinc-400">These are the same badges as on your dashboard and profile. <Link to="/student/profile#badges" className="font-semibold text-sky-700 dark:text-sky-300">Open your profile</Link></p>
+      <p className="text-[11.5px] text-slate-500 dark:text-zinc-400">These are the same badges as on your profile. <Link to="/student/profile#badges" className="font-semibold text-sky-700 dark:text-sky-300">Open your profile</Link></p>
     </div>
   );
 }

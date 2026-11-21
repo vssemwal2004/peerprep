@@ -12,7 +12,8 @@ import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
 import User from '../models/User.js';
-import { BadgeLadder, BadgeLevelAward, StudentDailyLogin } from '../models/MonthlyBadge.js';
+import { BadgeLadder, BadgeLevelAward } from '../models/MonthlyBadge.js';
+import { MissionAssignment } from '../models/AdaptiveEngagement.js';
 import { PrepScoreSolve } from '../models/PrepScoreTopicQuota.js';
 import { BADGE_LEVELS, creditEarningSafely, getEarningConfig } from '../platform/coinEarn.js';
 import { currentTenant } from '../platform/tenantContext.js';
@@ -27,21 +28,25 @@ const QUERY_TIMEOUT_MS = 8_000;
 const HISTORY_MONTHS = 3;
 const ACCEPTED = ['AC', 'Accepted', 'ACCEPTED', 'ACCEPT'];
 // Each next month asks more than the recent average.
-const GROWTH = 1.1;
+const GROWTH = 1.25;
 // Badges are meant to be precious (2026-11-19): level 1 already means beating your own recent
 // month (baseline = 110% of your 3-month average, never below the badge's floor), and level 10
 // asks for four times that. Level k's target = baseline × MULTIPLIERS[k - 1].
-const MULTIPLIERS = Object.freeze([1, 1.2, 1.4, 1.6, 1.8, 2, 2.4, 2.8, 3.2, 4]);
+// 2026-11-21: harder again (user: badges were too easy). Level 1 = 125% of your 3-month average,
+// level 10 = six times that.
+const MULTIPLIERS = Object.freeze([1, 1.3, 1.6, 2, 2.4, 2.9, 3.5, 4.2, 5, 6]);
 // Bumped when the rules change, so this month's ladder is rebuilt under the new rules once.
-export const LADDER_RULES = 'precious-1';
+export const LADDER_RULES = 'precious-2';
 
 // Only four badges, all earned by practice (opening the app, or touching many topics with easy
 // solves, no longer earns a badge).
 export const TRACKS = Object.freeze([
-  { key: 'solver', title: 'Problem Solver', unit: 'problems solved', description: 'New problems solved this month', floor: 12 },
-  { key: 'medium', title: 'Medium Master', unit: 'Medium problems', description: 'New Medium problems solved this month', floor: 4 },
-  { key: 'hard', title: 'Hard Hitter', unit: 'Hard problems', description: 'New Hard problems solved this month', floor: 2 },
-  { key: 'consistent', title: 'Consistency', unit: 'practice days', description: 'Days you submitted code this month', floor: 10, days: true },
+  { key: 'solver', title: 'Problem Solver', unit: 'problems solved', description: 'New problems solved this month', floor: 20 },
+  { key: 'medium', title: 'Medium Master', unit: 'Medium problems', description: 'New Medium problems solved this month', floor: 8 },
+  { key: 'hard', title: 'Hard Hitter', unit: 'Hard problems', description: 'New Hard problems solved this month', floor: 4 },
+  { key: 'consistent', title: 'Consistency', unit: 'practice days', description: 'Days you submitted code this month', floor: 15, days: true },
+  // The monthly active badge: daily challenges completed this month (2026-11-21).
+  { key: 'challenger', title: 'Daily Challenger', unit: 'daily challenges', description: 'Daily challenges completed this month', floor: 12, days: true },
 ].map(Object.freeze));
 const TRACK_BY_KEY = new Map(TRACKS.map((track) => [track.key, track]));
 
@@ -102,7 +107,7 @@ export async function monthlyValues(studentId, fromMonth, toMonth) {
   const student = objectId(studentId);
   const from = monthStart(fromMonth);
   const to = monthStart(shiftMonth(toMonth, 1));
-  const [localFirsts, sharedFirsts, uncounted, localDays, sharedDays, logins, catalog] = await Promise.all([
+  const [localFirsts, sharedFirsts, uncounted, localDays, sharedDays, challenges, catalog] = await Promise.all([
     Submission.aggregate([
       { $match: { user: student, mode: 'submit', assessmentId: null, status: { $in: ACCEPTED } } },
       { $group: { _id: '$problem', firstAt: { $min: '$createdAt' } } },
@@ -122,7 +127,7 @@ export async function monthlyValues(studentId, fromMonth, toMonth) {
       { $match: { studentId: student, source: 'shared', questionType: 'coding', createdAt: { $gte: from, $lt: to } } },
       { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } } } },
     ]).option({ maxTimeMS: QUERY_TIMEOUT_MS }),
-    StudentDailyLogin.find({ studentId: student, day: { $gte: `${fromMonth}-01`, $lte: `${toMonth}-31` } }).select('day').maxTimeMS(QUERY_TIMEOUT_MS).lean(),
+    MissionAssignment.find({ studentId: student, kind: 'daily', earnedAt: { $ne: null }, periodKey: { $gte: `${fromMonth}-01`, $lte: `${toMonth}-31` } }).select('periodKey').maxTimeMS(QUERY_TIMEOUT_MS).lean(),
     sharedFirstsNeedCatalog(),
   ]);
   const skipped = new Set(uncounted.map((row) => row.problemKey));
@@ -151,7 +156,7 @@ export async function monthlyValues(studentId, fromMonth, toMonth) {
     if (question) addSolve(row.firstAt, question.difficulty || question.questionData?.problemDataSnapshot?.difficulty, question.tags);
   }
   for (const row of [...localDays, ...sharedDays]) bucket(row._id.slice(0, 7)).days.add(row._id);
-  for (const row of logins) bucket(row.day.slice(0, 7)).regular += 1;
+  for (const row of challenges) bucket(row.periodKey.slice(0, 7)).challenger += 1;
   for (const row of Object.values(result)) {
     row.explorer = row.topics.size;
     row.consistent = row.days.size;

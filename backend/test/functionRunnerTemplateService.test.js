@@ -212,7 +212,8 @@ test('C runner supplies hidden sizes and keeps main out of the student template'
     'nums = [2, 7], target = 9',
     { ...cContract, runnerLanguage: 'c' },
   );
-  assert.match(source, /int __ppArg0\[\] = \{2, 7};/);
+  // Spacing inside the initializer is not part of the contract (the generator writes {2,7}).
+  assert.match(source, /int __ppArg0\[\] = \{2,\s*7};/);
   assert.match(source, /twoSum\(__ppArg0, \(int\)\(sizeof\(__ppArg0\)/);
   assert.doesNotMatch(studentTemplate, /int main/);
 });

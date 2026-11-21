@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Check, Info, Lock, Medal, X } from 'lucide-react';
+import { Check, Info, Medal, X } from 'lucide-react';
 import { LEVEL_POINTS_FORMULA, getLearnerLevelLadder } from '../profileBadge';
-import { awardIcon, awardTone } from './awardVisuals';
 import { levelTheme } from './levelTheme';
 import LevelMedallion from './LevelMedallion';
 import { focusRing } from './format';
-import BadgeEmblem from './BadgeEmblem';
+import BadgeMedal from '../badges/BadgeMedal';
+import { FAMILY_LABELS, fromAward, orderBadges } from '../badges/badgeModel';
 
 const MotionDiv = motion.div;
 
@@ -23,60 +23,37 @@ const FILTERS = [
   { key: 'locked', label: 'Locked' },
 ];
 
-function AwardTile({ award, earnedAt }) {
-  const Icon = awardIcon(award);
-  const remaining = Math.max(0, award.target - award.value);
+function BadgeTile({ badge }) {
+  const earnedAt = badge.earnedLabel || shortDate(badge.earnedAt);
   return (
-    <li className={`flex gap-3 rounded-xl border p-3 transition-colors ${award.earned
-      ? 'border-slate-200 bg-white dark:border-zinc-700 dark:bg-zinc-900'
+    <li className={`group flex gap-3 rounded-xl border p-3 transition-colors ${badge.earned
+      ? 'border-slate-200 bg-white hover:border-amber-200 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-amber-400/30'
       : 'border-dashed border-slate-200 bg-slate-50/60 dark:border-zinc-800 dark:bg-zinc-900/40'}`}
     >
-      {award.category ? <BadgeEmblem badge={award} className="h-16 w-14" /> : <span
-        className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${award.earned
-          ? `bg-gradient-to-br text-white shadow-md ${awardTone(award)}`
-          : 'bg-slate-200/70 text-slate-400 dark:bg-zinc-800 dark:text-zinc-600'}`}
-        aria-hidden="true"
-      >
-        <Icon className="h-5 w-5" />
-        {!award.earned ? (
-          <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white ring-1 ring-slate-200 dark:bg-zinc-900 dark:ring-zinc-700">
-            <Lock className="h-2.5 w-2.5 text-slate-400" />
-          </span>
-        ) : null}
-      </span>}
+      <BadgeMedal badge={badge} size={54} interactive />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="truncate text-[13px] font-semibold text-slate-900 dark:text-zinc-100">{award.title}</h3>
-          {award.earned ? (
+          <h3 className="truncate text-[13px] font-semibold text-slate-900 dark:text-zinc-100">{badge.title}</h3>
+          {badge.earned ? (
             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
               <Check className="h-3 w-3" aria-hidden="true" />
               Earned
             </span>
           ) : (
-            <span className="shrink-0 text-[10px] font-semibold tabular-nums text-slate-400 dark:text-zinc-500">
-              {Math.min(award.value, award.target)}/{award.target}
-            </span>
+            <span className="shrink-0 text-[10px] font-semibold tabular-nums text-slate-400 dark:text-zinc-500">{badge.valueText}</span>
           )}
         </div>
-        <p className="mt-0.5 text-[12px] text-slate-500 dark:text-zinc-400">{award.description}</p>
-        {award.category && <p className="mt-1 text-[10px] capitalize text-sky-600 dark:text-sky-400">{award.category} · {award.rarity} · Level {award.minimumLevel || 1}+{award.rewardXp ? ` · ${award.rewardXp} XP` : ''}</p>}
-        {award.earned ? (
-          <p className="mt-1.5 text-[11px] text-slate-400 dark:text-zinc-500">
-            {award.evidence?.imported && award.metric === 'legacy' ? 'Preserved legacy achievement' : earnedAt ? `Earned on ${earnedAt}` : 'Unlocked'}
-          </p>
+        <p className="mt-0.5 text-[12px] text-slate-500 dark:text-zinc-400">{badge.description}</p>
+        <p className="mt-1 text-[10px] text-sky-600 dark:text-sky-400">{FAMILY_LABELS[badge.family]} · {badge.tier}</p>
+        {badge.earned ? (
+          <p className="mt-1.5 text-[11px] text-slate-400 dark:text-zinc-500">{earnedAt ? `Earned ${badge.earnedLabel ? 'in' : 'on'} ${earnedAt}` : 'Unlocked'}</p>
         ) : (
           <>
-            <div
-              className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-zinc-800"
-              role="progressbar"
-              aria-label={`${award.title} progress`}
-              aria-valuemin={0}
-              aria-valuemax={award.target}
-              aria-valuenow={Math.min(award.value, award.target)}
-            >
-              <div className="h-full rounded-full bg-gradient-to-r from-sky-400 to-sky-600" style={{ width: `${award.progress}%` }} />
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-zinc-800" role="progressbar" aria-label={`${badge.title} progress`}
+              aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(badge.progress)}>
+              <div className="h-full rounded-full" style={{ width: `${badge.progress}%`, background: `linear-gradient(90deg, ${badge.look.from}, ${badge.look.to})` }} />
             </div>
-            <p className="mt-1 text-[11px] text-slate-400 dark:text-zinc-500">{remaining > 0 ? `${remaining} more to unlock` : `Activity target met · reach Level ${award.minimumLevel || 1} to unlock`}</p>
+            <p className="mt-1 text-[11px] text-slate-400 dark:text-zinc-500">{badge.hint}</p>
           </>
         )}
       </div>
@@ -149,7 +126,7 @@ function LevelRow({ tier, currentLevel, progress, achievedAt, isLast, allRequire
  * LeetCode-style badges gallery: every award (how to earn it, progress, earned date) and the full
  * level ladder (requirements, where the student is, progress to the next level).
  */
-export default function BadgesGallery({ open, onClose, level, awards, learnerProgress, initialTab = 'awards', subjectName = '', levelLadder }) {
+export default function BadgesGallery({ open, onClose, level, awards, collection, learnerProgress, initialTab = 'awards', subjectName = '', levelLadder }) {
   const reduceMotion = useReducedMotion();
   // subjectName set = someone else (admin/coordinator) is viewing this student's badges.
   const viewer = subjectName
@@ -164,7 +141,7 @@ export default function BadgesGallery({ open, onClose, level, awards, learnerPro
     : {
       heading: 'Your badges',
       here: 'You are here',
-      practise: 'Awards unlock automatically as you practise.',
+      practise: 'Badges unlock automatically as you practise.',
       none: 'No awards earned yet. Your first one is close.',
       rule: 'You move up a level when you meet',
       points: 'You have',
@@ -204,10 +181,17 @@ export default function BadgesGallery({ open, onClose, level, awards, learnerPro
     };
   }, [initialTab, onClose, open]);
 
-  const earnedDates = new Map((learnerProgress?.awards || []).map((entry) => [entry.id, shortDate(entry.earnedAt)]));
   const levelDates = new Map((learnerProgress?.levelHistory || []).map((entry) => [entry.level, shortDate(entry.achievedAt)]));
-  const list = awards.awards.filter((award) => (category === 'all' || award.category === category) && (filter === 'all' ? true : filter === 'earned' ? award.earned : !award.earned));
-  const categories = [...new Set(awards.awards.map((award) => award.category).filter(Boolean))];
+  // Every badge family in one list (achievements, lifetime milestones, monthly): earned first.
+  const all = useMemo(() => {
+    if (collection) return collection;
+    const earnedDates = new Map((learnerProgress?.awards || []).map((entry) => [entry.id, entry.earnedAt]));
+    const items = (awards?.awards || []).map((award) => fromAward({ ...award, earnedAt: award.earnedAt || earnedDates.get(award.id) || null }));
+    return { items, ...orderBadges(items), total: items.length };
+  }, [awards, collection, learnerProgress]);
+  const ordered = [...all.earned, ...all.locked];
+  const list = ordered.filter((badge) => (category === 'all' || badge.family === category) && (filter === 'all' ? true : filter === 'earned' ? badge.earned : !badge.earned));
+  const categories = [...new Set(ordered.map((badge) => badge.family))];
   const currentLevel = level?.level || 1;
 
   return (
@@ -253,13 +237,13 @@ export default function BadgesGallery({ open, onClose, level, awards, learnerPro
                     Level {currentLevel} · {level?.title}
                   </h2>
                   <p className="text-[12px] text-white/85">
-                    {awards.earnedCount} of {awards.awards.length} awards earned · {level?.score ?? 0} {levelLadder ? 'XP' : 'level points'}
+                    {all.earned.length} of {all.total} badges earned · {level?.score ?? 0} {levelLadder ? 'XP' : 'level points'}
                   </p>
                 </div>
               </div>
 
               <div className="relative mt-4 inline-flex rounded-lg bg-white/15 p-1" role="tablist" aria-label="Badge views">
-                {[{ key: 'awards', label: 'Awards' }, { key: 'levels', label: 'Levels' }].map((item) => (
+                {[{ key: 'awards', label: 'Badges' }, { key: 'levels', label: 'Levels' }].map((item) => (
                   <button
                     key={item.key}
                     type="button"
@@ -301,12 +285,10 @@ export default function BadgesGallery({ open, onClose, level, awards, learnerPro
                       ))}
                     </div>
                   </div>
-                  {categories.length > 0 && <div className="mt-3 flex flex-wrap gap-1" role="group" aria-label="Badge categories">{['all', ...categories].map((value) => <button key={value} type="button" aria-pressed={category === value} onClick={() => setCategory(value)} className={`rounded-full px-2.5 py-1 text-[11px] capitalize ${focusRing} ${category === value ? 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}>{value}</button>)}</div>}
+                  {categories.length > 1 && <div className="mt-3 flex flex-wrap gap-1" role="group" aria-label="Badge families">{['all', ...categories].map((value) => <button key={value} type="button" aria-pressed={category === value} onClick={() => setCategory(value)} className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${focusRing} ${category === value ? 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}>{value === 'all' ? 'All' : FAMILY_LABELS[value]}</button>)}</div>}
                   {list.length > 0 ? (
                     <ul className="mt-3 grid gap-2.5 sm:grid-cols-2">
-                      {list.map((award) => (
-                        <AwardTile key={award.id} award={award} earnedAt={shortDate(award.earnedAt) || earnedDates.get(award.id)} />
-                      ))}
+                      {list.map((badge) => <BadgeTile key={badge.uid} badge={badge} />)}
                     </ul>
                   ) : (
                     <p className="mt-6 text-center text-[13px] text-slate-500 dark:text-zinc-400">

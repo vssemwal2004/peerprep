@@ -1,4 +1,4 @@
-import { CalendarCheck, Code2, Compass, Flame, Layers, Sunrise } from 'lucide-react';
+import { CalendarCheck, CalendarCheck2, Code2, Compass, Flame, Layers, Sunrise } from 'lucide-react';
 
 // Each monthly badge has its own look: emblem shape, colour and icon. Server tracks:
 // backend/src/services/monthlyBadges.js TRACKS.
@@ -9,6 +9,8 @@ export const BADGE_LOOKS = {
   explorer: { shape: 'circle', from: '#6ee7b7', to: '#047857', accent: '#059669', Icon: Compass },
   consistent: { shape: 'squircle', from: '#a5b4fc', to: '#4338ca', accent: '#4f46e5', Icon: CalendarCheck },
   regular: { shape: 'burst', from: '#fcd34d', to: '#b45309', accent: '#d97706', Icon: Sunrise },
+  // Daily Challenger: daily challenges completed this month (2026-11-21).
+  challenger: { shape: 'burst', from: '#c4b5fd', to: '#6d28d9', accent: '#7c3aed', Icon: CalendarCheck2 },
 };
 export const badgeLook = (track) => BADGE_LOOKS[track] || BADGE_LOOKS.solver;
 

@@ -1,4 +1,4 @@
-// The resume ANVI asks about: either the student's saved Resume Builder resume or an uploaded file. Only
+// The resume ANVI asks about: either the student's saved Prep Resume or an uploaded file. Only
 // redacted plain text is kept (AnviResumeContext, removed when the attempt ends or by TTL); an upload stays in memory for the one
 // extraction call and is never written to disk or logged.
 import { createHash } from "node:crypto";
@@ -297,13 +297,13 @@ export function createAnviResumeService({ gemini, config, clock = Date, usage } 
     const resume = normalizeResumeSettings(data);
     if (resume.mode === "none") fail(409, "RESUME_NOT_USED", "This interview does not use a resume.");
     const chosen = file ? "upload" : source === "builder" ? "builder" : source === "upload" ? "upload" : null;
-    if (!chosen) fail(400, "RESUME_SOURCE_REQUIRED", "Choose your Resume Builder resume or upload a file.");
+    if (!chosen) fail(400, "RESUME_SOURCE_REQUIRED", "Choose your Prep Resume or upload a file.");
     if (!resume.sources.includes(chosen))
-      fail(403, "RESUME_SOURCE_DISABLED", chosen === "builder" ? "This interview does not accept the Resume Builder resume. Upload a file instead." : "This interview does not accept uploaded resumes. Use your Resume Builder resume instead.");
+      fail(403, "RESUME_SOURCE_DISABLED", chosen === "builder" ? "This interview does not accept the Prep Resume. Upload a file instead." : "This interview does not accept uploaded resumes. Use your Prep Resume instead.");
     let text;
     if (chosen === "builder") {
       text = redactResumeText(resumeToText(await Resume.findOne({ student: student._id }).lean())).slice(0, RESUME_TEXT_LIMIT);
-      if (!text) fail(404, "RESUME_BUILDER_EMPTY", "Your Resume Builder resume is empty. Add your details there or upload a file.");
+      if (!text) fail(404, "RESUME_BUILDER_EMPTY", "Your Prep Resume is empty. Add your details there or upload a file.");
     } else {
       if (!file) fail(400, "RESUME_FILE_REQUIRED", "Attach your resume as a PDF or text file.");
       if (file.size > RESUME_UPLOAD_BYTES || file.buffer?.length > RESUME_UPLOAD_BYTES) fail(413, "RESUME_TOO_LARGE", "Upload a resume of 5 MB or less.");

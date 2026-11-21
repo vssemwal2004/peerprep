@@ -15,6 +15,7 @@ import {
   Maximize2,
   BookOpenText,
   Clock3,
+  Crosshair,
   Gauge,
 } from 'lucide-react';
 import { api } from '../utils/api';
@@ -38,8 +39,9 @@ import AnviApproach, { ANVI_ASK_EVENT, AnviMark } from '../components/AnviApproa
 import QuickPrepMembership from './problems/QuickPrepMembership';
 import FailedTestCasePanel from './problems/FailedTestCasePanel';
 import { pickPracticeLanguage, rememberPracticeLanguage } from './practiceLanguage';
-import { quotaAfterSolve, quotaChip, quotaToast } from './prepScore/topicQuota';
-import { announceCoinsEarned } from './rewards/rewardEvents';
+import { quotaAfterSolve, quotaChip, submitNotice } from './prepScore/topicQuota';
+import { announceReadinessChange } from './readiness/readinessModel';
+import SolveScoreCard from './prepScore/SolveScoreCard';
 import PageGuideButton from '../guide/platform/PageGuideButton';
 import GuideInfo from '../guide/platform/GuideInfo';
 import { useOptionalAuth } from '../context/AuthContext';
@@ -387,19 +389,38 @@ function ReadingSectionTitle({ children, meta, info = null }) {
 
 const QUOTA_CHIP_TONES = {
   ok: 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300',
-  full: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-800',
+  partial: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-800',
+  full: 'bg-zinc-100 text-zinc-600 ring-1 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700',
   done: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300',
-  muted: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
 };
 
-/** Which Prep Score topic this problem counts against and how many counted solves are left today. */
-function PrepScoreQuotaChip({ quota, studentStatus }) {
-  const chip = quotaChip(quota, studentStatus);
+/**
+ * What solving this problem adds to the Prep Score today (its open tags share the points), the
+ * Prep Readiness topic it counts toward, and — when tags are full today — a comparable problem
+ * that still pays, before the student spends time on this one.
+ */
+function PrepScoreQuotaChip({ quota }) {
+  const chip = quotaChip(quota);
   if (!chip) return null;
+  const alternative = !quota?.solved && quota?.alternative ? quota.alternative : null;
   return (
-    <span title={chip.title} data-guide="ps-quota" className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${QUOTA_CHIP_TONES[chip.tone]}`}>
-      <Gauge className="h-3.5 w-3.5" aria-hidden="true" /> {chip.label}
-    </span>
+    <>
+      <span title={chip.title} data-guide="ps-quota" className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${QUOTA_CHIP_TONES[chip.tone]}`}>
+        <Gauge className="h-3.5 w-3.5" aria-hidden="true" /> {chip.label}
+      </span>
+      {quota?.readinessTopic ? (
+        <span title="The one Prep Readiness topic this problem counts toward (SBC and PBC)." data-guide="ps-readiness"
+          className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700 ring-1 ring-violet-200 dark:bg-violet-500/10 dark:text-violet-200 dark:ring-violet-400/20">
+          <Crosshair className="h-3.5 w-3.5" aria-hidden="true" /> Readiness · {quota.readinessTopic.label}
+        </span>
+      ) : null}
+      {alternative ? (
+        <a href={alternative.url} title={alternative.reason}
+          className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/20">
+          Still pays today: {alternative.title} →
+        </a>
+      ) : null}
+    </>
   );
 }
 
@@ -439,7 +460,7 @@ function ProblemDescriptionPanel({ problem, language, verifiedCompanies, prepQuo
         <div className="mt-4 flex flex-wrap items-center gap-2" data-guide="ps-meta">
           <DifficultyBadge difficulty={problem.difficulty} />
           <StudentProgressBadge status={problem.studentStatus || 'Unsolved'} />
-          <PrepScoreQuotaChip quota={prepQuota} studentStatus={problem.studentStatus} />
+          <PrepScoreQuotaChip quota={prepQuota} />
           <QuickPrepMembership key={problem._id} quickPreps={problem.quickPreps} />
           <button
             type="button"
@@ -1095,11 +1116,17 @@ export default function ProblemSolver() {
     return () => { active = false; };
   }, [problemId, quotaSource]);
   const currentPrepQuota = prepQuota.key === `${quotaSource}:${problemId}` ? prepQuota.value : null;
-  const announcePrepScore = useCallback((outcome) => {
-    if (!outcome) return;
+  // After a judged submit: the score card (points per topic, full topics, daily challenge) or a
+  // small toast for a wrong answer.
+  const [scoreCard, setScoreCard] = useState(null);
+  const closeScoreCard = useCallback(() => setScoreCard(null), []);
+  const announcePrepScore = useCallback((outcome, challenge = null, readiness = null) => {
+    if (!outcome && !challenge) return;
     setPrepQuota((previous) => ({ key: previous.key, value: quotaAfterSolve(previous.value, outcome) }));
-    const notice = quotaToast(outcome);
-    if (notice) toast[notice.type](notice.message, { title: notice.title, duration: notice.duration });
+    const notice = submitNotice(outcome, challenge, readiness);
+    if (notice?.toast) toast[notice.toast.type](notice.toast.message, { duration: notice.toast.duration });
+    if (notice?.card) setScoreCard(notice.card);
+    if (outcome?.kind === 'solve') announceReadinessChange();
   }, [toast]);
 
   const stopSubmissionPolling = useCallback(() => {
@@ -1635,9 +1662,8 @@ export default function ProblemSolver() {
           if (accepted) {
             celebrate({ passed: response.passedTestCases, total: response.totalTestCases, runtimeMs: response.executionTimeMs,
               memoryKb: response.memoryUsedKb, language: getLanguageLabel(language) });
-            announcePrepScore(response.prepScore);
-            if (response.coins) announceCoinsEarned({ kind: 'solve', ...response.coins, note: `Solved ${problem.title || 'a problem'}` });
           }
+          announcePrepScore(response.prepScore, response.challenge, response.readiness);
           setActiveConsoleTab('result');
           await loadSubmissions({ silent: true, selectLatest: true });
           if (isMountedRef.current) setActiveLeftTab('acceptance');
@@ -1675,9 +1701,7 @@ export default function ProblemSolver() {
         finalizeTrackedSubmission(matchedSubmission, {
           successMessage: `Submission finished with verdict ${statusLabel(matchedSubmission.status)}`,
         });
-        announcePrepScore(jobResult?.result?.response?.prepScore);
-        const earned = jobResult?.result?.response?.coins;
-        if (earned) announceCoinsEarned({ kind: 'solve', ...earned, note: `Solved ${problem.title || 'a problem'}` });
+        announcePrepScore(jobResult?.result?.response?.prepScore, jobResult?.result?.response?.challenge, jobResult?.result?.response?.readiness);
         return;
       }
 
@@ -2144,6 +2168,8 @@ export default function ProblemSolver() {
       <AcceptedCelebration key={celebration?.key} open={Boolean(celebration && problem)} onClose={closeCelebration}
         kind="coding" title={problem?.title} stats={celebration?.stats}
         report={problemId ? { source: reportSource, questionId: problemId } : null} />
+      {/* Shown once the celebration is closed, so the two never overlap. */}
+      {!celebration ? <SolveScoreCard card={scoreCard} onClose={closeScoreCard} /> : null}
     </div>
   );
 }

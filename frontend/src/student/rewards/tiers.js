@@ -12,4 +12,4 @@ export const NO_TIER = { ring: 'from-slate-100 to-slate-300 dark:from-white/10 d
 export const tierStyle = (tier) => TIERS[tier] || NO_TIER;
 
 // Short initials drawn on each badge emblem.
-export const BADGE_MARKS = { solver: 'PS', medium: 'MM', hard: 'HH', explorer: 'TE', consistent: 'CO', regular: 'DV' };
+export const BADGE_MARKS = { solver: 'PS', medium: 'MM', hard: 'HH', explorer: 'TE', consistent: 'CO', regular: 'DV', challenger: 'DC' };

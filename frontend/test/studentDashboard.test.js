@@ -234,8 +234,8 @@ test('today pairs the real streak with the daily challenge beside recent work', 
   const today = section('Today');
   assert.ok(today, 'Today sits next to the resume card');
   assert.ok(today.closest('.dashboard-greeting') === null && !today.closest('aside'), 'It belongs to the head row, not the rail');
-  assert.match(today.textContent, /3day streak/);
-  assert.match(today.textContent, /Done for today · Best 9/, 'Today already has activity in the fixture');
+  assert.match(today.textContent, /3day Prep Streak/);
+  assert.match(today.textContent, /Challenge done today · Best 9/, 'Today already has activity in the fixture');
   assert.ok(today.querySelector('svg .streak-flicker'), 'An active streak with today done shows the burning mark');
   const chain = today.querySelector('ol[aria-label]');
   assert.equal(chain.querySelectorAll(':scope > li').length, 7);
@@ -249,7 +249,7 @@ test('a live streak with no activity yet today shows a half-filled waiting flame
   dashboard.activityByDate = { '2035-01-16': 1 };
   await mount();
   const today = section('Today');
-  assert.match(today.textContent, /Keep it alive today · Best 9/);
+  assert.match(today.textContent, /Finish today’s challenge to keep it · Best 9/);
   assert.equal(today.querySelector('svg .streak-flicker'), null, 'The flame only burns once today is done');
   assert.ok(today.querySelector('svg clipPath'), 'The waiting flame is filled halfway');
 });

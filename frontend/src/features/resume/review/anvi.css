@@ -1,0 +1,70 @@
+/* ANVI's visual language for Prep Resume: a calm, structured assistant.
+   Static gradient hairlines and gradient wordmark; motion only where it
+   carries meaning (a running check, a message arriving). Every surface
+   follows the page theme (light in light, neutral in dark). */
+
+/* Gradient hairline border around a themed surface. */
+.anvi-aura {
+  position: relative;
+  border-radius: var(--anvi-radius, 1.25rem);
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.75), rgba(139, 92, 246, 0.75) 45%, rgba(217, 70, 239, 0.6) 75%, rgba(56, 189, 248, 0.35));
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 18px 40px -28px rgba(76, 29, 149, 0.45);
+}
+.dark .anvi-aura {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.45), rgba(139, 92, 246, 0.5) 45%, rgba(217, 70, 239, 0.35) 75%, rgba(255, 255, 255, 0.08));
+  box-shadow: none;
+}
+.anvi-aura > .anvi-aura-inner { border-radius: calc(var(--anvi-radius, 1.25rem) - 1px); height: 100%; }
+
+.anvi-text {
+  background: linear-gradient(100deg, #0284c7 0%, #7c3aed 50%, #c026d3 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.dark .anvi-text { background-image: linear-gradient(100deg, #38bdf8 0%, #a78bfa 50%, #e879f9 100%); }
+
+.anvi-button {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(100deg, #0284c7 0%, #7c3aed 55%, #a21caf 100%);
+  background-size: 140% 100%;
+  background-position: 0% 50%;
+  transition: background-position 0.4s ease, box-shadow 0.3s ease;
+  box-shadow: 0 10px 24px -14px rgba(124, 58, 237, 0.8);
+}
+.anvi-button:hover { background-position: 100% 50%; box-shadow: 0 14px 30px -14px rgba(124, 58, 237, 0.9); }
+
+/* Faint dot grid behind a conversation. */
+.anvi-thread {
+  background-color: #fafafc;
+  background-image: radial-gradient(rgba(15, 23, 42, 0.06) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+.dark .anvi-thread {
+  background-color: #1f1f1f;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+}
+
+/* Busy ring around the avatar while a check runs. */
+.anvi-spin { animation: anvi-spin 1.1s linear infinite; }
+@keyframes anvi-spin { to { transform: rotate(360deg); } }
+
+/* Typing dots shown briefly before a message lands. */
+.anvi-typing span { animation: anvi-typing 1s ease-in-out infinite; }
+.anvi-typing span:nth-child(2) { animation-delay: 0.15s; }
+.anvi-typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes anvi-typing { 0%, 60%, 100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
+
+/* Scan beam: only on the "checking" screen. */
+.anvi-beam { animation: anvi-scan 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+@keyframes anvi-scan { 0% { transform: translateY(-10%); opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { transform: translateY(var(--anvi-scan-to, 230px)); opacity: 0; } }
+.anvi-mark-hit { opacity: 1; }
+.anvi-scanning .anvi-mark-hit { animation: anvi-hit 2.4s ease-in-out infinite; animation-delay: var(--anvi-delay, 0s); }
+@keyframes anvi-hit { 0%, 30% { opacity: 0; } 40%, 85% { opacity: 1; } 100% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .anvi-spin, .anvi-typing span, .anvi-beam, .anvi-scanning .anvi-mark-hit { animation: none; }
+  .anvi-scanning .anvi-mark-hit { opacity: 1; }
+}

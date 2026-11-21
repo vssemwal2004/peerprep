@@ -21,7 +21,7 @@
     assessment: { url: 'peerprep.co.in/assessments', alt: 'A company-based mock assessment in progress with a question palette, timer and monitoring panel' },
     interview: { url: 'peerprep.co.in/interviews', alt: 'AI voice mock interview with a follow-up question and the conversation transcript' },
     analytics: { url: 'peerprep.co.in/analytics', alt: 'Performance and readiness analytics with topic accuracy and a company benchmark that marks verified gaps' },
-    resume: { url: 'peerprep.co.in/resume', alt: 'Resume builder with a document outline, quality checks and a live A4 preview' },
+    resume: { url: 'peerprep.co.in/resume', alt: 'Prep Resume with a document outline, quality checks and a live A4 preview' },
   };
 
   // Learn · Practice · Prove · Improve — [screen, tool] per stage.
@@ -39,7 +39,7 @@
       facts: { focus: 'Aptitude · SQL · Data interpretation', format: 'MCQ + short answer, timed', interview: 'AI mocks with transcripts' },
     },
     intern: {
-      stages: [['learning', 'Fundamentals, topic by topic'], ['coding', 'PrepCoding with Anvi hints'], ['resume', 'Resume builder, live preview'], ['interview', 'AI mock interview practice']],
+      stages: [['learning', 'Fundamentals, topic by topic'], ['coding', 'PrepCoding with Anvi hints'], ['resume', 'Prep Resume, live preview'], ['interview', 'AI mock interview practice']],
       facts: { focus: 'Arrays · Strings · OOP basics', format: 'College and mock assessments', interview: 'Peer mocks, both roles' },
     },
   };

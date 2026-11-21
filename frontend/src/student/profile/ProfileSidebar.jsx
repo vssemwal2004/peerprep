@@ -72,16 +72,17 @@ function SectionTitle({ children, aside }) {
   );
 }
 
-function DetailRow({ icon, label, value }) {
+/** One About fact, compact: icon + label over value. `wide` spans both columns (long values). */
+function DetailRow({ icon, label, value, wide = false }) {
   return (
-    <div className="flex items-center gap-3 py-1.5">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500 dark:bg-zinc-800/70 dark:text-zinc-400" aria-hidden="true">
+    <div className={`flex min-w-0 items-start gap-2 rounded-lg px-1.5 py-1.5 ${wide ? 'col-span-2' : ''}`}>
+      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-50 text-slate-500 dark:bg-zinc-800/70 dark:text-zinc-400" aria-hidden="true">
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <dt className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-zinc-500">{label}</dt>
+        <dt className="text-[9.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-zinc-500">{label}</dt>
         <dd
-          className={`truncate text-[13px] font-medium ${value ? 'text-slate-800 dark:text-zinc-200' : 'font-normal text-slate-400 dark:text-zinc-500'}`}
+          className={`truncate text-[12.5px] font-medium leading-snug ${value ? 'text-slate-800 dark:text-zinc-200' : 'font-normal text-slate-400 dark:text-zinc-500'}`}
           title={value || undefined}
         >
           {value || 'Not added'}
@@ -117,8 +118,9 @@ function BadgePill({ badge, level, onOpen }) {
 }
 
 /**
- * Identity sidebar (LeetCode-style): who the student is, About, Links. Stats, badges and levels
- * live in the right column only, so nothing on the page is shown twice.
+ * Identity sidebar (LeetCode-style), space-optimised: who the student is (photo, name, level),
+ * university rank, earned badges, bio and Edit Profile; then Prep Mates + Prep Coin side by side;
+ * then About in two columns with the links. Scores and analysis live in the right column.
  */
 export default function ProfileSidebar({
   user,
@@ -132,32 +134,35 @@ export default function ProfileSidebar({
   onChangePhoto,
   onEditProfile,
   prepMates = null,
+  badgeShelf = null,
+  rankCard = null,
 }) {
   const initial = user?.name ? user.name.charAt(0).toUpperCase() : 'U';
+  const showCoins = user?.role === 'student' && user?.accessScope !== 'assessment_only';
 
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_30px_-12px_rgba(14,116,144,0.18)] dark:border-zinc-800 dark:bg-[#242424]">
       {/* Decorated cover: gradient + dot pattern + soft glows, fading into the card. */}
-      <div className="relative h-28 shrink-0 overflow-hidden bg-gradient-to-br from-sky-500 via-sky-400 to-cyan-300 dark:from-sky-800 dark:via-sky-700 dark:to-cyan-800" aria-hidden="true">
+      <div className="relative h-24 shrink-0 overflow-hidden bg-gradient-to-br from-sky-500 via-sky-400 to-cyan-300 dark:from-sky-800 dark:via-sky-700 dark:to-cyan-800" aria-hidden="true">
         <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(rgba(255,255,255,0.9)_1px,transparent_1px)] [background-size:14px_14px] [mask-image:linear-gradient(to_bottom,black,transparent)]" />
         <div className="absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/25 blur-2xl" />
         <div className="absolute -left-8 top-10 h-28 w-28 rounded-full bg-indigo-400/30 blur-2xl" />
         <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent to-white dark:to-[#242424]" />
       </div>
 
-      <div className="flex flex-1 flex-col gap-5 px-5 pb-5">
+      <div className="flex flex-1 flex-col gap-4 px-4 pb-4">
         {/* Identity */}
-        <div className="-mt-14 flex flex-col items-center text-center" data-guide="pf-identity">
+        <div className="-mt-12 flex flex-col items-center text-center" data-guide="pf-identity">
           <div className="relative rounded-full bg-gradient-to-br from-sky-400 via-cyan-300 to-indigo-400 p-[3px] shadow-lg shadow-sky-500/20">
             {user?.avatarUrl ? (
               <img
                 src={user.avatarUrl}
                 alt={user?.name ? `${user.name}'s profile photo` : 'Profile photo'}
-                className="h-[88px] w-[88px] rounded-full object-cover ring-[3px] ring-white dark:ring-[#242424]"
+                className="h-[84px] w-[84px] rounded-full object-cover ring-[3px] ring-white dark:ring-[#242424]"
               />
             ) : (
               <div
-                className="flex h-[88px] w-[88px] items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-sky-700 text-3xl font-semibold text-white ring-[3px] ring-white dark:ring-[#242424]"
+                className="flex h-[84px] w-[84px] items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-sky-700 text-3xl font-semibold text-white ring-[3px] ring-white dark:ring-[#242424]"
                 aria-hidden="true"
               >
                 {initial}
@@ -173,7 +178,7 @@ export default function ProfileSidebar({
               <Camera className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
-          <div className="mt-3 flex max-w-full items-center justify-center gap-1.5">
+          <div className="mt-2.5 flex max-w-full items-center justify-center gap-1.5">
             <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight text-slate-900 dark:text-zinc-50" title={user?.name || 'Student'}>
               {user?.name || 'Student'}
             </h1>
@@ -183,7 +188,11 @@ export default function ProfileSidebar({
           <div className="flex flex-wrap items-center justify-center gap-1.5">
             <BadgePill badge={badge} level={level} onOpen={onOpenBadges} />
           </div>
-          <p className={`mt-3 text-[13px] leading-relaxed ${hasCustomBio ? 'text-slate-600 dark:text-zinc-300' : 'text-slate-500 dark:text-zinc-400'}`}>
+          {/* University rank right under the photo, name and level (SidebarRankCard). */}
+          {rankCard}
+          {/* Earned badges (BadgeShowcase). */}
+          {badgeShelf}
+          <p className={`mt-3 line-clamp-4 text-[12.5px] leading-relaxed ${hasCustomBio ? 'text-slate-600 dark:text-zinc-300' : 'text-slate-500 dark:text-zinc-400'}`} title={hasCustomBio ? bio : undefined}>
             {bio}
             {!hasCustomBio ? (
               <>
@@ -202,31 +211,33 @@ export default function ProfileSidebar({
             type="button"
             onClick={onEditProfile}
             data-guide="pf-edit"
-            className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm shadow-sky-600/30 transition-colors hover:bg-sky-700 dark:bg-sky-600 dark:hover:bg-sky-500 ${focusRing}`}
+            className={`mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm shadow-sky-600/30 transition-colors hover:bg-sky-700 dark:bg-sky-600 dark:hover:bg-sky-500 ${focusRing}`}
           >
             <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
             Edit Profile
           </button>
-          {prepMates ? <div className="mt-3 w-full" data-guide="pf-mates">{prepMates}</div> : null}
         </div>
 
-        {user?.role === 'student' && user?.accessScope !== 'assessment_only' ? <ProfilePrepCoin focusRing={focusRing} /> : null}
+        {/* Prep Mates and Prep Coin side by side; either one alone takes the full row. */}
+        {prepMates || showCoins ? (
+          <div className="grid grid-cols-2 gap-2 [&>*:only-child]:col-span-2">
+            {prepMates ? <div data-guide="pf-mates">{prepMates}</div> : null}
+            {showCoins ? <ProfilePrepCoin focusRing={focusRing} compact /> : null}
+          </div>
+        ) : null}
 
-        <section aria-labelledby="about-title" data-guide="pf-about" className="border-t border-slate-100 pt-4 dark:border-zinc-800">
+        <section aria-labelledby="about-title" data-guide="pf-about" className="border-t border-slate-100 pt-3 dark:border-zinc-800">
           <SectionTitle aside={<GuideInfo step="pf-about" />}><span id="about-title">About</span></SectionTitle>
-          <dl>
-            <DetailRow icon={<GraduationCap className="h-3.5 w-3.5" />} label="College" value={user?.college} />
+          <dl className="-mx-1.5 grid grid-cols-2 gap-x-1">
+            <DetailRow wide icon={<GraduationCap className="h-3.5 w-3.5" />} label="College" value={user?.college} />
             <DetailRow icon={<BookOpen className="h-3.5 w-3.5" />} label="Course" value={user?.course} />
             <DetailRow icon={<GitBranch className="h-3.5 w-3.5" />} label="Branch" value={user?.branch} />
             <DetailRow icon={<Hash className="h-3.5 w-3.5" />} label="Student ID" value={user?.studentId} />
             <DetailRow icon={<CalendarRange className="h-3.5 w-3.5" />} label="Semester" value={user?.semester ? `Semester ${user.semester}` : ''} />
-            <DetailRow icon={<Mail className="h-3.5 w-3.5" />} label="Email" value={user?.email} />
+            <DetailRow wide icon={<Mail className="h-3.5 w-3.5" />} label="Email" value={user?.email} />
           </dl>
-        </section>
-
-        <section aria-labelledby="links-title" data-guide="pf-links" className="mt-auto border-t border-slate-100 pt-4 dark:border-zinc-800">
-          <SectionTitle><span id="links-title">Links</span></SectionTitle>
-          <div className="flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-3 dark:border-zinc-800" data-guide="pf-links">
+            <span id="links-title" className="mr-auto text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500">Links</span>
             {socialLinks.map((item) => (
               <SocialButton key={item.label} href={item.href} label={item.label} />
             ))}
@@ -236,3 +247,4 @@ export default function ProfileSidebar({
     </div>
   );
 }
+

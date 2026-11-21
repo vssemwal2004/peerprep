@@ -22,9 +22,9 @@ export default function PrepScoreCard({ prepScore, visible = {} }) {
     <section
       aria-labelledby="admin-prep-score-title"
       data-guide="sp-prep-score"
-      className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.05)] dark:border-zinc-800 dark:bg-[#242424]"
+      className="h-full overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.05)] dark:border-zinc-800 dark:bg-[#242424]"
     >
-      <div className="grid sm:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="grid h-full sm:grid-cols-[180px_minmax(0,1fr)]">
         <div className="relative flex flex-col justify-between gap-3 bg-gradient-to-br from-sky-500 to-sky-700 p-4 text-white">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/15 ring-1 ring-inset ring-white/25">
@@ -45,7 +45,7 @@ export default function PrepScoreCard({ prepScore, visible = {} }) {
         <div className="p-4">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Other activity points</p>
           {modules.length ? (
-            <ul className="grid gap-2 sm:grid-cols-2">
+            <ul className="grid gap-2">
               {modules.map(({ key, label, Icon, score }) => (
                 <li key={key} className="flex items-center gap-2.5 rounded-lg bg-slate-50 px-3 py-2.5 dark:bg-white/[0.04]">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">

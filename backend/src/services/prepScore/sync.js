@@ -32,7 +32,9 @@ const REBUILD_BUDGET_MS = 5_000;
 
 const PERMISSION_KEYS = ['questions', 'learning', 'assessments', 'interviews', 'events'];
 // A changed key makes every university rebuild stored scores without requiring a policy edit.
-const ENGINE_KEY = 'coding-only-3';
+// 'points-6': Prep Score v6 points ledger (replayed from history, see points.js). The periodic
+// rebuild also applies each day's inactivity rule to students with no new activity.
+const ENGINE_KEY = 'points-7';
 const STUDENT_FIELDS = '_id role semester college isActive accessScope';
 // [model, student field, extra filter]. Runs and live-test heartbeats never change a score.
 const ACTIVITY_SOURCES = [

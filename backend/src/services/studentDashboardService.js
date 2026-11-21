@@ -15,6 +15,9 @@ import AIInterview from '../models/AIInterview.js';
 import { aiInterviewLevel, assessmentLevel, prepScore, scoreFeatures } from './prepScore/engine.js';
 import { ensurePrepScoreStore, rankFromStore, saveOwnScore, servingPolicy } from './prepScore/sync.js';
 import { uncountedSolvesFor } from './prepScore/topicQuota.js';
+import { ledgerFor, summarizeLedger } from './prepScore/points.js';
+import { loadPointFacts } from './prepScore/pointFacts.js';
+import { prepStreakFor } from './prepStreak.js';
 import { LEVELS } from './adaptiveEngagementRules.js';
 import { engagementTenant } from './engagementPolicyService.js';
 import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
@@ -103,9 +106,16 @@ function learnerLevel({ solved, streak, assessmentScore, interviewScore, challen
   return { level: 1, title: 'Rising Learner' };
 }
 
-/** Prep Score for a progress row (only the features in row.scoreFeatures count). */
+/**
+ * Prep Score for a progress row. The total is the v6 points ledger replayed from the row's
+ * `pointFacts` (prepScore/points.js); the formula modules stay as admin activity metrics.
+ */
 export function scoresForRow(metrics = {}, policy = {}) {
-  return prepScore(metrics.scoreEvidence || {}, metrics.scoreFeatures || scoreFeatures(null), policy);
+  const features = metrics.scoreFeatures || scoreFeatures(null);
+  const score = prepScore(metrics.scoreEvidence || {}, features, policy);
+  if (!metrics.pointFacts) return score;
+  const ledger = ledgerFor(metrics.pointFacts, policy, { now: metrics.scoredAt || new Date(), features });
+  return { ...score, total: ledger.total };
 }
 
 // The acknowledgement endpoint is cosmetic; none of its client-reported awards enters ranking.
@@ -307,7 +317,7 @@ export async function getStudentActivitySummary(student, now = new Date()) {
   return { activityByDate, streak: calculateActivityStreak(activityByDate, now), totalCompilerSubmissions: localSubmissions + sharedSubmissions };
 }
 
-async function loadProgressRows(students, permissions, semesters, now, sharedCatalog = [], includeActivity = true, includeDiscovery = false) {
+async function loadProgressRows(students, permissions, semesters, now, sharedCatalog = [], includeActivity = true, includeDiscovery = false, includePoints = true) {
   const ids = students.map((student) => objectId(student._id));
   if (!ids.length) return [];
   const adaptiveScopes = students.map((student) => ({ studentId: objectId(student._id), tenantKey: engagementTenant(student) }));
@@ -353,6 +363,8 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
     permissions.interviews ? aggregate(InterviewEngagementReceipt, [{ $match: { $or: adaptiveScopes, completedAt: { $ne: null } } }, { $group: { _id: '$studentId', aiInterviews: { $sum: 1 }, interviewIds: { $push: '$interviewId' } } }]) : [],
   ]);
   const aiMap = new Map(aiInterviews.map((entry) => [String(entry._id), entry]));
+  // The Prep Score points ledger is replayed from these facts (scoresForRow).
+  const pointFacts = includePoints ? await loadPointFacts(ids, { coding: permissions.questions === true, sharedCatalog }) : null;
   // Solves past the daily topic limit stay solved but add nothing to the Prep Score.
   const uncounted = permissions.questions ? await uncountedSolvesFor(ids) : new Map();
   const uncountedLocalIds = [...new Set([...uncounted.values()].flat().filter((key) => key.startsWith('local:')).map((key) => key.slice(6)))]
@@ -424,6 +436,7 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
       languages: languages.size,
       completedTopics, totalTopics: topics.size, activityByDate: activities.get(id) || {},
       aiInterviews: ai?.aiInterviews || 0, scoreFeatures: features,
+      ...(pointFacts ? { pointFacts: pointFacts.get(id), scoredAt: now } : {}),
       scoreEvidence: {
         problemSolved: [
           { level: 'Easy', count: scored('easySolved', 'easy') }, { level: 'Medium', count: scored('mediumSolved', 'medium') },
@@ -478,6 +491,43 @@ export async function getPeerProgressSnapshot(student, now = new Date()) {
   return { permissions, row, progress, sharedCatalog, codingTotals: permissions.questions ? codingTotals(problemTotals, sharedCatalog) : null };
 }
 
+/** Prep Streak for the dashboard and profile (activeDays stays the practice-day count). */
+export async function prepStreakView(student, activityByDate = {}, now = new Date()) {
+  const prep = await prepStreakFor(student._id, now);
+  return { current: prep.current, best: prep.best, todayDone: prep.todayDone, recent: prep.recent, activeDays: calculateActivityStreak(activityByDate, now).activeDays, kind: 'prep' };
+}
+
+const HISTORY_RANGES = { '7d': 7, '30d': 30, '90d': 90, all: null };
+
+/**
+ * The student's own Prep Score history (profile graph): per-day gains/losses and running total,
+ * where points came from (by kind) and which topics earned them. Same ledger as the stored score.
+ */
+export async function getStudentPrepScoreHistory(student, { range = '30d' } = {}, now = new Date()) {
+  const permissions = await dashboardPermissions(student);
+  const sharedCatalog = permissions.questions ? await getSharedCodingCatalog() : [];
+  const state = await ensurePrepScoreStore();
+  const policy = await servingPolicy(state);
+  const facts = (await loadPointFacts([student._id], { coding: permissions.questions === true, sharedCatalog })).get(String(student._id));
+  const ledger = ledgerFor(facts, policy, { now, features: scoreFeatures(permissions) });
+  const key = Object.hasOwn(HISTORY_RANGES, range) ? range : '30d';
+  const days = HISTORY_RANGES[key];
+  const from = days ? new Date(now.getTime() - (days - 1) * DAY_MS + 330 * 60_000).toISOString().slice(0, 10) : null;
+  const summary = summarizeLedger(ledger, { from, places: policy.config?.points?.decimalPlaces ?? 2 });
+  return {
+    range: key, from, to: new Date(now.getTime() + 330 * 60_000).toISOString().slice(0, 10),
+    total: ledger.total, startTotal: summary.startTotal, activityPoints: ledger.rawTotal,
+    change: Math.round((ledger.total - summary.startTotal) * 100) / 100,
+    series: summary.series, byKind: summary.byKind, topics: summary.topics.slice(0, 12),
+    // The live rules, so the "How it works" box always matches what the Master Admin published.
+    rules: (({ points: p = {}, modules = {} }) => ({
+      solve: p.solve, dailyTopicLimit: modules.coding?.dailyTopicLimit ?? 0, dailyChallenge: p.dailyChallenge, sheetCompleted: p.sheetCompleted,
+      login: p.login, monthlyBadgeLevel: p.monthlyBadgeLevel, wrongSubmission: p.wrongSubmission, wrongDailyCap: p.wrongDailyCap,
+      refundSameDay: p.refundSameDay, inactivity: p.inactivity, lossFloorShare: p.lossFloorShare, curve: p.curve,
+    }))(policy.config || {}),
+  };
+}
+
 export async function getStudentUniversityRanking(student, permissions = null, now = new Date()) {
   const allowed = permissions || await dashboardPermissions(student);
   const { own } = await loadOwnRow(student, allowed, now);
@@ -487,7 +537,7 @@ export async function getStudentUniversityRanking(student, permissions = null, n
 export async function getStudentCodingSummary(student, now = new Date()) {
   const sharedCatalog = await getSharedCodingCatalog();
   const [rows, totals] = await Promise.all([
-    loadProgressRows([student], { questions: true }, [], now, sharedCatalog, false),
+    loadProgressRows([student], { questions: true }, [], now, sharedCatalog, false, false, false),
     aggregate(Problem, [{ $match: publicProblemMatch }, { $group: { _id: '$difficulty', count: { $sum: 1 } } }]),
   ]);
   const own = rows[0] || {};
@@ -713,7 +763,8 @@ export async function getStudentDashboardData(student, now = new Date()) {
       totalSolved: count(own.easySolved) + count(own.mediumSolved) + count(own.hardSolved),
       totalProblems: Object.values(totalsByDifficulty).reduce((sum, total) => sum + total, 0), totalsByDifficulty,
       easySolved: count(own.easySolved), mediumSolved: count(own.mediumSolved), hardSolved: count(own.hardSolved),
-      attemptedProblems: count(own.attemptedProblems), streak: calculateActivityStreak(activityByDate, now), activity: activityByDate,
+      // The one streak students see: the Prep Streak (daily challenges completed in a row).
+      attemptedProblems: count(own.attemptedProblems), streak: await prepStreakView(student, activityByDate, now), activity: activityByDate,
     } : null,
     learning: permissions.learning ? { completedTopics: count(own.completedTopics), totalTopics: count(own.totalTopics), completionPercent: own.totalTopics > 0 ? Math.round((own.completedTopics / own.totalTopics) * 100) : 0 } : null,
     activityByDate, ranking,

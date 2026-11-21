@@ -9,6 +9,7 @@ import { engagementScope, createAchievement } from './adaptiveEngagementService.
 import { engagementTenant, engagementPermissions } from './engagementPolicyService.js';
 import { getSharedCodingCatalog, publicProblemMatch } from './studentDashboardService.js';
 import { notifyOnce } from './notificationService.js';
+import { creditEarningSafely, getEarningConfig } from '../platform/coinEarn.js';
 import { HttpError } from '../utils/errors.js';
 import { isControlPlane, isUniversity } from '../platform/deployment.js';
 import { sharedQuestions, sharedQuests } from '../platform/sharedContent.js';
@@ -896,8 +897,19 @@ async function settleEnrollment(scope, quest, enrollment, solved, total, now) {
   try { await StudentBadge.updateOne({ ...scope, badgeId: badge.id }, { $setOnInsert: { definition: badge, earnedAt: doneAt, evidence: { questId: String(quest._id), total } } }, { upsert: true }); }
   catch (error) { if (error.code !== 11000) throw error; }
   await createAchievement(scope, `badge:${badge.id}`, { type: 'badge', award: { ...badge, earned: true } });
+  // A completed sheet pays Prep Coins once (2026-11-21); the Prep Score points ledger counts the
+  // completion itself (QuestEnrollment.completedAt).
+  const { earning } = await getEarningConfig();
+  const coins = await creditEarningSafely({ user: scope.studentId, kind: 'sheet', key: String(quest._id), amount: earning.sheet, note: `Sheet completed: ${quest.title}`.slice(0, 120) });
+  const paid = coins && !coins.duplicate ? coins.amount : 0;
+  // The real Prep Score change of this completion (growth curve).
+  const points = await import('./prepScore/submitOutcome.js')
+    .then(({ scoreGainFor }) => scoreGainFor(scope.studentId, { kind: 'sheet', key: `sheet:${quest._id}` }, now))
+    .catch(() => 0);
+  const extras = [points ? `+${points} Prep Score` : '', paid ? `+${paid} Prep Coins` : ''].filter(Boolean).join(', ');
   await notifyOnce({ userId: scope.studentId, dedupeKey: `quest:${scope.tenantKey}:${quest._id}`, type: 'QUEST', actionUrl: `/student/quickprep/${quest.slug}`, now,
-    title: `QuickPrep complete: ${quest.title}`, message: `All ${total} questions solved. +${quest.rewardXp} XP and the ${badge.title} badge.` }).catch(() => {});
+    title: `QuickPrep complete: ${quest.title}`, message: `All ${total} questions solved. ${extras ? `${extras} and the` : `+${quest.rewardXp} XP and the`} ${badge.title} badge.` }).catch(() => {});
+  void import('./lifetimeBadges.js').then(({ evaluateLifetimeBadgesQuietly }) => evaluateLifetimeBadgesQuietly({ _id: scope.studentId, role: 'student' })).catch(() => {});
   return { ...enrollment, ...counts, completedAt: doneAt };
 }
 

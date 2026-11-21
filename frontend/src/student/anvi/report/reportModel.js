@@ -110,7 +110,7 @@ export const END_REASONS = Object.freeze({
 });
 export const endReasonLabel = (reason) => (reason ? END_REASONS[reason] || String(reason).replaceAll("_", " ") : "");
 
-export const RESUME_SOURCE_LABELS = Object.freeze({ builder: "Resume Builder (saved resume)", upload: "Uploaded file" });
+export const RESUME_SOURCE_LABELS = Object.freeze({ builder: "Prep Resume (saved resume)", upload: "Uploaded file" });
 
 /**
  * Terms, resume and (for older non-English attempts) language: admin rows (termsAcceptedAt) and student
