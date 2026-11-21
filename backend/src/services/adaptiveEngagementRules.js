@@ -7,14 +7,23 @@ export const DEFAULT_POLICY = {
   weeklyDays: 5, monthlyDays: 16, dailyXp: 20, weeklyXp: 40, monthlyXp: 150,
   stretchXp: 5, pauseUntil: null, customBadges: [],
 };
+// Twelve levels; every level needs all three (lifetime XP, demonstrated mastery, verified active
+// days) and a reached level is permanent. Levels 8–12 are the elite tier: deliberately hard, and
+// each pays Prep Coins once (amounts: Prep Coin earning settings `levelCoins`, defaults below).
+export const ELITE_FROM_LEVEL = 8;
+export const DEFAULT_LEVEL_COINS = Object.freeze([0, 0, 0, 0, 0, 0, 0, 10, 12, 15, 20, 25]);
 export const LEVELS = [
   ['Explorer', 0, 0, 0], ['Foundation Builder', 100, 15, 3],
   ['Consistent Learner', 350, 30, 10], ['Skilled Performer', 800, 45, 20],
   ['Advanced Practitioner', 1600, 60, 35], ['Campus Champion', 2800, 72, 50],
   ['Placement Pathfinder', 4500, 82, 70],
+  ['Interview Ready', 6500, 85, 100], ['Elite Engineer', 9000, 88, 140],
+  ['Grandmaster', 12500, 91, 200], ['Legend', 17000, 94, 270],
+  ['PeerPrep Hall of Fame', 23000, 96, 365],
 ].map(([title, xp, mastery, days], i) => ({ level: i + 1, title, xp, mastery, days,
-  minScore: xp, requirements: [`${xp} lifetime XP`, `${mastery}% demonstrated mastery`, `${days} verified active days`],
-  helper: 'Earned through verified practice and steady improvement.' }));
+  minScore: xp, requirements: [`${xp.toLocaleString('en-IN')} lifetime XP`, `${mastery}% demonstrated mastery`, `${days} verified active days`],
+  elite: i + 1 >= ELITE_FROM_LEVEL, coins: DEFAULT_LEVEL_COINS[i] || 0,
+  helper: i + 1 >= ELITE_FROM_LEVEL ? 'Elite tier: sustained excellence over months of verified practice.' : 'Earned through verified practice and steady improvement.' }));
 
 const badge = (id, title, category, metric, target, description, rarity = 'Common', minimumLevel = 1) =>
   ({ id, title, category, metric, target, description, rarity, minimumLevel, rewardXp: 0 });

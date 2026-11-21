@@ -11,7 +11,7 @@ import BadgeCelebration from '../badges/BadgeCelebration';
 import { fromBadgeEvent } from '../badges/badgeModel';
 
 const COIN_SHOW_MS = 2800;
-const KIND_LABEL = { login: 'Daily login', solve: 'Problem solved', badge: 'Badge level', challenge: 'Daily challenge', sheet: 'Sheet completed', milestone: 'Lifetime badge' };
+const KIND_LABEL = { login: 'Daily login', solve: 'Problem solved', badge: 'Badge level', challenge: 'Daily challenge', sheet: 'Sheet completed', milestone: 'Lifetime badge', level: 'Elite level reached' };
 
 /**
  * Student-wide reward feedback: the daily check-in, the small coin popup at the top (with sound),

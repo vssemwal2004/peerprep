@@ -258,9 +258,10 @@ export default function AdminStudentProfile() {
   const level = useMemo(() => getLearnerLevel({
     solvedCount: levelSolved,
     streak: currentStreak,
+    bestStreak,
     assessmentScore: levelAssessmentScore,
     interviewScore: num(interviewMetrics.avgScore),
-  }), [currentStreak, interviewMetrics.avgScore, levelAssessmentScore, levelSolved]);
+  }), [bestStreak, currentStreak, interviewMetrics.avgScore, levelAssessmentScore, levelSolved]);
 
   const awards = useMemo(() => computeAwards({
     solved: levelSolved,

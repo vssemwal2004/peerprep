@@ -31,7 +31,8 @@ export default function EarningSettings() {
 
   const problem = useMemo(() => {
     if (!earning) return '';
-    if (![earning.login, earning.challenge, earning.sheet, ...earning.badgeLevels, ...(earning.milestoneTiers || [])].every(whole)) return 'Use whole numbers from 0 to 1000.';
+    if (![earning.login, earning.challenge, earning.sheet, ...earning.badgeLevels, ...(earning.milestoneTiers || []), ...(earning.levelCoins || [])].every(whole)) return 'Use whole numbers from 0 to 1000.';
+    if ((earning.levelCoins || []).some((value, index) => index && value < earning.levelCoins[index - 1])) return 'A higher learner level cannot pay fewer coins.';
     if (earning.badgeLevels.some((value, index) => index && value < earning.badgeLevels[index - 1])) return 'A harder level cannot pay fewer coins than an easier one.';
     if ((earning.milestoneTiers || []).some((value, index) => index && value < earning.milestoneTiers[index - 1])) return 'A higher lifetime badge tier cannot pay fewer coins.';
     return '';
@@ -86,6 +87,15 @@ export default function EarningSettings() {
                 value={Number.isFinite(value) ? value : ''} onChange={(event) => setEarning((current) => ({ ...current, milestoneTiers: current.milestoneTiers.map((entry, at) => (at === index ? number(event.target.value) : entry)) }))} />
             </label>
           ))}
+        </div>
+        <p className="mt-4 text-xs font-medium text-slate-600 dark:text-slate-300">Elite learner levels 8–12 (each level pays once, ever)</p>
+        <div data-guide="pcp-level-coins" className="mt-1 grid grid-cols-5 gap-2">
+          {(earning.levelCoins || []).map((value, index) => (index < 7 ? null : (
+            <label key={index} className="text-center text-[11px] text-slate-500 dark:text-slate-400">Level {index + 1}
+              <input aria-label={`Level ${index + 1} coins`} className={`${inputClass} mt-1 px-1 text-center font-semibold tabular-nums`} type="number" min={0} max={1000} step={1}
+                value={Number.isFinite(value) ? value : ''} onChange={(event) => setEarning((current) => ({ ...current, levelCoins: current.levelCoins.map((entry, at) => (at === index ? number(event.target.value) : entry)) }))} />
+            </label>
+          )))}
         </div>
         <p className="mt-2 text-[11px] text-slate-400">Solving a problem does not pay coins; it adds to the Prep Score.</p>
         {problem && <p role="alert" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">{problem}</p>}

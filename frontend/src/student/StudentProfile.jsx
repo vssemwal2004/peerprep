@@ -742,12 +742,14 @@ export default function StudentProfile() {
     return getLearnerLevel({
       solvedCount: solved,
       streak,
+      bestStreak: Number(activityStats?.bestStreak || 0),
       assessmentScore,
       interviewScore,
     });
   }, [
     engagement.data?.level,
     activityStats?.currentStreak,
+    activityStats?.bestStreak,
     analysisAssessments?.avgScore,
     analysisInterviews?.avgScore,
     problemStatusSummary.loaded,

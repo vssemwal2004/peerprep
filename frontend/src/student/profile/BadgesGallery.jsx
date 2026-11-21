@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Check, Info, Medal, X } from 'lucide-react';
+import { Check, Coins, Info, Medal, X } from 'lucide-react';
 import { LEVEL_POINTS_FORMULA, getLearnerLevelLadder } from '../profileBadge';
 import { levelTheme } from './levelTheme';
 import LevelMedallion from './LevelMedallion';
@@ -80,13 +80,16 @@ function LevelRow({ tier, currentLevel, progress, achievedAt, isLast, allRequire
       </div>
       <div className={`mb-4 min-w-0 flex-1 rounded-xl border p-3 ${isCurrent
         ? 'border-sky-200 bg-sky-50/60 dark:border-sky-500/30 dark:bg-sky-500/5'
-        : 'border-slate-200 dark:border-zinc-800'}`}
+        : tier.elite ? 'border-amber-200/80 bg-gradient-to-br from-amber-50/70 via-white to-violet-50/50 dark:border-amber-400/20 dark:from-amber-500/[0.06] dark:via-transparent dark:to-violet-500/[0.06]'
+          : 'border-slate-200 dark:border-zinc-800'}`}
       >
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ring-1 ring-inset ${theme.soft}`}>
             Level {tier.level}
           </span>
           <h3 className="text-[13px] font-semibold text-slate-900 dark:text-zinc-100">{tier.title}</h3>
+          {tier.elite ? <span className="rounded-full bg-gradient-to-r from-amber-500 to-orange-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Elite</span> : null}
+          {tier.coins ? <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-bold text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-400/20"><Coins className="h-3 w-3" aria-hidden="true" />+{tier.coins} Prep Coins</span> : null}
           {isCurrent ? (
             <span className="rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-semibold text-white">{hereLabel}</span>
           ) : null}
@@ -99,7 +102,7 @@ function LevelRow({ tier, currentLevel, progress, achievedAt, isLast, allRequire
         </div>
         <p className="mt-1 text-[12px] text-slate-500 dark:text-zinc-400">{tier.helper}</p>
         <p className="mt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500">
-          {tier.level === 1 ? 'Requirement' : allRequirements ? 'Complete all requirements' : 'Reach it with any one of'}
+          {tier.level === 1 ? 'Requirement' : allRequirements || tier.all ? 'Complete all requirements' : 'Reach it with any one of'}
         </p>
         <ul className="mt-1 flex flex-wrap gap-1.5">
           {tier.requirements.map((requirement) => (
@@ -301,8 +304,9 @@ export default function BadgesGallery({ open, onClose, level, awards, collection
                   <div className="mb-4 flex gap-2 rounded-xl bg-slate-50 p-3 text-[12px] text-slate-600 dark:bg-zinc-900/60 dark:text-zinc-300">
                     <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-500" aria-hidden="true" />
                     <div>
-                      {levelLadder ? <p>Every level requires <strong>all three</strong>: lifetime XP, demonstrated mastery and verified active days. Your earned level is permanent. Monthly journeys reset; your XP and badges stay with you.</p> : <><p>
-                        {viewer.rule} <span className="font-semibold">any one</span> of its requirements.
+                      {levelLadder ? <p>Every level requires <strong>all three</strong>: lifetime XP, demonstrated mastery and verified active days. Your earned level is permanent. Levels 8–12 are the elite tier, built to take months, and each pays Prep Coins once. Monthly journeys reset; your XP and badges stay with you.</p> : <><p>
+                        {viewer.rule} <span className="font-semibold">any one</span> of its requirements for levels 1–7.
+                        The elite levels 8–12 need <span className="font-semibold">all</span> of them and pay Prep Coins once.
                         Level points are calculated as:
                       </p>
                       <ul className="mt-1.5 flex flex-wrap gap-1.5">

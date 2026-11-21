@@ -550,7 +550,8 @@ export const api = {
   },
   deleteUniversityLogo: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/logo`, { method: 'DELETE' }),
   publishPlatformContent: (kind, id, body) => request(`/platform/admin/publications/${kind}/${encodeURIComponent(id)}`, { method: 'PUT', body }),
-  platformAudit: ({ action = '', before = '' } = {}) => request(`/platform/admin/audit?${new URLSearchParams(Object.entries({ action, before }).filter(([, value]) => value))}`, { skipCache: true }),
+  // Master Admin activity log (merged control-plane feed). Filters: days, source, category, actor, q.
+  platformAudit: ({ days = 10, source = '', category = '', actor = '', q = '', before = '' } = {}) => request(`/platform/admin/audit?${new URLSearchParams(Object.entries({ days, source, category, actor, q, before }).filter(([, value]) => value !== '' && value != null))}`, { skipCache: true }),
   universityPolicy: () => request('/platform/university/policy', { skipCache: true }),
   aiInterviewRequest: (path = '', options = {}) => request(`/ai-interviews${path}`, { ...options, skipCache: true, skipDedupe: true }),
   // Hybrid ANVI question audio for a published interview: queue a regeneration, and read its progress.

@@ -16,8 +16,10 @@ import { currentTenant } from './tenantContext.js';
 // 'challenge' = daily challenge completed, 'sheet' = Quick Prep sheet completed, 'milestone' =
 // lifetime badge. 'solve' is kept for the ledger history only: solving a question no longer pays
 // coins (2026-11-21), the daily challenge and sheets do.
-export const EARN_KINDS = Object.freeze(['login', 'solve', 'badge', 'challenge', 'sheet', 'milestone']);
+// 'level' = an elite learner level reached (levels 8–12), paid once per level.
+export const EARN_KINDS = Object.freeze(['login', 'solve', 'badge', 'challenge', 'sheet', 'milestone', 'level']);
 export const BADGE_LEVELS = 10;
+export const LEARNER_LEVELS = 12;
 // Badge levels 1-2 are an honour only; coins start at level 3 and stay modest, so Prep Coins remain
 // precious (2026-11-19). Master Admin can change every amount in Prep Coin pricing.
 export const MILESTONE_TIERS = 5;
@@ -26,6 +28,8 @@ export const DEFAULT_EARNING = Object.freeze({
   badgeLevels: Object.freeze([0, 0, 1, 1, 2, 3, 4, 5, 7, 10]),
   // Lifetime milestone badges by tier (Bronze .. Legend).
   milestoneTiers: Object.freeze([2, 3, 5, 8, 12]),
+  // Learner levels 1–12; only the elite levels (8–12) pay.
+  levelCoins: Object.freeze([0, 0, 0, 0, 0, 0, 0, 10, 12, 15, 20, 25]),
 });
 // The previous defaults: a saved configuration still equal to them follows the new defaults.
 const PREVIOUS_BADGE_DEFAULTS = Object.freeze([1, 2, 3, 4, 6, 8, 10, 13, 16, 20]);
@@ -52,8 +56,13 @@ export function normalizeEarning(value = {}) {
   if (tiers.length !== MILESTONE_TIERS) throw new HttpError(400, `Set coins for all ${MILESTONE_TIERS} lifetime badge tiers.`);
   const milestoneTiers = tiers.map((amount, index) => whole(amount, `Lifetime badge tier ${index + 1} coins`));
   if (milestoneTiers.some((amount, index) => index && amount < milestoneTiers[index - 1])) throw new HttpError(400, 'Higher lifetime badge tiers cannot pay fewer coins.');
+  const levelInput = Array.isArray(input.levelCoins) ? input.levelCoins : DEFAULT_EARNING.levelCoins;
+  if (levelInput.length !== LEARNER_LEVELS) throw new HttpError(400, `Set coins for all ${LEARNER_LEVELS} learner levels.`);
+  const levelCoins = levelInput.map((amount, index) => whole(amount, `Level ${index + 1} coins`));
+  if (levelCoins.some((amount, index) => index && amount < levelCoins[index - 1])) throw new HttpError(400, 'Higher learner levels cannot pay fewer coins.');
   return {
     milestoneTiers,
+    levelCoins,
     login: whole(input.login ?? DEFAULT_EARNING.login, 'Daily login coins'),
     challenge: whole(input.challenge ?? DEFAULT_EARNING.challenge, 'Daily challenge coins'),
     sheet: whole(input.sheet ?? DEFAULT_EARNING.sheet, 'Sheet completion coins'),

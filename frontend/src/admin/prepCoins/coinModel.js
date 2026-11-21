@@ -26,6 +26,7 @@ export const KIND_META = {
   earn_challenge: { label: 'Earned: daily challenge', group: 'earned', Icon: Sparkles, chip: SHARED },
   earn_sheet: { label: 'Earned: sheet completed', group: 'earned', Icon: Sparkles, chip: SHARED },
   earn_milestone: { label: 'Earned: lifetime badge', group: 'earned', Icon: Sparkles, chip: SHARED },
+  earn_level: { label: 'Earned: elite level', group: 'earned', Icon: Sparkles, chip: SHARED },
 };
 
 export const KIND_GROUPS = [

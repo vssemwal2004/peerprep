@@ -19,6 +19,7 @@ import { getStudentUniversityRanking } from '../src/services/studentDashboardSer
 import { DEFAULT_POLICY, enabledDomains, selectDailyMissions, selectPeriodGoals, abilityFrom, periodsAt, evaluateGoals, assignmentComplete } from '../src/services/adaptiveEngagementRules.js';
 import { validatePolicy } from '../src/services/engagementPolicyService.js';
 import { observeVerifiedInterview } from '../src/services/interviewEngagementService.js';
+import { PlatformCoinMovement } from '../src/platform/models.js';
 
 const at = new Date('2026-10-15T08:00:00Z');
 const oid = () => new mongoose.Types.ObjectId();
@@ -47,6 +48,18 @@ after(async () => {
   keys.forEach((key) => { if (oldEnv[key] === undefined) delete process.env[key]; else process.env[key] = oldEnv[key]; });
 });
 const solve = (problem, when, extra = {}) => Submission.collection.insertOne({ user: student._id, problem, mode: 'submit', status: 'AC', createdAt: when, updatedAt: when, completedAt: when, ...extra });
+
+test('elite levels 8–12 each pay Prep Coins once, including a level skipped in one jump', async () => {
+  const scope = engagementScope(student);
+  await StudentProgression.create({ ...scope, level: 9, joinedAt: new Date('2026-01-01T00:00:00Z'), legacyImportedAt: at,
+    levelHistory: [{ level: 9, title: 'Elite Engineer', achievedAt: at, mastery: 88, xp: 9000 }] });
+  const view = await refreshAdaptiveEngagement(student, at);
+  await refreshAdaptiveEngagement(student, new Date(at.getTime() + 60_000));
+  const paid = await PlatformCoinMovement.find({ toUserId: student._id, kind: 'earn_level' }).sort({ amount: 1 }).lean();
+  assert.deepEqual(paid.map((row) => row.amount), [10, 12], 'levels 8 and 9, once each');
+  assert.equal(view.ladder.length, 12);
+  assert.deepEqual(view.ladder.filter((entry) => entry.elite).map((entry) => [entry.level, entry.coins]), [[8, 10], [9, 12], [10, 15], [11, 20], [12, 25]]);
+});
 
 test('allocation intersection cannot be expanded by a university policy', () => {
   assert.deepEqual(enabledDomains({ questions: false, learning: true, interviews: false }, DEFAULT_POLICY), ['learning']);

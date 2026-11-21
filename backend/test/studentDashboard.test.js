@@ -43,7 +43,7 @@ test('progress scores each module separately and uses coding for Prep Score', ()
   assert.equal(idle.hasProgress, false);
   assert.equal(idle.level.level, 1);
   assert.deepEqual(idle.badgeMetrics, { solved: 0, hardSolved: 0, bestStreak: 0, activeDays: 0, languages: 0, assessments: 0, interviews: 0 });
-  assert.deepEqual(idle.levelMetrics, { solvedCount: 0, streak: 0, assessmentScore: null, interviewScore: 0, challengePoints: 0 });
+  assert.deepEqual(idle.levelMetrics, { solvedCount: 0, streak: 0, bestStreak: 0, assessmentScore: null, interviewScore: 0, challengePoints: 0 });
   // Each module: N^0.4 × (average points)^1.5 with Easy 1, Medium 2, Hard 4; Prep Score is coding only.
   const scored = scoreStudentProgress({
     easySolved: 10, mediumSolved: 4, hardSolved: 2,

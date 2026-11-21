@@ -78,7 +78,10 @@ test('ladders: floors for new students, strictly rising levels, day badges withi
 
 test('earning amounts are validated and harder badge levels never pay less', () => {
   // Solving no longer pays coins (2026-11-21); the daily challenge and a finished sheet pay 5.
-  assert.deepEqual(normalizeEarning({}), { login: 1, challenge: 5, sheet: 5, badgeLevels: [0, 0, 1, 1, 2, 3, 4, 5, 7, 10], milestoneTiers: [2, 3, 5, 8, 12] });
+  assert.deepEqual(normalizeEarning({}), { login: 1, challenge: 5, sheet: 5, badgeLevels: [0, 0, 1, 1, 2, 3, 4, 5, 7, 10], milestoneTiers: [2, 3, 5, 8, 12], levelCoins: [0, 0, 0, 0, 0, 0, 0, 10, 12, 15, 20, 25] });
+  // Elite learner levels: twelve amounts, never fewer coins for a higher level.
+  assert.throws(() => normalizeEarning({ levelCoins: [0, 0, 0, 0, 0, 0, 0, 10, 12, 15, 20] }), /12 learner levels/);
+  assert.throws(() => normalizeEarning({ levelCoins: [0, 0, 0, 0, 0, 0, 0, 20, 12, 15, 20, 25] }), /fewer/);
   assert.equal('solve' in normalizeEarning({ solve: 9 }), false, 'a stored solve amount is ignored');
   assert.throws(() => normalizeEarning({ milestoneTiers: [5, 4, 3, 2, 1] }), /fewer/);
   assert.deepEqual(normalizeEarning({}).badgeLevels, [...DEFAULT_EARNING.badgeLevels]);

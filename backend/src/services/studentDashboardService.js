@@ -96,14 +96,33 @@ export function calculateActivityStreak(activityByDate, now = new Date()) {
   return { current, best, activeDays: keys.length };
 }
 
-function learnerLevel({ solved, streak, assessmentScore, interviewScore, challengePoints = 0 }) {
+// Classic learner levels (students without the adaptive Quick Prep ladder, and staff views).
+// Levels 1–7: any ONE requirement. Levels 8–12 (elite): ALL requirements together, on the best
+// streak so a broken streak never drops a level. Mirror: frontend/src/student/profileBadge.js.
+export const CLASSIC_LEVELS = Object.freeze([
+  { title: 'Rising Learner' },
+  { title: 'Quick Solver', score: 65, solved: 30, streak: 7 },
+  { title: 'Consistent Performer', score: 100, solved: 80, assessment: 70 },
+  { title: 'Skill Champion', score: 135, streak: 21 },
+  { title: 'Problem Master', score: 170, solved: 180 },
+  { title: 'Elite Coder', score: 220, solved: 260 },
+  { title: 'Algorithm Architect', score: 300, solved: 350, streak: 45 },
+  { title: 'Code Strategist', all: true, score: 400, solved: 450, bestStreak: 60 },
+  { title: 'Placement Ace', all: true, score: 520, solved: 600, bestStreak: 90 },
+  { title: 'Grandmaster', all: true, score: 680, solved: 800, bestStreak: 120 },
+  { title: 'Legend', all: true, score: 850, solved: 1000, bestStreak: 180 },
+  { title: 'Hall of Fame', all: true, score: 1100, solved: 1300, bestStreak: 365 },
+]);
+
+export function learnerLevel({ solved, streak, bestStreak = streak, assessmentScore, interviewScore, challengePoints = 0 }) {
   const score = solved * 0.5 + streak * 1.75 + assessmentScore * 0.35 + interviewScore * 0.2 + challengePoints * 0.1;
-  if (solved >= 260 || score >= 220) return { level: 6, title: 'Elite Coder' };
-  if (solved >= 180 || score >= 170) return { level: 5, title: 'Problem Master' };
-  if (streak >= 21 || score >= 135) return { level: 4, title: 'Skill Champion' };
-  if (solved >= 80 || assessmentScore >= 70 || score >= 100) return { level: 3, title: 'Consistent Performer' };
-  if (solved >= 30 || streak >= 7 || score >= 65) return { level: 2, title: 'Quick Solver' };
-  return { level: 1, title: 'Rising Learner' };
+  const values = { score, solved, streak, assessment: assessmentScore, bestStreak: Math.max(bestStreak || 0, streak || 0) };
+  for (let index = CLASSIC_LEVELS.length - 1; index > 0; index -= 1) {
+    const tier = CLASSIC_LEVELS[index];
+    const checks = ['score', 'solved', 'streak', 'assessment', 'bestStreak'].filter((key) => tier[key] !== undefined).map((key) => values[key] >= tier[key]);
+    if (tier.all ? checks.every(Boolean) : checks.some(Boolean)) return { level: index + 1, title: tier.title };
+  }
+  return { level: 1, title: CLASSIC_LEVELS[0].title };
 }
 
 /**
@@ -131,7 +150,7 @@ export function scoreStudentProgress(metrics = {}, now = new Date(), policy = {}
     languages: count(metrics.languages), assessments: count(metrics.assessmentsCompleted), interviews: count(metrics.interviews),
   };
   const levelMetrics = {
-    solvedCount: solved, streak: streak.current, assessmentScore: nullableScore(metrics.assessmentScore), interviewScore: count(metrics.interviewScore),
+    solvedCount: solved, streak: streak.current, bestStreak: streak.best, assessmentScore: nullableScore(metrics.assessmentScore), interviewScore: count(metrics.interviewScore),
     challengePoints: count(metrics.challengePoints),
   };
   const earned = [
@@ -151,7 +170,7 @@ export function scoreStudentProgress(metrics = {}, now = new Date(), policy = {}
     milestoneBadges: earned.length,
     challengeBadges: count(metrics.challengeBadges),
     badgeMetrics, levelMetrics,
-    level: metrics.adaptiveLevel || learnerLevel({ solved: levelMetrics.solvedCount, streak: levelMetrics.streak, assessmentScore: levelMetrics.assessmentScore ?? 0, interviewScore: levelMetrics.interviewScore, challengePoints: levelMetrics.challengePoints }),
+    level: metrics.adaptiveLevel || learnerLevel({ solved: levelMetrics.solvedCount, streak: levelMetrics.streak, bestStreak: streak.best, assessmentScore: levelMetrics.assessmentScore ?? 0, interviewScore: levelMetrics.interviewScore, challengePoints: levelMetrics.challengePoints }),
     // Coding solves count as progress even when a quota or rule awards no points yet.
     hasProgress: score.hasProgress,
   };
