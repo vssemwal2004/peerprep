@@ -215,7 +215,7 @@ test('a completed daily plan and its badges notify once and appear on the heatma
   const titles = notices.map((notice) => notice.title);
   assert.equal(titles.filter((title) => title === 'Daily challenge complete').length, 1);
   // The daily challenge pays Prep Score points and Prep Coins and grows the Prep Streak (2026-11-21).
-  assert.match(notices.find((notice) => notice.title === 'Daily challenge complete').message, /^\+[\d.]+ Prep Score · \+5 Prep Coins · Prep Streak 1 day\. A new challenge arrives at 2 AM\.$/);
+  assert.match(notices.find((notice) => notice.title === 'Daily challenge complete').message, /^\+[\d.]+ Prep Score · \+2 Prep Coins · Prep Streak 1 day\. A new challenge arrives at 2 AM\.$/);
   assert.ok(titles.includes('Badge earned: Code Initiate') && titles.includes('Badge earned: Daily Debut'));
   assert.equal(new Set(notices.map((notice) => notice.dedupeKey)).size, notices.length, 'No duplicate notices under concurrent refreshes');
   assert.ok(notices.filter((notice) => notice.type === 'BADGE').every((notice) => notice.actionUrl === '/student/profile#badges'));

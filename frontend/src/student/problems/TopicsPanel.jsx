@@ -8,7 +8,7 @@ const INITIAL = 20;
 const SEARCH_LIMIT = 30;
 
 /** The most common topics in a scrolling list that fills its column; the full catalogue opens in the topic browser. */
-export default function TopicsPanel({ topics, selected, onSelect, totalProblems }) {
+export default function TopicsPanel({ topics, selected, onSelect, totalProblems, inRail = false }) {
   const [query, setQuery] = useState('');
   const [browsing, setBrowsing] = useState(false);
   const closeBrowser = useCallback(() => setBrowsing(false), []);
@@ -35,7 +35,8 @@ export default function TopicsPanel({ topics, selected, onSelect, totalProblems 
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search topics" className={`w-full pl-9 pr-3 ${fieldBase}`} />
     </label>
-    <ul className="mt-2 max-h-[360px] space-y-0.5 overflow-y-auto [scrollbar-width:thin] xl:max-h-[calc(100vh-14rem)]">
+    {/* In the laptop rail the list shares one scrolling column with the library and calendar, so it stays short. */}
+    <ul className={`mt-2 space-y-0.5 overflow-y-auto [scrollbar-width:thin] ${inRail ? 'max-h-[min(300px,42vh)]' : 'max-h-[360px] 2xl:max-h-[calc(100vh-14rem)]'}`}>
       {!deferred && <li><button type="button" aria-pressed={!selected} onClick={() => onSelect('')} className={`${row(!selected)} !flex-row !items-center !gap-3`}>
         <span className={`min-w-0 flex-1 truncate text-[13.5px] font-medium ${!selected ? 'text-sky-700 dark:text-sky-300' : 'text-slate-700 dark:text-zinc-200'}`}>All topics</span>
         <span className="text-[12px] tabular-nums text-slate-400 dark:text-zinc-500">{Number(totalProblems || 0).toLocaleString()}</span>

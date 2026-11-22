@@ -11,7 +11,7 @@ import { BadgeLadder, BadgeLevelAward, StudentDailyLogin } from '../src/models/M
 import { PrepScoreSolve, PrepScoreTopicDay } from '../src/models/PrepScoreTopicQuota.js';
 import { PlatformAudit, PlatformCoinMovement, PlatformCoinPricing, PlatformCoinWallet } from '../src/platform/models.js';
 import { PLATFORM_WALLET_SCOPE } from '../src/platform/coins.js';
-import { clearEarningCache, creditEarning, DEFAULT_EARNING, normalizeEarning, saveEarningConfig } from '../src/platform/coinEarn.js';
+import { clearEarningCache, creditEarning, DEFAULT_EARNING, getEarningConfig, normalizeEarning, saveEarningConfig } from '../src/platform/coinEarn.js';
 import { dailyCheckIn } from '../src/services/dailyCheckIn.js';
 import { buildLadder, evaluateMonthlyBadges, levelFor, monthOf, tierOf } from '../src/services/monthlyBadges.js';
 import { clearPrepScorePolicyCache } from '../src/services/prepScore/policy.js';
@@ -76,9 +76,18 @@ test('ladders: floors for new students, strictly rising levels, day badges withi
   assert.deepEqual([tierOf(1), tierOf(5), tierOf(10)], ['Bronze', 'Gold', 'Legend']);
 });
 
-test('earning amounts are validated and harder badge levels never pay less', () => {
+test('earning amounts are validated and harder badge levels never pay less', async () => {
   // Solving no longer pays coins (2026-11-21); the daily challenge and a finished sheet pay 5.
-  assert.deepEqual(normalizeEarning({}), { login: 1, challenge: 5, sheet: 5, badgeLevels: [0, 0, 1, 1, 2, 3, 4, 5, 7, 10], milestoneTiers: [2, 3, 5, 8, 12], levelCoins: [0, 0, 0, 0, 0, 0, 0, 10, 12, 15, 20, 25] });
+  // A saved daily challenge amount still at the old default (5) follows the new default (2);
+  // any other amount a Master Admin chose is kept.
+  await PlatformCoinPricing.collection.insertOne({ _id: 'earning', version: 1, earning: { ...DEFAULT_EARNING, challenge: 5 } });
+  clearEarningCache();
+  assert.equal((await getEarningConfig({ fresh: true })).earning.challenge, 2);
+  await PlatformCoinPricing.collection.updateOne({ _id: 'earning' }, { $set: { 'earning.challenge': 3 } });
+  assert.equal((await getEarningConfig({ fresh: true })).earning.challenge, 3);
+  await PlatformCoinPricing.deleteMany({});
+  clearEarningCache();
+  assert.deepEqual(normalizeEarning({}), { login: 1, challenge: 2, sheet: 5, badgeLevels: [0, 0, 1, 1, 2, 3, 4, 5, 7, 10], milestoneTiers: [2, 3, 5, 8, 12], levelCoins: [0, 0, 0, 0, 0, 0, 0, 10, 12, 15, 20, 25] });
   // Elite learner levels: twelve amounts, never fewer coins for a higher level.
   assert.throws(() => normalizeEarning({ levelCoins: [0, 0, 0, 0, 0, 0, 0, 10, 12, 15, 20] }), /12 learner levels/);
   assert.throws(() => normalizeEarning({ levelCoins: [0, 0, 0, 0, 0, 0, 0, 20, 12, 15, 20, 25] }), /fewer/);

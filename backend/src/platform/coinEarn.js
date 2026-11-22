@@ -24,7 +24,8 @@ export const LEARNER_LEVELS = 12;
 // precious (2026-11-19). Master Admin can change every amount in Prep Coin pricing.
 export const MILESTONE_TIERS = 5;
 export const DEFAULT_EARNING = Object.freeze({
-  login: 1, challenge: 5, sheet: 5,
+  // Daily challenge: 2 coins (2026-11-22, was 5). Solving a problem pays no coins.
+  login: 1, challenge: 2, sheet: 5,
   badgeLevels: Object.freeze([0, 0, 1, 1, 2, 3, 4, 5, 7, 10]),
   // Lifetime milestone badges by tier (Bronze .. Legend).
   milestoneTiers: Object.freeze([2, 3, 5, 8, 12]),
@@ -33,6 +34,7 @@ export const DEFAULT_EARNING = Object.freeze({
 });
 // The previous defaults: a saved configuration still equal to them follows the new defaults.
 const PREVIOUS_BADGE_DEFAULTS = Object.freeze([1, 2, 3, 4, 6, 8, 10, 13, 16, 20]);
+const PREVIOUS_CHALLENGE_DEFAULT = 5;
 const MAX_EARN = 1_000;
 const CACHE_MS = 15_000;
 const EARNING_DOC = 'earning';
@@ -80,6 +82,8 @@ export async function getEarningConfig({ fresh = false } = {}) {
   const stored = { ...(row?.earning || {}) };
   // A configuration saved with the untouched old badge amounts follows the new defaults.
   if (Array.isArray(stored.badgeLevels) && stored.badgeLevels.join(',') === PREVIOUS_BADGE_DEFAULTS.join(',')) delete stored.badgeLevels;
+  // Likewise a saved daily challenge amount still at the old default (5) follows the new one (2).
+  if (Number(stored.challenge) === PREVIOUS_CHALLENGE_DEFAULT) delete stored.challenge;
   cache = { version: row?.version || 0, earning: normalizeEarning(stored), updatedAt: row?.updatedAt || null };
   cachedAt = Date.now();
   return cache;

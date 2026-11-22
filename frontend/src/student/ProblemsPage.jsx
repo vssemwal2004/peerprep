@@ -31,6 +31,23 @@ const ROW_GRID = 'sm:grid-cols-[24px_minmax(0,1fr)_100px_78px_32px]';
 const FAVORITES_KEY = 'peerprep:problem-favorites';
 const DIFFICULTY_OPTIONS = ['', 'Easy', 'Medium', 'Hard'];
 
+// Laptop widths (MacBook 1280–1535px) are too narrow for three columns: Topics joins the left rail there,
+// so the question list keeps room for full titles and a one-line toolbar. Three columns return at 2xl.
+const TOPICS_IN_RAIL_QUERY = '(min-width: 1280px) and (max-width: 1535.98px)';
+
+function useMatchMedia(query) {
+  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const media = window.matchMedia?.(query);
+    if (!media) return undefined;
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, [query]);
+  return Boolean(matches);
+}
+
 function readFavorites() {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(FAVORITES_KEY) || '[]');
@@ -240,6 +257,8 @@ export default function ProblemsPage() {
       : selectedList ? { kind: 'list', title: selectedList.title, description: selectedList.description, catalogCount: selectedList.problemCount ?? selectedList.problemIds?.length, clear: () => selectView({ kind: 'all' }) }
         : showFavorites ? { kind: 'favorites', title: 'Favorites', catalogCount: favorites.length, clear: () => selectView({ kind: 'all' }) } : null;
   const narrowed = selection && activeFilters.length > 1;
+  const topicsInRail = useMatchMedia(TOPICS_IN_RAIL_QUERY);
+  const topicsPanel = <TopicsPanel topics={topicCounts} selected={selectedTopic} onSelect={selectTopic} totalProblems={totalProblems} inRail={topicsInRail} />;
 
   return <div className="min-h-screen bg-[#f6f7f9] font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:text-zinc-100">
     <main className="mx-auto w-full max-w-[1600px] space-y-3.5 px-3 pb-12 pt-4 sm:px-5 lg:px-8">
@@ -262,12 +281,13 @@ export default function ProblemsPage() {
 
       <CompanyStrip companies={companyCounts} loading={companiesLoading} selected={selectedCompany} onSelect={selectCompany} />
 
-      <div className="grid gap-5 xl:grid-cols-[232px_minmax(0,1fr)_312px] xl:gap-6">
-        <aside aria-label="Library and practice calendar" className="order-2 xl:order-1">
+      <div className="grid gap-5 xl:grid-cols-[248px_minmax(0,1fr)] xl:gap-6 2xl:grid-cols-[232px_minmax(0,1fr)_312px]">
+        <aside aria-label={topicsInRail ? 'Library, topics and practice calendar' : 'Library and practice calendar'} className="order-2 xl:order-1">
           {/* Capped to the viewport so the month view never hangs below the sticky column. */}
           <div className="space-y-4 xl:sticky xl:top-5 xl:-mx-1 xl:max-h-[calc(100vh-2.5rem)] xl:overflow-y-auto xl:px-1 xl:pb-1 xl:[scrollbar-width:thin]">
             <LibrarySidebar view={view} totalProblems={totalProblems} favoritesCount={favorites.length} lists={lists} busyListId={busyListId}
               onView={selectView} onCreateList={() => setCreateListOpen(true)} onDeleteList={deleteList} />
+            {topicsInRail && topicsPanel}
             <PracticeCalendar />
           </div>
         </aside>
@@ -333,11 +353,9 @@ export default function ProblemsPage() {
           </div>
         </section>
 
-        <aside aria-label="Topics" className="order-3">
-          <div className="xl:sticky xl:top-5">
-            <TopicsPanel topics={topicCounts} selected={selectedTopic} onSelect={selectTopic} totalProblems={totalProblems} />
-          </div>
-        </aside>
+        {!topicsInRail && <aside aria-label="Topics" className="order-3">
+          <div className="2xl:sticky 2xl:top-5">{topicsPanel}</div>
+        </aside>}
       </div>
 
       {activeQuestion && <QuestionPracticeDialog question={activeQuestion} onClose={() => setActiveQuestion(null)} onAnswered={() => setRefreshQuestions((value) => value + 1)} />}
