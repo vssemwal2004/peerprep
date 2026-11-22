@@ -18,7 +18,9 @@ import { notifyOnce } from './notificationService.js';
 import { discoverableFilter, peerCard, peerProgressFor, peerScope } from './peerNetworkService.js';
 import { getSharedCodingCatalog } from './studentDashboardService.js';
 import { istDay } from './prepScore/topicQuota.js';
+import { sharedSummaryFor } from './prepReadiness/readiness.js';
 import { TRACKS, tierOf } from './monthlyBadges.js';
+import { prepStreaks } from './prepStreak.js';
 
 const QUERY_TIMEOUT_MS = 8_000;
 const DAY_MS = 86_400_000;
@@ -126,6 +128,9 @@ async function practiceFacts(studentIds, now = new Date()) {
     });
   }
   for (const row of [...localDays, ...sharedDays]) facts.get(idString(row._id.user))?.days.add(row._id.day);
+  // The streak shown everywhere is the Prep Streak (daily challenges in a row), 2026-11-21.
+  const prep = await prepStreaks(ids, now).catch(() => new Map());
+  for (const [id, fact] of facts) if (prep.has(id)) fact.prepStreak = { current: prep.get(id).current, best: prep.get(id).best };
   return facts;
 }
 
@@ -156,7 +161,7 @@ export function summarizeFacts(fact, now = new Date()) {
   const since30 = shiftDay(today, -29);
   return {
     totals, thisWeek, thisMonth,
-    streak: streaks(fact.days, today),
+    streak: fact.prepStreak || streaks(fact.days, today),
     practisedToday: fact.days.has(today),
     activeDays30: [...fact.days].filter((day) => day >= since30 && day <= today).length,
     topicsCovered: topics.size,
@@ -236,20 +241,10 @@ async function practisedToday(studentIds, now) {
   return new Set([...local, ...shared].map(idString));
 }
 
-/** Current practice streak for a few students (the rows on screen): Map(studentId -> days). */
+/** Current Prep Streak for a few students (the rows on screen): Map(studentId -> days). */
 async function currentStreaks(studentIds, now) {
-  const ids = [...new Set(studentIds.map(idString))].map(objectId);
   const result = new Map();
-  if (!ids.length) return result;
-  const since = new Date(now.getTime() - 400 * DAY_MS);
-  const istDayOf = (field) => ({ $dateToString: { format: '%Y-%m-%d', date: field, timezone: 'Asia/Kolkata' } });
-  const [local, shared] = await Promise.all([
-    Submission.aggregate([{ $match: { user: { $in: ids }, mode: 'submit', assessmentId: null, createdAt: { $gte: since } } }, { $group: { _id: { user: '$user', day: istDayOf('$createdAt') } } }]).option({ maxTimeMS: QUERY_TIMEOUT_MS }),
-    QuestionPracticeAttempt.aggregate([{ $match: { studentId: { $in: ids }, source: 'shared', questionType: 'coding', createdAt: { $gte: since } } }, { $group: { _id: { user: '$studentId', day: istDayOf('$createdAt') } } }]).option({ maxTimeMS: QUERY_TIMEOUT_MS }),
-  ]);
-  const days = new Map(ids.map((id) => [idString(id), new Set()]));
-  for (const row of [...local, ...shared]) days.get(idString(row._id.user))?.add(row._id.day);
-  for (const [id, set] of days) result.set(id, streaks(set, istDay(now)).current);
+  for (const [id, streak] of await prepStreaks(studentIds.map(idString), now)) result.set(id, streak.current);
   return result;
 }
 
@@ -364,7 +359,9 @@ export function standing(all, youIndex) {
 
 // ---------------------------------------------------------------- suggestions
 
-const SUGGESTIONS = 8;
+// Suggestions per page ("Show more" loads the next page).
+const SUGGESTIONS = 10;
+const SUGGESTIONS_MAX_PAGE = 50;
 const activeCache = new Map();
 
 /** Students with the most practice submissions in the last 7 days (whole database, cached 10 min). */
@@ -388,24 +385,40 @@ async function recentlyActive(now) {
  * Classmates to add: discoverable students of your university you have no Prep Mate link with
  * (accepted, pending or declined), most active this week first, then newest accounts.
  */
-export async function getSuggestions(viewer, now = new Date()) {
+/**
+ * Classmates you may want as Prep Mates, a page at a time: everyone discoverable at your university
+ * who is not yet linked to you, the most active this week first, then the rest (newest accounts
+ * first). → { items, total, nextOffset (null on the last page) }
+ */
+export async function getSuggestions(viewer, now = new Date(), { offset = 0, limit = SUGGESTIONS } = {}) {
+  const start = Math.max(0, Math.floor(Number(offset)) || 0);
+  const size = Math.min(SUGGESTIONS_MAX_PAGE, Math.max(1, Math.floor(Number(limit)) || SUGGESTIONS));
   const { self, cohort } = await peerScope(viewer);
   const id = objectId(self._id);
   const links = await PrepMate.find({ $or: [{ fromId: id }, { toId: id }] }).select('fromId toId').limit(MATES_CAP * 2).maxTimeMS(QUERY_TIMEOUT_MS).lean();
   const excluded = new Set([idString(id), ...links.flatMap((doc) => [idString(doc.fromId), idString(doc.toId)])]);
   const active = (await recentlyActive(now)).filter((key) => !excluded.has(key));
-  const people = active.length ? await User.find({ _id: { $in: active.map(objectId) }, ...discoverableFilter(cohort) })
-    .select('_id name avatarUrl course branch semester').maxTimeMS(QUERY_TIMEOUT_MS).lean() : [];
+  const fields = '_id name avatarUrl course branch semester';
+  const activePeople = active.length ? await User.find({ _id: { $in: active.map(objectId) }, ...discoverableFilter(cohort) })
+    .select(fields).maxTimeMS(QUERY_TIMEOUT_MS).lean() : [];
   const order = new Map(active.map((key, index) => [key, index]));
-  const picked = people.sort((a, b) => order.get(idString(a)) - order.get(idString(b))).slice(0, SUGGESTIONS);
-  if (picked.length < SUGGESTIONS) {
-    const skip = [...excluded, ...picked.map(idString)].map(objectId);
-    const more = await User.find({ _id: { $nin: skip }, ...discoverableFilter(cohort) })
-      .select('_id name avatarUrl course branch semester').sort({ _id: -1 }).limit(SUGGESTIONS - picked.length).maxTimeMS(QUERY_TIMEOUT_MS).lean();
+  activePeople.sort((a, b) => order.get(idString(a)) - order.get(idString(b)));
+  // One extra row tells whether another page exists.
+  const picked = activePeople.slice(start, start + size + 1);
+  const restFilter = { _id: { $nin: [...excluded, ...activePeople.map(idString)].map(objectId) }, ...discoverableFilter(cohort) };
+  if (picked.length < size + 1) {
+    const more = await User.find(restFilter).select(fields).sort({ _id: -1 })
+      .skip(Math.max(0, start - activePeople.length)).limit(size + 1 - picked.length).maxTimeMS(QUERY_TIMEOUT_MS).lean();
     picked.push(...more);
   }
-  const week = await solvedCounts(picked.map((person) => person._id), periodStart('week', now));
-  return { items: picked.map((person) => ({ ...peerCard(person), thisWeek: week.get(idString(person)) || 0, relation: { mate: 'none', requestId: null } })) };
+  const restCount = await User.countDocuments(restFilter).maxTimeMS(QUERY_TIMEOUT_MS);
+  const page = picked.slice(0, size);
+  const week = await solvedCounts(page.map((person) => person._id), periodStart('week', now));
+  return {
+    items: page.map((person) => ({ ...peerCard(person), thisWeek: week.get(idString(person)) || 0, relation: { mate: 'none', requestId: null } })),
+    total: activePeople.length + restCount,
+    nextOffset: picked.length > size ? start + size : null,
+  };
 }
 
 /**
@@ -506,8 +519,14 @@ export async function compareWithMate(viewer, rawId, now = new Date()) {
   const mates = await circleMates(self._id, cohort);
   const circleIds = [self, ...mates].map((person) => person._id);
   const [selfFull, mateFull] = await Promise.all([
-    User.findById(objectId(self._id)).select('_id role featureAccess accessScope semester college').lean(),
-    User.findById(objectId(mate._id)).select('_id role featureAccess accessScope semester college').lean(),
+    User.findById(objectId(self._id)).select('_id role featureAccess accessScope semester college sharePrepReadiness').lean(),
+    User.findById(objectId(mate._id)).select('_id role featureAccess accessScope semester college sharePrepReadiness').lean(),
+  ]);
+  // Prep Score + SBC/PBC summary, decided per person: each side is shown only if that student opted
+  // in (the viewer's own numbers included), and only between accepted Prep Mates (requireMate above).
+  const [youShared, mateShared] = await Promise.all([
+    selfFull?.sharePrepReadiness === true ? sharedSummaryFor(selfFull).catch(() => null) : null,
+    mateFull?.sharePrepReadiness === true ? sharedSummaryFor(mateFull).catch(() => null) : null,
   ]);
   // Ranks across the whole circle come from database counts; full practice detail only for the two
   // of you plus the circle's top two others (the optional extra lines on the weekly chart).
@@ -550,6 +569,7 @@ export async function compareWithMate(viewer, rawId, now = new Date()) {
     month,
     you: side(self, you, selfProgress),
     mate: side(mate, them, mateProgress),
+    shared: { you: youShared, mate: mateShared, youSharing: selfFull?.sharePrepReadiness === true, mateSharing: mateFull?.sharePrepReadiness === true },
     topics: tags,
     // The top of your circle by all-time solves, always including the two of you.
     leaders: leaderIds.map((key) => ({ ...peerCard(personById.get(key)), solved: solvedOf(key), rank: allTime.get(key), isYou: key === selfId, isMate: key === mateId })),

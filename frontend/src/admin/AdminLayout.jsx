@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import GlobalSidebar from '../components/GlobalSidebar';
+import ShellCorners from '../components/ShellCorners';
 import { useOverlaySidebar } from '../components/useOverlaySidebar';
 
 export default function AdminLayout({ children }) {
@@ -25,6 +26,7 @@ export default function AdminLayout({ children }) {
         onExpand={sidebar.onExpand}
         onCollapse={sidebar.onCollapse}
       />
+      <ShellCorners />
       {/* Hover never changes this padding (the sidebar floats over the page); only pinning does. */}
       <main ref={mainRef} data-app-scroll-container className="h-screen min-h-0 overflow-y-auto overscroll-contain" style={{ paddingLeft: 'var(--admin-sidebar-width)' }}>
         {children}

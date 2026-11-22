@@ -7,8 +7,11 @@ import { Card, EmptyRow, ProgressBar } from '../profile/ui';
 import { focusRing } from '../profile/format';
 import { levelTheme } from '../profile/levelTheme';
 import LevelMedallion from '../profile/LevelMedallion';
-import { awardIcon, awardTone } from '../profile/awardVisuals';
 import { computeAwards } from '../profile/achievements';
+import BadgeMedal from '../badges/BadgeMedal';
+import { formatScore } from '../prepScore/formatScore';
+import BadgeShowcase from '../badges/BadgeShowcase';
+import { fromAward, orderBadges } from '../badges/badgeModel';
 import { difficultyTheme } from '../../utils/difficultyTheme';
 import PeerAvatar from './PeerAvatar';
 import PeerActions from './PeerActions';
@@ -45,7 +48,20 @@ const LINKS = [
  * "12 Prep Mates" row that opens the Prep Mates popup. Used on a classmate's profile card and on
  * the student's own profile card.
  */
-export function PrepMatesButton({ count, onOpen, label = 'Prep Mates' }) {
+export function PrepMatesButton({ count, onOpen, label = 'Prep Mates', compact = false }) {
+  if (compact) {
+    // Half-width tile for the profile sidebar's stat row (next to Prep Coin).
+    return (
+      <button type="button" onClick={onOpen} aria-label={`${count ?? 0} Prep Mates. Show ${label}`}
+        className={`group flex h-full w-full items-center gap-2.5 rounded-xl border border-slate-200/80 bg-slate-50/70 px-2.5 py-2 text-left transition hover:border-sky-200 hover:bg-sky-50/70 dark:border-zinc-800 dark:bg-zinc-900/40 dark:hover:border-sky-900 dark:hover:bg-sky-500/10 ${focusRing}`}>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-sky-600 shadow-sm ring-1 ring-slate-200/70 dark:bg-zinc-800 dark:text-sky-300 dark:ring-zinc-700"><Handshake className="h-4 w-4" aria-hidden="true" /></span>
+        <span className="min-w-0">
+          <span className="block text-[15px] font-bold leading-tight tabular-nums text-slate-900 dark:text-white">{compactCount(count)}</span>{' '}
+          <span className="block truncate text-[10.5px] font-medium text-slate-500 dark:text-zinc-400">{PEER_TERMS.prepMates}</span>
+        </span>
+      </button>
+    );
+  }
   return (
     <button type="button" onClick={onOpen} aria-label={`${count ?? 0} Prep Mates. Show ${label}`}
       className={`group flex w-full items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-left transition hover:border-sky-200 hover:bg-sky-50/70 dark:border-zinc-800 dark:bg-zinc-900/40 dark:hover:border-sky-900 dark:hover:bg-sky-500/10 ${focusRing}`}>
@@ -60,27 +76,31 @@ export function PrepMatesButton({ count, onOpen, label = 'Prep Mates' }) {
 }
 
 /** Left column: who the classmate is, their Prep Mates, and what you can do. Mirrors ProfileSidebar. */
-export function PeerIdentityCard({ profile, progress, network, relation, isSelf, onRelationChange, onOpenMates }) {
+export function PeerIdentityCard({ profile, progress, network, relation, isSelf, onRelationChange, onOpenMates, shared = null }) {
   const level = progress?.level;
   const theme = levelTheme(level?.level);
   const LevelIcon = theme.Icon;
   const firstName = firstNameOf(profile.name);
+  // Earned milestone badges for the shelf under the name (same medals as the own profile).
+  const badgeItems = progress?.badgeMetrics ? computeAwards(progress.badgeMetrics).awards.map(fromAward) : [];
+  const badgeCollection = { items: badgeItems, ...orderBadges(badgeItems), total: badgeItems.length };
+  const score = shared?.prepScore;
 
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_30px_-12px_rgba(14,116,144,0.18)] dark:border-zinc-800 dark:bg-[#242424]">
-      <div className="relative h-28 shrink-0 overflow-hidden bg-gradient-to-br from-sky-500 via-sky-400 to-cyan-300 dark:from-sky-800 dark:via-sky-700 dark:to-cyan-800" aria-hidden="true">
+      <div className="relative h-24 shrink-0 overflow-hidden bg-gradient-to-br from-sky-500 via-sky-400 to-cyan-300 dark:from-sky-800 dark:via-sky-700 dark:to-cyan-800" aria-hidden="true">
         <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(rgba(255,255,255,0.9)_1px,transparent_1px)] [background-size:14px_14px] [mask-image:linear-gradient(to_bottom,black,transparent)]" />
         <div className="absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/25 blur-2xl" />
         <div className="absolute -left-8 top-10 h-28 w-28 rounded-full bg-indigo-400/30 blur-2xl" />
         <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent to-white dark:to-[#242424]" />
       </div>
 
-      <div className="flex flex-1 flex-col gap-5 px-5 pb-5">
-        <div className="relative z-10 -mt-14 flex flex-col items-center text-center" data-guide="pp-identity">
+      <div className="flex flex-1 flex-col gap-4 px-4 pb-4">
+        <div className="relative z-10 -mt-12 flex flex-col items-center text-center" data-guide="pp-identity">
           <div className="rounded-full bg-gradient-to-br from-sky-400 via-cyan-300 to-indigo-400 p-[3px] shadow-lg shadow-sky-500/20">
-            <PeerAvatar name={profile.name} url={profile.avatarUrl} className="!h-[88px] !w-[88px] !rounded-full !text-3xl ring-[3px] ring-white dark:ring-[#242424]" />
+            <PeerAvatar name={profile.name} url={profile.avatarUrl} className="!h-[84px] !w-[84px] !rounded-full !text-3xl ring-[3px] ring-white dark:ring-[#242424]" />
           </div>
-          <div className="mt-3 flex max-w-full items-center justify-center gap-1.5">
+          <div className="mt-2.5 flex max-w-full items-center justify-center gap-1.5">
             <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight text-slate-900 dark:text-zinc-50" title={profile.name}>{profile.name}</h1>
             <PageGuideButton />
           </div>
@@ -92,40 +112,58 @@ export function PeerIdentityCard({ profile, progress, network, relation, isSelf,
               <LevelIcon className="h-3.5 w-3.5" aria-hidden="true" />{level.title}<span className="font-normal opacity-70">· Lv {level.level}</span>
             </span>
           ) : null}
-          <p className={`mt-3 text-[13px] leading-relaxed ${profile.bio ? 'text-slate-600 dark:text-zinc-300' : 'italic text-slate-400 dark:text-zinc-500'}`}>
+          {badgeItems.length ? <BadgeShowcase collection={badgeCollection} /> : null}
+          <p className={`mt-3 line-clamp-4 text-[12.5px] leading-relaxed ${profile.bio ? 'text-slate-600 dark:text-zinc-300' : 'italic text-slate-400 dark:text-zinc-500'}`}>
             {profile.bio || `${firstName} hasn’t added a bio yet.`}
           </p>
         </div>
 
-        <div data-guide="pp-mates"><PrepMatesButton count={network?.prepMates} onOpen={onOpenMates} label={`${firstName}’s Prep Mates`} /></div>
+        {/* Prep Mates + Prep Score side by side. Prep Score shows only if the student shares it. */}
+        <div className="grid grid-cols-2 gap-2">
+          <div data-guide="pp-mates"><PrepMatesButton count={network?.prepMates} onOpen={onOpenMates} label={`${firstName}’s Prep Mates`} compact /></div>
+          <div className="flex h-full items-center gap-2.5 rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50 to-white px-2.5 py-2 dark:border-sky-500/15 dark:from-sky-500/[0.08] dark:to-transparent"
+            title={shared ? `${firstName} shares their Prep Score with Prep Mates.` : `${firstName}’s Prep Score is private${isSelf ? '. Share it in Edit Profile → Privacy.' : '.'}`}>
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white">{shared ? <Trophy className="h-4 w-4" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}</span>
+            <span className="min-w-0">
+              <span className="block text-[15px] font-bold leading-tight tabular-nums text-slate-900 dark:text-white">{shared && Number.isFinite(Number(score)) ? formatScore(score) : 'Private'}</span>
+              <span className="block truncate text-[10.5px] font-medium text-slate-500 dark:text-zinc-400">Prep Score</span>
+            </span>
+          </div>
+        </div>
 
         {isSelf ? (
           <Link to="/student/profile" className={`inline-flex w-full items-center justify-center rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-white/5 ${focusRing}`}>
             This is how classmates see you · Edit profile
           </Link>
         ) : (
-          <div className="flex flex-col gap-2" data-guide="pp-actions">
-            <PeerActions peer={profile} relation={relation} onRelationChange={onRelationChange} block />
+          // One compact action row: the Prep Mate action, plus Compare beside it once you are Prep Mates.
+          <div className={`grid gap-2 ${relation?.mate === 'mates' ? 'grid-cols-2' : 'grid-cols-1'}`} data-guide="pp-actions">
+            <PeerActions peer={profile} relation={relation} onRelationChange={onRelationChange} size="card" block />
             {relation?.mate === 'mates' && (
-              <Link to={`/student/peers/${profile.id}/compare`} className={`inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-semibold text-white hover:bg-slate-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white ${focusRing}`}>
-                <BarChart3 className="h-4 w-4" aria-hidden="true" /> Compare with me
+              <Link to={`/student/peers/${profile.id}/compare`} className={`inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-slate-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white ${focusRing}`}>
+                <BarChart3 className="h-4 w-4" aria-hidden="true" /> Compare
               </Link>
             )}
           </div>
         )}
 
-        <section aria-labelledby="peer-about-title" data-guide="pp-about" className="border-t border-slate-100 pt-4 dark:border-zinc-800">
+        <section aria-labelledby="peer-about-title" data-guide="pp-about" className="border-t border-slate-100 pt-3 dark:border-zinc-800">
           <SectionTitle><span id="peer-about-title">About</span></SectionTitle>
-          <dl>
-            <DetailRow icon={<BookOpen className="h-3.5 w-3.5" />} label="Course" value={profile.course} />
-            <DetailRow icon={<GitBranch className="h-3.5 w-3.5" />} label="Branch" value={profile.branch} />
-            <DetailRow icon={<CalendarRange className="h-3.5 w-3.5" />} label="Semester" value={profile.semester ? `Semester ${profile.semester}` : ''} />
+          {/* Compact: three short facts in one row. */}
+          <dl className="grid grid-cols-3 gap-1.5">
+            {[
+              { label: 'Course', value: profile.course, Icon: BookOpen },
+              { label: 'Branch', value: profile.branch, Icon: GitBranch },
+              { label: 'Semester', value: profile.semester ? `Semester ${profile.semester}` : '', Icon: CalendarRange },
+            ].map(({ label, value, Icon }) => (
+              <div key={label} className="min-w-0 rounded-lg bg-slate-50 px-2 py-1.5 dark:bg-white/[0.03]">
+                <dt className="flex items-center gap-1 text-[9.5px] font-semibold uppercase tracking-wide text-slate-400 dark:text-zinc-500"><Icon className="h-3 w-3" aria-hidden="true" />{label}</dt>
+                <dd className={`mt-0.5 truncate text-[12px] font-medium ${value ? 'text-slate-800 dark:text-zinc-200' : 'text-slate-400 dark:text-zinc-500'}`} title={value || undefined}>{value || '—'}</dd>
+              </div>
+            ))}
           </dl>
-        </section>
-
-        <section aria-labelledby="peer-links-title" className="border-t border-slate-100 pt-4 dark:border-zinc-800">
-          <SectionTitle><span id="peer-links-title">Links</span></SectionTitle>
-          <div className="flex items-center gap-2">
+          <div className="mt-3 flex items-center gap-2">
+            <span id="peer-links-title" className="mr-auto text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500">Links</span>
             {LINKS.map(({ key, label, Icon }) => {
               const href = profile.links?.[key];
               return href ? (
@@ -143,8 +181,8 @@ export function PeerIdentityCard({ profile, progress, network, relation, isSelf,
           </div>
         </section>
 
-        <p data-guide="pp-privacy" className="mt-auto flex items-center justify-center gap-1 text-[11px] text-slate-400 dark:text-zinc-500">
-          <ShieldCheck className="h-3 w-3" aria-hidden="true" />Contact details, scores and Prep Coins stay private
+        <p data-guide="pp-privacy" className="mt-auto flex items-center justify-center gap-1 text-center text-[11px] text-slate-400 dark:text-zinc-500">
+          <ShieldCheck className="h-3 w-3 shrink-0" aria-hidden="true" />Contact details and Prep Coins stay private. Scores show only if shared with Prep Mates.
         </p>
       </div>
     </div>
@@ -195,21 +233,12 @@ export function PeerHighlightBanner({ name, progress }) {
   );
 }
 
+/** One milestone badge: the shared medal (locked form when not earned) and its name. */
 function AwardMedal({ award }) {
-  const Icon = awardIcon(award);
   const status = award.earned ? 'Earned' : `${Math.min(award.value, award.target)}/${award.target}`;
   return (
-    <li className="flex flex-col items-center gap-1 text-center" title={`${award.title}: ${award.description} (${status})`}>
-      <span className={`relative flex h-10 w-10 items-center justify-center rounded-full ${award.earned
-        ? `bg-gradient-to-br text-white shadow-md ${awardTone(award)}`
-        : 'bg-slate-100 text-slate-300 dark:bg-zinc-800 dark:text-zinc-600'}`} aria-hidden="true">
-        <Icon className="h-[18px] w-[18px]" />
-        {!award.earned ? (
-          <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white ring-1 ring-slate-200 dark:bg-zinc-900 dark:ring-zinc-700">
-            <Lock className="h-2.5 w-2.5 text-slate-400" />
-          </span>
-        ) : null}
-      </span>
+    <li className="group flex flex-col items-center gap-1 text-center" title={`${award.title}: ${award.description} (${status})`}>
+      <span className="transition-transform duration-300 group-hover:-translate-y-1"><BadgeMedal badge={fromAward(award)} size={44} interactive /></span>
       <span className={`line-clamp-2 text-[10px] font-medium leading-tight ${award.earned ? 'text-slate-700 dark:text-zinc-200' : 'text-slate-400 dark:text-zinc-500'}`}>{award.title}</span>
       <span className="sr-only">{award.earned ? 'earned' : `locked, ${status}`}</span>
     </li>

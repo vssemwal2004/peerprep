@@ -118,7 +118,7 @@ export function LeaderBars({ leaders = [], colorFor }) {
       const color = colorFor(row);
       return <li key={row.id} className="flex items-center gap-3">
         <span className="w-6 shrink-0 text-right text-[12px] font-semibold tabular-nums text-slate-400 dark:text-zinc-500">{row.rank}</span>
-        <PeerAvatar name={row.name} url={row.avatarUrl} size="sm" className="!rounded-full" />
+        <PeerAvatar name={row.name} url={row.avatarUrl} color={row.isYou || row.isMate ? color : ''} size="sm" className="!rounded-full" />
         <div className="min-w-0 flex-1">
           <p className="mb-1 flex items-center gap-1.5 truncate text-[13px] font-medium text-slate-800 dark:text-zinc-100">
             <span className="truncate">{row.isYou ? 'You' : row.name}</span>
@@ -145,7 +145,7 @@ export function DifficultyMix({ you, mate, mateName }) {
       {people.map(({ key, label, color, totals, person }) => <div key={key}>
         <div className="mb-1.5 flex items-center justify-between gap-2">
           <span className="flex items-center gap-2 text-[13px] font-medium text-slate-800 dark:text-zinc-100">
-            <span className="rounded-full p-[2px]" style={{ backgroundColor: color }}><PeerAvatar name={person.name} url={person.avatarUrl} size="sm" className="!h-6 !w-6 !rounded-full ring-2 ring-white dark:ring-[#242424]" /></span>{label}
+            <span className="rounded-full p-[2px]" style={{ backgroundColor: color }}><PeerAvatar name={person.name} url={person.avatarUrl} color={color} size="sm" className="!h-6 !w-6 !rounded-full ring-2 ring-white dark:ring-[#242424]" /></span>{label}
           </span>
           <span className="text-[13px] font-bold tabular-nums text-slate-900 dark:text-white">{totals.total}</span>
         </div>
@@ -197,20 +197,98 @@ export function TopicButterfly({ topics = [], mateName }) {
 }
 
 /** The last 30 days, one cell per day, for each of you; days you both practised are counted. */
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const monthKeyOf = (day) => day.slice(0, 7);
+const longDate = (day) => new Date(`${day}T00:00:00Z`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+/** Calendar cells of one month (Monday first), with leading blanks. */
+function monthCells(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number);
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const lead = (first.getUTCDay() + 6) % 7;
+  return [
+    ...Array.from({ length: lead }, (_, index) => ({ blank: true, key: `b${index}` })),
+    ...Array.from({ length: days }, (_, index) => {
+      const date = `${monthKey}-${String(index + 1).padStart(2, '0')}`;
+      return { key: date, date, number: index + 1 };
+    }),
+  ];
+}
+
+/** One month box: a calendar where each day shows who practised. */
+function MonthBox({ monthKey, byDay, today, mateName }) {
+  const cells = useMemo(() => monthCells(monthKey), [monthKey]);
+  const inMonth = cells.filter((cell) => !cell.blank && byDay.has(cell.date)).map((cell) => byDay.get(cell.date));
+  const counts = { you: inMonth.filter((day) => day.you).length, mate: inMonth.filter((day) => day.mate).length, both: inMonth.filter((day) => day.you && day.mate).length };
+  const title = new Date(`${monthKey}-01T00:00:00Z`).toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return (
+    <div className="min-w-0 rounded-2xl bg-slate-50/80 p-3.5 ring-1 ring-inset ring-black/[0.04] sm:p-4 dark:bg-white/[0.03] dark:ring-white/[0.06]">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h3 className="text-[14px] font-semibold text-slate-900 dark:text-white">{title}</h3>
+        <p className="flex items-center gap-2.5 text-[11.5px] tabular-nums text-slate-500 dark:text-zinc-400">
+          <span><b style={{ color: YOU_COLOR }}>{counts.you}</b> you</span>
+          <span><b style={{ color: MATE_COLOR }}>{counts.mate}</b> {mateName}</span>
+          <span><b className="text-slate-800 dark:text-zinc-100">{counts.both}</b> together</span>
+        </p>
+      </div>
+      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-400 dark:text-zinc-500" aria-hidden="true">
+        {WEEKDAYS.map((day) => <span key={day}>{day.slice(0, 2)}</span>)}
+      </div>
+      <ol className="mt-1 grid grid-cols-7 gap-1" aria-label={`${title}: you practised on ${counts.you} days, ${mateName} on ${counts.mate}, together on ${counts.both}`}>
+        {cells.map((cell) => {
+          if (cell.blank) return <li key={cell.key} aria-hidden="true" />;
+          const entry = byDay.get(cell.date);
+          const tracked = Boolean(entry);
+          const isToday = cell.date === today;
+          const you = entry?.you;
+          const mate = entry?.mate;
+          const background = you && mate
+            ? `linear-gradient(135deg, ${YOU_COLOR} 0 50%, ${MATE_COLOR} 50% 100%)`
+            : you ? YOU_COLOR : mate ? MATE_COLOR : undefined;
+          const label = !tracked ? (cell.date > today ? 'still to come' : 'outside the last 30 days') : you && mate ? 'you both practised' : you ? 'you practised' : mate ? `${mateName} practised` : 'no practice';
+          return (
+            <li key={cell.key} title={`${longDate(cell.date)}: ${label}`}
+              className={`relative flex aspect-square max-h-10 items-center justify-center rounded-lg text-[11px] font-semibold tabular-nums transition-transform duration-150 hover:scale-[1.08] ${
+                background ? 'text-white shadow-[0_2px_6px_-2px_rgba(15,23,42,0.35)]'
+                  : tracked ? 'bg-white text-slate-500 ring-1 ring-inset ring-slate-200 dark:bg-white/[0.05] dark:text-zinc-400 dark:ring-white/10'
+                    : 'text-slate-300 dark:text-zinc-600'} ${isToday ? 'outline outline-2 outline-offset-1 outline-slate-900 dark:outline-white' : ''}`}
+              style={background ? { background } : undefined}>
+              <span aria-hidden="true">{cell.number}</span>
+              <span className="sr-only">{longDate(cell.date)}: {label}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+/**
+ * Last 30 days as two month calendars (the previous month and this month). Each day shows who
+ * practised: you, your Prep Mate, or both (split). Days outside the 30-day window are faded.
+ */
 export function ConsistencyGrid({ you, mate, mateName }) {
+  const byDay = useMemo(() => new Map(you.days30.map((day, index) => [day.day, { you: day.active, mate: Boolean(mate.days30[index]?.active) }])), [you.days30, mate.days30]);
+  const today = you.days30.at(-1)?.day || '';
+  const months = useMemo(() => {
+    if (!today) return [];
+    const [year, month] = today.split('-').map(Number);
+    const previous = new Date(Date.UTC(year, month - 2, 1));
+    return [`${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, '0')}`, monthKeyOf(today)];
+  }, [today]);
   const both = you.days30.filter((day, index) => day.active && mate.days30[index]?.active).length;
-  const row = (label, person, color) => <div className="flex items-center gap-3">
-    <span className="w-16 shrink-0 truncate text-[12px] font-medium text-slate-600 dark:text-zinc-300">{label}</span>
-    <ol className="grid flex-1 grid-cols-[repeat(30,minmax(0,1fr))] gap-[3px]" aria-label={`${label}: practised on ${person.activeDays30} of the last 30 days`}>
-      {person.days30.map((day) => <li key={day.day} title={`${new Date(`${day.day}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' })}: ${day.active ? 'practised' : 'no practice'}`}
-        className={`aspect-square max-h-5 rounded-[4px] ${day.active ? '' : 'bg-slate-100 dark:bg-white/[0.06]'}`} style={day.active ? { backgroundColor: color } : undefined} />)}
-    </ol>
-    <span className="w-14 shrink-0 text-right text-[12px] text-slate-500 dark:text-zinc-400"><b className="text-[14px] tabular-nums text-slate-900 dark:text-white">{person.activeDays30}</b> days</span>
-  </div>;
-  return <div className="space-y-2.5">
-    {row('You', you, YOU_COLOR)}
-    {row(mateName, mate, MATE_COLOR)}
-    <div className="flex items-center justify-between pl-[76px] pr-[68px] text-[10.5px] text-slate-400 dark:text-zinc-500"><span>30 days ago</span><span>Today</span></div>
-    <p className="rounded-xl bg-slate-50 px-3 py-2 text-[12.5px] text-slate-600 dark:bg-white/[0.04] dark:text-zinc-300">You both practised on <b className="text-slate-900 dark:text-white">{both}</b> of the same days.</p>
+  return <div className="space-y-4">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-slate-600 dark:text-zinc-300" aria-hidden="true">
+      <span className="inline-flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-[4px]" style={{ backgroundColor: YOU_COLOR }} />You <b className="tabular-nums text-slate-900 dark:text-white">{you.activeDays30}</b> days</span>
+      <span className="inline-flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-[4px]" style={{ backgroundColor: MATE_COLOR }} />{mateName} <b className="tabular-nums text-slate-900 dark:text-white">{mate.activeDays30}</b> days</span>
+      <span className="inline-flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-[4px]" style={{ background: `linear-gradient(135deg, ${YOU_COLOR} 0 50%, ${MATE_COLOR} 50% 100%)` }} />Both</span>
+      <span className="inline-flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-[4px] outline outline-2 outline-offset-1 outline-slate-900 dark:outline-white" />Today</span>
+      <span className="text-slate-400 dark:text-zinc-500">Faded days are outside the last 30 days</span>
+    </div>
+    <div className="grid gap-3 md:grid-cols-2">
+      {months.map((monthKey) => <MonthBox key={monthKey} monthKey={monthKey} byDay={byDay} today={today} mateName={mateName} />)}
+    </div>
+    <p className="rounded-xl bg-slate-50 px-3 py-2 text-[12.5px] text-slate-600 dark:bg-white/[0.04] dark:text-zinc-300">You both practised on <b className="text-slate-900 dark:text-white">{both}</b> of the same days in the last 30.</p>
   </div>;
 }

@@ -543,6 +543,9 @@ export async function login(req, res) {
     logAuthAttempt(req, true, admin.email, admin._id);
     // SECURITY: one session per account (asks first when another one is still signed in).
     if (!await signIn(req, res, admin, { sub: admin._id, role: admin.role, email: admin.email, ...tenantTokenClaims() })) return undefined;
+    // Admin sign-ins appear in the activity log (Master Admins on the control plane, university
+    // admins in their own database), only once the session really starts.
+    void logActivity({ userEmail: admin.email, userRole: 'admin', actionType: 'LOGIN', targetType: 'ADMIN', targetId: String(admin._id), description: 'Signed in', req });
 
     return res.json({ user: { id: admin._id, email: admin.email, role: admin.role, name: admin.name, adminAccess: admin.adminAccess || 'full',
       mustChangePassword: Boolean(admin.mustChangePassword), universityId: currentTenant()?.universityId || null } });

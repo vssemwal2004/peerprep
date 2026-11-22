@@ -18,7 +18,44 @@ const FIXED_LEVEL_ONLY = new Set(['mockCompleted']);
 const points = () => ({ Easy: 1, Medium: 2, Hard: 4 });
 const activity = (levelSource = 'content') => ({ enabled: true, units: 1, levelSource, level: 'Medium' });
 
+// Prep Score v6 is a points ledger (services/prepScore/points.js): every rule below adds or removes
+// points, replayed from each student's own history. The formula/modules block stays for the admin
+// activity metrics (Prep Analysis), and modules.coding.dailyTopicLimit is the per-topic limit.
+export const LIFETIME_TIERS = 5;
+export const DEFAULT_POINTS_CONFIG = Object.freeze({
+  // A first accepted solve, split equally across the problem's topics.
+  solve: Object.freeze({ Easy: 4, Medium: 8, Hard: 14 }),
+  // The per-topic daily limit applies to solves from this IST day (earlier solves count in full).
+  topicLimitFrom: '2026-11-19',
+  // From this IST day a solve's base points are split across only the tags with an open quota slot
+  // (a full tag's share moves to the open ones), tags are matched through the canonical topic
+  // aliases, and each canonical problem (local + shared copy) pays once, from a stored receipt.
+  // Points awarded before this day are kept as they were.
+  allocationFrom: '2026-11-22',
+  login: 1,
+  dailyChallenge: 5,
+  // A finished Quick Prep sheet: half a Medium solve (its questions already paid as solves).
+  sheetCompleted: 4,
+  monthlyBadgeLevel: 2,
+  // Lifetime milestone badges by tier (1 = first milestone of a track ... 5 = highest).
+  lifetimeBadge: Object.freeze([10, 20, 30, 40, 50]),
+  // Wrong answer / time limit / runtime error on a not-yet-solved problem; refunded when that
+  // problem is solved the same IST day. Compile errors and server failures never count.
+  wrongSubmission: 0.5,
+  wrongDailyCap: 5,
+  refundSameDay: true,
+  // Days without any practice submission: `graceDays` free, then `perDay` each, `monthlyCap` per month.
+  inactivity: Object.freeze({ graceDays: 3, perDay: 1, monthlyCap: 15 }),
+  // Wrong answers and inactivity never take away more than (1 - share) of the points from solving.
+  lossFloorShare: 0.75,
+  // Prep Score = scale × (activity points)^exponent: the old formula's shape (quick at first, then
+  // slower), so scores grow slowly and spread like before (2026-11-21). exponent 1 = plain points.
+  curve: Object.freeze({ scale: 1.3, exponent: 0.4 }),
+  decimalPlaces: 2,
+});
+
 export const DEFAULT_PREP_SCORE_CONFIG = deepFreeze({
+  points: structuredClone(DEFAULT_POINTS_CONFIG),
   formula: { volumeExponent: 0.4, qualityExponent: 1.5, scale: 1, decimalPlaces: 2 },
   modules: {
     // dailyTopicLimit: first solves per topic per IST day that count (0 = no limit). See topicQuota.js.
@@ -109,11 +146,55 @@ function normalizeModule(key, value) {
   return result;
 }
 
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+export function normalizePointsConfig(value = {}) {
+  const input = object(value);
+  const defaults = DEFAULT_POINTS_CONFIG;
+  const solveInput = object(input.solve);
+  const solve = {};
+  LEVELS.forEach((difficulty) => { solve[difficulty] = finite(solveInput[difficulty] ?? defaults.solve[difficulty], `${difficulty} solve points`, { min: 0, max: 1000 }); });
+  if (!(solve.Easy <= solve.Medium && solve.Medium <= solve.Hard)) throw new HttpError(400, 'Solve points must be ordered Easy ≤ Medium ≤ Hard.');
+  const from = String(input.topicLimitFrom ?? defaults.topicLimitFrom).trim();
+  if (!DAY_PATTERN.test(from)) throw new HttpError(400, 'Topic limit start must be a date (YYYY-MM-DD).');
+  const allocationFrom = String(input.allocationFrom ?? defaults.allocationFrom).trim();
+  if (!DAY_PATTERN.test(allocationFrom)) throw new HttpError(400, 'Allocation start must be a date (YYYY-MM-DD).');
+  const lifetime = Array.isArray(input.lifetimeBadge) ? input.lifetimeBadge : defaults.lifetimeBadge;
+  if (lifetime.length !== LIFETIME_TIERS) throw new HttpError(400, `Lifetime badge points need ${LIFETIME_TIERS} tiers.`);
+  const lifetimeBadge = lifetime.map((amount, index) => finite(amount, `Lifetime badge tier ${index + 1} points`, { min: 0, max: 1000 }));
+  const inactivityInput = object(input.inactivity);
+  return {
+    solve,
+    topicLimitFrom: from,
+    allocationFrom,
+    login: finite(input.login ?? defaults.login, 'Daily login points', { min: 0, max: 100 }),
+    dailyChallenge: finite(input.dailyChallenge ?? defaults.dailyChallenge, 'Daily challenge points', { min: 0, max: 1000 }),
+    sheetCompleted: finite(input.sheetCompleted ?? defaults.sheetCompleted, 'Sheet completion points', { min: 0, max: 1000 }),
+    monthlyBadgeLevel: finite(input.monthlyBadgeLevel ?? defaults.monthlyBadgeLevel, 'Monthly badge level points', { min: 0, max: 1000 }),
+    lifetimeBadge,
+    wrongSubmission: finite(input.wrongSubmission ?? defaults.wrongSubmission, 'Wrong submission points', { min: 0, max: 100 }),
+    wrongDailyCap: finite(input.wrongDailyCap ?? defaults.wrongDailyCap, 'Wrong submission daily cap', { min: 0, max: 1000 }),
+    refundSameDay: input.refundSameDay !== false,
+    inactivity: {
+      graceDays: Math.trunc(finite(inactivityInput.graceDays ?? defaults.inactivity.graceDays, 'Inactivity grace days', { min: 0, max: 60 })),
+      perDay: finite(inactivityInput.perDay ?? defaults.inactivity.perDay, 'Inactivity points per day', { min: 0, max: 100 }),
+      monthlyCap: finite(inactivityInput.monthlyCap ?? defaults.inactivity.monthlyCap, 'Inactivity monthly cap', { min: 0, max: 1000 }),
+    },
+    lossFloorShare: finite(input.lossFloorShare ?? defaults.lossFloorShare, 'Protected share of solve points', { min: 0, max: 1 }),
+    curve: {
+      scale: finite(object(input.curve).scale ?? defaults.curve.scale, 'Curve scale', { min: 0.01, max: 1000 }),
+      exponent: finite(object(input.curve).exponent ?? defaults.curve.exponent, 'Curve exponent', { min: 0.1, max: 1 }),
+    },
+    decimalPlaces: Math.trunc(finite(input.decimalPlaces ?? defaults.decimalPlaces, 'Score decimal places', { min: 0, max: 2 })),
+  };
+}
+
 export function normalizePrepScoreConfig(value = {}) {
   const input = upgradeLegacyConfig(object(value));
   const formula = object(input.formula);
   const defaults = DEFAULT_PREP_SCORE_CONFIG.formula;
   const normalized = {
+    points: normalizePointsConfig(input.points),
     formula: {
       volumeExponent: finite(formula.volumeExponent ?? defaults.volumeExponent, 'Volume exponent (α)', { min: 0.01, max: 10 }),
       qualityExponent: finite(formula.qualityExponent ?? defaults.qualityExponent, 'Difficulty exponent (β)', { min: 0.01, max: 10 }),

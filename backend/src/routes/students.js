@@ -9,6 +9,9 @@ import { authorizeStudent } from '../middleware/authorization.js';
 import { uploadLimiter, bulkOperationLimiter } from '../middleware/rateLimiter.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
 import { studentQuickPrepReport } from '../services/questService.js';
+import mongoose from 'mongoose';
+import User from '../models/User.js';
+import { readinessFor, readinessSummary } from '../services/prepReadiness/readiness.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -32,6 +35,23 @@ router.get('/promotion/semesters/:semester/students', requireAuth, requireCoordi
 router.post('/promotion/promote', requireAuth, requireCoordinatorPermission('coordinator.students.promote'), bulkOperationLimiter, invalidateResponseCache('students'), promoteStudents);
 router.get('/:studentId', requireAuth, requireCoordinatorPermission('coordinator.students.profile'), getStudentById);
 // SECURITY: Add authorization check for student-specific data
+// Prep Readiness (read-only) for staff: same permission and assignment scope as the profile itself
+// (a coordinator with 'own' data scope sees only students assigned to them).
+router.get('/:studentId/prep-readiness', requireAuth, requireCoordinatorPermission('coordinator.students.profile'), async (req, res, next) => {
+  try {
+    const { studentId } = req.params;
+    if (!mongoose.isValidObjectId(studentId)) return res.status(404).json({ error: 'Student not found' });
+    const user = req.user;
+    const query = user.role === 'coordinator' && user.coordinatorDataScope !== 'all'
+      ? { _id: studentId, role: 'student', teacherIds: user.coordinatorId }
+      : { _id: studentId, role: 'student' };
+    const student = await User.findOne(query).select('-password').lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+    res.set('Cache-Control', 'private, no-store');
+    if (String(req.query.view) === 'summary') return res.json(await readinessSummary(student, { sync: true }));
+    return res.json(await readinessFor(student, { range: String(req.query.range || '30d') }));
+  } catch (error) { return next(error); }
+});
 router.get('/:studentId/activity', requireAuth, authorizeStudent('studentId'), getStudentActivityByAdmin);
 router.get('/:studentId/stats', requireAuth, authorizeStudent('studentId'), getStudentStats);
 router.get('/:studentId/videos-watched', requireAuth, authorizeStudent('studentId'), getStudentVideosWatched);

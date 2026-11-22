@@ -86,6 +86,29 @@ export const promotionSteps = [
 
 export default [
   {
+    id: "admin.prep-topic-priority",
+    paths: ["/admin/settings/prep-topic-priority"],
+    area: "Settings",
+    title: "Prep Topic Priority Adjustment",
+    icon: "sliders",
+    deployment: "control",
+    summary: "Topic weight, target and priority for SBC and PBC Prep Readiness, edited as a draft, previewed on real students and published for every university.",
+    intro: "This page sets the Prep Readiness topic policy for every university.\nWeight and target change scores; priority only orders ANVI practice suggestions. Nothing changes for students until you publish.",
+    tips: [
+      "Run the preview before publishing: it separates catalogue shortages from student practice gaps.",
+      "Excluding a topic from a track (weight 0) removes it from that track's total.",
+      "If another admin publishes first, your edits stay on screen; reload to continue from their version.",
+    ],
+    steps: [
+      { id: "ptp-header", target: "ptp-header", chapter: "overview", quick: true, title: "Live version and draft", body: "Shows the live version, your draft and unsaved changes, with the read-only cutoffs (SBC 70, PBC 75) and Easy/Medium/Hard multipliers for each track." },
+      { id: "ptp-editor", target: "ptp-editor", chapter: "parts", quick: true, title: "Edit topics", body: "Switch between SBC and PBC, search or filter by category, and change weight, target and priority. Rows that differ from live are highlighted, and invalid values are flagged inline." },
+      { id: "ptp-actions", target: "ptp-actions", chapter: "actions", title: "Save, discard, publish", body: "Save the draft as often as you like. Publishing needs a short reason and a confirmation, and records who published which version and when." },
+      { id: "ptp-preview", target: "ptp-preview", chapter: "parts", title: "Preview impact", body: "Scores stored evidence for a chosen university under the draft without changing anything: score distributions before and after, and topics where the catalogue cannot reach the target." },
+      { id: "ptp-unmapped", target: "ptp-unmapped", chapter: "parts", title: "Questions without a topic", body: "Practice questions whose tags match no canonical topic. Choose a topic to start giving readiness credit for their accepted solves; each choice is audited." },
+      { id: "ptp-history", target: "ptp-history", chapter: "parts", title: "Version history", body: "Every published version with its date and reason. Student growth charts score each day under the version that applied then." },
+    ],
+  },
+  {
     id: "admin.prep-score-adjustment",
     paths: ["/admin/settings/prep-score-adjustment"],
     area: "Settings",
@@ -117,9 +140,14 @@ export default [
         body: "Live is the published version students are scored with. Draft appears when a saved draft is waiting. Unsaved changes means you edited values that are not saved yet.",
       },
       {
-        id: "psa-formula", target: "psa-formula", chapter: "parts", quick: true,
-        title: "The formula",
-        body: "Prep Score = S × N^α × Q^β for Prep Coding, where N is the Easy, Medium and Hard solves counted and Q is the average points per solve. The table explains every variable.",
+        id: "psa-points", target: "psa-points", chapter: "parts", quick: true,
+        title: "Prep Score points",
+        body: "Prep Score is a points total replayed from each student's own history: solves (shared across the problem's topics, within the daily topic limit), the daily challenge, finished sheets, daily visits and badges add points; wrong answers and days without practice remove a little, with caps. It never goes below 0.",
+      },
+      {
+        id: "psa-formula", target: "psa-formula", chapter: "parts",
+        title: "Prep Coding activity formula",
+        body: "S × N^α × Q^β is now the Prep Coding activity metric used in Prep Analysis, where N is the Easy, Medium and Hard solves counted and Q is the average points per solve. It does not set the Prep Score.",
       },
       {
         id: "psa-module", target: "psa-module", chapter: "parts",

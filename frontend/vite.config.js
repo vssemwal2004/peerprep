@@ -63,6 +63,8 @@ export default defineConfig({
     // Monaco ships as ESM and manages its own worker graph. Pre-bundling its
     // language contributions can leave the dev server with stale hashed URLs
     // after dependency changes (504 "Outdated Optimize Dep").
-    exclude: ['monaco-editor']
+    // harper.js (Prep Resume grammar) finds its WebAssembly file next to its own
+    // module via import.meta.url; pre-bundling would move the module and break that.
+    exclude: ['monaco-editor', 'harper.js']
   }
 });

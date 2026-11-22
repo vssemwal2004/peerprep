@@ -27,8 +27,8 @@ export default function CodingSheets() {
       ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((value) => <Skeleton key={value} className="h-[330px] rounded-2xl" />)}</div>
       : error && !quests.length
         ? <Unavailable message="Coding sheets could not be loaded." onRetry={reload} />
-        : <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {ordered.slice(0, SHOWN).map((quest, index) => <li key={quest.id} className="dashboard-rise flex [&>a]:flex-1" style={{ '--rise': index + 3 }}><QuestCard quest={quest} /></li>)}
+        : <ul className="quest-card-grid grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {ordered.slice(0, SHOWN).map((quest, index) => <li key={quest.id} className="dashboard-rise flex min-w-0 [&>a]:flex-1" style={{ '--rise': index + 3 }}><QuestCard quest={quest} /></li>)}
         </ul>}
   </section>;
 }

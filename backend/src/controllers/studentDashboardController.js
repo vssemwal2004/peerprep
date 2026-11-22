@@ -18,7 +18,7 @@ export async function getStudentChallengeBadges(req, res) {
   res.set('Cache-Control', 'private, no-store');
   res.json(await listStudentChallengeBadges(req.user, { cursor: req.query?.cursor }));
 }
-import { dashboardPermissions, getStudentDashboardData, getStudentUniversityRanking, getAccessibleCurriculumTopic, getSharedCodingCatalog, publicProblemMatch } from '../services/studentDashboardService.js';
+import { dashboardPermissions, getStudentDashboardData, getStudentPrepScoreHistory, getStudentUniversityRanking, getAccessibleCurriculumTopic, getSharedCodingCatalog, publicProblemMatch } from '../services/studentDashboardService.js';
 
 function publicRanking(ranking = {}) {
   return {
@@ -66,6 +66,12 @@ export async function getStudentDashboard(req, res) {
 export async function getStudentRanking(req, res) {
   res.set('Cache-Control', 'private, no-store');
   res.json({ ranking: publicRanking(await getStudentUniversityRanking(req.user)) });
+}
+
+/** GET /auth/prep-score/history?range=7d|30d|90d|all: the student's own score history graph. */
+export async function getPrepScoreHistory(req, res) {
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ history: await getStudentPrepScoreHistory(req.user, { range: String(req.query?.range || '30d') }) });
 }
 
 export async function recordStudentProblemView(req, res) {

@@ -14,7 +14,7 @@ import { parseDateRange, parseDayKey, rangeDayKeys, rangeEcho } from '../utils/d
 
 const DAY_MS = 86_400_000;
 const QUERY_MS = 8_000;
-const EARN_KINDS = ['earn_login', 'earn_solve', 'earn_badge'];
+const EARN_KINDS = ['earn_login', 'earn_solve', 'earn_badge', 'earn_challenge', 'earn_sheet', 'earn_milestone', 'earn_level'];
 const KINDS = ['initial', 'topup', 'admin_to_coordinator', 'coordinator_to_student', 'superadmin_to_coordinator', 'superadmin_to_student', 'student_spend', 'student_refund', ...EARN_KINDS];
 const featureLabel = new Map(COIN_FEATURES.map((feature) => [feature.key, feature.label]));
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

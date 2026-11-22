@@ -6,7 +6,8 @@ import { getActivePrepScorePolicy } from '../services/prepScore/policy.js';
 
 // 5: buckets are the Prep Score scaled to its policy's decimal places (12.34 -> 1234 at 2 places),
 // so small scores do not collapse into mass ties. Snapshots on another version are never compared.
-export const GLOBAL_RANK_VERSION = 5;
+// 6: Prep Score v6 points ledger (a different scale from the v5 formula, so v5 snapshots never mix in).
+export const GLOBAL_RANK_VERSION = 6;
 
 /** A score as an integer bucket. Anyone with progress is at least 1, never sharing 0 with non-starters. */
 export function snapshotScore(total, hasProgress, decimalPlaces = 2) {

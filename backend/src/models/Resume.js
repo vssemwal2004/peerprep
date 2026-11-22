@@ -1,5 +1,6 @@
 import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
+import { DEFAULT_RESUME_TEMPLATE, RESUME_TEMPLATE_IDS } from '../constants/resumeTemplates.js';
 
 const bulletSchema = new mongoose.Schema({
   text: { type: String, default: '', maxlength: 1200 },
@@ -47,7 +48,8 @@ const resumeSchema = new mongoose.Schema({
     unique: true,
     index: true,
   },
-  template: { type: String, enum: ['iit-bombay-classic', 'peerprep-nova', 'peerprep-meridian', 'peerprep-circuit'], default: 'iit-bombay-classic' },
+  // Design only: switching never changes the content fields below.
+  template: { type: String, enum: [...RESUME_TEMPLATE_IDS], default: DEFAULT_RESUME_TEMPLATE },
   basics: {
     name: { type: String, default: '', maxlength: 160 },
     headline: { type: String, default: '', maxlength: 160 },

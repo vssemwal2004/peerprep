@@ -160,6 +160,7 @@ export function EditProfileModal({ open, onClose, profileForm, setProfileForm, o
           <ProfileField label="Portfolio URL" type="url" value={profileForm.portfolioUrl} onChange={update('portfolioUrl')} placeholder="https://yourportfolio.com" />
         </div>
 
+        {showPeerVisibility ? <h3 className="pt-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Privacy</h3> : null}
         {showPeerVisibility ? (
           <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900/40">
             <span className="min-w-0">
@@ -176,6 +177,24 @@ export function EditProfileModal({ open, onClose, profileForm, setProfileForm, o
               className="peer sr-only"
             />
             <span aria-hidden="true" className="relative mt-0.5 h-6 w-11 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-sky-600 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500 peer-focus-visible:ring-offset-2 dark:bg-zinc-700 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-5" />
+          </label>
+        ) : null}
+        {showPeerVisibility ? (
+          <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-violet-200 bg-violet-50/50 px-4 py-3 dark:border-violet-400/20 dark:bg-violet-500/[0.06]">
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-slate-800 dark:text-zinc-100">Share Prep Score and Prep Readiness with Prep Mates</span>
+              <span className="mt-0.5 block text-xs leading-relaxed text-slate-500 dark:text-zinc-400">
+                Off by default. When on, your accepted Prep Mates see only your Prep Score and your SBC/PBC readiness values. Topic details, attempts and staff notes stay private. Turn it off any time.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={profileForm.sharePrepReadiness === true}
+              onChange={(event) => setProfileForm((prev) => ({ ...prev, sharePrepReadiness: event.target.checked }))}
+              className="peer sr-only"
+            />
+            <span aria-hidden="true" className="relative mt-0.5 h-6 w-11 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-violet-600 peer-focus-visible:ring-2 peer-focus-visible:ring-violet-500 peer-focus-visible:ring-offset-2 dark:bg-zinc-700 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-5" />
           </label>
         ) : null}
       </div>

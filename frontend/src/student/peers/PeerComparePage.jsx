@@ -13,6 +13,7 @@ import {
   CompassGlyph, CrestGlyph, DuelGlyph, GridGlyph, HiveGlyph, LadderGlyph, MedalGlyph, MiniFlame, PanelTitle, PulseGlyph, SparkGlyph, TargetGlyph, TrendGlyph,
 } from './peerGlyphs';
 import MonthlyBadgeEmblem from '../rewards/MonthlyBadgeEmblem';
+import { formatScore } from '../prepScore/formatScore';
 import { card, focusRing, Skeleton } from '../dashboard/ui';
 import PageGuideButton from '../../guide/platform/PageGuideButton';
 import GuideInfo from '../../guide/platform/GuideInfo';
@@ -30,7 +31,7 @@ function Fighter({ person, color, role, to, align = 'left' }) {
     : <p className="truncate text-[19px] font-semibold tracking-[-0.02em] text-slate-900 dark:text-white">{person.name}</p>;
   return <div className={`flex min-w-0 flex-1 items-center gap-4 ${right ? 'sm:flex-row-reverse sm:text-right' : ''}`}>
     <span className="relative shrink-0 rounded-full p-[3px] shadow-lg" style={{ background: `conic-gradient(${color}, ${color}55, ${color})` }}>
-      <PeerAvatar name={person.name} url={person.avatarUrl} size="xl" className="!h-20 !w-20 !rounded-full ring-4 ring-white dark:ring-[#242424]" />
+      <PeerAvatar name={person.name} url={person.avatarUrl} color={color} size="xl" className="!h-20 !w-20 !rounded-full ring-4 ring-white dark:ring-[#242424]" />
       {person.level?.level && <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-bold text-white shadow" style={{ backgroundColor: color }}>Lv {person.level.level}</span>}
     </span>
     <div className="min-w-0">
@@ -47,6 +48,38 @@ function Fighter({ person, color, role, to, align = 'left' }) {
 }
 
 /** One measure, both values, who leads and by how much, and a share bar. */
+/**
+ * Prep Score and SBC/PBC readiness, each side shown only if that student opted in to share with
+ * Prep Mates (decided per person on the server); otherwise "Private".
+ */
+function SharedCompareRow({ shared, mateName }) {
+  const rows = [
+    { key: 'score', label: 'Prep Score', pick: (side) => (side?.prepScore == null ? '—' : formatScore(side.prepScore)) },
+    { key: 'sbc', label: 'Service-Based Companies readiness', pick: (side) => (side?.readiness?.sbc ? (side.hasEvidence ? side.readiness.sbc.display : '0') : '—') },
+    { key: 'pbc', label: 'Product-Based Companies readiness', pick: (side) => (side?.readiness?.pbc ? (side.hasEvidence ? side.readiness.pbc.display : '0') : '—') },
+  ];
+  const cell = (side, color) => (side
+    ? null
+    : <span className="inline-flex items-center gap-1 text-[12px] font-medium text-slate-400 dark:text-zinc-500"><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />Private</span>);
+  return (
+    <section className="mt-4 rounded-2xl border border-violet-200/70 bg-gradient-to-br from-violet-50/80 via-white to-white p-4 dark:border-violet-400/15 dark:from-violet-500/[0.07] dark:via-[#242424] dark:to-[#242424]" aria-labelledby="shared-compare-title" data-guide="cmp-shared">
+      <h2 id="shared-compare-title" className="text-[13.5px] font-semibold text-slate-900 dark:text-white">Prep Score and Prep Readiness <span className="font-normal text-slate-500 dark:text-zinc-400">· shared by choice</span></h2>
+      <ul className="mt-2.5 grid gap-2 sm:grid-cols-3">
+        {rows.map((row) => (
+          <li key={row.key} className="rounded-xl bg-white/90 px-3 py-2.5 ring-1 ring-inset ring-violet-100 dark:bg-white/[0.03] dark:ring-white/[0.07]">
+            <p className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400">{row.label}</p>
+            <p className="mt-1 flex items-baseline justify-between gap-2 tabular-nums">
+              {cell(shared.you, YOU_COLOR) || <span className="text-[18px] font-bold" style={{ color: YOU_COLOR }}>{row.pick(shared.you)}<span className="ml-1 text-[10.5px] font-medium text-slate-400">You</span></span>}
+              {cell(shared.mate, MATE_COLOR) || <span className="text-[18px] font-bold" style={{ color: MATE_COLOR }}>{row.pick(shared.mate)}<span className="ml-1 text-[10.5px] font-medium text-slate-400">{mateName}</span></span>}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] text-slate-500 dark:text-zinc-400">Each of you decides in Edit Profile → Privacy. Topic details, attempts and staff notes are never shared.</p>
+    </section>
+  );
+}
+
 function ScoreCard({ glyph: Glyph, tone, label, you, mate, mateName, unit = '' }) {
   const lead = you - mate;
   const share = you + mate ? (you / (you + mate)) * 100 : 50;
@@ -151,6 +184,8 @@ export default function PeerComparePage() {
       <ScoreCard glyph={HiveGlyph} tone="bg-rose-500" label="Topics covered" you={you.topicsCovered} mate={mate.topicsCovered} mateName={mateName} />
     </ul>
 
+    {data.shared?.you || data.shared?.mate ? <SharedCompareRow shared={data.shared} mateName={mateName} /> : null}
+
     <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
       <section className={panel} aria-labelledby="performance-title" data-guide="cmp-performance">
         <PanelTitle id="performance-title" glyph={TrendGlyph} tone="sky" info={<GuideInfo step="cmp-performance" />} title="Performance comparison" subtitle={mode === 'week' ? 'Problems solved each week, last 8 weeks' : 'Problems solved so far, week by week'}
@@ -187,7 +222,7 @@ export default function PeerComparePage() {
     </div>
 
     <section className={`${panel} mt-5`} aria-labelledby="rhythm-title" data-guide="cmp-rhythm">
-      <PanelTitle id="rhythm-title" glyph={GridGlyph} tone="emerald" title="Last 30 days" subtitle="Each square is a day with practice" />
+      <PanelTitle id="rhythm-title" glyph={GridGlyph} tone="emerald" title="Last 30 days" subtitle="Month by month: who practised on each day" />
       <div className="mt-5"><ConsistencyGrid you={you} mate={mate} mateName={mateName} /></div>
     </section>
 
@@ -223,6 +258,6 @@ export default function PeerComparePage() {
         </ul>
       </div>
     </section>
-    <p data-guide="cmp-privacy" className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11.5px] text-slate-400 dark:text-zinc-500"><DuelGlyph className="h-3.5 w-3.5" />Only practice is compared. Prep Score, Prep Coins, tests and interviews stay private.</p>
+    <p data-guide="cmp-privacy" className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11.5px] text-slate-400 dark:text-zinc-500"><DuelGlyph className="h-3.5 w-3.5" />Practice is compared. Prep Score and Prep Readiness appear only when each student chooses to share them; Prep Coins, tests and interviews stay private.</p>
   </>);
 }

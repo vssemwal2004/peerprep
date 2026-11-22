@@ -16,17 +16,18 @@ export default function FormulaCard({ config, update }) {
   ];
   return (
     <section data-guide="psa-formula" className={card} aria-labelledby="formula-title">
-      <div className="flex items-center gap-2"><Sigma className="h-5 w-5 text-sky-600" aria-hidden="true" /><h2 id="formula-title" className={sectionTitle}>Formula</h2><GuideInfo step="psa-formula" /></div>
+      <div className="flex items-center gap-2"><Sigma className="h-5 w-5 text-sky-600" aria-hidden="true" /><h2 id="formula-title" className={sectionTitle}>Prep Coding activity formula</h2><GuideInfo step="psa-formula" /></div>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Used for the Prep Coding activity metric in Prep Analysis. It no longer sets the Prep Score (see Prep Score points above).</p>
       <div className="mt-4 grid gap-3 rounded-xl bg-slate-50 p-4 font-mono text-sm text-slate-800 dark:bg-slate-800/60 dark:text-slate-100 lg:grid-cols-2">
         <div>
           <p className={`mb-1 font-sans ${helperText}`}>Prep Coding</p>
-          <p>Prep Score = <V>S</V> × <V>N</V><sup><V>α</V></sup> × <V>Q</V><sup><V>β</V></sup></p>
+          <p>Prep Coding = <V>S</V> × <V>N</V><sup><V>α</V></sup> × <V>Q</V><sup><V>β</V></sup></p>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400"><V>N</V> = E + M + H &nbsp;·&nbsp; <V>Q</V> = (<V>e</V>·E + <V>m</V>·M + <V>h</V>·H) ÷ <V>N</V></p>
         </div>
         <div>
           <p className={`mb-1 font-sans ${helperText}`}>How the result is used</p>
-          <p>Prep Score = Prep Coding score</p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Assessment, Interview and Learning activity points do not change it. Shown to <V>d</V> decimal places.</p>
+          <p>Prep Score = sum of points (above)</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">This formula and the Assessment, Interview and Learning activity points are admin metrics only. Shown to <V>d</V> decimal places.</p>
         </div>
       </div>
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

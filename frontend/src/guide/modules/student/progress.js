@@ -1,4 +1,4 @@
-// Student guides: rankings, Prep Coin wallet, profile, resume builder and Prep Mates.
+// Student guides: rankings, Prep Coin wallet, profile, Prep Resume and Prep Mates.
 
 export default [
   {
@@ -121,6 +121,21 @@ export default [
         body: "How many Prep Mates you have. Click to see the list. If someone sent you a request, a reminder appears here so you can review it.",
       },
       {
+        id: "pf-rank", target: "pf-rank", chapter: "parts",
+        title: "University rank",
+        body: "Your rank at your university by Prep Score, with how far you are from Rank #1. Click it to open the full rankings.",
+      },
+      {
+        id: "pf-readiness", target: "pf-readiness", chapter: "parts", quick: true,
+        title: "Prep Readiness",
+        body: "How close your accepted coding practice is to the Service-Based (target 70) and Product-Based (target 75) practice targets. View growth opens the full breakdown in Prep Analysis. It is not a prediction of selection.",
+      },
+      {
+        id: "pf-badge-shelf", target: "pf-badge-shelf", chapter: "parts",
+        title: "Your badges",
+        body: "Every badge you earned, five per row: achievements, lifetime milestones (problems solved, active days, Prep Streak, daily challenges, sheets) and monthly badges. Click a badge to see it large with when you earned it; use the arrows to move through them. All badges opens every badge, including locked ones and how to earn them.",
+      },
+      {
         id: "pf-coins", target: "pf-coins", chapter: "parts",
         title: "Prep Coin balance",
         body: "Your current Prep Coins. Click to open your wallet with the full history.",
@@ -133,7 +148,7 @@ export default [
       {
         id: "pf-score", target: "pf-score", chapter: "parts", quick: true,
         title: "Your Prep Score",
-        body: "Your Prep Score and your rank at your university. It comes from verified Prep Coding solves. View rankings opens the full ranking page.",
+        body: "Your Prep Score and your rank at your university. Solving problems, the daily challenge, finished sheets, daily visits and badges add points; wrong answers and days without practice take a little away. The green or red chip shows the last 30 days; History opens every gain and loss.",
       },
       {
         id: "pf-summary", target: "pf-summary", chapter: "parts",
@@ -151,11 +166,6 @@ export default [
         body: "A calendar of the days you practised. Switch between the year and the last 30 days. Darker squares mean more activity that day.",
       },
       {
-        id: "pf-badges", target: "pf-badges", chapter: "parts",
-        title: "Badges and level",
-        body: "The badges you earned and how close you are to the next level. Open the gallery to see every badge and how to earn it.",
-      },
-      {
         id: "pf-progress", target: "pf-progress", chapter: "parts",
         title: "PeerPrep progress",
         body: "Your results outside coding practice: assessments, interview feedback and learning modules, when your university uses them.",
@@ -163,7 +173,7 @@ export default [
       {
         id: "pf-daily", target: "pf-daily", chapter: "parts",
         title: "Daily challenge and sheets",
-        body: "Today's challenge and your Quick Prep sheets, so you can jump straight into practice from your profile.",
+        body: "Today's challenge and your Quick Prep sheets. Finishing the challenge each day grows your Prep Streak and pays Prep Score points and Prep Coins; a finished sheet pays too.",
       },
       {
         id: "pf-history", target: "pf-history", chapter: "parts",
@@ -176,10 +186,46 @@ export default [
     id: "student.resume",
     paths: ["/student/resume"],
     area: "Account",
-    title: "Resume Builder",
+    title: "Prep Resume",
     icon: "file",
-    summary: "Build a clean, placement-ready A4 resume with a live preview, quality tips and PDF download.",
-    intro: "Build your placement resume here. Fill in the sections on the left and watch the A4 preview update on the right.\nEvery field is optional, and empty sections never appear in the final PDF.",
+    summary: "Two steps: create your resume once, then see it checked by ANVI for ATS readiness, grammar and job match.",
+    intro: "Prep Resume has two parts.\nCreate resume is where your details live. Your resume shows the finished document with ANVI's checks, and lets you fix issues or jump to the exact line to edit.",
+    next: "student.resume-create",
+    steps: [
+      { id: "pr-header", target: "pr-header", chapter: "layout", title: "Prep Resume", body: "Your resume in two steps: create it once, then have ANVI check it. Your details and your last check are kept for you." },
+      { id: "pr-create", target: "pr-create", chapter: "parts", quick: true, title: "Create resume", body: "Add or edit your details. The card shows how complete your resume is, which sections are filled and the template in use." },
+      { id: "pr-review", target: "pr-review", chapter: "parts", quick: true, title: "Your resume", body: "Your finished resume with ANVI's latest check: ATS readiness out of 100, grammar issues and job match. Open it to fix issues." },
+      { id: "pr-how", target: "pr-how", chapter: "parts", title: "What ANVI checks", body: "ATS readiness from your exported PDF, grammar and spelling on your device, and an optional job match." },
+    ],
+  },
+  {
+    id: "student.resume-review",
+    paths: ["/student/resume/review"],
+    area: "Account",
+    title: "Your resume",
+    icon: "file",
+    summary: "Your resume beside ANVI's check: ATS readiness, grammar, job match and the three fixes that matter most.",
+    intro: "Here ANVI checks your finished resume.\nThe ATS score comes from an open, rule-based engine reading your exported PDF, so the same resume always gets the same score. ANVI explains it; it never changes it.",
+    tips: [
+      "Fix these first lists the changes with the biggest effect, each with a link to the exact place.",
+      "Apply fix changes the words for you and saves; Go to bullet opens the editor at that line.",
+      "Add a skill from a job description only if you have genuinely used it.",
+    ],
+    steps: [
+      { id: "rr-check", target: "rr-check", chapter: "parts", quick: true, title: "ANVI check", body: "Run the check to get ATS readiness, grammar and spelling issues, and the fixes to do first. Switch between the ATS and Grammar tabs for details." },
+      { id: "rr-preview", target: "rr-preview", chapter: "parts", title: "Your resume", body: "Every page exactly as it downloads. Fixes you apply update it straight away." },
+      { id: "rr-edit", target: "rr-edit", chapter: "actions", quick: true, title: "Edit resume", body: "Opens Create resume to change anything. Your check stays here; run it again after big edits." },
+      { id: "rr-download", target: "rr-download", chapter: "actions", title: "Download PDF", body: "Downloads the same PDF that ANVI checked." },
+    ],
+  },
+  {
+    id: "student.resume-create",
+    paths: ["/student/resume/create"],
+    area: "Account",
+    title: "Create resume",
+    icon: "file",
+    summary: "Fill your details once, then try them in 30+ professional templates with a live A4 preview and a matching PDF download.",
+    intro: "Build your placement resume here. Fill in the sections on the left and watch the A4 preview update on the right.\nYour details are saved once and shared by every template, so switching templates never changes or removes anything. Every field is optional, and empty sections never appear in the final PDF.",
     next: "student.peers",
     tips: [
       "Write bullets as action + work + result, and add numbers where you can.",
@@ -200,8 +246,13 @@ export default [
       },
       {
         id: "rs-template", target: "rs-template", chapter: "parts", quick: true,
-        title: "Resume template",
-        body: "Pick the layout for your resume. The preview and the downloaded PDF always use the same template, so what you see is what you get.",
+        title: "Your template",
+        body: "The template in use, with its layout and fonts. Use the arrows to flip through templates one by one; your details stay exactly the same. The preview and the downloaded PDF match line for line.",
+      },
+      {
+        id: "rs-template-gallery", target: "rs-template-gallery", chapter: "actions", quick: true,
+        title: "Browse templates",
+        body: "Opens the gallery of 30+ templates, grouped as ATS-friendly, Classic, Modern, Two-column, Executive, Tech, Academic, Minimal and Creative. Preview any template with sample details or your own, then choose Use template.",
       },
       {
         id: "rs-quality", target: "rs-quality", chapter: "parts", quick: true,
@@ -221,7 +272,7 @@ export default [
       {
         id: "rs-basics", target: "rs-basics", chapter: "parts", quick: true,
         title: "Fill a section",
-        body: "Each section is a card: Basic Details, Academic Details, Experience, Projects, Achievements and Technical Skills. Open a card, add entries, and reorder or remove them. A section can be hidden from the preview without losing its content.",
+        body: "Each section is a card: Basic Details, Education, Experience, Projects, Achievements and Technical Skills. Open a card, add entries, and reorder or remove them. A section can be hidden from the preview without losing its content.",
       },
       {
         id: "rs-custom", target: "rs-custom", chapter: "actions",
@@ -247,6 +298,11 @@ export default [
         id: "rs-download", target: "rs-download", chapter: "actions", quick: true,
         title: "Download PDF",
         body: "Creates a professional A4 PDF of your resume, ready to upload to placement portals and send to companies.",
+      },
+      {
+        id: "rs-check", target: "rs-check", chapter: "actions", quick: true,
+        title: "Check with ANVI",
+        body: "Saves your resume and opens Your resume, where ANVI checks ATS readiness, grammar and job match.",
       },
     ],
   },
@@ -459,7 +515,7 @@ export default [
       {
         id: "cmp-rhythm", target: "cmp-rhythm", chapter: "parts",
         title: "Last 30 days",
-        body: "Each square is a day with practice. Regular practice beats long, rare sessions.",
+        body: "Two month calendars: blue days are yours, orange are your Prep Mate's, split days you both practised. Regular practice beats long, rare sessions.",
       },
       {
         id: "cmp-badges", target: "cmp-badges", chapter: "parts",

@@ -121,6 +121,26 @@ export default [
         body: "Your current and best streak, active days, your busiest weekdays and where your time goes across practice, lessons, tests and interviews over 12 months.",
       },
       {
+        id: "an-readiness-scores", target: "an-readiness-scores", chapter: "parts",
+        title: "Prep Readiness scores",
+        body: "SBC and PBC readiness out of 100 with their practice targets (70 and 75), points still to go and when they last changed. Progress toward practice targets, not a prediction of selection.",
+      },
+      {
+        id: "an-readiness-growth", target: "an-readiness-growth", chapter: "parts",
+        title: "Readiness growth",
+        body: "Both tracks on one 0–100 chart for 7, 30 or 90 days. Each day uses the policy that applied then; amber lines mark a new policy and shaded days were rebuilt from earlier solves.",
+      },
+      {
+        id: "an-readiness-next", target: "an-readiness-next", chapter: "parts",
+        title: "ANVI Practice Next",
+        body: "Real problems that can still raise the selected track, ordered by topic priority, readiness gain and difficulty fit, with today's Prep Score quota for each.",
+      },
+      {
+        id: "an-readiness-topics", target: "an-readiness-topics", chapter: "parts",
+        title: "Topic breakdown",
+        body: "Every topic's weight, target, Easy/Medium/Hard solves, points, progress, contribution and today's quota. Search, sort by priority or remaining gap, and filter excluded or completed topics.",
+      },
+      {
         id: "an-badges-page", target: "an-badges-page", chapter: "parts",
         title: "Badges",
         body: "Your level, the badges you have earned and the ones still to unlock, plus your next solve milestone. These are the same badges as on your dashboard and profile.",

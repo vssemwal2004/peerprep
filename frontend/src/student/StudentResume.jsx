@@ -8,6 +8,9 @@ import {
   BriefcaseBusiness,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  LayoutTemplate,
   ChevronUp,
   CircleHelp,
   Download,
@@ -35,19 +38,21 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import ResumePreview from '../features/resume/ResumePreview';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { AnviMark } from '../components/AnviApproach';
+import ResumePreview, { ResumeThumbnail } from '../features/resume/ResumePreview';
+import TemplateGallery, { templateFacts } from '../features/resume/TemplateGallery';
+import { RESUME_TEMPLATE_CATALOG, getTemplate } from '../features/resume/templates/catalog';
+import { sampleResumeFor } from '../features/resume/templates/sampleResume';
 import {
   DEFAULT_SECTION_ORDER,
   FIXED_SECTION_META,
-  RESUME_TEMPLATES,
   calculateReadiness,
   createEmptyDetailEntry,
   filenameForResume,
   hasResumeContent,
   mergeSavedResumeMetadata,
   normalizeClientResume,
-  paginateResume,
 } from '../features/resume/resumeUtils';
 import { api } from '../utils/api';
 import RequirePasswordChange from './RequirePasswordChange';
@@ -136,9 +141,9 @@ function SectionCard({ sectionKey, title, help, icon: Icon, active, collapsed, o
   );
 }
 
-function EntryShell({ label, index, onRemove, onMoveUp, onMoveDown, children }) {
+function EntryShell({ label, index, onRemove, onMoveUp, onMoveDown, children, reviewId }) {
   return (
-    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 dark:border-slate-700 dark:bg-slate-950/55">
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} data-review={reviewId} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 dark:border-slate-700 dark:bg-slate-950/55">
       <div className="mb-3 flex items-center gap-2">
         <GripVertical className="h-4 w-4 text-slate-300" />
         <span className="flex-1 text-xs font-bold text-slate-700 dark:text-slate-200">{label} {index + 1}</span>
@@ -151,7 +156,7 @@ function EntryShell({ label, index, onRemove, onMoveUp, onMoveDown, children }) 
   );
 }
 
-function RichTextArea({ value, onChange, placeholder, rows = 3, label = 'Formatted text', compact = false }) {
+function RichTextArea({ value, onChange, placeholder, rows = 3, label = 'Formatted text', compact = false, reviewId }) {
   const inputRef = useRef(null);
   const applyFormat = (marker) => {
     const node = inputRef.current;
@@ -174,12 +179,12 @@ function RichTextArea({ value, onChange, placeholder, rows = 3, label = 'Formatt
       <div className="flex items-center gap-1 border-b border-slate-100 bg-slate-50 px-2 py-1.5 dark:border-slate-800 dark:bg-slate-900" aria-label="Text formatting controls">
         {[['**', 'B', 'Bold'], ['*', 'I', 'Italic'], ['__', 'U', 'Underline']].map(([marker, text, title]) => <button key={title} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => applyFormat(marker)} title={title} aria-label={title} className={`flex h-7 min-w-7 items-center justify-center rounded-md px-2 text-xs text-slate-600 hover:bg-white hover:text-sky-700 dark:text-slate-300 dark:hover:bg-slate-800 ${title === 'Bold' ? 'font-black' : title === 'Italic' ? 'italic' : 'underline'}`}>{text}</button>)}
       </div>
-      <textarea ref={inputRef} value={value || ''} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} rows={rows} className="w-full resize-y bg-transparent px-3 py-2.5 text-sm text-slate-800 outline-none dark:text-slate-100" />
+      <textarea ref={inputRef} data-review={reviewId} value={value || ''} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} rows={rows} className="w-full resize-y bg-transparent px-3 py-2.5 text-sm text-slate-800 outline-none dark:text-slate-100" />
     </div>
   </div>;
 }
 
-function BulletEditor({ bullets, onChange }) {
+function BulletEditor({ bullets, onChange, reviewPrefix }) {
   const updateBullet = (index, text) => onChange(bullets.map((bullet, i) => i === index ? { text } : bullet));
   return (
     <div className="space-y-2">
@@ -192,7 +197,7 @@ function BulletEditor({ bullets, onChange }) {
       {bullets.map((bullet, index) => (
         <div className="flex items-start gap-2" key={index}>
           <span className="mt-2.5 text-sm text-sky-500">○</span>
-          <div className="min-w-0 flex-1"><RichTextArea value={bullet?.text || ''} onChange={(text) => updateBullet(index, text)} placeholder="Example: Implemented reusable components that reduced duplicate frontend code." rows={2} compact /></div>
+          <div className="min-w-0 flex-1"><RichTextArea value={bullet?.text || ''} onChange={(text) => updateBullet(index, text)} placeholder="Example: Implemented reusable components that reduced duplicate frontend code." rows={2} compact reviewId={reviewPrefix ? `${reviewPrefix}|${index}` : undefined} /></div>
           <button type="button" onClick={() => onChange(bullets.filter((_, i) => i !== index))} className="mt-1 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950"><X className="h-3.5 w-3.5" /></button>
         </div>
       ))}
@@ -215,7 +220,7 @@ function EmptySection({ title, description, action, onClick }) {
   );
 }
 
-function DetailSectionEditor({ entries, onChange, onRemove, noun, placeholders = {} }) {
+function DetailSectionEditor({ sectionKey, entries, onChange, onRemove, noun, placeholders = {} }) {
   const update = (index, patch) => onChange(entries.map((entry, i) => i === index ? { ...entry, ...patch } : entry));
   const move = (index, delta) => {
     const next = [...entries];
@@ -228,15 +233,15 @@ function DetailSectionEditor({ entries, onChange, onRemove, noun, placeholders =
   return (
     <div className="space-y-3">
       {entries.map((entry, index) => (
-        <EntryShell key={index} label={noun} index={index} onRemove={() => onRemove ? onRemove(index) : onChange(entries.filter((_, i) => i !== index))} onMoveUp={() => move(index, -1)} onMoveDown={() => move(index, 1)}>
+        <EntryShell key={index} label={noun} index={index} reviewId={`${sectionKey}|${index}`} onRemove={() => onRemove ? onRemove(index) : onChange(entries.filter((_, i) => i !== index))} onMoveUp={() => move(index, -1)} onMoveDown={() => move(index, 1)}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label={placeholders.titleLabel || 'Title'} value={entry.title || ''} onChange={(event) => update(index, { title: event.target.value })} placeholder={placeholders.title || 'Entry title'} />
+            <Field data-review={`${sectionKey}|${index}|title`} label={placeholders.titleLabel || 'Title'} value={entry.title || ''} onChange={(event) => update(index, { title: event.target.value })} placeholder={placeholders.title || 'Entry title'} />
             <Field label="Date / Duration" value={entry.date || ''} onChange={(event) => update(index, { date: event.target.value })} placeholder="Jan 2025 – Present" />
-            <Field label={placeholders.subtitleLabel || 'Subtitle'} value={entry.subtitle || ''} onChange={(event) => update(index, { subtitle: event.target.value })} placeholder={placeholders.subtitle || 'Role or supporting title'} />
+            <Field data-review={`${sectionKey}|${index}|subtitle`} label={placeholders.subtitleLabel || 'Subtitle'} value={entry.subtitle || ''} onChange={(event) => update(index, { subtitle: event.target.value })} placeholder={placeholders.subtitle || 'Role or supporting title'} />
             <Field label="Location" value={entry.location || ''} onChange={(event) => update(index, { location: event.target.value })} placeholder="City, India or Remote" />
             <div className="sm:col-span-2"><Field label="Technologies / Supporting details" value={entry.technologies || ''} onChange={(event) => update(index, { technologies: event.target.value })} placeholder="React, Node.js, MongoDB, AWS" /></div>
             <div className="sm:col-span-2"><Field label="Link" type="url" value={entry.link || ''} onChange={(event) => update(index, { link: event.target.value })} placeholder="https://..." /></div>
-            <div className="sm:col-span-2"><BulletEditor bullets={entry.bullets || []} onChange={(bullets) => update(index, { bullets })} /></div>
+            <div className="sm:col-span-2"><BulletEditor reviewPrefix={`${sectionKey}|${index}|bullet`} bullets={entry.bullets || []} onChange={(bullets) => update(index, { bullets })} /></div>
           </div>
         </EntryShell>
       ))}
@@ -245,7 +250,7 @@ function DetailSectionEditor({ entries, onChange, onRemove, noun, placeholders =
   );
 }
 
-function FlexibleCustomSectionEditor({ entries, onChange, onRemove, sectionTitle }) {
+function FlexibleCustomSectionEditor({ sectionKey, entries, onChange, onRemove, sectionTitle }) {
   const move = (index, delta) => {
     const target = index + delta;
     if (target < 0 || target >= entries.length) return;
@@ -255,15 +260,15 @@ function FlexibleCustomSectionEditor({ entries, onChange, onRemove, sectionTitle
   };
   if (!entries.length) return <EmptySection title={`No content in ${sectionTitle.toLowerCase()} yet`} description="Add a subsection, then use an optional heading, supporting text, formatted paragraph, and bullet points in any combination." action="Add subsection" onClick={() => onChange([createEmptyDetailEntry()])} />;
   return <div className="space-y-3">
-    {entries.map((entry, index) => <EntryShell key={index} label="Subsection" index={index} onRemove={() => onRemove(index)} onMoveUp={() => move(index, -1)} onMoveDown={() => move(index, 1)}>
+    {entries.map((entry, index) => <EntryShell key={index} label="Subsection" index={index} reviewId={`${sectionKey}|${index}`} onRemove={() => onRemove(index)} onMoveUp={() => move(index, -1)} onMoveDown={() => move(index, 1)}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Heading" value={entry.title || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, title: event.target.value } : item))} placeholder="Certification, responsibility, publication..." />
+        <Field data-review={`${sectionKey}|${index}|title`} label="Heading" value={entry.title || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, title: event.target.value } : item))} placeholder="Certification, responsibility, publication..." />
         <Field label="Date / Duration" value={entry.date || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, date: event.target.value } : item))} placeholder="2025 or Jan 2025 – Present" />
-        <Field label="Supporting line" value={entry.subtitle || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, subtitle: event.target.value } : item))} placeholder="Organization, role, issuer, or context" />
+        <Field data-review={`${sectionKey}|${index}|subtitle`} label="Supporting line" value={entry.subtitle || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, subtitle: event.target.value } : item))} placeholder="Organization, role, issuer, or context" />
         <Field label="Location" value={entry.location || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, location: event.target.value } : item))} placeholder="Optional location" />
         <div className="sm:col-span-2"><Field label="Link" type="url" value={entry.link || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, link: event.target.value } : item))} placeholder="https://..." /></div>
-        <div className="sm:col-span-2"><RichTextArea label="Paragraph" value={entry.technologies || ''} onChange={(technologies) => onChange(entries.map((item, i) => i === index ? { ...item, technologies } : item))} placeholder="Add a short description. Select text and use Bold, Italic, or Underline when needed." /></div>
-        <div className="sm:col-span-2"><BulletEditor bullets={entry.bullets || []} onChange={(bullets) => onChange(entries.map((item, i) => i === index ? { ...item, bullets } : item))} /></div>
+        <div className="sm:col-span-2"><RichTextArea reviewId={`${sectionKey}|${index}|paragraph`} label="Paragraph" value={entry.technologies || ''} onChange={(technologies) => onChange(entries.map((item, i) => i === index ? { ...item, technologies } : item))} placeholder="Add a short description. Select text and use Bold, Italic, or Underline when needed." /></div>
+        <div className="sm:col-span-2"><BulletEditor reviewPrefix={`${sectionKey}|${index}|bullet`} bullets={entry.bullets || []} onChange={(bullets) => onChange(entries.map((item, i) => i === index ? { ...item, bullets } : item))} /></div>
       </div>
     </EntryShell>)}
     <AddButton onClick={() => onChange([...entries, createEmptyDetailEntry()])}>Add another subsection</AddButton>
@@ -362,7 +367,7 @@ function ManageSectionsModal({ resume, onChange, onUndoableChange, onCustomAdded
   );
 }
 
-function ResumeWelcomeModal({ onStart, onArrange, onClose }) {
+function ResumeWelcomeModal({ onStart, onArrange, onTemplates, onClose }) {
   useEffect(() => {
     const closeOnEscape = (event) => { if (event.key === 'Escape') onClose(); };
     window.addEventListener('keydown', closeOnEscape);
@@ -371,12 +376,12 @@ function ResumeWelcomeModal({ onStart, onArrange, onClose }) {
   return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="resume-welcome-title">
     <motion.div initial={{ opacity: 0, y: 14, scale: .99 }} animate={{ opacity: 1, y: 0, scale: 1 }} className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
       <div className="border-t-4 border-sky-500 bg-slate-950 px-6 py-7 text-white sm:px-8">
-        <div className="flex items-start justify-between gap-4"><div><div className="text-[10px] font-bold uppercase tracking-[.2em] text-sky-300">PeerPrep Resume Studio</div><h2 id="resume-welcome-title" className="mt-2 text-2xl font-black">Build your placement resume with confidence</h2><p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Your name and email are prefilled from your profile. Every field remains optional, and the professional A4 preview updates as you type.</p></div><button type="button" onClick={onClose} aria-label="Close introduction" className="rounded-lg border border-white/15 p-2 hover:bg-white/10"><X className="h-4 w-4" /></button></div>
+        <div className="flex items-start justify-between gap-4"><div><div className="text-[10px] font-bold uppercase tracking-[.2em] text-sky-300">Prep Resume</div><h2 id="resume-welcome-title" className="mt-2 text-2xl font-black">Build your placement resume with confidence</h2><p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Your name and email are prefilled from your profile. Fill your details once and try them in {RESUME_TEMPLATE_CATALOG.length} professional templates. Every field is optional and the A4 preview updates as you type.</p></div><button type="button" onClick={onClose} aria-label="Close introduction" className="rounded-lg border border-white/15 p-2 hover:bg-white/10"><X className="h-4 w-4" /></button></div>
       </div>
       <div className="grid gap-3 p-5 sm:grid-cols-3 sm:p-7">
-        {[['01', 'Fill only what matters', 'Start in any section. Empty fields and sections never appear in the final document.'], ['02', 'Shape the outline', 'Reorder, hide, rename, and add custom sections in the layout that fits your content.'], ['03', 'Review and download', 'Use the fixed preview, quality guidance, and generate a professional A4 PDF.']].map(([number, title, text]) => <div key={number} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/50"><span className="text-[10px] font-black tracking-[.18em] text-sky-600">{number}</span><h3 className="mt-2 text-sm font-black text-slate-900 dark:text-white">{title}</h3><p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{text}</p></div>)}
+        {[['01', 'Pick a template', `Browse ${RESUME_TEMPLATE_CATALOG.length} designs filled with sample details before you type anything.`], ['02', 'Fill your details once', 'Start in any section. Switching templates later never changes or removes what you wrote.'], ['03', 'Review and download', 'The A4 PDF matches the preview line for line, page for page.']].map(([number, title, text]) => <div key={number} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/50"><span className="text-[10px] font-black tracking-[.18em] text-sky-600">{number}</span><h3 className="mt-2 text-sm font-black text-slate-900 dark:text-white">{title}</h3><p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{text}</p></div>)}
       </div>
-      <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:px-7"><div className="flex items-center gap-2 text-[10px] font-semibold text-slate-400"><Keyboard className="h-3.5 w-3.5" /> Ctrl/⌘ + S saves · Ctrl/⌘ + P previews</div><div className="flex gap-2"><button type="button" onClick={onArrange} className="rounded-lg border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-600 dark:border-slate-700 dark:text-slate-300">Arrange sections</button><button type="button" onClick={onStart} className="rounded-lg bg-sky-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-sky-700">Start building</button></div></div>
+      <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:px-7"><div className="flex items-center gap-2 text-[10px] font-semibold text-slate-400"><Keyboard className="h-3.5 w-3.5" /> Ctrl/⌘ + S saves · Ctrl/⌘ + P previews</div><div className="flex flex-wrap gap-2"><button type="button" onClick={onArrange} className="rounded-lg border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-600 dark:border-slate-700 dark:text-slate-300">Arrange sections</button><button type="button" onClick={onTemplates} className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs font-bold text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300">Choose a template</button><button type="button" onClick={onStart} className="rounded-lg bg-sky-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-sky-700">Start building</button></div></div>
     </motion.div>
   </div>;
 }
@@ -412,6 +417,9 @@ export default function StudentResume() {
   const [downloadStage, setDownloadStage] = useState('');
   const [downloadComplete, setDownloadComplete] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [galleryInitial, setGalleryInitial] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
   const [undoAction, setUndoAction] = useState(null);
   const savingRef = useRef(false);
   const editRevisionRef = useRef(0);
@@ -439,6 +447,41 @@ export default function StudentResume() {
   useEffect(() => {
     window.localStorage.setItem('peerprep-resume-editor-width', String(editorWidth));
   }, [editorWidth]);
+
+  // Deep links from "Your resume" / ANVI: ?focus=projects|0|bullet|1 opens that
+  // exact field; ?templates=1 opens the template gallery.
+  const locateField = useCallback((focus) => {
+    const parts = String(focus || '').split('|').filter((part) => part !== '');
+    const section = parts[0];
+    if (!section) return;
+    setMobileTab('edit');
+    setEditorCollapsed(false);
+    setActiveSection(section);
+    setCollapsed((state) => ({ ...state, [section]: false }));
+    let tries = 0;
+    const attempt = () => {
+      const ids = parts.map((_, index) => parts.slice(0, parts.length - index).join('|'));
+      const element = ids.map((id) => document.querySelector(`[data-review="${CSS.escape(id)}"]`)).find(Boolean)
+        || document.getElementById(`resume-editor-${section.replace(':', '-')}`);
+      if (!element) { if (tries < 12) { tries += 1; setTimeout(attempt, 80); } return; }
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (/^(INPUT|TEXTAREA)$/.test(element.tagName)) element.focus({ preventScroll: true });
+      element.classList.add('resume-review-flash');
+      setTimeout(() => element.classList.remove('resume-review-flash'), 2400);
+    };
+    setTimeout(attempt, 60);
+  }, []);
+
+  useEffect(() => {
+    if (loading || !resume) return;
+    const focus = searchParams.get('focus');
+    const templates = searchParams.get('templates');
+    if (!focus && !templates) return;
+    // ?templates=<id> opens the gallery straight on that template's preview.
+    if (templates) { setGalleryInitial(RESUME_TEMPLATE_CATALOG.some((item) => item.id === templates) ? templates : ''); setGalleryOpen(true); }
+    if (focus) locateField(focus);
+    setSearchParams({}, { replace: true });
+  }, [loading, resume, searchParams, setSearchParams, locateField]);
 
   const updateResume = useCallback((next, { undoLabel = '' } = {}) => {
     if (undoLabel && resumeRef.current) setUndoAction({ label: undoLabel, resume: JSON.parse(JSON.stringify(resumeRef.current)) });
@@ -509,12 +552,18 @@ export default function StudentResume() {
     return () => clearTimeout(timer);
   }, [undoAction]);
 
-  const readiness = useMemo(() => resume ? calculateReadiness(resume) : { percent: 0, suggestions: [] }, [resume]);
-  const pages = useMemo(() => resume ? paginateResume(resume) : [[]], [resume]);
+  // Measured by the live preview: pages of block ids + a reader for line breaks.
+  const [previewLayout, setPreviewLayout] = useState(null);
+  const previewLayoutRef = useRef(null);
+  const handleLayoutChange = useCallback((info) => { previewLayoutRef.current = info; setPreviewLayout(info); }, []);
+  const pages = useMemo(() => previewLayout?.pages || [{ main: [], side: [] }], [previewLayout]);
+  const readiness = useMemo(() => resume ? calculateReadiness(resume, { pageCount: previewLayout?.pages?.length }) : { percent: 0, suggestions: [] }, [resume, previewLayout]);
 
   useEffect(() => { if (previewPage >= pages.length) setPreviewPage(Math.max(0, pages.length - 1)); }, [pages.length, previewPage]);
   useEffect(() => {
-    const index = pages.findIndex((pageKeys) => pageKeys.includes(activeSection));
+    if (!activeSection) return;
+    const owns = (id) => (activeSection === 'basics' ? id === 'header' : id.startsWith(`${activeSection}|`));
+    const index = pages.findIndex((page) => [...page.main, ...page.side].some(owns));
     if (index >= 0) setPreviewPage(index);
   }, [activeSection, pages]);
 
@@ -553,7 +602,17 @@ export default function StudentResume() {
       ]);
       setDownloadStage('generating');
       const documentResume = normalizeClientResume(resumeRef.current || resume);
-      const blob = await pdf(<ResumePdfDocument resume={documentResume} />).toBlob();
+      // Same page and line breaks as the preview the student approved.
+      const measured = previewLayoutRef.current?.template === documentResume.template ? previewLayoutRef.current : null;
+      const lineBreaks = measured?.getLineBreaks?.() || null;
+      let blob;
+      try {
+        blob = await pdf(<ResumePdfDocument resume={documentResume} pages={measured?.pages} lineBreaks={lineBreaks} />).toBlob();
+      } catch (renderError) {
+        // Last resort: the same template with standard PDF fonts, so a download never fails.
+        console.error('Prep Resume PDF render failed; retrying with standard fonts', renderError);
+        blob = await pdf(<ResumePdfDocument resume={documentResume} safeFonts />).toBlob();
+      }
       if (!blob?.size) throw new Error('The generated PDF was empty. Please try again.');
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -634,25 +693,33 @@ export default function StudentResume() {
   }, [handleDownload, saveResume, undoAction, undoLastAction]);
 
   if (loading) return <div className="min-h-screen bg-slate-50 pt-3 dark:bg-slate-950"><div className="mx-auto grid max-w-[1600px] gap-6 px-4 py-6 lg:grid-cols-[minmax(0,.9fr)_minmax(540px,1.1fr)]"><div className="h-[700px] animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" /><div className="h-[700px] animate-pulse rounded-2xl bg-slate-300 dark:bg-slate-900" /></div></div>;
-  if (!resume) return <div className="min-h-screen bg-slate-50 pt-24 text-center dark:bg-slate-950"><p className="text-slate-600 dark:text-slate-300">{error || 'Resume builder is unavailable.'}</p><button onClick={() => navigate('/student/dashboard')} className="mt-4 rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white">Back to dashboard</button></div>;
+  if (!resume) return <div className="min-h-screen bg-slate-50 pt-24 text-center dark:bg-slate-950"><p className="text-slate-600 dark:text-slate-300">{error || 'Prep Resume is unavailable.'}</p><button onClick={() => navigate('/student/dashboard')} className="mt-4 rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white">Back to dashboard</button></div>;
 
   const saveLabel = saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Retry save' : dirty ? 'Unsaved changes' : 'Save';
   const sectionItems = [{ key: 'basics', label: 'Basics' }, ...resume.sectionOrder.map((key) => ({ key, label: key.startsWith('custom:') ? resume.customSections.find((section) => `custom:${section.id}` === key)?.title || 'Custom' : FIXED_SECTION_META[key]?.label || key }))];
-  const selectedTemplate = RESUME_TEMPLATES.find((template) => template.id === resume.template) || RESUME_TEMPLATES[0];
+  const selectedTemplate = getTemplate(resume.template);
+  const templateIndex = RESUME_TEMPLATE_CATALOG.findIndex((template) => template.id === selectedTemplate.id);
+  const selectedFacts = templateFacts(selectedTemplate.id);
+  const hasContent = hasResumeContent(resume);
+  // Before any details exist, the preview shows the chosen template filled with sample details.
+  const previewResume = hasContent ? resume : sampleResumeFor(resume.template);
+  const applyTemplate = (id) => { updateResume((current) => ({ ...current, template: id })); setPreviewPage(0); };
+  const stepTemplate = (delta) => applyTemplate(RESUME_TEMPLATE_CATALOG[(templateIndex + delta + RESUME_TEMPLATE_CATALOG.length) % RESUME_TEMPLATE_CATALOG.length].id);
 
   return (
     <RequirePasswordChange user={user}>
       <div className="min-h-screen bg-slate-50 pb-10 dark:bg-slate-950">
         <div className="sticky top-0 z-30 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
           <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6" data-guide="rs-toolbar">
-            <button type="button" onClick={() => navigate('/student/dashboard')} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft className="h-4 w-4" /></button>
+            <button type="button" onClick={() => navigate('/student/resume')} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Back to Prep Resume" title="Back to Prep Resume"><ArrowLeft className="h-4 w-4" /></button>
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <div className="hidden h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white sm:flex"><FileText className="h-5 w-5" /></div>
-              <div className="min-w-0"><div className="flex items-center gap-2"><h1 className="truncate text-base font-black text-slate-950 dark:text-white sm:text-lg">Resume Builder</h1><PageGuideButton /><span className="hidden rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[.13em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 sm:inline">Professional A4</span></div><p className="hidden text-[11px] text-slate-500 sm:block">A focused workspace for a clear, placement-ready resume.</p></div>
+              <div className="min-w-0"><div className="flex items-center gap-2"><h1 className="truncate text-base font-black text-slate-950 dark:text-white sm:text-lg"><span className="hidden font-semibold text-slate-400 sm:inline">Prep Resume / </span>Create resume</h1><PageGuideButton /><span className="hidden rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[.13em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 sm:inline">{RESUME_TEMPLATE_CATALOG.length} templates · A4</span></div><p className="hidden text-[11px] text-slate-500 sm:block">Enter your details once, then switch between professional templates freely.</p></div>
             </div>
             <div className="hidden items-center gap-2 text-[11px] font-semibold text-slate-500 md:flex" data-guide="rs-save-state">{saveState === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-500" /> : saveState === 'saved' ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : dirty ? <span className="h-2 w-2 rounded-full bg-amber-400" /> : null}{saveLabel}{savedAt && saveState === 'saved' ? ` · ${savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</div>
             <button type="button" onClick={() => setManageOpen(true)} data-guide="rs-sections-button" className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:inline-flex"><Settings2 className="h-4 w-4" /> Sections</button>
             <button type="button" onClick={() => saveResume()} data-guide="rs-save" className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300">{saveState === 'saving' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save</button>
+            <button type="button" onClick={async () => { if (dirty) await saveResume(); navigate('/student/resume/review'); }} disabled={!hasResumeContent(resume)} data-guide="rs-check" className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700 shadow-sm transition hover:border-violet-300 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"><AnviMark className="h-4 w-4" /><span className="hidden sm:inline">Check with ANVI</span></button>
             <button type="button" onClick={handleDownload} disabled={!hasResumeContent(resume) || downloading} data-guide="rs-download" className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-40">{downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}<span className="hidden sm:inline">Download PDF</span></button>
           </div>
         </div>
@@ -660,18 +727,23 @@ export default function StudentResume() {
         <div className="mx-auto mt-4 flex max-w-[1680px] gap-2 px-4 lg:hidden"><button type="button" onClick={() => setMobileTab('edit')} className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold ${mobileTab === 'edit' ? 'bg-sky-600 text-white' : 'bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300'}`}>Edit Resume</button><button type="button" onClick={() => setMobileTab('preview')} className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold ${mobileTab === 'preview' ? 'bg-sky-600 text-white' : 'bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300'}`}>Preview</button></div>
 
         <section className="mx-auto mt-3 max-w-[1680px] px-4 sm:px-6" aria-labelledby="resume-template-title" data-guide="rs-template">
-          <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900">
-            <div className="min-w-0">
-              <h2 id="resume-template-title" className="flex items-center gap-1.5 text-xs font-black text-slate-950 dark:text-white">Resume template<GuideInfo step="rs-template" /></h2>
-              <p className="truncate text-[10px] text-slate-500 dark:text-slate-400">{selectedTemplate.caption} · Preview and PDF use the same layout</p>
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <button type="button" onClick={() => setGalleryOpen(true)} className="shrink-0 overflow-hidden rounded-md border border-slate-200 shadow-sm transition hover:border-sky-400 dark:border-slate-700" style={{ height: 52 }} aria-label="Open template gallery">
+              <ResumeThumbnail resume={previewResume} width={44} />
+            </button>
+            <div className="min-w-0 flex-1">
+              <h2 id="resume-template-title" className="flex flex-wrap items-center gap-1.5 text-sm font-black text-slate-950 dark:text-white">
+                {selectedTemplate.name}
+                {selectedTemplate.ats ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[.1em] text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">ATS-friendly</span> : null}
+                <GuideInfo step="rs-template" />
+              </h2>
+              <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{selectedFacts.layout} · {selectedFacts.fonts.join(' + ')} · Template {templateIndex + 1} of {RESUME_TEMPLATE_CATALOG.length}</p>
             </div>
-            <label className="relative block w-full shrink-0 sm:w-64">
-              <span className="sr-only">Select resume template</span>
-              <select value={selectedTemplate.id} onChange={(event) => { updateResume((current) => ({ ...current, template: event.target.value })); setPreviewPage(0); }} className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-9 text-xs font-bold text-slate-800 outline-none transition hover:border-sky-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-sky-950">
-                {RESUME_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.name} — {template.caption}</option>)}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            </label>
+            <div className="flex items-center gap-1.5">
+              <button type="button" onClick={() => stepTemplate(-1)} className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:border-sky-300 hover:text-sky-600 dark:border-slate-700" aria-label="Previous template" title="Previous template"><ChevronLeft className="h-4 w-4" /></button>
+              <button type="button" onClick={() => stepTemplate(1)} className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:border-sky-300 hover:text-sky-600 dark:border-slate-700" aria-label="Next template" title="Next template"><ChevronRight className="h-4 w-4" /></button>
+              <button type="button" onClick={() => setGalleryOpen(true)} data-guide="rs-template-gallery" className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-700"><LayoutTemplate className="h-4 w-4" />Browse templates</button>
+            </div>
           </div>
         </section>
 
@@ -694,20 +766,20 @@ export default function StudentResume() {
               <div className="mb-4 rounded-xl bg-sky-50 px-3 py-2 text-[11px] leading-5 text-sky-800 dark:bg-sky-950/40 dark:text-sky-200">Profile information is used only as a starting point. Editing or hiding it here does not change your PeerPrep profile.</div>
               <div className="grid gap-3 sm:grid-cols-2">
                 {Object.entries({ name: 'Full Name', headline: 'Professional headline', location: 'Location', email: 'Email', mobile: 'Mobile', linkedin: 'LinkedIn', github: 'GitHub', portfolio: 'Portfolio' }).map(([key, label]) => (
-                  <div key={key} className={['headline', 'portfolio'].includes(key) ? 'sm:col-span-2' : ''}><Field label={label} type={['email'].includes(key) ? key : key === 'mobile' ? 'tel' : ['linkedin', 'github', 'portfolio'].includes(key) ? 'url' : 'text'} value={resume.basics[key] || ''} onChange={(event) => updateResume((current) => ({ ...current, basics: { ...current.basics, [key]: event.target.value } }))} placeholder={key === 'name' ? 'Your full name' : key === 'headline' ? 'Software Engineer or Automation QA Engineer' : key === 'location' ? 'City, India' : key === 'email' ? 'you@example.com' : key === 'mobile' ? '+91...' : 'https://...'} visibility={['name', 'headline'].includes(key) ? undefined : resume.basicsVisibility[key]} onToggleVisibility={['name', 'headline'].includes(key) ? undefined : () => updateResume((current) => ({ ...current, basicsVisibility: { ...current.basicsVisibility, [key]: !current.basicsVisibility[key] } }))} /></div>
+                  <div key={key} className={['headline', 'portfolio'].includes(key) ? 'sm:col-span-2' : ''}><Field data-review={`basics|${key}`} label={label} type={['email'].includes(key) ? key : key === 'mobile' ? 'tel' : ['linkedin', 'github', 'portfolio'].includes(key) ? 'url' : 'text'} value={resume.basics[key] || ''} onChange={(event) => updateResume((current) => ({ ...current, basics: { ...current.basics, [key]: event.target.value } }))} placeholder={key === 'name' ? 'Your full name' : key === 'headline' ? 'Software Engineer or Automation QA Engineer' : key === 'location' ? 'City, India' : key === 'email' ? 'you@example.com' : key === 'mobile' ? '+91...' : 'https://...'} visibility={['name', 'headline'].includes(key) ? undefined : resume.basicsVisibility[key]} onToggleVisibility={['name', 'headline'].includes(key) ? undefined : () => updateResume((current) => ({ ...current, basicsVisibility: { ...current.basicsVisibility, [key]: !current.basicsVisibility[key] } }))} /></div>
                 ))}
               </div>
             </SectionCard></div>
 
-            <SectionCard sectionKey="education" title="Academic Details" help={SECTION_HELP.education} icon={GraduationCap} active={activeSection === 'education'} collapsed={collapsed.education} onCollapse={() => setCollapsed((state) => ({ ...state, education: !state.education }))} onFocus={() => setActiveSection('education')} hidden={resume.hiddenSections.includes('education')} onToggleHidden={() => toggleHidden('education')} status={resume.hiddenSections.includes('education') ? 'Hidden' : isReady('education') ? 'Ready' : 'Not added'}>
-              {!resume.education.length ? <EmptySection title="No academic details added" description="Add college, secondary school, or other relevant education in your preferred wording." action="Add education" onClick={() => { setActiveSection('education'); setCollapsed((state) => ({ ...state, education: false })); setSection('education', [{ year: '', degree: '', institute: '', score: '' }]); }} /> : <div className="space-y-3">{resume.education.map((entry, index) => <EntryShell key={index} label="Education" index={index} onRemove={() => setSection('education', resume.education.filter((_, i) => i !== index), 'Education entry removed')} onMoveUp={() => { if (index > 0) { const next = [...resume.education]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; setSection('education', next); } }} onMoveDown={() => { if (index < resume.education.length - 1) { const next = [...resume.education]; [next[index + 1], next[index]] = [next[index], next[index + 1]]; setSection('education', next); } }}><div className="grid gap-3 sm:grid-cols-2"><Field label="Degree" value={entry.degree || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, degree: event.target.value } : item))} placeholder="B.Tech Computer Science and Engineering" /><Field label="Institute" value={entry.institute || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, institute: event.target.value } : item))} placeholder="College or school name" /><Field label="Year / Duration" value={entry.year || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, year: event.target.value } : item))} placeholder="2023 – Present" /><Field label="CGPA / Percentage" value={entry.score || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, score: event.target.value } : item))} placeholder="7.64 or 90%" /></div></EntryShell>)}<AddButton onClick={() => setSection('education', [...resume.education, { year: '', degree: '', institute: '', score: '' }])}>Add another education</AddButton></div>}
+            <SectionCard sectionKey="education" title="Education" help={SECTION_HELP.education} icon={GraduationCap} active={activeSection === 'education'} collapsed={collapsed.education} onCollapse={() => setCollapsed((state) => ({ ...state, education: !state.education }))} onFocus={() => setActiveSection('education')} hidden={resume.hiddenSections.includes('education')} onToggleHidden={() => toggleHidden('education')} status={resume.hiddenSections.includes('education') ? 'Hidden' : isReady('education') ? 'Ready' : 'Not added'}>
+              {!resume.education.length ? <EmptySection title="No education added" description="Add college, secondary school, or other relevant education in your preferred wording." action="Add education" onClick={() => { setActiveSection('education'); setCollapsed((state) => ({ ...state, education: false })); setSection('education', [{ year: '', degree: '', institute: '', score: '' }]); }} /> : <div className="space-y-3">{resume.education.map((entry, index) => <EntryShell key={index} label="Education" index={index} onRemove={() => setSection('education', resume.education.filter((_, i) => i !== index), 'Education entry removed')} onMoveUp={() => { if (index > 0) { const next = [...resume.education]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; setSection('education', next); } }} onMoveDown={() => { if (index < resume.education.length - 1) { const next = [...resume.education]; [next[index + 1], next[index]] = [next[index], next[index + 1]]; setSection('education', next); } }}><div className="grid gap-3 sm:grid-cols-2"><Field label="Degree" value={entry.degree || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, degree: event.target.value } : item))} placeholder="B.Tech Computer Science and Engineering" /><Field label="Institute" value={entry.institute || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, institute: event.target.value } : item))} placeholder="College or school name" /><Field label="Year / Duration" value={entry.year || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, year: event.target.value } : item))} placeholder="2023 – Present" /><Field label="CGPA / Percentage" value={entry.score || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, score: event.target.value } : item))} placeholder="7.64 or 90%" /></div></EntryShell>)}<AddButton onClick={() => setSection('education', [...resume.education, { year: '', degree: '', institute: '', score: '' }])}>Add another education</AddButton></div>}
             </SectionCard>
 
             {[
               { key: 'experience', noun: 'Experience', icon: BriefcaseBusiness, placeholders: { titleLabel: 'Company', title: 'Company or organization', subtitleLabel: 'Role', subtitle: 'Technical Intern', empty: 'Internships, employment, freelance work, and open-source contributions can be included here.' } },
               { key: 'projects', noun: 'Project', icon: FolderKanban, placeholders: { titleLabel: 'Project title', title: 'Project name', subtitleLabel: 'Supporting title', subtitle: 'Short project description', empty: 'Add academic, personal, hackathon, or production projects that demonstrate your skills.' } },
               { key: 'achievements', noun: 'Achievement', icon: Trophy, placeholders: { titleLabel: 'Achievement title', title: 'Award, certification, or milestone', subtitleLabel: 'Organization', subtitle: 'Issuing organization', empty: 'Awards, certifications, competitions, and notable milestones can appear here.' } },
-            ].map((config) => <SectionCard key={config.key} sectionKey={config.key} title={FIXED_SECTION_META[config.key].label} help={SECTION_HELP[config.key]} icon={config.icon} active={activeSection === config.key} collapsed={collapsed[config.key]} onCollapse={() => setCollapsed((state) => ({ ...state, [config.key]: !state[config.key] }))} onFocus={() => setActiveSection(config.key)} hidden={resume.hiddenSections.includes(config.key)} onToggleHidden={() => toggleHidden(config.key)} status={resume.hiddenSections.includes(config.key) ? 'Hidden' : isReady(config.key) ? 'Ready' : 'Not added'}><DetailSectionEditor entries={resume[config.key]} onChange={(entries) => setSection(config.key, entries)} onRemove={(index) => setSection(config.key, resume[config.key].filter((_, i) => i !== index), `${config.noun} removed`)} noun={config.noun} placeholders={config.placeholders} /></SectionCard>)}
+            ].map((config) => <SectionCard key={config.key} sectionKey={config.key} title={FIXED_SECTION_META[config.key].label} help={SECTION_HELP[config.key]} icon={config.icon} active={activeSection === config.key} collapsed={collapsed[config.key]} onCollapse={() => setCollapsed((state) => ({ ...state, [config.key]: !state[config.key] }))} onFocus={() => setActiveSection(config.key)} hidden={resume.hiddenSections.includes(config.key)} onToggleHidden={() => toggleHidden(config.key)} status={resume.hiddenSections.includes(config.key) ? 'Hidden' : isReady(config.key) ? 'Ready' : 'Not added'}><DetailSectionEditor sectionKey={config.key} entries={resume[config.key]} onChange={(entries) => setSection(config.key, entries)} onRemove={(index) => setSection(config.key, resume[config.key].filter((_, i) => i !== index), `${config.noun} removed`)} noun={config.noun} placeholders={config.placeholders} /></SectionCard>)}
 
             <SectionCard sectionKey="skills" title="Technical Skills" help={SECTION_HELP.skills} icon={Wrench} active={activeSection === 'skills'} collapsed={collapsed.skills} onCollapse={() => setCollapsed((state) => ({ ...state, skills: !state.skills }))} onFocus={() => setActiveSection('skills')} hidden={resume.hiddenSections.includes('skills')} onToggleHidden={() => toggleHidden('skills')} status={resume.hiddenSections.includes('skills') ? 'Hidden' : isReady('skills') ? 'Ready' : 'Not added'}>
               {!resume.skills.length ? <EmptySection title="No technical skills added" description="Create clear categories such as Programming Languages, Full Stack Development, or Tools & Cloud." action="Add skill category" onClick={() => setSection('skills', [{ category: '', skills: '' }])} /> : <div className="space-y-3">{resume.skills.map((entry, index) => <EntryShell key={index} label="Skill category" index={index} onRemove={() => setSection('skills', resume.skills.filter((_, i) => i !== index), 'Skill category removed')} onMoveUp={() => { if (index > 0) { const next = [...resume.skills]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; setSection('skills', next); } }} onMoveDown={() => { if (index < resume.skills.length - 1) { const next = [...resume.skills]; [next[index + 1], next[index]] = [next[index], next[index + 1]]; setSection('skills', next); } }}><div className="grid gap-3 sm:grid-cols-[.42fr_.58fr]"><Field label="Category" value={entry.category || ''} onChange={(event) => setSection('skills', resume.skills.map((item, i) => i === index ? { ...item, category: event.target.value } : item))} placeholder="Programming Languages" /><Field label="Skills" value={entry.skills || ''} onChange={(event) => setSection('skills', resume.skills.map((item, i) => i === index ? { ...item, skills: event.target.value } : item))} placeholder="C, C++, Java, Python" hint="Separate skills with commas." /></div></EntryShell>)}<AddButton onClick={() => setSection('skills', [...resume.skills, { category: '', skills: '' }])}>Add skill category</AddButton></div>}
@@ -728,7 +800,7 @@ export default function StudentResume() {
               });
               const removeEntry = (index) => updateResume((current) => ({ ...current, customSections: current.customSections.map((item) => item.id === section.id ? { ...item, entries: item.entries.filter((_, i) => i !== index) } : item) }), { undoLabel: `${section.title} entry removed` });
               return <SectionCard key={key} sectionKey={key} title={section.title} help="Add any combination of subsections, headings, formatted paragraphs, dates, links, and bullet points." icon={Sparkles} active={activeSection === key} collapsed={collapsed[key]} onCollapse={() => setCollapsed((state) => ({ ...state, [key]: !state[key] }))} onFocus={() => setActiveSection(key)} hidden={resume.hiddenSections.includes(key)} onToggleHidden={() => toggleHidden(key)} status={resume.hiddenSections.includes(key) ? 'Hidden' : isReady(key) ? 'Ready' : 'Not added'}>
-                <FlexibleCustomSectionEditor sectionTitle={section.title} entries={section.entries || []} onChange={changeEntries} onRemove={removeEntry} />
+                <FlexibleCustomSectionEditor sectionKey={key} sectionTitle={section.title} entries={section.entries || []} onChange={changeEntries} onRemove={removeEntry} />
               </SectionCard>;
             })}
 
@@ -741,7 +813,7 @@ export default function StudentResume() {
           </div>
 
           <aside data-guide="rs-preview" className={`${mobileTab === 'edit' ? 'hidden lg:block' : 'block'} min-w-0 lg:sticky lg:top-[116px] lg:self-start`}>
-            <ResumePreview resume={resume} activeSection={activeSection} page={previewPage} onPageChange={setPreviewPage} onExpand={() => setFullPreview(true)} />
+            <ResumePreview resume={previewResume} page={previewPage} onPageChange={setPreviewPage} onExpand={() => setFullPreview(true)} onLayoutChange={hasContent ? handleLayoutChange : undefined} sampleNotice={hasContent ? '' : `Sample details in ${selectedTemplate.name} — your details will replace them`} />
           </aside>
         </main>
 
@@ -749,8 +821,9 @@ export default function StudentResume() {
 
         <AnimatePresence>{undoAction ? <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="fixed bottom-20 left-1/2 z-[85] flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-xs text-white shadow-2xl lg:bottom-6"><span>{undoAction.label}</span><button type="button" onClick={undoLastAction} className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-1.5 font-black text-sky-300 hover:bg-white/20"><Undo2 className="h-3.5 w-3.5" /> Undo</button><button type="button" onClick={() => setUndoAction(null)} aria-label="Dismiss undo" className="text-slate-400"><X className="h-3.5 w-3.5" /></button></motion.div> : null}</AnimatePresence>
         {manageOpen ? <ManageSectionsModal resume={resume} onChange={updateResume} onUndoableChange={(next, label) => updateResume(next, { undoLabel: label })} onCustomAdded={(key) => { setManageOpen(false); setCollapsed((state) => ({ ...state, [key]: false })); setActiveSection(key); requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(`resume-editor-${key.replace(':', '-')}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))); }} onClose={() => setManageOpen(false)} /> : null}
-        {fullPreview ? <div className="fixed inset-0 z-[95] flex flex-col bg-slate-950/95 p-3 backdrop-blur"><div className="mx-auto flex w-full max-w-6xl items-center justify-between py-2 text-white"><div><div className="text-xs font-bold uppercase tracking-[.15em] text-sky-300">Resume preview</div><div className="mt-1 text-sm font-bold">{filenameForResume(resume)}</div></div><div className="flex gap-2"><button type="button" onClick={handleDownload} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold"><Download className="h-4 w-4" />Download</button><button type="button" onClick={() => setFullPreview(false)} className="rounded-lg border border-white/20 p-2"><X className="h-4 w-4" /></button></div></div><div className="mx-auto min-h-0 w-full max-w-5xl flex-1"><ResumePreview resume={resume} page={previewPage} onPageChange={setPreviewPage} /></div></div> : null}
-        {welcomeOpen ? <ResumeWelcomeModal onClose={dismissWelcome} onStart={() => { dismissWelcome(); setActiveSection('basics'); setCollapsed((state) => ({ ...state, basics: false })); requestAnimationFrame(() => document.getElementById('resume-editor-basics')?.scrollIntoView({ behavior: 'smooth' })); }} onArrange={() => { dismissWelcome(); setManageOpen(true); }} /> : null}
+        {fullPreview ? <div className="fixed inset-0 z-[95] flex flex-col bg-slate-950/95 p-3 backdrop-blur"><div className="mx-auto flex w-full max-w-6xl items-center justify-between py-2 text-white"><div><div className="text-xs font-bold uppercase tracking-[.15em] text-sky-300">Resume preview</div><div className="mt-1 text-sm font-bold">{filenameForResume(resume)}</div></div><div className="flex gap-2"><button type="button" onClick={handleDownload} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold"><Download className="h-4 w-4" />Download</button><button type="button" onClick={() => setFullPreview(false)} className="rounded-lg border border-white/20 p-2"><X className="h-4 w-4" /></button></div></div><div className="mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-hidden rounded-xl bg-slate-900/40"><ResumePreview resume={previewResume} mode="scroll" sampleNotice={hasContent ? '' : 'Sample details — add your own to replace them'} /></div></div> : null}
+        {galleryOpen ? <TemplateGallery currentId={resume.template} resume={resume} hasContent={hasContent} initialId={galleryInitial} onApply={(id) => { applyTemplate(id); setGalleryOpen(false); setGalleryInitial(''); }} onClose={() => { setGalleryOpen(false); setGalleryInitial(''); }} /> : null}
+        {welcomeOpen ? <ResumeWelcomeModal onClose={dismissWelcome} onStart={() => { dismissWelcome(); setActiveSection('basics'); setCollapsed((state) => ({ ...state, basics: false })); requestAnimationFrame(() => document.getElementById('resume-editor-basics')?.scrollIntoView({ behavior: 'smooth' })); }} onArrange={() => { dismissWelcome(); setManageOpen(true); }} onTemplates={() => { dismissWelcome(); setGalleryOpen(true); }} /> : null}
         <DownloadStatus stage={downloadStage} complete={downloadComplete} filename={filenameForResume(resume)} onClose={() => setDownloadComplete(false)} />
       </div>
     </RequirePasswordChange>

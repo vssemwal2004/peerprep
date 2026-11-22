@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ChevronDown, Loader2 } from 'lucide-react';
 import { api } from '../../utils/api';
 import PeerAvatar from './PeerAvatar';
 import PeerActions from './PeerActions';
@@ -7,10 +8,27 @@ import { PEER_NETWORK_EVENT, peerSubtitle } from './peerNetwork';
 import { DuelGlyph, InviteGlyph, MatesGlyph, PanelTitle, SparkGlyph } from './peerGlyphs';
 import { card, focusRing, Skeleton } from '../dashboard/ui';
 
-/** Classmates from your university you may want as Prep Mates (most active this week first). */
+const PAGE = 10;
+
+/**
+ * Classmates from your university you may want as Prep Mates (most active this week first), ten
+ * at a time; "Show more" loads the next ten until everyone suggested is listed.
+ */
 export function Suggestions({ title = 'Classmates you may know', subtitle = 'Active this week at your university' }) {
-  const [state, setState] = useState({ loading: true, items: [] });
-  const load = useCallback(() => api.getPeerSuggestions().then((data) => setState({ loading: false, items: data.items || [] })).catch(() => setState({ loading: false, items: [] })), []);
+  const [state, setState] = useState({ loading: true, items: [], total: 0, nextOffset: null, more: false, error: false });
+  const load = useCallback(() => api.getPeerSuggestions({ offset: 0, limit: PAGE })
+    .then((data) => setState({ loading: false, items: data.items || [], total: data.total || (data.items || []).length, nextOffset: data.nextOffset ?? null, more: false, error: false }))
+    .catch(() => setState({ loading: false, items: [], total: 0, nextOffset: null, more: false, error: false })), []);
+  const loadMore = () => {
+    if (state.nextOffset == null || state.more) return;
+    setState((current) => ({ ...current, more: true, error: false }));
+    api.getPeerSuggestions({ offset: state.nextOffset, limit: PAGE })
+      .then((data) => setState((current) => {
+        const seen = new Set(current.items.map((item) => item.id));
+        return { ...current, more: false, items: [...current.items, ...(data.items || []).filter((item) => !seen.has(item.id))], total: data.total || current.total, nextOffset: data.nextOffset ?? null };
+      }))
+      .catch(() => setState((current) => ({ ...current, more: false, error: true })));
+  };
   useEffect(() => { load(); }, [load]);
   const patch = (id, relation) => setState((current) => ({ ...current, items: current.items.map((item) => (item.id === id ? { ...item, relation } : item)) }));
   if (!state.loading && !state.items.length) return null;
@@ -27,6 +45,19 @@ export function Suggestions({ title = 'Classmates you may know', subtitle = 'Act
           <div className="relative mt-3 w-full"><PeerActions peer={peer} relation={peer.relation} size="sm" block onRelationChange={(relation) => patch(peer.id, relation)} /></div>
         </li>)}
       </ul>}
+    {!state.loading && state.items.length ? (
+      <div className="mt-5 flex flex-col items-center gap-2">
+        <p className="text-[12px] tabular-nums text-slate-500 dark:text-zinc-400">Showing {state.items.length} of {Math.max(state.total, state.items.length)} classmates</p>
+        {state.nextOffset != null ? (
+          <button type="button" onClick={loadMore} disabled={state.more}
+            className={`inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-[13px] font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:text-sky-700 disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-200 dark:hover:border-sky-500/40 dark:hover:text-sky-300 ${focusRing}`}>
+            {state.more ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
+            {state.more ? 'Loading…' : `Show more (${Math.max(0, state.total - state.items.length)} more)`}
+          </button>
+        ) : null}
+        {state.error ? <p role="alert" className="text-[12px] text-rose-600 dark:text-rose-300">Could not load more. Try again.</p> : null}
+      </div>
+    ) : null}
   </section>;
 }
 

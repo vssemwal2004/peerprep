@@ -95,6 +95,9 @@ const userSchema = new mongoose.Schema({
   // Peer network: when false the student is hidden from same-university search, peer profiles,
   // and Prep Mate lists. Missing means visible (the default).
   visibleToPeers: { type: Boolean, default: true },
+  // Opt-in (off by default): accepted Prep Mates may see the compact Prep Score and SBC/PBC Prep
+  // Readiness summary. Topic detail, attempts and staff notes are never shared.
+  sharePrepReadiness: { type: Boolean, default: false },
   // The language a student last ran or submitted practice code in; the practice editor opens in it next time.
   practiceLanguage: { type: String, trim: true, maxlength: 20 },
   // Learner level / awards already celebrated in the student UI. Levels and awards themselves are

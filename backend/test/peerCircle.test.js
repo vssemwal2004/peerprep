@@ -138,7 +138,7 @@ test('compare: head-to-head numbers for you and one Prep Mate', async () => {
   assert.equal(result.you.weekly.length, 8);
   assert.equal(result.mate.weekly.at(-1).solved, 2);
   assert.deepEqual(result.topics.map((topic) => [topic.tag, topic.you, topic.mate]), [['DP', 1, 1], ['Graph', 0, 2]]);
-  assert.equal(result.badges.length, 4);
+  assert.equal(result.badges.length, 5, 'monthly badges incl. Daily Challenger');
   assert.deepEqual([result.you.rank.allTime, result.mate.rank.allTime, result.you.rank.of], [2, 1, 2], 'rank in your circle');
   assert.equal(result.you.days30.length, 30);
   assert.equal(result.you.days30.at(-1).active, true, 'practised today');
@@ -157,4 +157,27 @@ test('compare adds the circle leaders; suggestions skip anyone already linked', 
   assert.deepEqual(result.others.map((row) => [row.name, row.total, row.weekly.length]), [['Top', 2, 8]]);
   const { items } = await getSuggestions(asha, NOW);
   assert.deepEqual(items.map((row) => [row.name, row.thisWeek]), [['Fresh', 1]], 'not mates, not pending, same university only');
+});
+
+test('suggestions page ten at a time: active first, no repeats, every classmate reachable', async () => {
+  const asha = await student('Asha');
+  const others = [];
+  for (let index = 0; index < 23; index += 1) others.push(await student(`C${String(index).padStart(2, '0')}`));
+  await student('Far', 'Elsewhere');
+  await solve(others[5]);
+  // A different day than the other tests: "recently active" is cached per IST day for ten minutes.
+  const LATER = new Date(NOW.getTime() + 86_400_000);
+  const first = await getSuggestions(asha, LATER);
+  assert.equal(first.items.length, 10);
+  assert.equal(first.total, 23);
+  assert.equal(first.nextOffset, 10);
+  assert.equal(first.items[0].name, 'C05', 'active this week comes first');
+  const second = await getSuggestions(asha, LATER, { offset: first.nextOffset });
+  const third = await getSuggestions(asha, LATER, { offset: second.nextOffset });
+  assert.equal(second.items.length, 10);
+  assert.equal(third.items.length, 3);
+  assert.equal(third.nextOffset, null, 'last page');
+  const names = [...first.items, ...second.items, ...third.items].map((row) => row.name);
+  assert.equal(new Set(names).size, 23, 'no classmate twice, none missing');
+  assert.ok(!names.includes('Far') && !names.includes('Asha'));
 });

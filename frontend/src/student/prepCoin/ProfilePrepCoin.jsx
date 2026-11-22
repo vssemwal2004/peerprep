@@ -4,9 +4,22 @@ import PrepCoinIcon from '../../components/prepCoin/PrepCoinIcon';
 import usePrepCoinBalance from './usePrepCoinBalance';
 
 /** Prep Coin balance on the student profile; the same live figure as the header. */
-export default function ProfilePrepCoin({ focusRing = '' }) {
+export default function ProfilePrepCoin({ focusRing = '', compact = false }) {
   const { balance, changeCount } = usePrepCoinBalance();
   if (balance == null) return null;
+  if (compact) {
+    // Half-width tile for the profile sidebar's stat row (next to Prep Mates).
+    return (
+      <Link to="/student/wallet" data-guide="pf-coins" aria-label={`Prep Coin balance ${balance.toLocaleString()}. Open Prep Coin history`}
+        className={`group relative flex h-full items-center gap-2.5 overflow-hidden rounded-xl border border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-amber-100/60 px-2.5 py-2 transition-colors hover:border-amber-300 dark:border-amber-500/25 dark:from-amber-500/10 dark:via-transparent dark:to-amber-500/5 ${focusRing}`}>
+        <PrepCoinIcon key={changeCount} size={30} shine pop={changeCount > 0} />
+        <span className="min-w-0">
+          <span className="block text-[15px] font-bold leading-tight tabular-nums text-amber-950 dark:text-amber-100">{balance.toLocaleString()}</span>
+          <span className="block truncate text-[10.5px] font-medium text-amber-800/80 dark:text-amber-200/70">Prep Coins</span>
+        </span>
+      </Link>
+    );
+  }
   return (
     <Link to="/student/wallet" data-guide="pf-coins" aria-label={`Prep Coin balance ${balance.toLocaleString()}. Open Prep Coin history`}
       className={`group relative flex items-center gap-3 overflow-hidden rounded-xl border border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-amber-100/60 px-3.5 py-3 transition-colors hover:border-amber-300 dark:border-amber-500/25 dark:from-amber-500/10 dark:via-transparent dark:to-amber-500/5 ${focusRing}`}>

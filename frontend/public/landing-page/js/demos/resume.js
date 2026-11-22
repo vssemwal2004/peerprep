@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Demo scene — Resume Builder
+   Demo scene — Prep Resume
    Scripted recreation of /student/resume with fictional data (Aarav Sharma).
    Every state change is a tween or tl.set so the timeline is fully seekable
    and restartable (no onUpdate-driven text).
@@ -94,7 +94,7 @@
 
       /* ---- top bar ---- */
       '<div class="dm-resume__card dm-resume__top">' +
-        '<div class="dm-resume__title"><div class="dm-h3">Resume Builder</div>' +
+        '<div class="dm-resume__title"><div class="dm-h3">Prep Resume</div>' +
           '<div class="dm-resume__meta"><span class="dm-resume__pill dm-resume__pill--brand">Professional A4</span>' +
           '<span class="dm-resume__save"><span data-save="ok"><i class="dm-resume__dot"></i>Saved</span>' +
           '<span data-save="dirty" style="opacity:0"><i class="dm-resume__dot dm-resume__dot--warn"></i>Unsaved changes</span></span></div>' +
@@ -204,11 +204,11 @@
   }
 
   PP.demos.register('resume', {
-    title: 'Resume Builder',
+    title: 'Prep Resume',
     route: '/student/resume',
     nav: 'resume',
     caption: 'Arrange sections, write measurable bullets, watch the A4 preview and quality score update, download a PDF.',
-    description: 'Animated recreation of the PeerPrep Resume Builder for a fictional student, Aarav Sharma. The Projects section is dragged above Experience in the document outline and the live A4 preview reorders to match. The Projects editor opens and a new bullet, "Reduced API latency by 38% by caching hot queries", is typed and appears in the preview as it is written. The resume quality ring rises from 62% to 86%, the Measurable results and Bullet count checks turn green, and the suggestion changes. Finally Download PDF is clicked and a "PDF ready" notification appears.',
+    description: 'Animated recreation of the PeerPrep Prep Resume for a fictional student, Aarav Sharma. The Projects section is dragged above Experience in the document outline and the live A4 preview reorders to match. The Projects editor opens and a new bullet, "Reduced API latency by 38% by caching hot queries", is typed and appears in the preview as it is written. The resume quality ring rises from 62% to 86%, the Measurable results and Bullet count checks turn green, and the suggestion changes. Finally Download PDF is clicked and a "PDF ready" notification appears.',
     duration: 11100,
     create: function (root) {
       build(root);

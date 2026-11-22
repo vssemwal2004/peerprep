@@ -15,8 +15,7 @@ import { validateObjectId } from '../utils/validators.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
 import { readTestcaseTextObject } from '../utils/testcaseStorage.js';
 import { createNotification } from './notificationService.js';
-import { recordAcceptedSolve } from './prepScore/topicQuota.js';
-import { rewardAcceptedSolve } from './solveRewards.js';
+import { afterPracticeSubmit } from './practiceRewards.js';
 import { getIo } from '../utils/io.js';
 import { personalRoom, compilerMonitorRoom } from '../utils/realtime.js';
 import {
@@ -1691,19 +1690,24 @@ async function runCompilerExecutionJob(job) {
       && isHiddenJudgeFailure(submitResult.persisted.failedCase)
       && !(await problemUsedInAssessment(problem._id).catch(() => true));
     const responsePayload = buildSubmitApiResponse(submitResult.persisted, { revealHidden });
-    if (job.name === 'submit' && !assessmentId && submitResult.persisted.status === 'AC' && userId && problem?._id) {
-      // Daily topic quota: decide (once) whether this first solve counts toward the Prep Score.
+    const practiceStatus = submitResult.persisted.status;
+    // Prep Score points / losses, daily challenge, badges (services/practiceRewards.js). A runtime
+    // error with no test run is the judge failing, never the student's mistake.
+    const judged = practiceStatus === 'AC' || ['WA', 'TLE'].includes(practiceStatus)
+      || (practiceStatus === 'RE' && Number(submitResult.persisted.totalTestCases) > 0);
+    if (job.name === 'submit' && !assessmentId && judged && userId && problem?._id) {
       try {
-        const alreadySolved = Boolean(await Submission.exists({
+        const accepted = practiceStatus === 'AC';
+        const alreadySolved = accepted && Boolean(await Submission.exists({
           user: userId, problem: problem._id, mode: 'submit', assessmentId: null,
           status: { $in: ['AC', 'Accepted', 'ACCEPTED', 'ACCEPT'] }, ...(submissionId ? { _id: { $ne: submissionId } } : {}),
         }));
-        const prepScore = await recordAcceptedSolve({ studentId: userId, source: 'local', problemId: problem._id, alreadySolved });
-        if (prepScore) responsePayload.prepScore = prepScore;
-        const coins = await rewardAcceptedSolve({ userId, source: 'local', problemId: problem._id, title: problem.title, outcome: prepScore });
-        if (coins) responsePayload.coins = coins;
+        const rewards = await afterPracticeSubmit({ user: userId, source: 'local', problemId: problem._id, accepted, alreadySolved });
+        if (rewards.prepScore) responsePayload.prepScore = rewards.prepScore;
+        if (rewards.challenge) responsePayload.challenge = rewards.challenge;
+        if (rewards.readiness) responsePayload.readiness = rewards.readiness;
       } catch (error) {
-        console.error('[processCompilerExecutionJob] Prep Score quota error:', error.message);
+        console.error('[processCompilerExecutionJob] practice rewards error:', error.message);
       }
     }
     if (job.name === 'assessment-code-submit' && finalizedSubmission) {

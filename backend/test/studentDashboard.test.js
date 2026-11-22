@@ -20,6 +20,8 @@ import {
   calculateActivityStreak, scoreStudentProgress, universityCohort,
   buildCurriculumTopicMap, learningResumeItem, combineResumeItems, getStudentDashboardData, getStudentUniversityRanking, buildLearningSubjectCards, codePreviewLines,
 } from '../src/services/studentDashboardService.js';
+import PrepScorePolicy from '../src/models/PrepScorePolicy.js';
+import { clearPrepScorePolicyCache } from '../src/services/prepScore/policy.js';
 import { computeAwards } from '../../frontend/src/student/profile/achievements.js';
 import { getLearnerLevel } from '../../frontend/src/student/profileBadge.js';
 
@@ -41,7 +43,7 @@ test('progress scores each module separately and uses coding for Prep Score', ()
   assert.equal(idle.hasProgress, false);
   assert.equal(idle.level.level, 1);
   assert.deepEqual(idle.badgeMetrics, { solved: 0, hardSolved: 0, bestStreak: 0, activeDays: 0, languages: 0, assessments: 0, interviews: 0 });
-  assert.deepEqual(idle.levelMetrics, { solvedCount: 0, streak: 0, assessmentScore: null, interviewScore: 0, challengePoints: 0 });
+  assert.deepEqual(idle.levelMetrics, { solvedCount: 0, streak: 0, bestStreak: 0, assessmentScore: null, interviewScore: 0, challengePoints: 0 });
   // Each module: N^0.4 × (average points)^1.5 with Easy 1, Medium 2, Hard 4; Prep Score is coding only.
   const scored = scoreStudentProgress({
     easySolved: 10, mediumSolved: 4, hardSolved: 2,
@@ -173,6 +175,11 @@ before(async () => {
     semester: 1, isActive: key !== 'inactive', accessScope: key === 'assessmentOnly' ? 'assessment_only' : 'full',
   })));
   ownStudent = await User.findById(students.own).lean();
+  // These tests fix "now" in October 2026 while stored classmate rows are built on the real clock,
+  // so the time-based Prep Score losses (inactivity, wrong answers) are switched off here; they are
+  // covered in prepScorePoints.test.js.
+  await PrepScorePolicy.create({ version: 6, status: 'active', config: { points: { inactivity: { perDay: 0 }, wrongSubmission: 0 } }, createdBy: id(), publishedAt: new Date() });
+  clearPrepScorePolicyCache();
   await Problem.collection.insertMany(Object.entries(problems).map(([key, problemId]) => ({
     _id: problemId, title: `${key} problem`, difficulty: key.includes('Easy') || key === 'easy' ? 'Easy' : key === 'medium' ? 'Medium' : 'Hard',
     status: key === 'draft' ? 'draft' : 'published', visibility: key === 'private' ? 'private' : 'public',
@@ -272,7 +279,8 @@ test('profile and dashboard refresh the current score within cohort cache TTL; m
   await Submission.collection.insertOne({ _id: id(), user: students.own, problem: problems.medium, mode: 'submit', status: 'AC', language: 'python', createdAt: new Date('2026-10-11T11:00:00Z') });
   const profileRank = await getStudentUniversityRanking(ownStudent, null, now);
   const dashboard = await getStudentDashboardData(ownStudent, now);
-  assert.equal(profileRank.rank, 2);
+  // Easy 4 + Medium 8 = 12 points, ahead of the classmate's single Medium (8).
+  assert.equal(profileRank.rank, 1);
   assert.equal(profileRank.score, profileRank.prepScore.total, 'the rank score is the coding Prep Score');
   assert.ok(profileRank.prepScore.features.coding.score > 0 && profileRank.score <= 100);
   assert.deepEqual(profileRank, dashboard.ranking);
@@ -338,7 +346,9 @@ test('shared coding is counted from judged practice attempts, tracked, resumed a
     assert.equal(dashboard.ranking.badgeMetrics.hardSolved, 1);
     assert.equal(dashboard.ranking.earnedBadges, 3); // First Accept, Hard Hitter, Polyglot.
     assert.equal(dashboard.ranking.levelMetrics.solvedCount, dashboard.coding.totalSolved);
-    assert.equal(dashboard.ranking.levelMetrics.streak, dashboard.coding.streak.current);
+    // The streak students see is the Prep Streak (daily challenges); no challenge done here.
+    assert.equal(dashboard.coding.streak.kind, 'prep');
+    assert.equal(dashboard.coding.streak.current, 0);
     assertProfileProgressContract(dashboard.ranking);
     assert.deepEqual(dashboard.coding.totalsByDifficulty, { easy: 3, medium: 2, hard: 2 });
     assert.ok(dashboard.resumeItems.some((item) => item.href === `/problems/shared/${sharedEasy}`));

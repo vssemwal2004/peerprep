@@ -561,11 +561,11 @@ test("terms counter, acceptance toggle and student preview", async () => {
 test("resume card: sources keep at least one and the privacy note is shown", async () => {
   const state = await mountSettings(newDefinition(), { path: "/admin/ai-interviews/i1/anvi?tab=candidate" });
   assert.ok(document.body.textContent.includes("Only the resume text is kept, with personal details removed, and it is deleted when the interview ends."));
-  assert.equal(checkbox("Saved resume from Resume Builder"), undefined, "sources are hidden while resume is off");
+  assert.equal(checkbox("Saved resume from Prep Resume"), undefined, "sources are hidden while resume is off");
   await click(radio("Ask for the student's resume", "Required"));
   assert.equal(state.data.anvi.resume.mode, "required");
   assert.equal(state.data.rules.resume, "required");
-  await click(checkbox("Saved resume from Resume Builder"));
+  await click(checkbox("Saved resume from Prep Resume"));
   assert.deepEqual(state.data.anvi.resume.sources, ["upload"]);
   const upload = checkbox("Uploaded file");
   assert.equal(upload.checked, true);

@@ -9,6 +9,9 @@ import { requireEngagementUniqueIndex } from '../utils/engagementIndexes.js';
 import { notifyOnce } from './notificationService.js';
 import { StudentDailyLogin } from '../models/MonthlyBadge.js';
 import { HttpError } from '../utils/errors.js';
+import { rewardDailyChallenge } from './dailyChallengeRewards.js';
+import { creditEarningSafely, getEarningConfig } from '../platform/coinEarn.js';
+import { DEFAULT_LEVEL_COINS, ELITE_FROM_LEVEL } from './adaptiveEngagementRules.js';
 
 const pending = new Map();
 export const engagementScope = (student) => ({ tenantKey: engagementTenant(student), studentId: new mongoose.Types.ObjectId(String(student._id)) });
@@ -115,10 +118,14 @@ async function refresh(student, now) {
       row.earnedAt = earnedAt;
       if (await awardXp(scope, `${row.kind}:${row.periodKey}`, row.rewardPoints, row.kind, earnedAt)) {
         newAwards.push({ kind: row.kind, periodKey: row.periodKey, rewardPoints: row.rewardPoints });
-        notices.push({ key: `done:${row.kind}:${row.periodKey}`, type: 'CHALLENGE', actionUrl: '/student/quests',
+        // The daily challenge also pays Prep Coins, Prep Score points and grows the Prep Streak (once:
+        // only the request that created the XP receipt gets here).
+        const reward = row.kind === 'daily' ? await rewardDailyChallenge(student, row.periodKey, now) : null;
+        const extras = reward ? [reward.points ? `+${reward.points} Prep Score` : '', reward.coins ? `+${reward.coins} Prep Coins` : '', reward.streak?.current ? `Prep Streak ${reward.streak.current} ${reward.streak.current === 1 ? 'day' : 'days'}` : ''].filter(Boolean).join(' · ') : '';
+        notices.push({ key: `done:${row.kind}:${row.periodKey}`, type: 'CHALLENGE', actionUrl: '/student/dashboard',
           title: row.kind === 'daily' ? 'Daily challenge complete' : `${PERIOD_NAMES[row.kind]} reached`,
           message: row.kind === 'daily'
-            ? `+${row.rewardPoints} XP earned. A new challenge arrives at 2 AM.`
+            ? `${extras || `+${row.rewardPoints} XP earned`}. A new challenge arrives at 2 AM.`
             : `+${row.rewardPoints} XP and the ${row.kind === 'weekly' ? 'Weekly Momentum' : 'Monthly Explorer'} badge for ${row.periodKey}.` });
       }
       if (row.kind !== 'daily') {
@@ -161,11 +168,21 @@ async function refresh(student, now) {
     if (updated) {
       progression = updated;
       notices.push({ key: `level:${eligible.level}`, type: 'LEVEL', actionUrl: '/student/profile#badges',
-        title: `Level ${eligible.level} unlocked: ${eligible.title}`, message: `${xp} XP and ${mastery}% demonstrated mastery got you here.` });
+        title: `Level ${eligible.level} unlocked: ${eligible.title}`, message: `${xp} XP and ${mastery}% demonstrated mastery got you here.${eligible.elite ? ' Elite level: Prep Coins added to your wallet.' : ''}` });
     }
   }
   // The unique event key repairs a crash between promoting and publishing the celebration.
   for (const entry of progression.levelHistory || []) if (!entry.imported) await createAchievement(scope, `level:${entry.level}`, { type: 'level', level: { ...LEVELS[entry.level - 1], helper: `${entry.xp} XP and ${entry.mastery}% demonstrated mastery.` } });
+  // Elite levels (8–12) pay Prep Coins once each. The ledger key makes it idempotent, so this also
+  // pays any level skipped in one jump and repairs a crash between promotion and payment.
+  const { earning } = await getEarningConfig().catch(() => ({ earning: {} }));
+  const levelCoins = Array.isArray(earning?.levelCoins) ? earning.levelCoins : DEFAULT_LEVEL_COINS;
+  if (progression.level >= ELITE_FROM_LEVEL) {
+    for (let reached = ELITE_FROM_LEVEL; reached <= Math.min(progression.level, LEVELS.length); reached += 1) {
+      const amount = Number(levelCoins[reached - 1]) || 0;
+      if (amount > 0) await creditEarningSafely({ user: student, kind: 'level', key: `level:${reached}`, amount, note: `Level ${reached} · ${LEVELS[reached - 1].title}` });
+    }
+  }
   const metrics = { activities: events.length, activeDays: days.size, weeklyDays: weekDays, domainsUsed: new Set(events.map((e) => e.domain)).size,
     dailyCompleted: rewards.filter((r) => r.kind === 'daily').length, monthlyCompleted: earnedMonths,
     hardSolved: events.filter((e) => e.domain === 'coding' && e.difficulty === 'Hard').length,
@@ -245,7 +262,7 @@ async function refresh(student, now) {
   return { version: 2, enabled, domains, timezone: 'Asia/Kolkata', rolloverHour: 2, daily, periods: cards.filter((card) => card.kind !== 'daily'),
     lifetime: { points: xp, badges: badgeMap.size, dailyCompleted: metrics.dailyCompleted },
     month: { key: month, dailyPlans: monthPlans.map((plan) => ({ dayKey: plan.periodKey, acceptedAt: plan.acceptedAt || null, completed: Boolean(plan.earnedAt), rewardPoints: plan.rewardPoints })) },
-    level, ladder: LEVELS, ability: Object.fromEntries(domains.map((domain) => [domain, ability[domain]])), badges,
+    level, ladder: LEVELS.map((entry) => ({ ...entry, coins: Number(levelCoins[entry.level - 1]) || 0 })), ability: Object.fromEntries(domains.map((domain) => [domain, ability[domain]])), badges,
     awards: { awards: badges, earnedCount: badges.filter((b) => b.earned).length, nextAward: badges.filter((b) => !b.earned).sort((a, b) => b.progress - a.progress)[0] || null },
     learnerProgress: { levelHistory: progression.levelHistory, awards: badges.filter((b) => b.earned).map((b) => ({ id: b.id, earnedAt: b.earnedAt })) },
     momentum: { weekDays, weeklyTarget: policy.weeklyDays, monthDays, monthlyTarget: policy.monthlyDays, activeToday: days.has(dayKey(now)), returning },

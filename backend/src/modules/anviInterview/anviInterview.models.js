@@ -153,7 +153,7 @@ const attemptSchema = new Schema({
   skills: { type: [Schema.Types.Mixed], default: undefined },
   flags: { type: [String], default: [] },
   resumeConsent: { type: Boolean, default: false },
-  // Where the resume used for questions came from: "builder" (saved Resume Builder) or "upload" (redacted text).
+  // Where the resume used for questions came from: "builder" (saved Prep Resume) or "upload" (redacted text).
   resumeSource: { type: String, enum: ["builder", "upload"], default: null },
   // The terms the student accepted before starting, as they read them, and when.
   termsText: { type: String, default: undefined },

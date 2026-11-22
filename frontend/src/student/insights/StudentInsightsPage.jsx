@@ -16,6 +16,7 @@ import { BadgesPage } from "./components/BadgesViews";
 import OverviewPage from "./pages/OverviewPage";
 import { ActivityPage, CodingPage, TestsPage, TopicsPage } from "./pages/FeaturePages";
 import { buttonClass, Card } from "./components/ui";
+import PrepReadinessSection from "../readiness/PrepReadinessSection";
 
 const PERIOD_KEY = "peerprep:analysis:period:v1";
 
@@ -113,12 +114,13 @@ export default function StudentInsightsPage() {
     overview: () => <OverviewPage insights={data} badges={badges} onOpenTopic={setOpenTopic} />,
     topics: () => <TopicsPage insights={data} onOpenTopic={setOpenTopic} />,
     coding: () => <CodingPage insights={data} />,
+    "prep-readiness": () => <PrepReadinessSection />,
     quickprep: () => <QuickPrepSection quickprep={data.sections.quickprep} />,
     learning: () => <LearningSection learning={data.sections.learning} range={data.range} previousLabel={previousLabel} />,
     tests: () => <TestsPage insights={data} />,
     interviews: () => <InterviewSection interview={data.sections.interview} previousLabel={previousLabel} />,
     activity: () => <ActivityPage insights={data} />,
-    badges: () => <BadgesPage badges={badges} milestones={data.sections.coding?.milestones} />,
+    badges: () => <BadgesPage badges={badges} milestones={data.sections.coding?.milestones} coding={Boolean(data.access?.coding)} />,
     companies: () => <CompanySection />,
   };
 

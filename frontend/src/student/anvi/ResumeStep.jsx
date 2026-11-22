@@ -7,7 +7,7 @@ import { resumeHighlightsOf } from "./prestart/resumeHighlights";
 import { focus } from "./list/styles";
 
 const SOURCE_TEXT = {
-  builder: { title: "Use Resume Builder resume", body: "The resume you made in PeerPrep.", Icon: NotebookPen },
+  builder: { title: "Use your Prep Resume", body: "The resume you made in PeerPrep.", Icon: NotebookPen },
   upload: { title: "Upload a file", body: "A PDF or TXT from your device.", Icon: UploadCloud },
 };
 
@@ -41,7 +41,7 @@ export function ResumeChip({ controller, className = "" }) {
 
 /**
  * The resume step of a start, a booking or the resume sheet: the sources the interview allows as two
- * option cards (Resume Builder with an explicit permission tick, or a PDF/TXT drop zone), then the stored
+ * option cards (Prep Resume with an explicit permission tick, or a PDF/TXT drop zone), then the stored
  * file as one row with Replace / Remove. While a file uploads, "ANVI is reading your resume…" shows a slim
  * progress bar, but it never holds the student: Continue stays open and the upload finishes in the
  * background. Once it resolves, "Ready" and the skills (or sections) found in the preview fade in.
@@ -90,7 +90,7 @@ function ResumeStepView({ controller, setup }) {
 
   const errorNote = error && <div role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] leading-5 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-200">
     <p className="flex items-start gap-1.5"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span>{error.message}
-      {error.builderLink && <> <a href={RESUME_BUILDER_ROUTE} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold underline underline-offset-2">Open Resume Builder<ExternalLink className="h-3 w-3" aria-hidden="true" /></a></>}
+      {error.builderLink && <> <a href={RESUME_BUILDER_ROUTE} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold underline underline-offset-2">Open Prep Resume<ExternalLink className="h-3 w-3" aria-hidden="true" /></a></>}
     </span></p>
     {controller.canRetry && <div className="mt-2 flex flex-wrap gap-2">
       <button type="button" onClick={() => void controller.retry()} className={quietButton}><RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />Try again</button>
@@ -109,8 +109,8 @@ function ResumeStepView({ controller, setup }) {
         <div className="flex items-center gap-3">
           <span className={fileIcon}><FileText className="h-[18px] w-[18px]" aria-hidden="true" /></span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-slate-900 dark:text-zinc-100">{builder ? "Resume Builder resume" : controller.fileName || "Your resume"}</p>
-            <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{[builder ? "" : formatSize(controller.fileSize), builder ? "From Resume Builder" : "Uploaded file"].filter(Boolean).join(" · ")}</p>
+            <p className="truncate text-sm font-medium text-slate-900 dark:text-zinc-100">{builder ? "Prep Resume" : controller.fileName || "Your resume"}</p>
+            <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{[builder ? "" : formatSize(controller.fileSize), builder ? "From Prep Resume" : "Uploaded file"].filter(Boolean).join(" · ")}</p>
           </div>
           {sending && <span className="shrink-0 text-xs font-medium tabular-nums text-slate-500 dark:text-zinc-400">{percent}%</span>}
         </div>
@@ -122,7 +122,7 @@ function ResumeStepView({ controller, setup }) {
         </div>
         <p aria-live="polite" className="mt-2.5 flex items-center gap-2 text-[13px] font-medium text-violet-700 dark:text-violet-300">
           <span aria-hidden="true" className="relative flex h-1.5 w-1.5"><span className="absolute inset-0 animate-ping rounded-full bg-violet-400 opacity-60 motion-reduce:hidden" /><span className="relative h-1.5 w-1.5 rounded-full bg-violet-500" /></span>
-          {builder ? "ANVI is reading your Resume Builder resume…" : "ANVI is reading your resume…"}
+          {builder ? "ANVI is reading your Prep Resume…" : "ANVI is reading your resume…"}
         </p>
         <p className="mt-0.5 pl-3.5 text-xs text-slate-500 dark:text-zinc-400">You can continue. This finishes in the background.</p>
       </div>
@@ -134,7 +134,7 @@ function ResumeStepView({ controller, setup }) {
     const day = formatDay(stored.createdAt);
     const { skills, sections } = resumeHighlightsOf(stored.preview, { maxSkills: 6, maxSections: 4 });
     const fromUpload = stored.source !== "builder";
-    const name = !fromUpload ? "Resume Builder resume" : controller.fileName || "Uploaded resume";
+    const name = !fromUpload ? "Prep Resume" : controller.fileName || "Uploaded resume";
     const meta = [fromUpload && controller.fileName ? formatSize(controller.fileSize) : "", `Using ${resumeSourceLabel(stored.source)}`, day ? `added ${day}` : ""].filter(Boolean).join(" · ");
     const chips = skills.length ? skills : sections;
     return <div data-resume-state="provided">
@@ -200,11 +200,11 @@ function ResumeStepView({ controller, setup }) {
             <label htmlFor={`${ids}-permission`} className="flex cursor-pointer items-start gap-2.5 text-[13px] text-slate-700 dark:text-zinc-200">
               <input id={`${ids}-permission`} type="checkbox" checked={permission} onChange={(event) => setPermission(event.target.checked)} disabled={locked}
                 className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-violet-600 focus:ring-violet-500 dark:border-zinc-600 dark:bg-zinc-800" />
-              <span>I allow ANVI to read my Resume Builder resume for this interview.</span>
+              <span>I allow ANVI to read my Prep Resume for this interview.</span>
             </label>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button type="button" onClick={() => { if (permission && !locked) { void controller.saveBuilder(); start(); } }} disabled={!permission || locked} className={primaryButton}>Use this resume</button>
-              <a href={RESUME_BUILDER_ROUTE} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[13px] font-semibold text-violet-700 hover:underline dark:text-violet-300 ${focus}`}>Open Resume Builder<ExternalLink className="h-3 w-3" aria-hidden="true" /></a>
+              <a href={RESUME_BUILDER_ROUTE} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[13px] font-semibold text-violet-700 hover:underline dark:text-violet-300 ${focus}`}>Open Prep Resume<ExternalLink className="h-3 w-3" aria-hidden="true" /></a>
             </div>
           </div>}
           {open && source === "upload" && <div className="anvi-fade-up px-3.5 pb-3.5">

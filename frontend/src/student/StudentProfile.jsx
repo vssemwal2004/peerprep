@@ -7,8 +7,9 @@ import { getLearnerLevel } from './profileBadge';
 import useStickySidebar from './profile/useStickySidebar';
 import { DailyChallengeCard } from './engagement/EngagementCards';
 import QuestsCard from './dashboard/QuestsCard';
-import BadgesCard from './profile/BadgesCard';
 import PrepScoreSummary from './profile/PrepScoreSummary';
+import BadgeShowcase from './badges/BadgeShowcase';
+import { useBadgeCollection } from './badges/useBadgeCollection';
 import AchievementCelebration from './engagement/AchievementCelebration';
 import BadgesGallery from './profile/BadgesGallery';
 import ProfileSidebar from './profile/ProfileSidebar';
@@ -25,6 +26,9 @@ import { useAuth } from '../context/AuthContext';
 import { hasStudentFeature } from './studentFeatureAccess';
 import { announcePeerNetworkChange, canUsePeers } from './peers/peerNetwork';
 import MyPrepMates from './peers/MyPrepMates';
+import SidebarRankCard from './profile/SidebarRankCard';
+import ReadinessSummaryCard from './readiness/ReadinessSummaryCard';
+import { useReadiness } from './readiness/useReadiness';
 
 const MotionDiv = motion.div;
 
@@ -614,6 +618,7 @@ export default function StudentProfile() {
       githubUrl: user?.githubUrl || '',
       portfolioUrl: user?.portfolioUrl || '',
       visibleToPeers: user?.visibleToPeers !== false,
+      sharePrepReadiness: readiness.data?.sharing === true,
     });
     setShowEditModal(true);
   };
@@ -669,6 +674,11 @@ export default function StudentProfile() {
         ...(showPeerVisibility ? { visibleToPeers: profileForm.visibleToPeers !== false } : {}),
       });
       if (showPeerVisibility) announcePeerNetworkChange({ action: 'visibility' });
+      // Prep Score / Prep Readiness sharing with Prep Mates has its own endpoint.
+      if (showPeerVisibility && canQuestions && (profileForm.sharePrepReadiness === true) !== (readiness.data?.sharing === true)) {
+        await api.setPrepReadinessSharing(profileForm.sharePrepReadiness === true);
+        readiness.reload();
+      }
       const updatedUser = response?.user || response;
       if (!isMountedRef.current) return;
       setUser((prev) => ({
@@ -686,6 +696,7 @@ export default function StudentProfile() {
         githubUrl: updatedUser?.githubUrl || '',
         portfolioUrl: updatedUser?.portfolioUrl || '',
         visibleToPeers: updatedUser?.visibleToPeers !== false,
+        sharePrepReadiness: profileForm.sharePrepReadiness === true,
       });
       setSuccess('Profile details updated successfully.');
       setTimeout(() => {
@@ -731,12 +742,14 @@ export default function StudentProfile() {
     return getLearnerLevel({
       solvedCount: solved,
       streak,
+      bestStreak: Number(activityStats?.bestStreak || 0),
       assessmentScore,
       interviewScore,
     });
   }, [
     engagement.data?.level,
     activityStats?.currentStreak,
+    activityStats?.bestStreak,
     analysisAssessments?.avgScore,
     analysisInterviews?.avgScore,
     problemStatusSummary.loaded,
@@ -907,6 +920,12 @@ export default function StudentProfile() {
 
   // Only server-issued, allocation-scoped badge definitions may enter the new gallery.
   const awards = engagement.data?.awards || { awards: [], earnedCount: 0, nextAward: null };
+  // Every badge family together (achievements + lifetime milestones + monthly) for the shelf,
+  // the Badges card and the gallery.
+  const badgeCollection = useBadgeCollection({ awards: engagement.data?.awards?.awards, milestones: canQuestions });
+  // Prep Readiness summary (SBC/PBC) beside the Prep Score.
+  const readinessFetcher = useCallback(() => api.getPrepReadinessSummary(), []);
+  const readiness = useReadiness(readinessFetcher, [], { enabled: canQuestions });
 
   const closeBadgesGallery = useCallback(() => setBadgesGallery(null), []);
 
@@ -992,13 +1011,22 @@ export default function StudentProfile() {
               socialLinks={socialLinks}
               onChangePhoto={openPhotoModal}
               onEditProfile={openEditModal}
-              prepMates={showPeerVisibility ? <MyPrepMates /> : null}
+              prepMates={showPeerVisibility ? <MyPrepMates compact /> : null}
+              rankCard={canRanking ? <SidebarRankCard ranking={ranking} loading={loadingRanking && !ranking} /> : null}
+              badgeShelf={canEngage || canQuestions ? <BadgeShowcase collection={badgeCollection} onOpen={setBadgesGallery} loading={engagement.loading || badgeCollection.loading} /> : null}
             />
           </aside>
 
           {/* Summary and Coding keep their existing design. Activity is immediately below them. */}
           <main className="min-w-0 space-y-4">
-            {canRanking && <div data-guide="pf-score"><PrepScoreSummary ranking={ranking} loading={loadingRanking && !ranking} /></div>}
+            {/* Prep Score (points) and Prep Readiness (SBC/PBC targets): one row, equal height; either alone spans it. */}
+            {(canRanking || canQuestions) && (
+              <div className="grid items-stretch gap-4 lg:grid-cols-2 [&>*:only-child]:lg:col-span-2">
+                {canRanking && <div data-guide="pf-score" className="h-full"><PrepScoreSummary ranking={ranking} loading={loadingRanking && !ranking} /></div>}
+                {canQuestions && <ReadinessSummaryCard guide="pf-readiness" summary={readiness.data} loading={readiness.loading} error={readiness.error} onRetry={readiness.reload}
+                  sharing={showPeerVisibility ? readiness.data?.sharing === true : undefined} />}
+              </div>
+            )}
 
             <div className="grid gap-4 xl:grid-cols-2">
               {canQuestions && <div data-guide="pf-summary"><StudentSummary
@@ -1025,26 +1053,13 @@ export default function StudentProfile() {
               activityStats={engagement.data?.activity?.stats || (canQuestions ? activityStats : null)} loading={engagement.loading || loadingActivity}
               breakdown={engagement.data?.activity?.breakdownByDate} domains={engagement.data?.domains} verified={engagement.data?.version === 2} /></div>}
 
-            <div className="grid gap-4 xl:grid-cols-2">
-              {canEngage && <div data-guide="pf-badges"><BadgesCard
-                className="h-full"
-                level={performanceTitle}
-                awards={awards}
-                loading={engagement.loading}
-                error={engagement.error}
-                onRetry={loadRanking}
-                learnerProgress={engagement.data?.learnerProgress || learnerProgress}
-                onOpenGallery={setBadgesGallery}
-              /></div>}
-              {canAnalysis && (canAssessments || canInterviews || canEvents || canLearning) && <div data-guide="pf-progress"><PeerPrepProgress
-                className="h-full"
-                assessments={assessments}
-                interviews={interviews}
-                learning={learning}
-                content={learningContent}
-                visible={{ assessments: canAssessments, interviews: canInterviews || canEvents, learning: canLearning }}
-              /></div>}
-            </div>
+            {canAnalysis && (canAssessments || canInterviews || canEvents || canLearning) && <div data-guide="pf-progress"><PeerPrepProgress
+              assessments={assessments}
+              interviews={interviews}
+              learning={learning}
+              content={learningContent}
+              visible={{ assessments: canAssessments, interviews: canInterviews || canEvents, learning: canLearning }}
+            /></div>}
 
             {canEngage && <div className="grid items-start gap-4 xl:grid-cols-2" data-guide="pf-daily">
               <DailyChallengeCard section={engagement} onRetry={loadRanking} autoRefresh={false} />
@@ -1091,6 +1106,7 @@ export default function StudentProfile() {
         onClose={closeBadgesGallery}
         level={performanceTitle}
         awards={awards}
+        collection={badgeCollection}
         learnerProgress={engagement.data?.learnerProgress || learnerProgress}
         levelLadder={engagement.data?.ladder}
       />

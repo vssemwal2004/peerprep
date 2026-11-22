@@ -39,6 +39,16 @@ test('resume normalization sanitizes section order, custom ids, links, and bulle
   assert.equal(result.hiddenSections.includes('education'), true);
 });
 
+test('every Prep Resume template id is accepted; unknown ids fall back without touching content', async () => {
+  const { RESUME_TEMPLATE_IDS, DEFAULT_RESUME_TEMPLATE } = await import('../src/constants/resumeTemplates.js');
+  assert.ok(RESUME_TEMPLATE_IDS.length >= 30);
+  for (const id of RESUME_TEMPLATE_IDS) assert.equal(normalizeResume({ template: id }).template, id);
+  const fallback = normalizeResume({ template: 'not-a-template', basics: { name: 'Asha' }, projects: [{ title: 'Kept' }] });
+  assert.equal(fallback.template, DEFAULT_RESUME_TEMPLATE);
+  assert.equal(fallback.basics.name, 'Asha');
+  assert.equal(fallback.projects[0].title, 'Kept');
+});
+
 test('resume normalization defaults unknown custom layouts for older and malformed documents', () => {
   const result = normalizeResume({
     customSections: [

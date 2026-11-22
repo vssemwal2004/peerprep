@@ -10,6 +10,9 @@
   html {
     scroll-behavior: smooth;
   }
+  /* App frame colour: the sidebar, the page header and the curved corners (ShellCorners). */
+  :root { --shell-frame: #ffffff; }
+  .dark { --shell-frame: #202020; }
 
   /* Hide scrollbars globally while keeping scrolling functional */
   * {

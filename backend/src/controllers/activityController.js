@@ -8,6 +8,7 @@ import Feedback from '../models/Feedback.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import { publicCodingProblemStages, getStudentCodingSummary, getStudentActivitySummary } from '../services/studentDashboardService.js';
 import { HttpError } from '../utils/errors.js';
+import { prepStreakFor } from '../services/prepStreak.js';
 
 // Format seconds into a human-readable watch time string (e.g. "3m 45s", "1h 02m")
 function formatWatchTime(seconds) {
@@ -157,9 +158,11 @@ export async function getStudentActivity(req, res) {
   const startDate = new Date(now.getTime() - 364 * 86400000);
   startDate.setUTCHours(0, 0, 0, 0);
   try {
-    const [scope, activity] = await Promise.all([
+    const [scope, activity, prep] = await Promise.all([
       computeLearningScopeForStudent(user),
       getStudentActivitySummary(user, now),
+      // The streak students see everywhere is the Prep Streak (daily challenges in a row).
+      prepStreakFor(user._id, now),
     ]);
     const videoWatchMatch = {
       studentId: user._id,
@@ -179,8 +182,9 @@ export async function getStudentActivity(req, res) {
       stats: {
         totalActiveDays: activity.streak.activeDays,
         totalDaysInRange: 365,
-        currentStreak: activity.streak.current,
-        bestStreak: activity.streak.best,
+        currentStreak: prep.current,
+        bestStreak: prep.best,
+        streakTodayDone: prep.todayDone,
         totalSubjects: scope.totalCourses,
         totalVideosWatched: videosWatched[0]?.count || 0,
         totalVideosTotal: scope.totalVideosTotal,

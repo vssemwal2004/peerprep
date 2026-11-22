@@ -13,13 +13,28 @@ import { PlatformAudit, PlatformCoinMovement, PlatformCoinPricing, PlatformCoinW
 import { PLATFORM_WALLET_SCOPE } from './coins.js';
 import { currentTenant } from './tenantContext.js';
 
-export const EARN_KINDS = Object.freeze(['login', 'solve', 'badge']);
+// 'challenge' = daily challenge completed, 'sheet' = Quick Prep sheet completed, 'milestone' =
+// lifetime badge. 'solve' is kept for the ledger history only: solving a question no longer pays
+// coins (2026-11-21), the daily challenge and sheets do.
+// 'level' = an elite learner level reached (levels 8–12), paid once per level.
+export const EARN_KINDS = Object.freeze(['login', 'solve', 'badge', 'challenge', 'sheet', 'milestone', 'level']);
 export const BADGE_LEVELS = 10;
+export const LEARNER_LEVELS = 12;
 // Badge levels 1-2 are an honour only; coins start at level 3 and stay modest, so Prep Coins remain
 // precious (2026-11-19). Master Admin can change every amount in Prep Coin pricing.
-export const DEFAULT_EARNING = Object.freeze({ login: 1, solve: 2, badgeLevels: Object.freeze([0, 0, 1, 1, 2, 3, 4, 5, 7, 10]) });
+export const MILESTONE_TIERS = 5;
+export const DEFAULT_EARNING = Object.freeze({
+  // Daily challenge: 2 coins (2026-11-22, was 5). Solving a problem pays no coins.
+  login: 1, challenge: 2, sheet: 5,
+  badgeLevels: Object.freeze([0, 0, 1, 1, 2, 3, 4, 5, 7, 10]),
+  // Lifetime milestone badges by tier (Bronze .. Legend).
+  milestoneTiers: Object.freeze([2, 3, 5, 8, 12]),
+  // Learner levels 1–12; only the elite levels (8–12) pay.
+  levelCoins: Object.freeze([0, 0, 0, 0, 0, 0, 0, 10, 12, 15, 20, 25]),
+});
 // The previous defaults: a saved configuration still equal to them follows the new defaults.
 const PREVIOUS_BADGE_DEFAULTS = Object.freeze([1, 2, 3, 4, 6, 8, 10, 13, 16, 20]);
+const PREVIOUS_CHALLENGE_DEFAULT = 5;
 const MAX_EARN = 1_000;
 const CACHE_MS = 15_000;
 const EARNING_DOC = 'earning';
@@ -39,9 +54,20 @@ export function normalizeEarning(value = {}) {
   if (levels.length !== BADGE_LEVELS) throw new HttpError(400, `Set coins for all ${BADGE_LEVELS} badge levels.`);
   const badgeLevels = levels.map((amount, index) => whole(amount, `Badge level ${index + 1} coins`));
   if (badgeLevels.some((amount, index) => index && amount < badgeLevels[index - 1])) throw new HttpError(400, 'Harder badge levels cannot pay fewer coins than easier ones.');
+  const tiers = Array.isArray(input.milestoneTiers) ? input.milestoneTiers : DEFAULT_EARNING.milestoneTiers;
+  if (tiers.length !== MILESTONE_TIERS) throw new HttpError(400, `Set coins for all ${MILESTONE_TIERS} lifetime badge tiers.`);
+  const milestoneTiers = tiers.map((amount, index) => whole(amount, `Lifetime badge tier ${index + 1} coins`));
+  if (milestoneTiers.some((amount, index) => index && amount < milestoneTiers[index - 1])) throw new HttpError(400, 'Higher lifetime badge tiers cannot pay fewer coins.');
+  const levelInput = Array.isArray(input.levelCoins) ? input.levelCoins : DEFAULT_EARNING.levelCoins;
+  if (levelInput.length !== LEARNER_LEVELS) throw new HttpError(400, `Set coins for all ${LEARNER_LEVELS} learner levels.`);
+  const levelCoins = levelInput.map((amount, index) => whole(amount, `Level ${index + 1} coins`));
+  if (levelCoins.some((amount, index) => index && amount < levelCoins[index - 1])) throw new HttpError(400, 'Higher learner levels cannot pay fewer coins.');
   return {
+    milestoneTiers,
+    levelCoins,
     login: whole(input.login ?? DEFAULT_EARNING.login, 'Daily login coins'),
-    solve: whole(input.solve ?? DEFAULT_EARNING.solve, 'Coins per solve'),
+    challenge: whole(input.challenge ?? DEFAULT_EARNING.challenge, 'Daily challenge coins'),
+    sheet: whole(input.sheet ?? DEFAULT_EARNING.sheet, 'Sheet completion coins'),
     badgeLevels,
   };
 }
@@ -56,6 +82,8 @@ export async function getEarningConfig({ fresh = false } = {}) {
   const stored = { ...(row?.earning || {}) };
   // A configuration saved with the untouched old badge amounts follows the new defaults.
   if (Array.isArray(stored.badgeLevels) && stored.badgeLevels.join(',') === PREVIOUS_BADGE_DEFAULTS.join(',')) delete stored.badgeLevels;
+  // Likewise a saved daily challenge amount still at the old default (5) follows the new one (2).
+  if (Number(stored.challenge) === PREVIOUS_CHALLENGE_DEFAULT) delete stored.challenge;
   cache = { version: row?.version || 0, earning: normalizeEarning(stored), updatedAt: row?.updatedAt || null };
   cachedAt = Date.now();
   return cache;

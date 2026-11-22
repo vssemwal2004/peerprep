@@ -67,17 +67,16 @@ function TodayRows({ daily, plan, now }) {
     </div>;
   }
   return <div className="mt-3 space-y-2 border-t border-[#f0f1f4] pt-3 dark:border-white/[0.06]">
-    <Link to={problem.href} className={`group flex items-center gap-3 rounded-xl ${focusRing}`}>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[11px] text-slate-400 dark:text-zinc-500">{personal ? 'Your daily challenge' : 'Problem of the day'}{resetsIn ? ` · resets in ${resetsIn}` : ''}</span>
-        <span className="flex items-center gap-2">
-          <span className="truncate text-[13.5px] font-semibold text-slate-900 group-hover:text-sky-700 dark:text-zinc-50 dark:group-hover:text-sky-300" title={problem.title}>{problem.title}</span>
-          {difficulty && <span className={`shrink-0 rounded-full px-1.5 py-px text-[10.5px] font-semibold ring-1 ring-inset ${difficulty.pill}`}>{difficulty.short}</span>}
-        </span>
-      </span>
+    {/* Title gets the full rail width (two lines at most); difficulty and the action sit on the row below. */}
+    <Link to={problem.href} className={`group block rounded-xl ${focusRing}`}>
+      <span className="block text-[11px] text-slate-400 dark:text-zinc-500">{personal ? 'Your daily challenge' : 'Problem of the day'}{resetsIn ? ` · resets in ${resetsIn}` : ''}</span>
+      <span className="mt-0.5 line-clamp-2 text-[13.5px] font-semibold leading-snug text-slate-900 group-hover:text-sky-700 dark:text-zinc-50 dark:group-hover:text-sky-300" title={problem.title}>{problem.title}</span>
+      <span className="mt-2 flex items-center justify-between gap-2">
+        {difficulty ? <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${difficulty.pill}`}>{difficulty.short}</span> : <span />}
       {problem.done
         ? <span className="inline-flex shrink-0 items-center gap-1 rounded-[10px] bg-emerald-50 px-2.5 py-1.5 text-[12px] font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><Check className="h-3.5 w-3.5" aria-hidden="true" />Done</span>
         : <span className="inline-flex shrink-0 items-center gap-1 rounded-[10px] bg-sky-600 px-2.5 py-1.5 text-[12px] font-medium text-white transition-colors group-hover:bg-sky-700">Solve<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></span>}
+      </span>
     </Link>
   </div>;
 }

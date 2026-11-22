@@ -89,12 +89,14 @@ test('publishing a policy rebuilds stored scores, then serves the new version; d
   const before = await StudentPrepScore.findOne({ studentId: easySolver._id }).lean();
 
   await User.deleteOne({ _id: gone._id });
-  const config = normalizePrepScoreConfig({ modules: { coding: { points: { Easy: 1, Medium: 3.5, Hard: 9 } } } });
+  const config = normalizePrepScoreConfig({ points: { solve: { Easy: 2, Medium: 5, Hard: 20 } }, modules: { coding: { points: { Easy: 1, Medium: 3.5, Hard: 9 } } } });
   await savePrepScorePolicyDraft(config, admin, 'Reward hard work more');
   const impact = await previewPolicyImpact(config);
   assert.equal(impact.studentsCompared, 2);
-  // One Hard solve is 1^0.4 × 9^1.5 = 27 in Prep Coding and Prep Score.
-  assert.equal(impact.top[0].after.score, 27);
+  // Prep Score (v6 points): one Hard solve = 20 activity points, on the growth curve 1.3 × 20^0.4.
+  // The Prep Coding activity metric keeps the formula: 1^0.4 × 9^1.5 = 27.
+  const hardScore = Math.round(1.3 * 20 ** 0.4 * 100) / 100;
+  assert.equal(impact.top[0].after.score, hardScore);
   assert.equal(await StudentPrepScore.countDocuments({ policyVersion: { $ne: before.policyVersion } }), 0, 'a preview never writes scores');
 
   const active = await publishPrepScorePolicy(admin, 'Reward hard work more');
@@ -105,7 +107,7 @@ test('publishing a policy rebuilds stored scores, then serves the new version; d
   assert.equal(await StudentPrepScore.countDocuments({ studentId: gone._id }), 0, 'a deleted student is no longer ranked');
   const rank = await getStudentUniversityRanking(hardSolver);
   assert.equal(rank.prepScore.features.coding.score, 27);
-  assert.equal(rank.score, 27);
+  assert.equal(rank.score, hardScore);
   assert.equal(rank.policyVersion, active.version);
   assert.equal((await syncPrepScores()).status, 'current', 'nothing left to do');
 });

@@ -4,9 +4,10 @@ import { useToast } from '../../components/CustomToast';
 import { ACTION_TOASTS, DECISION_TONES, PEER_TERMS, errorMessage, mateButtonState, runPeerAction } from './peerNetwork';
 
 const base = 'inline-flex items-center justify-center gap-1.5 rounded-xl font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-[#1a1a1a]';
-const sizes = { sm: 'h-8 px-3 text-xs', md: 'h-10 px-4 text-sm' };
+// 'card': the profile sidebar action — same height and corners as the Edit Profile button.
+const sizes = { sm: 'h-8 px-3 text-xs', md: 'h-10 px-4 text-sm', card: 'h-9 !rounded-lg px-3.5 text-[13px]' };
 const tones = {
-  primary: 'bg-sky-600 text-white shadow-sm hover:bg-sky-700',
+  primary: 'bg-gradient-to-b from-sky-500 to-sky-600 text-white shadow-[0_6px_14px_-8px_rgba(2,132,199,0.9)] ring-1 ring-inset ring-sky-600/20 hover:from-sky-600 hover:to-sky-700',
   success: 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:border-rose-900 dark:hover:bg-rose-950/40 dark:hover:text-rose-300',
   muted: 'border border-slate-200 bg-slate-50 text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-400 dark:hover:border-rose-900 dark:hover:text-rose-300',
   danger: 'border border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300',

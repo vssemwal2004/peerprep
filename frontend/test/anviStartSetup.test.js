@@ -127,7 +127,7 @@ test("language, terms, resume and start body are read from the list item in one 
 
 test("every resume and start error code has student-friendly copy", () => {
   const copy = (code, status) => setupLib.resumeErrorOf(apiError(code, status)).message;
-  assert.match(copy("RESUME_BUILDER_EMPTY", 404), /Resume Builder resume is empty/);
+  assert.match(copy("RESUME_BUILDER_EMPTY", 404), /Prep Resume is empty/);
   assert.equal(setupLib.resumeErrorOf(apiError("RESUME_BUILDER_EMPTY", 404)).builderLink, true);
   assert.match(copy("RESUME_DOCX_UNSUPPORTED", 415), /Save your resume as a PDF/);
   assert.match(copy("RESUME_TYPE_UNSUPPORTED", 415), /PDF or a plain-text/);
@@ -137,7 +137,7 @@ test("every resume and start error code has student-friendly copy", () => {
   assert.match(copy("RATE_LIMITED", 429), /Wait a few minutes/);
   assert.match(copy("AI_UNAVAILABLE", 503), /try again in a minute/);
   assert.match(copy("RESUME_SOURCE_DISABLED", 403), /Use the other option/);
-  assert.match(copy("RESUME_SOURCE_REQUIRED"), /Choose your Resume Builder resume or upload a file/);
+  assert.match(copy("RESUME_SOURCE_REQUIRED"), /Choose your Prep Resume or upload a file/);
   assert.match(copy("RESUME_FILE_REQUIRED"), /Choose a PDF or \.txt file/);
   assert.match(copy("RESUME_NOT_USED", 409), /doesn't use a resume/);
   assert.match(setupLib.resumeErrorOf({ message: "x", response: { status: 0 } }).message, /did not finish/);
@@ -224,7 +224,7 @@ test("flow: a required resume uploads in the background while ANVI 'reads' it; N
   assert.match(step().textContent, /Required/);
   assert.match(step().textContent, /Upload a file/);
   assert.match(step().querySelector("[data-resume-dropzone]").textContent, /Drag & drop or browse.*PDF\/TXT · up to 5 MB/);
-  assert.equal(step().querySelector('[data-resume-source="builder"]'), null, "the Resume Builder is not offered when the interview does not allow it");
+  assert.equal(step().querySelector('[data-resume-source="builder"]'), null, "the Prep Resume is not offered when the interview does not allow it");
   assert.match(step().textContent, /Only the text is used, personal details are removed, and it's deleted after your interview\./);
   assert.equal(nextButton().disabled, true);
   assert.equal(document.getElementById("anvi-phase-hint").textContent, "Add your resume to continue.");
@@ -311,7 +311,7 @@ test("flow: a server refusal of the upload is explained in plain words", async (
   }
 });
 
-test("flow: the Resume Builder needs explicit permission, links to the builder when empty, and an optional resume never blocks", async () => {
+test("flow: the Prep Resume needs explicit permission, links to the builder when empty, and an optional resume never blocks", async () => {
   const saves = [];
   let empty = true;
   api.saveAnviBuilderResume = async (target) => {
@@ -326,19 +326,19 @@ test("flow: the Resume Builder needs explicit permission, links to the builder w
   await click(step().querySelector('[data-resume-source="builder"] [role="radio"]'));
   const use = buttonNamed(/Use this resume/, step());
   assert.equal(use.disabled, true, "permission first");
-  await click(checkboxFor(/I allow ANVI to read my Resume Builder resume/));
+  await click(checkboxFor(/I allow ANVI to read my Prep Resume/));
   await click(buttonNamed(/Use this resume/, step()));
   await tick();
   const alert = step().querySelector('[role="alert"]');
-  assert.match(alert.textContent, /Resume Builder resume is empty/);
-  assert.equal(alert.querySelector("a").getAttribute("href"), "/student/resume");
+  assert.match(alert.textContent, /Prep Resume is empty/);
+  assert.equal(alert.querySelector("a").getAttribute("href"), "/student/resume/create");
   empty = false;
   await click(step().querySelector('[data-resume-source="builder"] [role="radio"]'));
-  await click(checkboxFor(/I allow ANVI to read my Resume Builder resume/));
+  await click(checkboxFor(/I allow ANVI to read my Prep Resume/));
   await click(buttonNamed(/Use this resume/, step()));
   await tick();
   assert.deepEqual(saves, [{ kind: "practice", id: "int-7" }, { kind: "practice", id: "int-7" }]);
-  assert.match(step().textContent, /Using your Resume Builder resume/);
+  assert.match(step().textContent, /Using your Prep Resume/);
   assert.match(step().textContent, /Final-year CSE student\./);
 });
 

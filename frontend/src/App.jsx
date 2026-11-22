@@ -4,7 +4,7 @@ import { lazy as reactLazy, Suspense, useEffect, useCallback, useLayoutEffect, u
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { UniversityPolicyProvider } from './platform/UniversityPolicyContext';
-import { canAdjustPrepScore, canManageInterviewCompanies, isUniversityDeployment, LEGACY_PREP_COIN_PRICING_PATH, PREP_COIN_PRICING_PATH, PREP_SCORE_ADJUSTMENT_PATH, QUICKPREP_ANALYSIS_PATH, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
+import { canAdjustPrepScore, canManageInterviewCompanies, isUniversityDeployment, LEGACY_PREP_COIN_PRICING_PATH, PREP_COIN_PRICING_PATH, PREP_SCORE_ADJUSTMENT_PATH, PREP_TOPIC_PRIORITY_PATH, QUICKPREP_ANALYSIS_PATH, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
 import { ToastProvider } from './components/CustomToast';
 import AdminProtectedRoute from './admin/AdminProtectedRoute';
 import CoordinatorProtectedRoute from './coordinator/CoordinatorProtectedRoute';
@@ -23,6 +23,7 @@ import { STUDENT_SIDEBAR_PANEL_WIDTH, STUDENT_SIDEBAR_RAIL_WIDTH } from './compo
 const AdminLayout = lazy(() => import('./admin/AdminLayout'));
 const CoordinatorLayout = lazy(() => import('./coordinator/CoordinatorLayout'));
 const GlobalSidebar = lazy(() => import('./components/GlobalSidebar'));
+const ShellCorners = lazy(() => import('./components/ShellCorners'));
 const StudentDashboardHeader = lazy(() => import('./components/StudentDashboardHeader'));
 const StudentRewardsLayer = lazy(() => import('./student/rewards/StudentRewardsLayer'));
 const AnnouncementPopup = lazy(() => import('./student/AnnouncementPopup'));
@@ -65,6 +66,8 @@ const AssessmentAttempt = lazy(() => import("./student/AssessmentAttempt"));
 const AssessmentFeedbackPage = lazy(() => import("./student/AssessmentFeedbackPage"));
 const StudentAnalytics = lazy(() => import("./student/StudentAnalytics"));
 const StudentResume = lazy(() => import("./student/StudentResume"));
+const PrepResumeHome = lazy(() => import("./student/resume/PrepResumeHome"));
+const ResumeReviewPage = lazy(() => import("./student/resume/ResumeReviewPage"));
 const PeerNetworkPage = lazy(() => import("./student/peers/PeerNetworkPage"));
 const PrepMockPage = lazy(() => import("./student/prepMock/PrepMockPage"));
 const MockCompaniesPage = lazy(() => import("./admin/prepMock/MockCompaniesPage"));
@@ -82,6 +85,7 @@ const SharedAssessments = lazy(() => import('./admin/universities/SharedAssessme
 const UniversityDefaults = lazy(() => import('./admin/universities/UniversityDefaults'));
 const UniversityActivity = lazy(() => import('./admin/universities/UniversityActivity'));
 const PrepScoreAdjustment = lazy(() => import('./admin/PrepScoreAdjustment'));
+const PrepTopicPriority = lazy(() => import('./admin/PrepTopicPriority'));
 const WalletPage = lazy(() => import('./wallet/WalletPage'));
 const PrepCoinsOverview = lazy(() => import('./admin/prepCoins/PrepCoinsOverview'));
 const IssueCoins = lazy(() => import('./admin/prepCoins/IssueCoins'));
@@ -367,7 +371,7 @@ function AppContent() {
   const isStudentDashboard = (location.pathname.startsWith("/student/") || isStudentProblems || isAssessmentModuleAlias) && !isStudentLogin && !isFeedbackForm && !isChangePassword;
   const isAdmin = location.pathname === '/admin' || location.pathname.startsWith('/admin/');
   const isAssessmentPreview = location.pathname.startsWith("/admin/assessment/preview/");
-  const isResumePage = location.pathname === "/student/resume" || /\/(admin|coordinator)\/students\/[^/]+\/resume$/.test(location.pathname);
+  const isResumePage = /^\/student\/resume(\/(create|review))?$/.test(location.pathname) || /\/(admin|coordinator)\/students\/[^/]+\/resume$/.test(location.pathname);
   const isCoordinator = location.pathname.startsWith("/coordinator");
   const isStudentShell = user?.role === 'student'
     && (location.pathname.startsWith('/student/') || isStudentProblems || isAssessmentModuleAlias)
@@ -417,6 +421,8 @@ function AppContent() {
             onExpand={() => setIsStudentSidebarHovered(true)}
             onCollapse={() => setIsStudentSidebarHovered(false)}
           />
+          {/* Curved corners where the page meets the frame (under the header when there is one). */}
+          <ShellCorners top={showStudentHeader || /^\/student\/resume\/review\/?$/.test(location.pathname) ? '4rem' : '0px'} />
         </Suspense>
       )}
      
@@ -464,7 +470,9 @@ function AppContent() {
         <Route path="/student/challenges" element={<Navigate to="/student/dashboard" replace />} />
         <Route path="/student/quests" element={<Navigate to="/student/quickprep" replace />} />
         <Route path="/student/quests/:slug" element={<LegacyQuickPrepRedirect />} />
-        <Route path="/student/resume" element={<StudentProtectedRoute><StudentResume /></StudentProtectedRoute>} />
+        <Route path="/student/resume" element={<StudentProtectedRoute><PrepResumeHome /></StudentProtectedRoute>} />
+        <Route path="/student/resume/create" element={<StudentProtectedRoute><StudentResume /></StudentProtectedRoute>} />
+        <Route path="/student/resume/review" element={<StudentProtectedRoute><ResumeReviewPage /></StudentProtectedRoute>} />
         <Route path="/student/dashboard" element={<StudentProtectedRoute><StudentDashboard /></StudentProtectedRoute>} />
         <Route path="/student/interview" element={<StudentProtectedRoute><StudentInterview /></StudentProtectedRoute>} />
         <Route path="/student/ai-interviews" element={<StudentProtectedRoute><StudentAIInterview /></StudentProtectedRoute>} />
@@ -551,6 +559,7 @@ function AppContent() {
         <Route path="/admin/universities/:universityId" element={<AdminShell><UniversityDetail /></AdminShell>} />
         <Route path={PREP_SCORE_ADJUSTMENT_PATH} element={canAdjustPrepScore ? <AdminShell><PrepScoreAdjustment /></AdminShell> : <Navigate to="/admin/dashboard" replace />} />
         <Route path={PREP_COIN_PRICING_PATH} element={canAdjustPrepScore ? <AdminShell><PrepCoinPricing /></AdminShell> : <Navigate to="/admin/dashboard" replace />} />
+        <Route path={PREP_TOPIC_PRIORITY_PATH} element={canAdjustPrepScore ? <AdminShell><PrepTopicPriority /></AdminShell> : <Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin/learning/:semester/:subject/:teacherId" element={<AdminShell><AdminLearningDetail /></AdminShell>} />
         <Route path="/admin/activity" element={<AdminShell>{isUniversityDeployment ? <AdminActivity /> : <UniversityActivity />}</AdminShell>} />
         <Route path="/admin/analysis" element={<AdminShell><PrepAnalysisPage /></AdminShell>} />

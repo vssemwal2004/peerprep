@@ -32,8 +32,8 @@ import { problemUsedInAssessment, serializeProblem, studentFailedCase } from '..
 import { interviewReportOptions, interviewReportSummaries, reporterKey, saveInterviewReport } from './interviewQuestionReports.js';
 import { questionQuickPreps } from '../services/questService.js';
 import { sanitizeEffort } from '../services/solveEffort.js';
-import { quotaForProblem, recordAcceptedSolve } from '../services/prepScore/topicQuota.js';
-import { rewardAcceptedSolve } from '../services/solveRewards.js';
+import { topicStatusForProblem } from '../services/prepScore/topicStatus.js';
+import { afterPracticeSubmit } from '../services/practiceRewards.js';
 import { matchesSerialSearch, parseSerialSearch, serialSearchClause } from '../utils/problemSerial.js';
 
 const router = Router();
@@ -452,9 +452,9 @@ router.get('/:source/:id/prep-score', asyncRoute(async (req, res) => {
   } else if (!await Problem.exists({ _id: id, status: { $in: ['published', 'Active', 'active'] }, visibility: { $ne: 'private' } })) {
     throw new HttpError(404, 'Problem not found');
   }
-  const quota = await quotaForProblem(req.user._id, source, id);
-  if (!quota) throw new HttpError(404, 'Problem not found');
-  res.json(quota);
+  const status = await topicStatusForProblem(req.user, source, id);
+  if (!status) throw new HttpError(404, 'Problem not found');
+  res.json(status);
 }));
 
 router.get('/shared/:id/problem', asyncRoute(async (req, res) => {
@@ -675,16 +675,15 @@ router.post('/:source/:id/attempts', compilerExecutionLimiter, asyncRoute(async 
       QuestionPracticeAttempt.countDocuments({ source: 'shared', questionId: question._id, questionType: 'coding' }),
       QuestionPracticeAttempt.countDocuments({ source: 'shared', questionId: question._id, questionType: 'coding', result: 'correct' }),
     ]);
-    // Daily topic quota: decide (once) whether this first solve counts toward the Prep Score.
-    const prepScore = sharedCodingSolve
-      ? await recordAcceptedSolve({ studentId: req.user._id, source: 'shared', problemId: question._id, alreadySolved })
-        .catch((error) => { console.error('[questionPractice] Prep Score quota error:', error.message); return null; })
-      : null;
-    const coins = sharedCodingSolve
-      ? await rewardAcceptedSolve({ userId: req.user._id, source: 'shared', problemId: question._id, title: question.title || question.questionData?.problemDataSnapshot?.title, outcome: prepScore })
-      : null;
+    // Prep Score points / losses, daily challenge, badges (services/practiceRewards.js). Compile
+    // errors never cost points.
+    const judged = graded.result === 'correct' || (graded.result === 'incorrect' && graded.failureStatus !== 'CE');
+    const rewards = judged
+      ? await afterPracticeSubmit({ user: req.user, source: 'shared', problemId: question._id, accepted: sharedCodingSolve, alreadySolved })
+      : { prepScore: null, challenge: null };
     res.status(201).json({ ...graded, totalSubmissions, acceptedSubmissions,
-      acceptanceRate: Number((acceptedSubmissions * 100 / totalSubmissions).toFixed(1)), ...(prepScore ? { prepScore } : {}), ...(coins ? { coins } : {}) });
+      acceptanceRate: Number((acceptedSubmissions * 100 / totalSubmissions).toFixed(1)),
+      ...(rewards.prepScore ? { prepScore: rewards.prepScore } : {}), ...(rewards.challenge ? { challenge: rewards.challenge } : {}), ...(rewards.readiness ? { readiness: rewards.readiness } : {}) });
     return;
   }
   res.status(201).json(graded);

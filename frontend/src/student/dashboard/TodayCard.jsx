@@ -80,19 +80,20 @@ function StreakFlame({ state }) {
 
 function StreakHeadline({ week, streak, loading }) {
   const current = numeric(streak?.current);
-  const activeToday = week[week.length - 1]?.count > 0;
+  // The Prep Streak counts days with the daily challenge done (streak.todayDone from the server).
+  const activeToday = streak?.kind === 'prep' ? Boolean(streak.todayDone) : week[week.length - 1]?.count > 0;
   const activeDays = week.filter((day) => day.count > 0).length;
   const lit = streak ? current > 0 : activeDays > 0;
   const flame = loading || !lit ? 'cold' : activeToday ? 'burning' : 'waiting';
   const note = !streak ? 'days active this week'
-    : current === 0 ? 'Practise today to start one'
-      : `${activeToday ? 'Done for today' : 'Keep it alive today'} · Best ${numeric(streak.best)}`;
+    : current === 0 ? 'Finish today’s daily challenge to start one'
+      : `${activeToday ? 'Challenge done today' : 'Finish today’s challenge to keep it'} · Best ${numeric(streak.best)}`;
   return <div className="flex shrink-0 items-center gap-3.5">
     <StreakFlame state={flame} />
     <div>
     <p className="flex items-baseline gap-2">
       <span className="text-[44px] font-semibold leading-none tracking-[-0.045em] tabular-nums text-slate-950 dark:text-zinc-50">{loading ? '–' : streak ? current : activeDays}</span>
-      <span className="text-[14px] font-medium text-slate-600 dark:text-zinc-300">{streak ? 'day streak' : 'of 7'}</span>
+      <span className="text-[14px] font-medium text-slate-600 dark:text-zinc-300">{streak ? `day Prep Streak` : 'of 7'}</span>
     </p>
     {!loading && <p className={`mt-2 text-[12.5px] ${streak && current > 0 && !activeToday ? 'font-medium text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-zinc-400'}`}>{note}</p>}
     </div>

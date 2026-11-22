@@ -34,6 +34,7 @@ import { accountLimit, withAccountCreationLocks } from './accountLimits.js';
 import { buildOverview, overviewRange, universitySnapshot } from '../services/overviewInsights.js';
 import { rangeEcho } from '../utils/dateRange.js';
 import { platformCentralSummary } from './platformInsights.js';
+import { masterActivityFeed } from './masterActivity.js';
 
 const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
@@ -269,43 +270,7 @@ router.get('/admin/insights', masterOnly, asyncRoute(async (req, res) => {
 // university keeps its own admin/coordinator Activity collection in its tenant
 // database, and those records are never joined into this feed.
 router.get('/admin/audit', masterOnly, asyncRoute(async (req, res) => {
-  const windowStart = new Date();
-  windowStart.setUTCDate(windowStart.getUTCDate() - 9);
-  windowStart.setUTCHours(0, 0, 0, 0);
-  const baseFilter = { createdAt: { $gte: windowStart } };
-  const action = String(req.query.action || '').trim();
-  if (action) {
-    if (!/^[a-z_]+(\.[a-z_]*)?$/.test(action)) throw new HttpError(400, 'Invalid action filter');
-    baseFilter.action = { $regex: `^${action.replace('.', '\\.')}` };
-  }
-  const filter = { ...baseFilter, createdAt: { ...baseFilter.createdAt } };
-  if (req.query.before) {
-    const before = new Date(String(req.query.before));
-    if (Number.isNaN(before.getTime())) throw new HttpError(400, 'Invalid cursor');
-    filter.createdAt.$lt = before;
-  }
-  const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
-  const [rows, total, actionCounts] = await Promise.all([
-    PlatformAudit.find(filter).sort({ createdAt: -1 }).limit(limit + 1).lean(),
-    PlatformAudit.countDocuments(baseFilter),
-    PlatformAudit.aggregate([
-      { $match: baseFilter },
-      { $group: { _id: { $arrayElemAt: [{ $split: ['$action', '.'] }, 0] }, count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-    ]),
-  ]);
-  const page = rows.slice(0, limit);
-  const actorIds = [...new Set(page.map((row) => row.actor).filter((value) => mongoose.isValidObjectId(value)))];
-  const actors = actorIds.length ? await User.find({ _id: { $in: actorIds } }).select('name email').lean() : [];
-  const names = new Map(actors.map((person) => [String(person._id), person.name || person.email]));
-  res.set('Cache-Control', 'private, no-store').json({
-    entries: page.map((row) => ({ id: row._id, action: row.action, universityId: row.universityId || '', createdAt: row.createdAt, actorName: names.get(String(row.actor)) || 'System', details: row.details || {} })),
-    nextCursor: rows.length > limit ? page.at(-1).createdAt : null,
-    total,
-    actionCounts,
-    windowDays: 10,
-    scope: 'platform',
-  });
+  res.set('Cache-Control', 'private, no-store').json(await masterActivityFeed(req.query));
 }));
 
 router.get('/admin/wallets', masterOnly, asyncRoute(async (req, res) => {

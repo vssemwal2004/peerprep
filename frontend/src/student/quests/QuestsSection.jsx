@@ -91,7 +91,7 @@ export default function QuestsSection({ quests, loading, error, onRetry }) {
           </label>}
         </div>
         {!visible.length ? <p className="mt-4 rounded-2xl border border-dashed border-slate-300 px-6 py-10 text-center text-[13px] text-slate-500 dark:border-white/10 dark:text-zinc-400">No QuickPrep matches. <button type="button" onClick={() => { setSearch(''); setCategory('all'); }} className="font-semibold text-sky-700 underline dark:text-sky-300">Show all</button></p>
-          : <ul className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-guide="qp-catalog">{visible.map((quest) => <li key={quest.id} className="flex"><div className="flex w-full flex-col [&>a]:flex-1"><QuestCard quest={quest} /></div></li>)}</ul>}
+          : <ul className="quest-card-grid mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-guide="qp-catalog">{visible.map((quest) => <li key={quest.id} className="flex min-w-0 [&>a]:flex-1"><QuestCard quest={quest} /></li>)}</ul>}
         <p className="mt-3 flex items-center gap-1 text-[12px] text-slate-400" data-guide="qp-rules"><ArrowRight className="h-3 w-3" aria-hidden="true" />Questions you already solved count the moment you start a QuickPrep. A QuickPrep with a start and end time counts only solves made between them.</p>
       </>}
   </section>;

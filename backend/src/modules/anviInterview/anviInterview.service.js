@@ -79,7 +79,7 @@ async function summarizeSnapshot(data, maxQuestions) {
   return { estimatedMinutes };
 }
 
-// Plain-text view of the saved resume builder for question generation. Contact details are left out.
+// Plain-text view of the saved Prep Resume for question generation. Contact details are left out.
 export function resumeToText(resume) {
   if (!resume) return "";
   const hidden = new Set(resume.hiddenSections || []);
@@ -391,7 +391,7 @@ export function createAnviService({
         if (resumeText) resumeSource = "builder";
       }
       if (!resumeText && resume.mode === "required")
-        fail(400, "RESUME_REQUIRED", "This interview asks about your resume. Add it from your Resume Builder or upload one before starting.");
+        fail(400, "RESUME_REQUIRED", "This interview asks about your resume. Add it from your Prep Resume or upload one before starting.");
     }
     return {
       language, resumeText, resumeSource, resumeRow,

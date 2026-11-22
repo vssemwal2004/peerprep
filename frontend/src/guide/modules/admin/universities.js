@@ -368,7 +368,12 @@ export default [
       {
         id: "ua-timeline", target: "ua-timeline", chapter: "parts",
         title: "Timeline",
-        body: "Events grouped by day: the time, the action, who did it, the details and the university affected. Load more fetches older events within the 10 days.",
+        body: "Events grouped by day: the time, who did it, whether it was a workspace action or a platform settings change, and the details. Load older activity fetches earlier events in the chosen range.",
+      },
+      {
+        id: "ua-operators", target: "ua-operators", chapter: "parts",
+        title: "Master Admins",
+        body: "Every Master Admin with their actions and sign-ins in the chosen range and when they were last active. Click a name to see only their activity.",
       },
     ],
   },

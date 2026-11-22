@@ -60,7 +60,8 @@ activitySchema.index({ tenantKey: 1, studentId: 1, occurredAt: -1 });
 export const EngagementActivity = make('EngagementActivity', activitySchema);
 
 const progressionSchema = new Schema({ ...owner,
-  level: { type: Number, default: 1, min: 1, max: 7 },
+  // Twelve learner levels (adaptiveEngagementRules LEVELS); 8–12 are the elite tier.
+  level: { type: Number, default: 1, min: 1, max: 12 },
   joinedAt: { type: Date, required: true },
   syncedAt: Date,
   domainSyncedAt: Schema.Types.Mixed,

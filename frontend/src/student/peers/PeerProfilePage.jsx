@@ -13,6 +13,7 @@ import {
   QuickPrepSheetsCard, RecentSolvedCard,
 } from './PeerProfileCards';
 import { PEER_NETWORK_EVENT, errorMessage } from './peerNetwork';
+import SharedScoresCard from '../readiness/SharedScoresCard';
 
 const MotionDiv = motion.div;
 
@@ -97,6 +98,7 @@ export default function PeerProfilePage() {
                 network={data.network}
                 relation={data.relation}
                 isSelf={isSelf}
+                shared={data.shared}
                 onRelationChange={(relation) => setData((prev) => ({ ...prev, relation }))}
                 onOpenMates={() => setMatesOpen(true)}
               />
@@ -105,6 +107,8 @@ export default function PeerProfilePage() {
             <main className="min-w-0 space-y-4">
               {progress?.unavailable ? <NotSharedNotice name={profile.name} /> : (
                 <>
+                  {/* Opt-in only: Prep Score + Prep Readiness, for accepted Prep Mates (or yourself). */}
+                  <SharedScoresCard shared={data.shared} name={String(profile.name || '').split(/\s+/)[0]} isSelf={isSelf} />
                   <PeerHighlightBanner name={profile.name} progress={progress} />
 
                   {/* Practice only: coding, badges, recent solves, Quick Prep sheets and learning. */}

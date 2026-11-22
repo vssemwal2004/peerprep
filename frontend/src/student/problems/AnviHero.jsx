@@ -27,8 +27,9 @@ export default function AnviHero() {
           <span className="truncate">Inside every coding problem: press Ask AnvI for a direction to try, not a full solution.</span>
         </p>
       </div>
-      <ul className="hidden flex-wrap gap-1.5 md:flex">
-        {CAPABILITIES.map(({ icon: Icon, label }) => <li key={label} className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1 text-[11.5px] font-medium text-violet-50 ring-1 ring-inset ring-white/10">
+      {/* Chips only where the line beside them still fits whole: two on laptops, all three from 2xl. */}
+      <ul className="hidden shrink-0 gap-1.5 xl:flex">
+        {CAPABILITIES.map(({ icon: Icon, label }, index) => <li key={label} className={`${index === 2 ? 'hidden 2xl:inline-flex' : 'inline-flex'} items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1 text-[11.5px] font-medium text-violet-50 ring-1 ring-inset ring-white/10`}>
           <Icon className="h-3 w-3 text-cyan-300" aria-hidden="true" />{label}
         </li>)}
       </ul>

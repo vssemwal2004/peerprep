@@ -7,7 +7,7 @@ export const MODULES = [
   { key: 'prepmock', label: 'PrepMock', description: 'Company mock assessments; requires Assessments' },
   { key: 'events', label: 'Peer interviews', description: 'Mock interview events with feedback' },
   { key: 'interviews', label: 'AI interviews', description: 'Voice interviews with ANVI' },
-  { key: 'resumes', label: 'Resumes', description: 'Resume builder and resume-based questions' },
+  { key: 'resumes', label: 'Resumes', description: 'Prep Resume and resume-based questions' },
 ];
 
 export const DAY_MS = 86_400_000;
