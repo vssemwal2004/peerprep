@@ -21,6 +21,7 @@ import { createDefaultProblemForm, createProblemFormFromProblem, toAssessmentPro
 import AssessmentCard from './assessment/components/AssessmentCard';
 import StudentSelector from './assessment/components/StudentSelector';
 import AssessmentCandidateEditor from './assessment/components/AssessmentCandidateEditor';
+import { isLimitedUniversityAdmin } from '../platform/adminAccess';
 import SectionBuilder from './assessment/components/SectionBuilder';
 import AssessmentPreview from './assessment/components/AssessmentPreview';
 import AIProctoringSettings, { DEFAULT_AI_PROCTORING_SETTINGS, normalizeAiProctoringSettings } from '../features/assessment/admin/components/AIProctoringSettings';
@@ -389,7 +390,7 @@ export default function CreateAssessment({ viewOnly = false }) {
   const sessionKey = isMock ? 'peerprep_current_mock_session' : 'peerprep_current_assessment_session';
   const isCoordinator = rolePrefix === '/coordinator';
   const managerLabel = isCoordinator ? 'coordinator' : 'admin';
-  const canCreateAssessmentCandidates = hasPermission(user, 'coordinator.assessment.candidates');
+  const canCreateAssessmentCandidates = !isLimitedUniversityAdmin(user) && hasPermission(user, 'coordinator.assessment.candidates');
   const requestedAudience = 'platform_students';
 
   const [currentId, setCurrentId] = useState(id || null);

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { uploadStudentsCsv, createStudent, listTeacherOptions, bulkUpdateStudentAccess, checkStudentsCsv,listAllStudents, listAllSpecialStudents, listSpecialStudentsByEvent, deleteStudent, updateStudent, bulkDeleteStudents, resendStudentCredentials, exportStudentsCsv, getStudentById, listPromotionSemesters, listPromotionStudents, promoteStudents, listStudentUploadBatches, createStudentUploadBatch, renameStudentUploadBatch, deleteStudentUploadBatch } from '../controllers/studentController.js';
 import { getStudentActivityByAdmin, getStudentStats, getStudentVideosWatched, getStudentCoursesEnrolled } from '../controllers/activityController.js';
-import { requireAuth, requireCoordinatorPermission } from '../middleware/auth.js';
+import { requireAuth, requireCoordinatorPermission, requireStudentManagement } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { getStudentAccess, getStudentAccessPolicy, updateStudentAccess, updateStudentAccessPolicy } from '../controllers/studentAccessController.js';
 import { authorizeStudent } from '../middleware/authorization.js';
@@ -12,6 +12,8 @@ import { studentQuickPrepReport } from '../services/questService.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+// Covers single and bulk changes, access, promotions, uploads, and credential delivery.
+router.use((req, res, next) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method) ? next() : requireStudentManagement(req, res, next));
 
 router.get('/list', requireAuth, requireCoordinatorPermission('coordinator.students.view'), cacheJsonResponse({ namespace: 'students', ttlSeconds: Number(process.env.RESPONSE_CACHE_STUDENTS_TTL_SECONDS || 30) }), listAllStudents);
 router.get('/access-policy', requireAuth, requireCoordinatorPermission('coordinator.students.create'), getStudentAccessPolicy);

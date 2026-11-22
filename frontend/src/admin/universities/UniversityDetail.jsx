@@ -44,7 +44,7 @@ export default function UniversityDetail() {
   const health = universityHealth(university);
   const status = STATUS_META[health.status];
   const remove = () => {
-    if (!window.confirm(`Remove ${university.name} (${university.universityId}) from PeerPrep? Its shared assessment access is revoked. Its own database stays intact.`)) return;
+    if (!window.confirm(`Permanently delete ${university.name} (${university.universityId}) and all data in its MongoDB database? This removes students, coordinators, assessments, attempts, and reports. This cannot be undone.`)) return;
     run('delete', () => api.deleteUniversity(university.universityId)).then((result) => { if (result) navigate('/admin/universities/all'); });
   };
   const props = { university, defaults, run, busy, tabLink };

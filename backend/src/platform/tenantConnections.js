@@ -23,7 +23,9 @@ export function validUniversityId(value) {
 
 export function validateTenantMongoUri(value) {
   const uri = String(value || '').trim();
-  if (!/^mongodb(?:\+srv)?:\/\//.test(uri) || uri.length > 4096) throw new HttpError(400, 'Enter a valid MongoDB URI');
+  if (!/^mongodb(?:\+srv)?:\/\//.test(uri) || uri.length > 4096) {
+    throw new HttpError(400, 'Paste a MongoDB URI starting with mongodb:// or mongodb+srv://, without MONGODB_URI= or surrounding quotes.');
+  }
   return uri;
 }
 
@@ -31,35 +33,96 @@ export async function verifyTenantDatabase(connection, universityId, { claim = f
   const collection = connection.db.collection('peerprep_deployment_identity');
   const existing = await collection.findOne({ _id: 'deployment' });
   if (existing && (existing.role !== 'university' || existing.universityId !== universityId)) {
-    throw new Error('This database belongs to another PeerPrep deployment');
+    throw new HttpError(422, 'This database is already claimed by another PeerPrep deployment or university.');
   }
   if (!existing && (claim || allowUnclaimed)) {
     const collections = await connection.db.listCollections({}, { nameOnly: true }).toArray();
     if (collections.some((entry) => !entry.name.startsWith('system.'))) {
-      throw new Error('Unclaimed university database already contains data');
+      throw new HttpError(422, 'This database already contains data but has no PeerPrep university identity. Use an empty database or the database already claimed for this university.');
     }
     if (claim) await collection.insertOne({ _id: 'deployment', role: 'university', universityId, createdAt: new Date() });
   }
-  if (!existing && !claim && !allowUnclaimed) throw new Error('University database has not been claimed');
+  if (!existing && !claim && !allowUnclaimed) throw new HttpError(422, 'This university database has not been claimed by PeerPrep.');
 }
 
 export async function testTenantConnection(uri, universityId, { claim = false, allowUnclaimed = false } = {}) {
   if (!validUniversityId(universityId)) throw new HttpError(400, 'Invalid university ID');
-  const connection = mongoose.createConnection(validateTenantMongoUri(uri), {
-    autoIndex: false,
-    serverSelectionTimeoutMS: 5000,
-    maxPoolSize: 2,
-    minPoolSize: 0,
-  });
+  const mongoUri = validateTenantMongoUri(uri);
+  let connection;
   try {
+    connection = mongoose.createConnection(mongoUri, {
+      autoIndex: false,
+      serverSelectionTimeoutMS: 5000,
+      maxPoolSize: 2,
+      minPoolSize: 0,
+    });
     await connection.asPromise();
     await connection.db.admin().ping();
     await verifyTenantDatabase(connection, universityId, { claim, allowUnclaimed });
-  } catch {
-    throw new HttpError(422, 'University database connection or identity check failed');
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    if (error?.name === 'MongoParseError') throw new HttpError(400, 'The MongoDB URI is malformed. Check its host, database name, and options.');
+    if (error?.code === 18 || error?.code === 13 || error?.codeName === 'AuthenticationFailed') {
+      throw new HttpError(422, 'MongoDB authentication failed. Check the username, password, and authSource in the URI.');
+    }
+    throw new HttpError(422, 'Could not connect to MongoDB. Check the URI, database network access, and server availability.');
   } finally {
-    await connection.close();
+    if (connection) await connection.close().catch(() => {});
   }
+}
+
+// Delete only a database that PeerPrep itself claimed for this university.
+export async function dropTenantDatabase(uri, universityId, { allowAlreadyDropped = false } = {}) {
+  if (!validUniversityId(universityId)) throw new HttpError(400, 'Invalid university ID');
+  const mongoUri = validateTenantMongoUri(uri);
+  const connection = mongoose.createConnection(mongoUri, {
+    autoIndex: false, serverSelectionTimeoutMS: 5000, maxPoolSize: 2, minPoolSize: 0,
+  });
+  try {
+    await connection.asPromise();
+    const identity = await connection.db.collection('peerprep_deployment_identity').findOne({ _id: 'deployment' });
+    if (!identity && allowAlreadyDropped) {
+      const collections = await connection.db.listCollections({}, { nameOnly: true }).toArray();
+      if (!collections.some((entry) => !entry.name.startsWith('system.'))) return { alreadyDropped: true };
+    }
+    if (identity?.role !== 'university' || identity.universityId !== universityId) {
+      throw new HttpError(422, 'Database identity does not match this university. No data was deleted.');
+    }
+    await connection.dropDatabase();
+    return { alreadyDropped: false };
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(502, 'Could not delete the university database. The university registration was kept.');
+  } finally {
+    await connection.close().catch(() => {});
+  }
+}
+
+export async function inspectTenantDatabase(uri) {
+  const mongoUri = validateTenantMongoUri(uri);
+  const connection = mongoose.createConnection(mongoUri, {
+    autoIndex: false, serverSelectionTimeoutMS: 5000, maxPoolSize: 2, minPoolSize: 0,
+  });
+  try {
+    await connection.asPromise();
+    return await connection.db.collection('peerprep_deployment_identity').findOne({ _id: 'deployment' });
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(422, 'Could not inspect the MongoDB database. Check the URI and network access.');
+  } finally {
+    await connection.close().catch(() => {});
+  }
+}
+
+export async function closeTenantConnection(universityId) {
+  const pending = [];
+  for (const key of [universityId, `inactive:${universityId}`]) {
+    const cached = connections.get(key);
+    if (cached) { connections.delete(key); pending.push(cached.promise); }
+  }
+  const tenants = await Promise.allSettled(pending);
+  const unique = new Set(tenants.filter((item) => item.status === 'fulfilled').map((item) => item.value.connection));
+  await Promise.allSettled([...unique].map((connection) => connection.close()));
 }
 
 export async function getTenant(universityId, { includeInactive = false } = {}) {

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, requireStudentManagement } from '../middleware/auth.js';
 import {
   deleteBulkUpload,
   downloadBulkUpload,
@@ -11,6 +11,7 @@ import {
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
+router.use((req, res, next) => req.method === 'GET' ? next() : requireStudentManagement(req, res, next));
 router.get('/', listBulkUploads);
 router.get('/:batchId/delete-preview', getBulkUploadDeletePreview);
 router.get('/:batchId/download', downloadBulkUpload);

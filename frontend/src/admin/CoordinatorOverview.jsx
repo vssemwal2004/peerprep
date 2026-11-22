@@ -6,6 +6,8 @@ import { defaultCoordinatorPermissions } from './coordinatorPermissions';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
 import PageGuideButton from '../guide/platform/PageGuideButton';
 import GuideInfo from '../guide/platform/GuideInfo';
+import { useAuth } from '../context/AuthContext';
+import { isLimitedUniversityAdmin } from '../platform/adminAccess';
 
 function formatDate(value) {
   if (!value) return 'Never';
@@ -177,6 +179,7 @@ function SortableHead({ columns, table, trailing }) {
 }
 
 export default function CoordinatorOverview() {
+  const { user } = useAuth();
   const [coordinators, setCoordinators] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -248,10 +251,10 @@ export default function CoordinatorOverview() {
             </p>
           </div>
           <div className="flex gap-2" data-guide="cov-actions">
-            <Link to="/admin/coordinators" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200">
+            {!isLimitedUniversityAdmin(user) && <Link to="/admin/coordinators" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200">
               <UserPlus className="h-4 w-4" />
               Add Coordinator
-            </Link>
+            </Link>}
             <Link to="/admin/coordinator-access" className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white dark:bg-white dark:text-slate-950">
               <ShieldCheck className="h-4 w-4" />
               Manage Access

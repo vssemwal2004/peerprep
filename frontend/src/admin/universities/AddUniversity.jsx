@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, ChevronLeft, ChevronRight, Database, KeyRound, PlugZap, Sparkles } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Database, KeyRound, PlugZap, Sparkles, Trash2 } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useUniversities } from './useUniversities';
 import { MODULES } from './universityModel';
+import { MONGO_URI_HINT, mongoUriProblem } from './mongoUri';
 import { Button, Card, Field, Notice, PageHeader, pageShell, helper, inputClass } from './ui';
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
@@ -13,13 +14,13 @@ const inAYear = () => { const date = new Date(); date.setFullYear(date.getFullYe
 const EMPTY = {
   universityId: '', name: '', contactEmail: '',
   dbUri: '', judge0Url: '', judge0AuthHeader: '', judge0AuthToken: '', interviewServiceUrl: '', interviewServiceSecret: '',
-  adminEmail: '', adminPassword: '',
+  adminEmail: '', adminPassword: '', limitedAdminEmail: '', limitedAdminPassword: '',
   serviceStartDate: today(), serviceEndDate: inAYear(), coordinatorLimit: '20', studentLimit: '1000', initialCoins: '0',
 };
 const STEPS = [
   { key: 'identity', title: 'Identity', hint: 'Name and web address' },
   { key: 'connections', title: 'Connections', hint: 'Database and code judge' },
-  { key: 'admin', title: 'First admin', hint: 'Who runs the university' },
+  { key: 'admin', title: 'Two admins', hint: 'Full and limited access' },
   { key: 'plan', title: 'Plan', hint: 'Service period and limits' },
   { key: 'review', title: 'Review', hint: 'Check and create' },
 ];
@@ -48,6 +49,9 @@ function stepProblems(step, form, dbTest) {
   if (step === 'admin') {
     if (!EMAIL.test(form.adminEmail)) problems.push('Enter the first admin\'s email.');
     if (form.adminPassword.length < 12) problems.push('The starting password needs at least 12 characters.');
+    if (!EMAIL.test(form.limitedAdminEmail)) problems.push('Enter the second admin\'s email.');
+    if (form.limitedAdminEmail.trim().toLowerCase() === form.adminEmail.trim().toLowerCase()) problems.push('The two admins need different email addresses.');
+    if (form.limitedAdminPassword.length < 12) problems.push('The second admin password needs at least 12 characters.');
   }
   if (step === 'plan') {
     if (!form.serviceStartDate || !form.serviceEndDate) problems.push('Set both service dates.');
@@ -72,7 +76,9 @@ export default function AddUniversity() {
   const [dbTest, setDbTest] = useState(null);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
+  const [deletingOldDatabase, setDeletingOldDatabase] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showLimitedPassword, setShowLimitedPassword] = useState(false);
   const set = (key) => (event) => setForm((previous) => ({ ...previous, [key]: key === 'universityId' ? event.target.value.toLowerCase().replace(/\s+/g, '-') : event.target.value }));
   const current = STEPS[step];
   const problems = useMemo(() => stepProblems(current.key, form, dbTest), [current.key, form, dbTest]);
@@ -80,13 +86,36 @@ export default function AddUniversity() {
 
   async function testDatabase() {
     const { universityId: id, dbUri: uri } = form;
+    const formatProblem = mongoUriProblem(uri);
+    if (formatProblem) {
+      setDbTest({ id, uri, status: 'error', message: formatProblem });
+      return;
+    }
     setDbTest({ id, uri, status: 'testing' });
     try {
       await api.testUniversityDatabase(id, uri);
       setDbTest({ id, uri, status: 'success' });
     } catch (cause) {
-      setDbTest({ id, uri, status: 'error', message: cause.message || 'The connection failed.' });
+      let claimedUniversityId = '';
+      if (/already claimed by another PeerPrep deployment or university/i.test(cause.message || '')) {
+        try { claimedUniversityId = (await api.inspectOrphanedUniversityDatabase(uri)).universityId || ''; }
+        catch { /* Only databases from a previously deleted university can be removed here. */ }
+      }
+      setDbTest({ id, uri, status: 'error', message: cause.message || 'The connection failed.', claimedUniversityId });
     }
+  }
+
+  async function deleteOldDatabase() {
+    const claimedUniversityId = dbStatus?.claimedUniversityId;
+    if (!claimedUniversityId) return;
+    if (!window.confirm(`Permanently delete the database for previously removed university "${claimedUniversityId}"? All its students, assessments, attempts, and reports will be erased. This cannot be undone.`)) return;
+    setDeletingOldDatabase(true);
+    try {
+      await api.deleteOrphanedUniversityDatabase(form.dbUri, claimedUniversityId);
+      await testDatabase();
+    } catch (cause) {
+      setDbTest({ id: form.universityId, uri: form.dbUri, status: 'error', message: cause.message || 'The old database could not be deleted.' });
+    } finally { setDeletingOldDatabase(false); }
   }
 
   async function create() {
@@ -138,11 +167,15 @@ export default function AddUniversity() {
               <p className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white"><Database className="h-4 w-4 text-sky-600" aria-hidden="true" />University database</p>
               <p className={`mt-1 ${helper}`}>The university's own MongoDB. Testing checks it is reachable and not used by another university; it saves nothing.</p>
               <div className="mt-3 flex flex-wrap items-end gap-3">
-                <Field label="MongoDB URI" required className="min-w-[18rem] flex-1"><input className={inputClass} type="password" autoComplete="off" value={form.dbUri} onChange={set('dbUri')} placeholder="mongodb+srv://…" /></Field>
+                <Field label="MongoDB URI" required hint={MONGO_URI_HINT} className="min-w-[18rem] flex-1"><input className={inputClass} type="password" autoComplete="off" value={form.dbUri} onChange={set('dbUri')} placeholder="mongodb+srv://…" /></Field>
                 <Button variant="secondary" icon={PlugZap} busy={dbStatus?.status === 'testing'} disabled={!form.dbUri || !ID_PATTERN.test(form.universityId)} onClick={testDatabase}>Test connection</Button>
               </div>
               {dbStatus?.status === 'success' && <div className="mt-3"><Notice tone="success">Connection verified.</Notice></div>}
               {dbStatus?.status === 'error' && <div className="mt-3"><Notice tone="danger">{dbStatus.message}</Notice></div>}
+              {dbStatus?.claimedUniversityId && <div className="mt-3 space-y-3">
+                <Notice tone="warning">This database belongs to previously deleted university {dbStatus.claimedUniversityId}. Delete its old data to reuse this MongoDB URI.</Notice>
+                <Button variant="danger" icon={Trash2} busy={deletingOldDatabase} onClick={deleteOldDatabase}>Delete old university database</Button>
+              </div>}
             </div>
             <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
               <p className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white"><KeyRound className="h-4 w-4 text-sky-600" aria-hidden="true" />Code judge (Judge0)</p>
@@ -163,15 +196,27 @@ export default function AddUniversity() {
         )}
 
         {current.key === 'admin' && (
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Admin email" required hint="If this email already has an admin account in the university database, that account is kept."><input className={inputClass} type="email" value={form.adminEmail} onChange={set('adminEmail')} placeholder="admin@university.edu" /></Field>
-            <Field label="Starting password" required hint="At least 12 characters. The admin must change it on first sign-in.">
+          <div className="grid gap-6">
+            <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Full admin email" required hint="Keeps all current admin rights. An existing admin account with this email is kept."><input className={inputClass} type="email" value={form.adminEmail} onChange={set('adminEmail')} placeholder="admin@university.edu" /></Field>
+            <Field label="Full admin starting password" required hint="At least 12 characters. New admins must change it on first sign-in.">
               <span className="flex gap-2">
                 <input className={inputClass} type={showPassword ? 'text' : 'password'} autoComplete="new-password" value={form.adminPassword} onChange={set('adminPassword')} />
                 <Button variant="secondary" onClick={() => setShowPassword((value) => !value)}>{showPassword ? 'Hide' : 'Show'}</Button>
                 <Button variant="secondary" onClick={() => { setForm((previous) => ({ ...previous, adminPassword: strongPassword() })); setShowPassword(true); }}>Generate</Button>
               </span>
             </Field>
+            </div>
+            <div className="grid gap-4 border-t border-slate-200 pt-5 md:grid-cols-2 dark:border-slate-800">
+              <Field label="Second admin email" required hint="Can use content and reports, but cannot add coordinators or change student accounts."><input className={inputClass} type="email" value={form.limitedAdminEmail} onChange={set('limitedAdminEmail')} placeholder="content-admin@university.edu" /></Field>
+              <Field label="Second admin starting password" required hint="At least 12 characters. New admins must change it on first sign-in.">
+                <span className="flex gap-2">
+                  <input className={inputClass} type={showLimitedPassword ? 'text' : 'password'} autoComplete="new-password" value={form.limitedAdminPassword} onChange={set('limitedAdminPassword')} />
+                  <Button variant="secondary" onClick={() => setShowLimitedPassword((value) => !value)}>{showLimitedPassword ? 'Hide' : 'Show'}</Button>
+                  <Button variant="secondary" onClick={() => { setForm((previous) => ({ ...previous, limitedAdminPassword: strongPassword() })); setShowLimitedPassword(true); }}>Generate</Button>
+                </span>
+              </Field>
+            </div>
           </div>
         )}
 
@@ -187,7 +232,7 @@ export default function AddUniversity() {
 
         {current.key === 'review' && (
           <div className="grid gap-5 lg:grid-cols-2">
-            <div><p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">University</p><Summary rows={[['Name', form.name], ['ID', form.universityId], ['Student link', `peerprep.co.in/u/${form.universityId}/student`], ['Contact', form.contactEmail], ['First admin', form.adminEmail]]} /></div>
+            <div><p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">University</p><Summary rows={[['Name', form.name], ['ID', form.universityId], ['Student link', `peerprep.co.in/u/${form.universityId}/student`], ['Contact', form.contactEmail], ['Full admin', form.adminEmail], ['Limited admin', form.limitedAdminEmail]]} /></div>
             <div><p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">Plan and connections</p><Summary rows={[['Service', `${form.serviceStartDate} to ${form.serviceEndDate}`], ['Limits', `${form.coordinatorLimit} coordinators · ${form.studentLimit} students`], ['Starting Prep Coins', Number(form.initialCoins || 0).toLocaleString()], ['Database', 'Verified'], ['Judge0', form.judge0Url], ['AI interviews', form.interviewServiceUrl ? 'Connected' : 'Not connected']]} /></div>
             <div className="lg:col-span-2 rounded-xl bg-slate-50 p-4 text-sm dark:bg-slate-800/50">
               <p className="font-semibold text-slate-900 dark:text-white">Modules it starts with</p>

@@ -9,7 +9,7 @@ import QuestionLibrary from '../models/QuestionLibrary.js';
 import Semester from '../models/Subject.js';
 import Problem from '../models/Problem.js';
 import { loadHiddenExecutionTestCases } from '../controllers/problemController.js';
-import { University, Publication, PlatformAudit, PlatformSettings, PlatformCoinWallet, PlatformCoinMovement } from './models.js';
+import { University, Publication, PlatformAudit, PlatformSettings, PlatformCoinWallet, PlatformCoinMovement, PlatformLoginIdentity } from './models.js';
 import { isControlPlane, isUniversity } from './deployment.js';
 import { controlRequest, universityPolicy } from './client.js';
 import { signInspection, verifyInspection } from './inspectionAuth.js';
@@ -21,8 +21,8 @@ import { CENTRAL_QUESTION_FILTER } from './centralQuestions.js';
 import { publishedQuestDefinitions } from '../services/questService.js';
 import { acceptLogoUpload, logoStorage, removeStoredLogo, validateLogoFile } from './universityLogo.js';
 import { deploymentRole } from './deployment.js';
-import { encryptTenantSecret } from './tenantSecrets.js';
-import { getTenant, testTenantConnection, validateTenantMongoUri, invalidateTenantRegistration, ensureTenantIndexes } from './tenantConnections.js';
+import { decryptTenantSecret, encryptTenantSecret } from './tenantSecrets.js';
+import { closeTenantConnection, dropTenantDatabase, getTenant, inspectTenantDatabase, testTenantConnection, validateTenantMongoUri, invalidateTenantRegistration, ensureTenantIndexes } from './tenantConnections.js';
 import { currentTenant, runForTenant } from './tenantContext.js';
 import { verifiedSharedInternalRequest } from './internalAuth.js';
 import { backfillTenantLoginDirectory } from './loginDirectory.js';
@@ -39,7 +39,7 @@ const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 const keyHash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const idPattern = /^[a-z0-9][a-z0-9-]{1,62}$/;
-const moduleNames = ['learning', 'assessments', 'questions', 'events', 'interviews', 'resumes'];
+const moduleNames = ['learning', 'assessments', 'questions', 'quickprep', 'prepmock', 'events', 'interviews', 'resumes'];
 const sourceNames = ['learning', 'questions'];
 const clean = (doc) => {
   const value = doc.toObject ? doc.toObject() : { ...doc };
@@ -386,6 +386,34 @@ router.post('/admin/universities/test-database', masterOnly, asyncRoute(async (r
   res.json({ connected: true, message: 'MongoDB connection and university database identity verified' });
 }));
 
+// Recovery for databases left behind by the older registration-only delete flow.
+async function orphanedTenantDatabase(uri) {
+  const identity = await inspectTenantDatabase(uri);
+  const id = identity?.role === 'university' ? identity.universityId : '';
+  if (!idPattern.test(id)) throw new HttpError(409, 'This database is not a claimed PeerPrep university database.');
+  if (await University.exists({ universityId: id, deletedAt: null })) {
+    throw new HttpError(409, 'This database still belongs to a registered university and cannot be deleted here.');
+  }
+  if (!await PlatformAudit.exists({ action: 'university.deleted', universityId: id })) {
+    throw new HttpError(409, 'PeerPrep has no deletion record for this university database. No data was deleted.');
+  }
+  return id;
+}
+
+router.post('/admin/universities/orphaned-database/inspect', masterOnly, asyncRoute(async (req, res) => {
+  const id = await orphanedTenantDatabase(req.body?.dbUri);
+  res.set('Cache-Control', 'no-store').json({ universityId: id, canDelete: true });
+}));
+
+router.delete('/admin/universities/orphaned-database', masterOnly, asyncRoute(async (req, res) => {
+  const id = await orphanedTenantDatabase(req.body?.dbUri);
+  if (req.body?.confirmUniversityId !== id) throw new HttpError(400, 'Confirm the claimed university ID before deleting its database.');
+  await dropTenantDatabase(req.body.dbUri, id);
+  await PlatformLoginIdentity.deleteMany({ universityId: id });
+  await audit(req, 'university.orphan_database_deleted', id);
+  res.set('Cache-Control', 'no-store').json({ universityId: id, deleted: true });
+}));
+
 router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
   const universityId = String(req.body?.universityId || '').trim().toLowerCase();
   const name = String(req.body?.name || '').trim();
@@ -414,13 +442,17 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
     const adminEmail = contactEmail(req.body?.adminEmail);
     const adminPassword = String(req.body?.adminPassword || '');
     if (!adminEmail || adminPassword.length < 12) throw new HttpError(400, 'Admin email and a password of at least 12 characters are required');
+    const limitedAdminEmail = contactEmail(req.body?.limitedAdminEmail);
+    const limitedAdminPassword = String(req.body?.limitedAdminPassword || '');
+    if (!limitedAdminEmail || limitedAdminPassword.length < 12) throw new HttpError(400, 'Second admin email and a password of at least 12 characters are required');
+    if (limitedAdminEmail === adminEmail) throw new HttpError(400, 'The two admins need different email addresses');
     const interviewServiceUrl = String(req.body?.interviewServiceUrl || '').trim();
     const interviewServiceSecret = String(req.body?.interviewServiceSecret || '').trim();
     if (Boolean(interviewServiceUrl) !== Boolean(interviewServiceSecret)) throw new HttpError(400, 'Interview URL and secret must be provided together');
     if (interviewServiceUrl) validInterviewServiceUrl(interviewServiceUrl);
     if (interviewServiceUrl && interviewServiceSecret.length < 32) throw new HttpError(400, 'Invalid interview service secret');
     await testTenantConnection(dbUri, universityId, { claim: true });
-    sharedSetup = { dbUri, judge0Url, judge0AuthHeader, judge0AuthToken, adminEmail, adminPassword, interviewServiceUrl, interviewServiceSecret };
+    sharedSetup = { dbUri, judge0Url, judge0AuthHeader, judge0AuthToken, adminEmail, adminPassword, limitedAdminEmail, limitedAdminPassword, interviewServiceUrl, interviewServiceSecret };
   }
   if (previous) {
     // Older deployments archived registrations instead of removing them.
@@ -452,13 +484,18 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
         if (existingCoordinators > coordinatorLimit || existingStudents > studentLimit) {
           throw new HttpError(409, `The university database already has ${existingCoordinators} coordinators and ${existingStudents} students. Increase the account limits before registration.`);
         }
-        const existingAccount = await User.findOne({ email: sharedSetup.adminEmail });
-        if (existingAccount && existingAccount.role !== 'admin') {
-          throw new HttpError(409, 'The initial admin email belongs to a different university role');
-        }
-        if (!existingAccount) {
-          const passwordHash = await User.hashPassword(sharedSetup.adminPassword);
-          await User.create({ role: 'admin', email: sharedSetup.adminEmail, name: `${name} Admin`, passwordHash, mustChangePassword: true });
+        for (const [email, password, access, label] of [
+          [sharedSetup.adminEmail, sharedSetup.adminPassword, 'full', 'Admin'],
+          [sharedSetup.limitedAdminEmail, sharedSetup.limitedAdminPassword, 'limited', 'Content Admin'],
+        ]) {
+          const existingAccount = await User.findOne({ email });
+          if (existingAccount && existingAccount.role !== 'admin') throw new HttpError(409, `${label} email belongs to a different university role`);
+          if (existingAccount) {
+            if (existingAccount.adminAccess !== access) { existingAccount.adminAccess = access; await existingAccount.save(); }
+          } else {
+            const passwordHash = await User.hashPassword(password);
+            await User.create({ role: 'admin', adminAccess: access, email, name: `${name} ${label}`, passwordHash, mustChangePassword: true });
+          }
         }
       });
       await backfillTenantLoginDirectory(tenant);
@@ -652,13 +689,30 @@ router.get('/admin/universities/:id/students/:studentId', masterOnly, asyncRoute
 }));
 
 router.delete('/admin/universities/:id', masterOnly, asyncRoute(async (req, res) => {
-  const university = await University.findOneAndUpdate(
-    { universityId: req.params.id },
-    { $set: { active: false, deletedAt: new Date() } },
-    { new: true },
-  );
+  const university = await University.findOne({ universityId: req.params.id })
+    .select('+dbUriEncrypted');
   if (!university) throw new HttpError(404, 'University not found');
+  const wasActive = university.active;
+  const wasDeletedAt = university.deletedAt;
+  if (deploymentRole() === 'shared' && !university.dbUriEncrypted) throw new HttpError(409, 'University database connection is missing; no data was deleted.');
+  university.active = false;
+  university.deletedAt = university.deletedAt || new Date();
+  await university.save();
+  invalidateTenantRegistration(university.universityId);
+  try {
+    if (deploymentRole() === 'shared') {
+      await closeTenantConnection(university.universityId);
+      await dropTenantDatabase(decryptTenantSecret(university.dbUriEncrypted), university.universityId, { allowAlreadyDropped: Boolean(wasDeletedAt) });
+    }
+  } catch (error) {
+    university.active = wasActive;
+    university.deletedAt = wasDeletedAt;
+    await university.save();
+    invalidateTenantRegistration(university.universityId);
+    throw error;
+  }
   await clearUniversityAssignments(university.universityId);
+  await PlatformLoginIdentity.deleteMany({ universityId: university.universityId });
   await University.deleteOne({ _id: university._id });
   invalidateTenantRegistration(university.universityId);
   await removeStoredLogo(university.logo?.publicId, 'university deleted');

@@ -17,6 +17,7 @@ import StudentAccessSelector from './components/StudentAccessSelector';
 import BulkStudentAccessDialog from './components/BulkStudentAccessDialog';
 import { normalizeStudentAccess } from '../student/studentFeatureAccess';
 import { useAuth } from '../context/AuthContext';
+import { isLimitedUniversityAdmin } from '../platform/adminAccess';
 import PageGuideButton from '../guide/platform/PageGuideButton';
 import GuideInfo from '../guide/platform/GuideInfo';
 
@@ -164,6 +165,7 @@ const STUDENT_COLUMNS_SECTION_KEY = 'peerprep.studentColumns.section';
 
 export default function StudentDirectory() {
   const { user } = useAuth();
+  const canManageStudents = !isLimitedUniversityAdmin(user);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [uploadBatchId, setUploadBatchId] = useState(searchParams.get('uploadBatchId') || '');
@@ -1326,7 +1328,7 @@ export default function StudentDirectory() {
 
                 <div className="flex min-w-0 items-center gap-2 sm:flex-1 sm:justify-end">
                 {renderSearchBox('min-w-0 flex-1 sm:max-w-sm')}
-                <div ref={bulkMenuRef} className="relative shrink-0" data-guide="sd-bulk-actions">
+                {canManageStudents && <div ref={bulkMenuRef} className="relative shrink-0" data-guide="sd-bulk-actions">
                   <button
                     data-platform-menu-trigger
                     aria-expanded={showBulkMenu}
@@ -1416,7 +1418,7 @@ export default function StudentDirectory() {
                       </button>
                     </div>
                   )}
-                </div>
+                </div>}
                 </div>
               </div>
 
@@ -1559,15 +1561,15 @@ export default function StudentDirectory() {
                                     <Eye className="h-4 w-4 text-sky-600" />
                                     View profile
                                   </button>
-                                  <button
+                                  {canManageStudents && <button
                                     type="button"
                                     onClick={(event) => handleEditStudent(s, event)}
                                     className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800"
                                   >
                                     <Edit2 className="h-4 w-4 text-blue-600" />
                                     Edit details
-                                  </button>
-                                  {user?.role === 'admin' && <button
+                                  </button>}
+                                  {canManageStudents && user?.role === 'admin' && <button
                                     type="button"
                                     onClick={(event) => openStudentAccess(s, event)}
                                     className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-sky-50 dark:text-gray-200 dark:hover:bg-sky-950/30"
@@ -1599,7 +1601,7 @@ export default function StudentDirectory() {
                                     <FileDown className="h-4 w-4 text-emerald-600" />
                                     Download data
                                   </button>
-                                  {s.canResendCredentials && s.loginStatus !== 'active' && (
+                                  {canManageStudents && s.canResendCredentials && s.loginStatus !== 'active' && (
                                     <button
                                       type="button"
                                       onClick={(event) => handleSendCredentials([studentId], event)}
@@ -1612,15 +1614,15 @@ export default function StudentDirectory() {
                                       Send credential mail
                                     </button>
                                   )}
-                                  <div className="my-1 border-t border-slate-100 dark:border-gray-800" />
-                                  <button
+                                  {canManageStudents && <div className="my-1 border-t border-slate-100 dark:border-gray-800" />}
+                                  {canManageStudents && <button
                                     type="button"
                                     onClick={(event) => handleDeleteStudent(s, event)}
                                     className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
                                   >
                                     <Trash2 className="h-4 w-4" />
                                     Delete student
-                                  </button>
+                                  </button>}
                                 </div>
                               )}
                             </div>

@@ -5,12 +5,22 @@ import { moduleForPath, pathAllowed } from '../src/platform/universityPermission
 const university = { university: true };
 const policy = { questions: false, assessments: true, events: false, interviews: true, learning: false, resumes: false };
 
-test('QuickPrep and legacy quest routes require question sheets access, not challenge access', () => {
+test('QuickPrep and legacy quest routes require QuickPrep and question sheets access', () => {
   for (const path of ['/student/quickprep', '/student/quickprep/arrays', '/student/quests', '/student/quests/arrays']) {
-    assert.equal(moduleForPath(path), 'questions');
+    assert.equal(moduleForPath(path), 'quickprep');
     assert.equal(pathAllowed(path, { learning: true }, 'student', '', university), false);
     assert.equal(pathAllowed(path, { questions: true }, 'student', '', university), true);
+    assert.equal(pathAllowed(path, { questions: true, quickprep: false }, 'student', '', university), false);
   }
+});
+
+test('PrepMock has its own switch and still requires assessments', () => {
+  assert.equal(moduleForPath('/admin/prepmock'), 'prepmock');
+  assert.equal(moduleForPath('/student/prep-mock'), 'prepmock');
+  assert.equal(pathAllowed('/admin/prepmock', { assessments: true }, 'admin', '', university), true);
+  assert.equal(pathAllowed('/admin/prepmock', { assessments: true, prepmock: false }, 'admin', '', university), false);
+  assert.equal(pathAllowed('/student/prep-mock', { assessments: false, prepmock: true }, 'student', '', university), false);
+  assert.equal(pathAllowed('/admin/prep-analysis', { assessments: true, prepmock: false }, 'admin', '?area=prepmock', university), false);
 });
 
 test('university admins never see QuickPrep management; only the super admin or a standalone admin does', () => {

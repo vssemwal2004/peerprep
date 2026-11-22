@@ -2,7 +2,9 @@
 export const MODULES = [
   { key: 'learning', label: 'Learning', description: 'Semesters, subjects, topic videos and notes' },
   { key: 'assessments', label: 'Assessments', description: 'Tests, including shared PeerPrep assessments' },
-  { key: 'questions', label: 'Question practice', description: 'Prep Coding problems and QuickPrep sheets' },
+  { key: 'questions', label: 'Question practice', description: 'Prep Coding problems' },
+  { key: 'quickprep', label: 'QuickPrep', description: 'Student QuickPrep sheets; requires Question practice' },
+  { key: 'prepmock', label: 'PrepMock', description: 'Company mock assessments; requires Assessments' },
   { key: 'events', label: 'Peer interviews', description: 'Mock interview events with feedback' },
   { key: 'interviews', label: 'AI interviews', description: 'Voice interviews with ANVI' },
   { key: 'resumes', label: 'Resumes', description: 'Resume builder and resume-based questions' },
@@ -58,7 +60,8 @@ export const enabledModules = (university) => MODULES.filter(({ key }) => univer
 const ACTION_LABELS = {
   'university.created': 'University added',
   'university.updated': 'University updated',
-  'university.deleted': 'University removed',
+  'university.deleted': 'University deleted',
+  'university.orphan_database_deleted': 'Old university database deleted',
   'university.defaults_updated': 'New-university defaults changed',
   'university.coins_topup': 'Prep Coins added',
   'university.coins_initial': 'Starting Prep Coins added',

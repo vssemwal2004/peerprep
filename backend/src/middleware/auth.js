@@ -115,7 +115,7 @@ async function getSessionState(userId) {
   if (sessionStateLoads.has(key)) return sessionStateLoads.get(key);
 
   const load = User.findById(userId)
-    .select('_id activeSessionToken activeSessionCreatedAt activeSessionDevice passwordChangedAt isActive accessScope featureAccess')
+    .select('_id activeSessionToken activeSessionCreatedAt activeSessionDevice passwordChangedAt isActive accessScope featureAccess adminAccess')
     .maxTimeMS(2000)
     .lean()
     .then(async (value) => {
@@ -195,6 +195,7 @@ export async function requireAuth(req, res, next) {
     isActive: sessionState.isActive,
     accessScope: sessionState.accessScope || user.accessScope,
     featureAccess: sessionState.featureAccess || user.featureAccess,
+    adminAccess: sessionState.adminAccess || user.adminAccess,
   };
   if (user.role === 'coordinator' && user.isActive === false) throw new HttpError(403, 'Coordinator account disabled');
   
@@ -228,6 +229,21 @@ export async function requireAuth(req, res, next) {
 
 export function requireAdmin(req, res, next) {
   if (!req.user || req.user.role !== 'admin') throw new HttpError(403, 'Admin only');
+  next();
+}
+
+/** Limits university content admins to read-only student administration. */
+export function requireStudentManagement(req, res, next) {
+  if (currentTenant() && req.user?.role === 'admin' && req.user.adminAccess === 'limited') {
+    throw new HttpError(403, 'This admin cannot add, edit, or delete students.');
+  }
+  next();
+}
+
+export function requireCoordinatorCreation(req, res, next) {
+  if (currentTenant() && req.user?.role === 'admin' && req.user.adminAccess === 'limited') {
+    throw new HttpError(403, 'This admin cannot add coordinators.');
+  }
   next();
 }
 

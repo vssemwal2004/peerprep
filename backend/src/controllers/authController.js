@@ -250,6 +250,7 @@ export async function me(req, res) {
     username: profile.username || '',
     name: u.name,
     role: u.role,
+    ...(u.role === 'admin' ? { adminAccess: u.adminAccess || 'full' } : {}),
     accessScope: u.accessScope || 'full',
     avatarUrl: u.avatarUrl,
     isSpecialStudent: Boolean(u.isSpecialStudent),
@@ -543,7 +544,7 @@ export async function login(req, res) {
     // SECURITY: one session per account (asks first when another one is still signed in).
     if (!await signIn(req, res, admin, { sub: admin._id, role: admin.role, email: admin.email, ...tenantTokenClaims() })) return undefined;
 
-    return res.json({ user: { id: admin._id, email: admin.email, role: admin.role, name: admin.name,
+    return res.json({ user: { id: admin._id, email: admin.email, role: admin.role, name: admin.name, adminAccess: admin.adminAccess || 'full',
       mustChangePassword: Boolean(admin.mustChangePassword), universityId: currentTenant()?.universityId || null } });
   }
 

@@ -54,6 +54,7 @@ import {
   Briefcase,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { isLimitedUniversityAdmin } from '../platform/adminAccess';
 import { canManageInterviewCompanies, isControlDeployment, isUniversityDeployment, PREP_COIN_PRICING_PATH, QUICKPREP_ANALYSIS_PATH, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { useTheme } from '../context/ThemeContext';
@@ -522,7 +523,15 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
           : item));
     }
     if (role !== 'student' && (isUniversityDeployment || role !== 'admin')) items.unshift({ type: 'link', label: 'Prep Coin management', to: `/${role}/wallet`, icon: Wallet });
-    if (role !== 'coordinator') return applyPlatformPermissions(items, allowsPath, role);
+    if (role !== 'coordinator') {
+      const limitedItems = isLimitedUniversityAdmin(user) ? items.map((item) => {
+        if (item.key === 'student-management') return { ...item, items: item.items.filter((child) => child.to !== '/admin/onboarding') };
+        if (item.key === 'coordinator-management') return { ...item, items: item.items.filter((child) => child.to !== '/admin/coordinators') };
+        if (item.key === 'settings') return { ...item, items: item.items.filter((child) => child.label !== 'Students') };
+        return item;
+      }) : items;
+      return applyPlatformPermissions(limitedItems, allowsPath, role);
+    }
     return applyPlatformPermissions(items
       .map((item) => {
         if (item.type === 'group') {

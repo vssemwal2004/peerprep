@@ -61,8 +61,8 @@ export default function OverviewTab({ university, tabLink, onDelete, busy }) {
         </ul>
       </Card>
 
-      <Card id="danger-title" data-guide="unid-remove" info="unid-remove" title="Remove university" description="Removes the registration from PeerPrep and revokes its shared assessments. The university's own database is not touched.">
-        <Button variant="danger" icon={Trash2} busy={busy === 'delete'} onClick={onDelete}>Remove {university.name}</Button>
+      <Card id="danger-title" data-guide="unid-remove" info="unid-remove" title="Delete university" description="Permanently deletes this university and its MongoDB database, including all student accounts, assessments, attempts, and reports.">
+        <Button variant="danger" icon={Trash2} busy={busy === 'delete'} onClick={onDelete}>Delete {university.name}</Button>
       </Card>
     </div>
   );

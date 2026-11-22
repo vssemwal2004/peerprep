@@ -6,6 +6,8 @@ import { normalizeEmailAddress } from '../utils/emailIdentity.js';
 
 const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['admin', 'student', 'coordinator'], default: 'student' },
+  // University admins created without this field keep full access.
+  adminAccess: { type: String, enum: ['full', 'limited'], default: 'full' },
   accessScope: { type: String, enum: ['full', 'assessment_only'], default: 'full', index: true },
   featureAccess: {
     mode: { type: String, enum: ['all', 'custom'], default: 'all' },

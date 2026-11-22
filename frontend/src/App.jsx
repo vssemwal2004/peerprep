@@ -13,6 +13,7 @@ import DesktopOnly from './components/DesktopOnly';
 import { LandingPageSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
 import { hideGlobalLoader } from './utils/globalLoader';
 import { useAuth } from './context/AuthContext';
+import { isLimitedUniversityAdmin, limitedAdminBlockedPath } from './platform/adminAccess';
 import { hasPermission } from './admin/coordinatorPermissions';
 import PopupDismissManager from './components/PopupDismissManager';
 import PlatformGuideProvider from './guide/platform/PlatformGuideProvider';
@@ -289,6 +290,9 @@ function ShellPage({ children }) {
 }
 
 function AdminShell({ children, layout = true }) {
+  const { user } = useAuth();
+  const { pathname } = useLocation();
+  if (isLimitedUniversityAdmin(user) && limitedAdminBlockedPath(pathname)) return <Navigate to="/admin/students" replace />;
   const page = <ShellPage>{children}</ShellPage>;
   return (
     <AdminProtectedRoute>

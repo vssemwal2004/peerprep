@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, requireCoordinatorCreation } from '../middleware/auth.js';
 import {
   createCoordinator,
   bulkCreateCoordinators,
@@ -17,8 +17,8 @@ import { cacheJsonResponse, invalidateResponseCache } from '../middleware/respon
 const router = Router();
 
 router.get('/list', requireAuth, requireAdmin, cacheJsonResponse({ namespace: 'coordinators', ttlSeconds: Number(process.env.RESPONSE_CACHE_COORDINATORS_TTL_SECONDS || 30) }), listAllCoordinators);
-router.post('/create', requireAuth, requireAdmin, invalidateResponseCache('coordinators'), createCoordinator);
-router.post('/bulk-create', requireAuth, requireAdmin, bulkOperationLimiter, invalidateResponseCache('coordinators'), bulkCreateCoordinators);
+router.post('/create', requireAuth, requireAdmin, requireCoordinatorCreation, invalidateResponseCache('coordinators'), createCoordinator);
+router.post('/bulk-create', requireAuth, requireAdmin, requireCoordinatorCreation, bulkOperationLimiter, invalidateResponseCache('coordinators'), bulkCreateCoordinators);
 router.post('/resend-credentials', requireAuth, requireAdmin, bulkOperationLimiter, resendCoordinatorCredentials);
 router.get('/:coordinatorId/access', requireAuth, requireAdmin, getCoordinatorAccess);
 router.put('/:coordinatorId/access', requireAuth, requireAdmin, invalidateResponseCache('coordinators'), updateCoordinatorAccess);

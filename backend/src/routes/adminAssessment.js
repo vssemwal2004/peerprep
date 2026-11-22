@@ -7,6 +7,10 @@ import {
   addMockRole, fetchMissingLogos, listMockCatalogCompanies, mockRolesFor, removeCompanyLogo, setLogoFromUpload, setLogoFromWebsite,
 } from '../services/prepMockCatalog.js';
 import { universityPolicy } from '../platform/client.js';
+import { permissionAllowed } from '../platform/enforcePolicy.js';
+import Assessment from '../models/Assessment.js';
+import AssessmentSubmission from '../models/AssessmentSubmission.js';
+import mongoose from 'mongoose';
 import { bulkOperationLimiter, uploadLimiter, compilerExecutionLimiter } from '../middleware/rateLimiter.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
 import {
@@ -69,7 +73,8 @@ router.use('/library/questions', async (req, res, next) => {
   if (!isUniversity()) return next();
   try {
     const policy = await universityPolicy();
-    if (!policy.permissions?.questions) return res.status(403).json({ error: 'Question library is disabled' });
+    const moduleName = req.query?.scope === 'mock' ? 'prepmock' : 'questions';
+    if (!permissionAllowed(policy.permissions, moduleName)) return res.status(403).json({ error: `${moduleName} is disabled for this university` });
     next();
   } catch (error) { next(error); }
 });
@@ -84,6 +89,28 @@ router.post('/assessment/students/preview', requireAuth, requireCoordinatorPermi
 const mockAuthor = [requireAuth, requireCoordinatorPermission('coordinator.assessment.create')];
 const noStore = (res) => res.set('Cache-Control', 'private, no-store');
 const route = (handler) => async (req, res, next) => { try { await handler(req, res); } catch (error) { next(error); } };
+router.use('/assessment/:id', async (req, res, next) => {
+  if (!isUniversity() || !mongoose.isValidObjectId(req.params.id)) return next();
+  try {
+    const assessment = await Assessment.findById(req.params.id).select('kind').lean();
+    if (assessment?.kind === 'mock' && !permissionAllowed((await universityPolicy()).permissions, 'prepmock')) {
+      return res.status(403).json({ error: 'PrepMock is disabled for this university' });
+    }
+    return next();
+  } catch (error) { return next(error); }
+});
+router.use(['/assessment/reports/submissions/:submissionId', '/assessment/submissions/:submissionId/violations'], async (req, res, next) => {
+  if (!isUniversity() || !mongoose.isValidObjectId(req.params.submissionId)) return next();
+  try {
+    const submission = await AssessmentSubmission.findById(req.params.submissionId).select('assessmentId').lean();
+    if (!submission) return next();
+    const assessment = await Assessment.findById(submission.assessmentId).select('kind').lean();
+    if (assessment?.kind === 'mock' && !permissionAllowed((await universityPolicy()).permissions, 'prepmock')) {
+      return res.status(403).json({ error: 'PrepMock is disabled for this university' });
+    }
+    return next();
+  } catch (error) { return next(error); }
+});
 router.get('/assessment/mock-companies', ...mockAuthor, route(async (req, res) => {
   const search = String(req.query.search || '').trim().toLowerCase().slice(0, 80);
   const requested = Number.parseInt(req.query.limit, 10);

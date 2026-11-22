@@ -121,12 +121,49 @@ test('adding a university is a guided flow that cannot skip the connection test'
   await act(async () => next().click());
   assert.match(document.body.textContent, /Test the MongoDB connection/);
   assert.equal(next().disabled, true, 'connections need a passing database test');
-  api.testUniversityDatabase = async () => ({ connected: true });
-  await type(document.querySelector('input[placeholder="mongodb+srv://…"]'), 'mongodb://db.example/west');
+  let connectionChecks = 0;
+  api.testUniversityDatabase = async () => { connectionChecks += 1; return { connected: true }; };
+  const dbInput = document.querySelector('input[placeholder="mongodb+srv://…"]');
+  await type(dbInput, 'MONGODB_URI="mongodb://db.example/west"');
+  await act(async () => button('Test connection').click());
+  assert.equal(connectionChecks, 0, 'an environment assignment is rejected before the request');
+  assert.match(document.body.textContent, /Do not include MONGODB_URI=/);
+  await type(dbInput, 'mongodb://db.example/west');
   await act(async () => button('Test connection').click());
   await settle();
+  assert.equal(connectionChecks, 1);
   await type(document.querySelector('input[placeholder="https://judge.university.edu"]'), 'https://judge.example');
   assert.equal(next().disabled, false);
+});
+
+test('a previously removed university database can be cleared and retested during setup', async () => {
+  await render('/admin/universities/new', '/admin/universities/new', pages.AddUniversity);
+  await type(document.querySelector('input[placeholder="graphic-era"]'), 'new-west');
+  await type(document.querySelector('input[placeholder="Graphic Era University"]'), 'New West University');
+  await act(async () => button('Continue').click());
+  await type(document.querySelector('input[placeholder="mongodb+srv://…"]'), 'mongodb://db.example/old-west');
+  let cleared = false;
+  api.testUniversityDatabase = async () => {
+    if (!cleared) throw new Error('This database is already claimed by another PeerPrep deployment or university.');
+    return { connected: true };
+  };
+  api.inspectOrphanedUniversityDatabase = async () => ({ universityId: 'old-west', canDelete: true });
+  api.deleteOrphanedUniversityDatabase = async (uri, id) => {
+    assert.equal(uri, 'mongodb://db.example/old-west');
+    assert.equal(id, 'old-west');
+    cleared = true;
+    return { deleted: true };
+  };
+  await act(async () => button('Test connection').click());
+  await settle();
+  assert.match(document.body.textContent, /previously deleted university old-west/);
+  const originalConfirm = window.confirm;
+  window.confirm = () => true;
+  try { await act(async () => button('Delete old university database').click()); }
+  finally { window.confirm = originalConfirm; }
+  await settle();
+  assert.equal(cleared, true);
+  assert.match(document.body.textContent, /Connection verified/);
 });
 
 test('the activity log stays in the master workspace and pages within ten days', async () => {

@@ -21,11 +21,11 @@ import {
 export const MODULES = Object.freeze({
   student: { label: 'Student details', permission: null },
   coding: { label: 'Prep Coding', permission: 'questions' },
-  quickprep: { label: 'Quick Prep', permission: 'questions' },
+  quickprep: { label: 'Quick Prep', permission: 'quickprep' },
   learning: { label: 'Prep Learning', permission: 'learning' },
   interview: { label: 'Prep Interview', permission: ['events', 'interviews'] },
   assessment: { label: 'Prep Assessment', permission: 'assessments' },
-  prepmock: { label: 'PrepMock', permission: 'assessments' },
+  prepmock: { label: 'PrepMock', permission: 'prepmock' },
 });
 
 // Which module each "Only count" set belongs to.
@@ -231,7 +231,11 @@ export const STATIC_OPTIONS = Object.freeze({
 /** Modules a request may use under the university policy (null permissions = standalone: all). */
 export function allowedModules(permissions) {
   return Object.entries(MODULES)
-    .filter(([, module]) => !module.permission || !permissions || [].concat(module.permission).some((key) => permissions[key] === true))
+    .filter(([key, module]) => !module.permission || !permissions || (key === 'quickprep'
+      ? permissions.questions === true && permissions.quickprep !== false
+      : key === 'prepmock'
+        ? permissions.assessments === true && permissions.prepmock !== false
+        : [].concat(module.permission).some((permission) => permissions[permission] === true)))
     .map(([key]) => key);
 }
 

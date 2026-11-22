@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Bot, Code2, Database, PlugZap } from 'lucide-react';
 import { api } from '../../../utils/api';
 import { Button, Card, Field, Notice, Pill, inputClass } from '../ui';
+import { MONGO_URI_HINT, mongoUriProblem } from '../mongoUri';
 
 const Status = ({ on, optional }) => <Pill tone={on ? 'success' : optional ? 'neutral' : 'danger'}>{on ? 'Connected' : optional ? 'Not connected' : 'Missing'}</Pill>;
 
@@ -16,6 +17,11 @@ export default function ConnectionsTab({ university, run, busy }) {
 
   async function testDatabase() {
     const uri = dbUri;
+    const formatProblem = mongoUriProblem(uri);
+    if (formatProblem) {
+      setDbTest({ uri, status: 'error', message: formatProblem });
+      return;
+    }
     setDbTest({ uri, status: 'testing' });
     try { await api.testUniversityDatabase(id, uri); setDbTest({ uri, status: 'success' }); }
     catch (error) { setDbTest({ uri, status: 'error', message: error.message || 'The connection failed.' }); }
@@ -27,7 +33,7 @@ export default function ConnectionsTab({ university, run, busy }) {
 
       <Card id="db-title" title="University database" icon={Database} actions={<Status on={university.dbConfigured} />} description="Changing the database moves this university to another MongoDB. Test it first.">
         <div className="flex flex-wrap items-end gap-3">
-          <Field label="New MongoDB URI" className="min-w-[18rem] flex-1"><input className={inputClass} type="password" autoComplete="off" value={dbUri} onChange={(event) => setDbUri(event.target.value)} placeholder="mongodb+srv://…" /></Field>
+          <Field label="New MongoDB URI" hint={MONGO_URI_HINT} className="min-w-[18rem] flex-1"><input className={inputClass} type="password" autoComplete="off" value={dbUri} onChange={(event) => setDbUri(event.target.value)} placeholder="mongodb+srv://…" /></Field>
           <Button variant="secondary" icon={PlugZap} busy={dbTest?.status === 'testing'} disabled={!dbUri} onClick={testDatabase}>Test connection</Button>
           <Button busy={busy === 'db'} disabled={!tested} onClick={() => run('db', async () => { await api.updateUniversity(id, { dbUri }); setDbUri(''); setDbTest(null); }, 'Database connection replaced.')}>Save database</Button>
         </div>

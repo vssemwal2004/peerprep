@@ -152,15 +152,25 @@ test('one API isolates university users, sessions and student lists with duplica
     assert.equal(await University.countDocuments({ universityId: 'gamma' }), 0);
     const unreachableDatabase = await testDatabase('gamma', 'mongodb://127.0.0.1:1/gamma');
     assert.equal(unreachableDatabase.status, 422);
+    assert.match((await unreachableDatabase.json()).error, /Could not connect to MongoDB/);
     assert.equal(await University.countDocuments({ universityId: 'gamma' }), 0);
     const wrongDatabase = await testDatabase('gamma', mongo.getUri('alpha'));
     assert.equal(wrongDatabase.status, 422);
+    assert.match((await wrongDatabase.json()).error, /already claimed by another/);
+    const occupiedUri = mongo.getUri('occupied');
+    const occupiedConnection = await mongoose.createConnection(occupiedUri).asPromise();
+    await occupiedConnection.collection('users').insertOne({ role: 'student' });
+    await occupiedConnection.close();
+    const occupiedDatabase = await testDatabase('gamma', occupiedUri);
+    assert.equal(occupiedDatabase.status, 422);
+    assert.match((await occupiedDatabase.json()).error, /already contains data/);
     const gamma = await fetch(`${origin}/api/platform/admin/universities`, { method: 'POST',
       headers: { Cookie: platformCookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ universityId: 'gamma', name: 'Gamma University',
         serviceStartDate: '2020-01-01', serviceEndDate: '2099-12-31', coordinatorLimit: 100, studentLimit: 10000,
         dbUri: gammaUri, judge0Url: 'http://127.0.0.1:2358',
-        adminEmail: 'gamma-admin@example.test', adminPassword: 'gamma-password-strong' }) });
+        adminEmail: 'gamma-admin@example.test', adminPassword: 'gamma-password-strong',
+        limitedAdminEmail: 'gamma-content@example.test', limitedAdminPassword: 'gamma-content-password' }) });
     const gammaBody = await gamma.json();
     assert.equal(gamma.status, 201, JSON.stringify(gammaBody));
     assert.equal(gammaBody.apiKey, undefined);
@@ -185,12 +195,55 @@ test('one API isolates university users, sessions and student lists with duplica
       body: JSON.stringify({ universityId: 'existing', name: 'Existing University', dbUri: existingUri,
         serviceStartDate: '2020-01-01', serviceEndDate: '2099-12-31', coordinatorLimit: 100, studentLimit: 10000,
         judge0Url: 'http://127.0.0.1:2358', adminEmail: 'existing-admin@example.test',
-        adminPassword: 'unused-password-strong' }) });
+        adminPassword: 'unused-password-strong', limitedAdminEmail: 'existing-content@example.test',
+        limitedAdminPassword: 'existing-content-password' }) });
     assert.equal(existingRegistration.status, 201, await existingRegistration.text());
     const existingLogin = await fetch(`${origin}/api/u/existing/auth/login`, { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier: 'existing-admin@example.test', password: 'existing-password' }) });
     assert.equal(existingLogin.status, 200);
+    const limitedLogin = await fetch(`${origin}/api/u/gamma/auth/login`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: 'gamma-content@example.test', password: 'gamma-content-password' }) });
+    assert.equal(limitedLogin.status, 200);
+    assert.equal((await limitedLogin.json()).user.adminAccess, 'limited');
+    const limitedCookie = limitedLogin.headers.get('set-cookie').split(';')[0];
+    const limitedMe = await fetch(`${origin}/api/u/gamma/auth/me`, { headers: { Cookie: limitedCookie } });
+    assert.equal((await limitedMe.json()).adminAccess, 'limited');
+    const blockedStudentId = String(sharedStudentId);
+    for (const [method, path] of [
+      ['POST', '/students/create'], ['PUT', `/students/${blockedStudentId}`],
+      ['DELETE', `/students/${blockedStudentId}`], ['POST', '/students/access/bulk'],
+      ['POST', '/coordinators/create'], ['POST', '/coordinators/bulk-create'],
+      ['DELETE', `/bulk-uploads/${blockedStudentId}`],
+    ]) {
+      const response = await fetch(`${origin}/api/u/gamma${path}`, { method,
+        headers: { Cookie: limitedCookie, 'Content-Type': 'application/json' }, body: method === 'DELETE' ? undefined : '{}' });
+      assert.equal(response.status, 403, `${method} ${path}: ${await response.text()}`);
+    }
+    const limitedStudents = await fetch(`${origin}/api/u/gamma/students/list`, { headers: { Cookie: limitedCookie } });
+    assert.equal(limitedStudents.status, 200);
+    const limitedCoordinators = await fetch(`${origin}/api/u/gamma/coordinators/list`, { headers: { Cookie: limitedCookie } });
+    assert.equal(limitedCoordinators.status, 200);
+    const blockedCandidateCreation = await fetch(`${origin}/api/u/gamma/admin/assessment/create`, {
+      method: 'POST', headers: { Cookie: limitedCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignedStudents: [{ name: 'New student', email: 'new@example.test', studentid: 'NEW-1' }] }),
+    });
+    assert.equal(blockedCandidateCreation.status, 403);
+    const disablePrepFeatures = await fetch(`${origin}/api/platform/admin/universities/gamma`, {
+      method: 'PATCH', headers: { Cookie: platformCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permissions: { quickprep: false, prepmock: false } }),
+    });
+    assert.equal(disablePrepFeatures.status, 200, await disablePrepFeatures.text());
+    for (const path of ['/quests', '/admin/assessment/mock-companies', '/admin/library/questions?scope=mock']) {
+      const response = await fetch(`${origin}/api/u/gamma${path}`, { headers: { Cookie: limitedCookie } });
+      assert.equal(response.status, 403, `${path}: ${await response.text()}`);
+    }
+    const enablePrepFeatures = await fetch(`${origin}/api/platform/admin/universities/gamma`, {
+      method: 'PATCH', headers: { Cookie: platformCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permissions: { quickprep: true, prepmock: true } }),
+    });
+    assert.equal(enablePrepFeatures.status, 200, await enablePrepFeatures.text());
     const gammaCookie = await (async () => {
       const response = await fetch(`${origin}/api/u/gamma/auth/login`, { method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -288,6 +341,58 @@ test('one API isolates university users, sessions and student lists with duplica
     assert.equal(gammaMe.status, 200);
     assert.match(JSON.stringify(await alpha.json()), /alpha student/);
     assert.match(JSON.stringify(await beta.json()), /beta student/);
+    const { dropTenantDatabase } = await import('../src/platform/tenantConnections.js');
+    await assert.rejects(dropTenantDatabase(mongo.getUri('alpha'), 'gamma'), /identity does not match/);
+    await University.updateOne({ universityId: 'gamma' }, { $set: { dbUriEncrypted: encryptTenantSecret(mongo.getUri('alpha')) } });
+    const wrongDatabaseDelete = await fetch(`${origin}/api/platform/admin/universities/gamma`, {
+      method: 'DELETE', headers: { Cookie: platformCookie },
+    });
+    assert.equal(wrongDatabaseDelete.status, 422);
+    assert.equal((await University.findOne({ universityId: 'gamma' })).active, true);
+    await University.updateOne({ universityId: 'gamma' }, { $set: { dbUriEncrypted: encryptTenantSecret(gammaUri) } });
+    const deletedGamma = await fetch(`${origin}/api/platform/admin/universities/gamma`, {
+      method: 'DELETE', headers: { Cookie: platformCookie },
+    });
+    assert.equal(deletedGamma.status, 200, await deletedGamma.text());
+    assert.equal(await University.countDocuments({ universityId: 'gamma' }), 0);
+    assert.equal((await loginDirectoryCandidates('gamma-admin@example.test')).length, 0);
+    const afterDelete = await mongoose.createConnection(gammaUri).asPromise();
+    assert.deepEqual(await afterDelete.db.listCollections({}, { nameOnly: true }).toArray(), []);
+    await afterDelete.close();
+    const reusableDatabase = await testDatabase('gamma-replacement', gammaUri);
+    assert.equal(reusableDatabase.status, 200, await reusableDatabase.text());
+    const activeDatabaseInspect = await fetch(`${origin}/api/platform/admin/universities/orphaned-database/inspect`, {
+      method: 'POST', headers: { Cookie: platformCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dbUri: mongo.getUri('alpha') }),
+    });
+    assert.equal(activeDatabaseInspect.status, 409);
+    const oldUri = mongo.getUri('old-deleted');
+    await testTenantConnection(oldUri, 'old-deleted', { claim: true });
+    const oldConnection = await mongoose.createConnection(oldUri).asPromise();
+    await oldConnection.collection('old_students').insertOne({ name: 'Previously deleted student' });
+    await oldConnection.close();
+    const { PlatformAudit } = await import('../src/platform/models.js');
+    await PlatformAudit.create({ actor: 'test', action: 'university.deleted', universityId: 'old-deleted' });
+    const inspectOld = await fetch(`${origin}/api/platform/admin/universities/orphaned-database/inspect`, {
+      method: 'POST', headers: { Cookie: platformCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dbUri: oldUri }),
+    });
+    const inspectOldBody = await inspectOld.json();
+    assert.equal(inspectOld.status, 200, JSON.stringify(inspectOldBody));
+    assert.equal(inspectOldBody.universityId, 'old-deleted');
+    const wrongConfirmation = await fetch(`${origin}/api/platform/admin/universities/orphaned-database`, {
+      method: 'DELETE', headers: { Cookie: platformCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dbUri: oldUri, confirmUniversityId: 'someone-else' }),
+    });
+    assert.equal(wrongConfirmation.status, 400);
+    const eraseOld = await fetch(`${origin}/api/platform/admin/universities/orphaned-database`, {
+      method: 'DELETE', headers: { Cookie: platformCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dbUri: oldUri, confirmUniversityId: 'old-deleted' }),
+    });
+    assert.equal(eraseOld.status, 200, await eraseOld.text());
+    const clearedOld = await mongoose.createConnection(oldUri).asPromise();
+    assert.deepEqual(await clearedOld.db.listCollections({}, { nameOnly: true }).toArray(), []);
+    await clearedOld.close();
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     const { closeTenantConnections } = await import('../src/platform/tenantConnections.js');

@@ -21,14 +21,16 @@ const MASTER_ONLY_SETTINGS_PATH = /^\/admin\/(?:settings\/(?:prep-score-adjustme
 export function moduleForPath(pathname = '') {
   const path = pathname.split('?')[0];
   if (/^\/student\/challenges(?:\/|$)/.test(path)) return 'challenges';
-  if (/^\/student\/(?:quests|quickprep)(?:\/|$)/.test(path)) return 'questions';
+  if (/^\/student\/(?:quests|quickprep)(?:\/|$)/.test(path)) return 'quickprep';
+  if (/^\/student\/prep-mock(?:\/|$)|^\/admin\/prepmock(?:\/|$)/.test(path)) return 'prepmock';
   if (/^\/(?:admin|student)\/ai-interviews(?:\/|$)|^\/coordinator\/ai-interviews(?:\/|$)/.test(path)) return 'interviews';
   if (/^\/(?:admin|student)\/learning(?:\/|$)|^\/coordinator\/subjects(?:\/|$)/.test(path)) return 'learning';
-  if (/^\/(?:admin|coordinator)\/library(?:\/|$)|^\/(?:admin|coordinator)\/compiler(?:\/|$)|^\/admin\/(?:quests|quickprep)(?:\/|$)|^\/problems(?:\/|$)/.test(path)) return 'questions';
+  if (/^\/admin\/(?:quests|quickprep)(?:\/|$)/.test(path)) return 'quickprep';
+  if (/^\/(?:admin|coordinator)\/library(?:\/|$)|^\/(?:admin|coordinator)\/compiler(?:\/|$)|^\/problems(?:\/|$)/.test(path)) return 'questions';
   if (/^\/(?:admin|coordinator)\/assessment(?:\/|-|$)|^\/student\/assessments?(?:\/|-|$)|^\/(?:assessments|assessment-reports|assessment-history)(?:\/|$)/.test(path)) return 'assessments';
   if (/^\/(?:admin|coordinator)\/(?:event|interviews|feedback)(?:\/|$)|^\/student\/(?:interview|session|feedback)(?:\/|$)/.test(path)) return 'events';
   if (/^\/student\/resume(?:\/|$)|^\/(?:admin|coordinator)\/students\/[^/]+\/resume(?:\/|$)/.test(path)) return 'resumes';
-  if (/^\/(?:admin|student)\/(?:analysis|analytics)(?:\/|$)/.test(path)) return 'analysis';
+  if (/^\/(?:admin|student)\/(?:analysis|analytics|prep-analysis)(?:\/|$)/.test(path)) return 'analysis';
   return null;
 }
 
@@ -37,6 +39,8 @@ export function moduleEnabled(permissions, moduleName) {
   if (moduleName === 'challenges') return ['questions', 'learning', 'assessments', 'interviews', 'events'].some(name => permissions[name] === true);
   if (moduleName === 'coding') return permissions.coding === undefined
     ? permissions.questions === true : permissions.coding === true;
+  if (moduleName === 'quickprep') return permissions.questions === true && permissions.quickprep !== false;
+  if (moduleName === 'prepmock') return permissions.assessments === true && permissions.prepmock !== false;
   return permissions[moduleName] === true;
 }
 
@@ -52,9 +56,11 @@ export function pathAllowed(pathname, permissions, role = 'admin', search = '', 
   const student = role === 'student';
   // A student's analysis is one page that shows only the parts their university and admin allow
   // (the server enforces that too), so any contributing module opens it, at any section address.
-  const contributors = student ? ['questions', 'assessments', 'interviews', 'events', 'learning'] : ['questions', 'assessments', 'learning'];
+  const contributors = student ? ['questions', 'quickprep', 'assessments', 'prepmock', 'interviews', 'events', 'learning'] : ['questions', 'quickprep', 'assessments', 'prepmock', 'learning'];
   if (!contributors.some((name) => moduleEnabled(permissions, name))) return false;
   if (student) return true;
+  const area = new URLSearchParams(search || pathname.split('?')[1] || '').get('area');
+  if (area === 'quickprep' || area === 'prepmock') return moduleEnabled(permissions, area);
   if (/^\/admin\/analysis\/assessments(?:\/|$)/.test(pathname)) {
     return moduleEnabled(permissions, 'assessments');
   } else if (new URLSearchParams(search || pathname.split('?')[1] || '').get('source') === 'coding') {

@@ -2439,6 +2439,11 @@ export async function createAssessment(req, res) {
       mockUniversityIds,
     } = req.body || {};
 
+    if (isUniversity() && req.user?.role === 'admin' && req.user.adminAccess === 'limited'
+      && Array.isArray(assignedStudents) && assignedStudents.some((row) => !mongoose.isValidObjectId(row?._id || row?.id || row))) {
+      return res.status(403).json({ error: 'This admin cannot create student accounts through an assessment.' });
+    }
+
     const mockKind = req.body?.kind === 'mock';
     if (mockKind && !String(company || '').trim()) return res.status(400).json({ error: 'Choose a company for this mock.' });
     const mockRole = mockKind ? cleanMockRole(req.body?.role) : '';
@@ -2902,6 +2907,11 @@ export async function updateAssessment(req, res) {
       mockAudienceMode,
       mockUniversityIds,
     } = req.body || {};
+
+    if (isUniversity() && req.user?.role === 'admin' && req.user.adminAccess === 'limited'
+      && Array.isArray(assignedStudents) && assignedStudents.some((row) => !mongoose.isValidObjectId(row?._id || row?.id || row))) {
+      return res.status(403).json({ error: 'This admin cannot create student accounts through an assessment.' });
+    }
 
     if (req.user?.role === 'coordinator'
       && !hasCoordinatorPermission(req.user, 'coordinator.assessment.candidates')

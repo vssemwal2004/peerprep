@@ -7,6 +7,8 @@ import { useToast } from '../components/CustomToast';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
 import PageGuideButton from '../guide/platform/PageGuideButton';
 import GuideInfo from '../guide/platform/GuideInfo';
+import { useAuth } from '../context/AuthContext';
+import { isLimitedUniversityAdmin } from '../platform/adminAccess';
 
 const timeValue = (value) => {
   const time = value ? new Date(value).getTime() : Number.NaN;
@@ -140,6 +142,7 @@ function CoordinatorCard({ coordinator, checked, onCheck, onEdit, onToggle, onVi
 }
 
 export default function CoordinatorDirectory() {
+  const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const [coordinators, setCoordinators] = useState([]);
@@ -328,9 +331,9 @@ export default function CoordinatorDirectory() {
               <select aria-label="Filter coordinator status" data-guide="cd-status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                 <option value="all">All statuses</option><option value="active">Active</option><option value="disabled">Disabled</option>
               </select>
-              <Link to="/admin/coordinators" data-guide="cd-add" className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700">
+              {!isLimitedUniversityAdmin(user) && <Link to="/admin/coordinators" data-guide="cd-add" className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700">
                 <UserPlus className="h-4 w-4" />Add coordinator
-              </Link>
+              </Link>}
             </div>
           </div>
 
