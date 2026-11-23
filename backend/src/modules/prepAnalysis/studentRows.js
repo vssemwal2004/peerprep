@@ -279,7 +279,9 @@ export function attachStoredScores(rows, stored, { features = {}, points = { Eas
     const saved = stored.get(row.id);
     const modules = Object.fromEntries(Object.entries(saved?.modules || {}).filter(([key]) => features[key] !== false));
     row.scores = { total: saved?.total ?? 0, features: modules };
-    row.coding.prepScore = modules.coding?.score ?? 0;
+    // The one Prep Score (points ledger total) that profiles, dashboards and ranks show. The
+    // formula's coding module score is only an activity metric and must never be shown as it.
+    row.coding.prepScore = row.scores.total;
     row.coding.scoredCounts = Object.fromEntries(DIFFICULTIES.map((level) => [level, modules.coding?.counts?.[level] || 0]));
     row.coding.points = Object.fromEntries(DIFFICULTIES.map((level) => [level, roundScore((modules.coding?.counts?.[level] || 0) * points[level], 2)]));
   }

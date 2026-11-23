@@ -24,7 +24,7 @@ export default function TopStudentDialog({ item, range, onClose, onDetails }) {
               <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{rangeLabel(range)}</p>
             </div>
             <div className="shrink-0 rounded-lg bg-sky-50 px-3 py-1.5 text-right dark:bg-sky-500/10">
-              <p className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Prep Score · Coding</p>
+              <p className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Prep Score</p>
               <p className="text-lg font-bold leading-6 tabular-nums text-slate-900 dark:text-white">{formatScore(item.score)}</p>
             </div>
           </div>

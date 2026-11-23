@@ -40,11 +40,27 @@ test('admin rows show the stored Prep Score students rank on, never a period-lim
     total: 9.5,
     modules: { coding: { score: 8.09, counts: { Easy: 1, Medium: 3, Hard: 2 } }, learning: { score: 3, counts: { Easy: 3, Medium: 0, Hard: 0 } } },
   }]]), { features: { coding: true, learning: false }, points: { Easy: 1, Medium: 2, Hard: 4 } });
-  assert.equal(rows[0].coding.prepScore, 8.09);
+  assert.equal(rows[0].coding.prepScore, 9.5, 'the stored total the profile shows, not the coding module score (8.09)');
   assert.deepEqual(rows[0].coding.points, { Easy: 1, Medium: 6, Hard: 8 }, 'work split by configured points');
   assert.equal(rows[0].scores.total, 9.5);
   assert.equal(rows[0].scores.features.learning, undefined, 'an unlicensed module is not shown');
   assert.deepEqual(rows[1].scores, { total: 0, features: {} }, 'no stored row yet means 0');
+});
+
+test('every Prep Analysis Prep Score equals the profile score even when the coding module score differs', () => {
+  // Production case: ledger total 18.5 (solves + logins + challenges) vs formula coding score 16.5.
+  const rows = buildStudentRows({
+    students: [{ _id: 's1', name: 'Asha' }],
+    facts: { byStudent: new Map([['s1', [{ problemId: 'p1', language: 'cpp', attempts: 1, accepted: 1 }]]]), days: new Map() },
+    problems: indexProblemMeta(new Map([['p1', { id: 'p1', title: 'One', difficulty: 'Easy', topicIds: [], topics: [], tags: [], companies: [] }]])),
+  });
+  attachStoredScores(rows, new Map([['s1', { total: 18.5, modules: { coding: { score: 16.5, counts: { Easy: 38, Medium: 30, Hard: 18 } } } }]]), { features: { coding: true } });
+  const [row] = rows;
+  assert.equal(row.coding.prepScore, 18.5);
+  assert.equal(row.scores.total, 18.5);
+  const [item] = CHARTS.find((chart) => chart.id === 'top-students').build({ rows, options: {}, range: {} }).items;
+  assert.equal(item.score, 18.5, 'top-students bar shows the profile score');
+  assert.equal(Math.round((item.segments.Easy + item.segments.Medium + item.segments.Hard) * 100) / 100, 18.5, 'bar parts add up to it');
 });
 
 test('top-student bars are the Prep Score split by difficulty, so a longer bar always means a higher score', () => {
