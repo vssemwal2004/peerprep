@@ -81,5 +81,9 @@
   },
   "devDependencies": {
     "mongodb-memory-server": "^10.1.4"
+  },
+  "allowScripts": {
+    "bcrypt@5.1.1": true,
+    "msgpackr-extract@3.0.4": true
   }
 }
