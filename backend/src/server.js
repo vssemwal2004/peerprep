@@ -21,6 +21,8 @@ import { validateDeploymentConfig } from './platform/deployment.js';
 import { getTenant } from './platform/tenantConnections.js';
 import { runForTenant } from './platform/tenantContext.js';
 import { startSharedMaintenance } from './platform/sharedMaintenance.js';
+import { resumeScanJobs } from './modules/resumeReview/resumeReview.jobs.js';
+import { sharedExtractor } from './modules/resumeReview/resumeReview.extractor.js';
 import { registerAnviSocketHandlers } from './modules/anviInterview/anviInterview.socket.js';
 import { flushAnviUsage } from './modules/anviInterview/anviInterview.usage.js';
 import { registerAssessmentReportSocketHandlers } from './services/assessmentReportRealtime.js';
@@ -216,10 +218,8 @@ setIo(io);
 startEmbeddedWorkers();
 const scheduledJobsEnabled = String(process.env.START_SCHEDULED_JOBS || 'true').trim().toLowerCase() !== 'false';
 const mailWorkerEnabled = String(process.env.START_MAIL_WORKER || 'true').trim().toLowerCase() !== 'false';
-let stopSharedMaintenance = async () => {};
-if (scheduledJobsEnabled || mailWorkerEnabled) {
-  stopSharedMaintenance = startSharedMaintenance({ scheduled: scheduledJobsEnabled, mail: mailWorkerEnabled });
-}
+sharedExtractor().warm();
+const stopSharedMaintenance = startSharedMaintenance({ scheduled: scheduledJobsEnabled, mail: mailWorkerEnabled, resumeScans: true });
 
 // SECURITY: Graceful shutdown handlers
 const shutdown = async (signal) => {
@@ -231,6 +231,8 @@ const shutdown = async (signal) => {
 
   const exitCleanly = async (code) => {
     await stopSharedMaintenance().catch(() => {});
+    await resumeScanJobs().close();
+    sharedExtractor().close();
     await closeQueueWorkers().catch(() => {});
     await closeQueues().catch(() => {});
     await closeJudge0Gateway().catch(() => {});

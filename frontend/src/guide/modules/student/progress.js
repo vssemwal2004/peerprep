@@ -193,9 +193,9 @@ export default [
     next: "student.resume-create",
     steps: [
       { id: "pr-header", target: "pr-header", chapter: "layout", title: "Prep Resume", body: "Your resume in two steps: create it once, then have ANVI check it. Your details and your last check are kept for you." },
-      { id: "pr-create", target: "pr-create", chapter: "parts", quick: true, title: "Create resume", body: "Add or edit your details. The card shows how complete your resume is, which sections are filled and the template in use." },
-      { id: "pr-review", target: "pr-review", chapter: "parts", quick: true, title: "Your resume", body: "Your finished resume with ANVI's latest check: ATS readiness out of 100, grammar issues and job match. Open it to fix issues." },
-      { id: "pr-how", target: "pr-how", chapter: "parts", title: "What ANVI checks", body: "ATS readiness from your exported PDF, grammar and spelling on your device, and an optional job match." },
+      { id: "pr-create", target: "pr-create", chapter: "parts", quick: true, title: "Create resume", body: "Upload a PDF or Word résumé, start from scratch, or continue your saved draft." },
+      { id: "pr-review", target: "pr-review", chapter: "parts", quick: true, title: "Your resume", body: "Check your exported PDF, review spelling and grammar, improve a bullet or compare your résumé with a job description." },
+      { id: "pr-how", target: "pr-how", chapter: "parts", title: "How it works", body: "Bring in your details, choose a template, review your résumé and download your PDF." },
     ],
   },
   {

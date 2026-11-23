@@ -79,6 +79,7 @@ export const mergeSavedResumeMetadata = (draft, saved = {}) => {
   return {
     ...normalizedDraft,
     exists: true,
+    createdAt: saved.createdAt || normalizedDraft.createdAt,
     updatedAt: saved.updatedAt || normalizedDraft.updatedAt,
     completion: typeof saved.completion === 'number'
       ? saved.completion
@@ -136,17 +137,48 @@ export const hasResumeContent = (resume) => {
   return Boolean(visibleBasics || visibleSectionKeys(resume).length);
 };
 
+/** Check fields together on the same visible entry, just as they appear on the PDF. */
+export function getResumeRequirements(resume = {}) {
+  const basics = resume?.basics || {};
+  const shown = (section) => !resume?.hiddenSections?.includes(section);
+  const hasWords = (value) => /[\p{L}\p{N}]/u.test(String(value ?? ''));
+  const contactVisible = (field) => resume?.basicsVisibility?.[field] !== false;
+  const email = String(basics.email || '').trim();
+  const phone = String(basics.mobile || '').trim();
+  const contact = (contactVisible('email') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    || (contactVisible('mobile') && /^[+\d ().-]+$/.test(phone) && /^\d{7,15}$/.test(phone.replace(/\D/g, '')));
+  const missing = [];
+  function requireField(ok, id, label, section, field, entryIndex, bulletIndex) {
+    if (!ok) missing.push({ id, label, section, field, entryIndex, bulletIndex });
+  }
+  requireField(hasWords(basics.name), 'name', 'Add your full name', 'basics', 'name');
+  requireField(contact, 'contact', 'Add a visible email address or phone number', 'basics', contactVisible('email') ? 'email' : 'mobile');
+
+  function closest(entries, evaluate) {
+    return entries.map((item, index) => ({ item, index, count: evaluate(item) }))
+      .sort((a, b) => b.count - a.count)[0];
+  }
+  const education = closest(resume?.education || [], (row) => Number(hasWords(row.degree)) + Number(hasWords(row.institute)));
+  const edVisible = shown('education');
+  requireField(edVisible && hasWords(education?.item.degree), 'degree', edVisible ? 'Add your degree or qualification' : 'Show your education on the PDF', 'education', 'degree', education?.index ?? 0);
+  requireField(edVisible && hasWords(education?.item.institute), 'institute', edVisible ? 'Add the school or institute for this qualification' : 'Include the institute on your PDF', 'education', 'institute', education?.index ?? 0);
+  const skills = resume?.skills || [];
+  requireField(shown('skills') && skills.some((row) => hasWords(row.skills)), 'skills', shown('skills') ? 'List the skills you use' : 'Show your skills on the PDF', 'skills', 'skills', 0);
+
+  const hasBullet = (row) => row.bullets?.some((bullet) => hasWords(typeof bullet === 'string' ? bullet : bullet?.text));
+  const options = ['projects', 'experience'].filter(shown).flatMap((section) =>
+    (resume?.[section] || []).map((row, index) => ({ section, row, index })));
+  const work = closest(options, ({ row }) => Number(hasWords(row.title)) + Number(Boolean(hasBullet(row))))?.item;
+  const section = work?.section || (shown('projects') || !shown('experience') ? 'projects' : 'experience');
+  requireField(hasWords(work?.row.title), 'work-title', 'Add a project name or an employer', section, 'title', work?.index ?? 0);
+  requireField(work && hasBullet(work.row), 'work-bullet', 'Describe one thing you did in that project or role', section, 'bullet', work?.index ?? 0, 0);
+  const total = 7;
+  const complete = total - missing.length;
+  return { ready: !missing.length, missing, total, complete, percent: Math.round(100 * complete / total) };
+}
+
 export const calculateReadiness = (resume, { pageCount: measuredPageCount } = {}) => {
-  const checks = [
-    Boolean(resume.basics?.name || resume.basics?.email || resume.basics?.mobile),
-    resume.education.some((entry) => entry.degree || entry.institute),
-    resume.experience.some(isDetailEntryMeaningful),
-    resume.projects.some(isDetailEntryMeaningful),
-    resume.skills.some((entry) => entry.category || entry.skills),
-    resume.achievements.some(isDetailEntryMeaningful),
-    resume.customSections.some((section) => section.entries.some(isDetailEntryMeaningful)),
-  ];
-  const percent = Math.round((checks.filter(Boolean).length / checks.length) * 100);
+  const { percent } = getResumeRequirements(resume);
   const suggestions = [];
   if (!resume.projects.some(isDetailEntryMeaningful)) suggestions.push('Add a project that demonstrates applied skills.');
   if (!resume.skills.some((entry) => entry.category || entry.skills)) suggestions.push('Group your strongest technical skills.');

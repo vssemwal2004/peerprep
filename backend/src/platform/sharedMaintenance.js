@@ -14,6 +14,7 @@ import { runDailyAnalytics } from '../jobs/analytics.js';
 import { dispatchAnviEvaluations, sweepStaleAnviAttempts } from '../modules/anviInterview/anviInterview.maintenance.js';
 import { sweepAnviScheduling } from '../modules/anviInterview/anviInterview.scheduling.maintenance.js';
 import { runEvidenceCleanup } from '../services/assessmentEvidenceCleanupService.js';
+import { resumeScanJobs } from '../modules/resumeReview/resumeReview.jobs.js';
 
 // A failed score pass is retried next minute; it must not skip mail or assessment work.
 const logPrepScoreFailure = (error) => console.error(`[SharedMaintenance] Prep Score sync failed (${error?.name || 'Error'}).`);
@@ -26,7 +27,7 @@ const logAssessmentReportFailure = (error) => console.error(`[SharedMaintenance]
 const logAssessmentExpiryFailure = (error) => console.error(`[SharedMaintenance] Assessment expiry sweep failed (${error?.name || 'Error'}).`);
 const logEvidenceCleanupFailure = (error) => console.error(`[SharedMaintenance] Evidence cleanup failed (${error?.name || 'Error'}).`);
 
-export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
+export function startSharedMaintenance({ scheduled = true, mail = true, resumeScans = false } = {}) {
   let stopped = false;
   let timer;
   let running = Promise.resolve();
@@ -47,6 +48,7 @@ export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
         nextRefresh = Date.now() + 60_000;
       }
       // PeerPrep's own students live in the main database, outside every university.
+      if (resumeScans && due('platform', 'resumeScans', 30_000)) await runForPlatform(() => resumeScanJobs().recover()).catch(logResumeScanFailure);
       if (scheduled && due('platform', 'prepScores', 60_000)) await runForPlatform(() => syncPrepScores()).catch(logPrepScoreFailure);
       if (scheduled && due('platform', 'coinCharges', 60_000)) {
         await runForPlatform(() => sweepPendingCharges({ scope: PLATFORM_WALLET_SCOPE, verifiers: chargeVerifiers })).catch(logCoinFailure);
@@ -84,6 +86,7 @@ export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
       const id = universityIds[cursor++ % universityIds.length];
       const tenant = await getTenant(id);
       await runForTenant(tenant, async () => {
+        if (resumeScans && due(id, 'resumeScans', 30_000)) await resumeScanJobs().recover().catch(logResumeScanFailure);
         if (scheduled) {
           await dispatchPendingAssessmentEvaluations({ limit: 10 });
           if (due(id, 'reports', 3000)) {
@@ -119,4 +122,8 @@ export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
   };
   tick();
   return async () => { stopped = true; clearTimeout(timer); await running; };
+}
+
+function logResumeScanFailure(error) {
+  console.error(`[SharedMaintenance] Resume scan recovery failed (${error?.name || 'Error'}).`);
 }

@@ -44,28 +44,52 @@ function Stat({ label, value, detail, dot = false, className = '' }) {
 }
 
 /**
- * The top of Prep Mock: what the page is, and the student's own standing in it (completed, open now,
- * companies tried, best and latest released result). Compact: no tall empty banner.
+ * The page header shown above the company bar and the panel on every Prep Mock view (like the admin's
+ * title bar): the title, the page guide and live counts.
+ */
+export function PrepMockHeader({ totals }) {
+  return (
+    <header data-guide="pmock-header" className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
+        <p className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-[0.13em] text-violet-700 dark:text-violet-300"><TicketGlyph className="h-4 w-4" />Company mock tests</p>
+        <h1 id="pmock-title" className="mt-1 flex items-center text-[26px] font-medium leading-tight tracking-[-0.03em] text-slate-900 sm:text-[30px] dark:text-zinc-50">
+          <span>Prep <span className="relative inline-block font-bold text-violet-600 dark:text-violet-400">Mock<TitleUnderline /></span></span>
+          <PageGuideButton className="ml-3" />
+        </h1>
+      </div>
+      {totals && (
+        <ul aria-label="Prep Mock at a glance" className="flex flex-wrap gap-1.5 text-[12px]">
+          {totals.open > 0 && <li className="inline-flex h-8 items-center gap-1.5 rounded-full bg-emerald-50 px-3 font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200/70 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/20"><LiveDot />{totals.open} open now</li>}
+          <li className="inline-flex h-8 items-center gap-1 rounded-full bg-white px-3 text-slate-500 ring-1 ring-inset ring-[#e6e7eb] dark:bg-[#242424] dark:text-zinc-400 dark:ring-white/[0.08]"><b className="font-semibold text-slate-800 dark:text-zinc-100">{totals.companies}</b> {totals.companies === 1 ? 'company' : 'companies'}</li>
+          <li className="inline-flex h-8 items-center gap-1 rounded-full bg-white px-3 text-slate-500 ring-1 ring-inset ring-[#e6e7eb] dark:bg-[#242424] dark:text-zinc-400 dark:ring-white/[0.08]"><b className="font-semibold text-slate-800 dark:text-zinc-100">{totals.completed}/{totals.mocks}</b> mocks done</li>
+        </ul>
+      )}
+    </header>
+  );
+}
+
+/**
+ * The overview's first card: the student's own standing (completed, open now, companies tried, best
+ * and latest released result). The page title lives in PrepMockHeader above it.
  */
 export default function MockHero({ journey, userName }) {
   const name = firstName(userName);
   return (
-    <section data-guide="pmock-header" aria-labelledby="pmock-title" className="relative overflow-hidden rounded-3xl border border-[#e8e5f4] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-[#242424]">
+    <section data-guide="pmock-stats" aria-labelledby="pmock-hero-title" className="relative overflow-hidden rounded-3xl border border-[#e8e5f4] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-[#242424]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_100%_at_0%_0%,rgba(139,92,246,0.14),transparent_65%),radial-gradient(45%_90%_at_100%_0%,rgba(14,165,233,0.11),transparent_65%)]" aria-hidden="true" />
       <div className="relative flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <div className="min-w-0">
-          <p className="inline-flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.13em] text-violet-700 dark:text-violet-300"><TicketGlyph className="h-4 w-4" />Company mock tests</p>
-          <h1 id="pmock-title" className="mt-1.5 text-[30px] font-medium leading-tight tracking-[-0.03em] text-slate-900 sm:text-[34px] dark:text-zinc-50">
-            Prep <span className="relative inline-block font-bold text-violet-600 dark:text-violet-400">Mock<TitleUnderline /></span>
-            <PageGuideButton className="ml-3 align-middle" />
-          </h1>
-          <p className="mt-3 max-w-xl text-[14px] leading-6 text-slate-500 dark:text-zinc-400">
-            {name ? `${name}, practise` : 'Practise'} real company tests, role by role. Pick a company, choose your role and sit its mocks under real test rules.
+          <p className="text-[12px] font-semibold uppercase tracking-[0.13em] text-violet-700 dark:text-violet-300">Your progress</p>
+          <h2 id="pmock-hero-title" className="mt-1.5 text-[24px] font-semibold leading-tight tracking-[-0.025em] text-slate-900 sm:text-[26px] dark:text-zinc-50">
+            {name ? `Welcome back, ${name}` : 'Welcome back'}
+          </h2>
+          <p className="mt-2 max-w-xl text-[14px] leading-6 text-slate-500 dark:text-zinc-400">
+            Practise real company tests, role by role. Pick a company on the left, choose your role and sit its mocks under real test rules.
           </p>
         </div>
         <ProgressMedal done={journey.completed} total={journey.total} />
       </div>
-      <dl data-guide="pmock-stats" className="relative grid grid-cols-2 divide-black/[0.05] border-t border-black/[0.05] bg-white/55 backdrop-blur sm:grid-cols-4 sm:divide-x dark:divide-white/[0.06] dark:border-white/[0.06] dark:bg-white/[0.02]">
+      <dl className="relative grid grid-cols-2 divide-black/[0.05] border-t border-black/[0.05] bg-white/55 backdrop-blur sm:grid-cols-4 sm:divide-x dark:divide-white/[0.06] dark:border-white/[0.06] dark:bg-white/[0.02]">
         <Stat label="Open now" value={journey.open} detail={journey.inProgress.length ? `${journey.inProgress.length} to continue` : ''} dot={journey.open > 0} />
         <Stat label="Companies tried" value={journey.attemptedCompanies} detail={`of ${journey.companies}`} className="border-l" />
         <Stat label="Best result" value={journey.best ? journey.best.result.label : '–'} detail={journey.best ? '' : 'none released'} className="border-t sm:border-t-0" />

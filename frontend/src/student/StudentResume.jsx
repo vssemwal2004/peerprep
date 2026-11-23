@@ -20,9 +20,7 @@ import {
   FolderKanban,
   GripVertical,
   GraduationCap,
-  Keyboard,
-  Lightbulb,
-  ListChecks,
+  FileUp,
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -41,16 +39,18 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AnviMark } from '../components/AnviApproach';
 import ResumePreview, { ResumeThumbnail } from '../features/resume/ResumePreview';
+import { CoreDetailsChecklist, ImportSummary, ResumeImportDialog } from '../features/resume/ResumeImport';
 import TemplateGallery, { templateFacts } from '../features/resume/TemplateGallery';
 import { RESUME_TEMPLATE_CATALOG, getTemplate } from '../features/resume/templates/catalog';
 import { sampleResumeFor } from '../features/resume/templates/sampleResume';
 import {
   DEFAULT_SECTION_ORDER,
   FIXED_SECTION_META,
-  calculateReadiness,
+  getResumeRequirements,
   createEmptyDetailEntry,
   filenameForResume,
   hasResumeContent,
+  isDetailEntryMeaningful,
   mergeSavedResumeMetadata,
   normalizeClientResume,
 } from '../features/resume/resumeUtils';
@@ -80,14 +80,14 @@ const SECTION_HELP = {
 
 const fieldClass = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-sky-500 dark:focus:ring-sky-950';
 
-function Field({ label, hint, visibility, onToggleVisibility, multiline = false, ...props }) {
+function Field({ label, hint, fieldNote, visibility, onToggleVisibility, multiline = false, ...props }) {
   const Input = multiline ? 'textarea' : 'input';
   return (
     <label className="block min-w-0">
       <span className="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-[0.13em] text-slate-500 dark:text-slate-400">
         <span>{label}</span>
         <span className="flex items-center gap-2 text-[9px] font-semibold normal-case tracking-normal text-slate-400">
-          Optional
+          {fieldNote || 'Optional'}
           {onToggleVisibility ? (
             <button type="button" onClick={onToggleVisibility} className="rounded-md p-1 hover:bg-slate-100 dark:hover:bg-slate-800" title={visibility ? 'Shown in resume' : 'Hidden from resume'}>
               {visibility ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
@@ -104,7 +104,7 @@ function Field({ label, hint, visibility, onToggleVisibility, multiline = false,
 function SectionCard({ sectionKey, title, help, icon: Icon, active, collapsed, onCollapse, onFocus, hidden, onToggleHidden, children, status }) {
   const statusClass = status === 'Ready'
     ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-    : status === 'Hidden'
+    : ['Hidden', 'Needs details'].includes(status)
       ? 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
       : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400';
   return (
@@ -236,7 +236,7 @@ function DetailSectionEditor({ sectionKey, entries, onChange, onRemove, noun, pl
         <EntryShell key={index} label={noun} index={index} reviewId={`${sectionKey}|${index}`} onRemove={() => onRemove ? onRemove(index) : onChange(entries.filter((_, i) => i !== index))} onMoveUp={() => move(index, -1)} onMoveDown={() => move(index, 1)}>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field data-review={`${sectionKey}|${index}|title`} label={placeholders.titleLabel || 'Title'} value={entry.title || ''} onChange={(event) => update(index, { title: event.target.value })} placeholder={placeholders.title || 'Entry title'} />
-            <Field label="Date / Duration" value={entry.date || ''} onChange={(event) => update(index, { date: event.target.value })} placeholder="Jan 2025 – Present" />
+            <Field data-review={`${sectionKey}|${index}|date`} label="Date / Duration" value={entry.date || ''} onChange={(event) => update(index, { date: event.target.value })} placeholder="Jan 2025 – Present" />
             <Field data-review={`${sectionKey}|${index}|subtitle`} label={placeholders.subtitleLabel || 'Subtitle'} value={entry.subtitle || ''} onChange={(event) => update(index, { subtitle: event.target.value })} placeholder={placeholders.subtitle || 'Role or supporting title'} />
             <Field label="Location" value={entry.location || ''} onChange={(event) => update(index, { location: event.target.value })} placeholder="City, India or Remote" />
             <div className="sm:col-span-2"><Field label="Technologies / Supporting details" value={entry.technologies || ''} onChange={(event) => update(index, { technologies: event.target.value })} placeholder="React, Node.js, MongoDB, AWS" /></div>
@@ -263,7 +263,7 @@ function FlexibleCustomSectionEditor({ sectionKey, entries, onChange, onRemove, 
     {entries.map((entry, index) => <EntryShell key={index} label="Subsection" index={index} reviewId={`${sectionKey}|${index}`} onRemove={() => onRemove(index)} onMoveUp={() => move(index, -1)} onMoveDown={() => move(index, 1)}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field data-review={`${sectionKey}|${index}|title`} label="Heading" value={entry.title || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, title: event.target.value } : item))} placeholder="Certification, responsibility, publication..." />
-        <Field label="Date / Duration" value={entry.date || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, date: event.target.value } : item))} placeholder="2025 or Jan 2025 – Present" />
+        <Field data-review={`${sectionKey}|${index}|date`} label="Date / Duration" value={entry.date || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, date: event.target.value } : item))} placeholder="2025 or Jan 2025 – Present" />
         <Field data-review={`${sectionKey}|${index}|subtitle`} label="Supporting line" value={entry.subtitle || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, subtitle: event.target.value } : item))} placeholder="Organization, role, issuer, or context" />
         <Field label="Location" value={entry.location || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, location: event.target.value } : item))} placeholder="Optional location" />
         <div className="sm:col-span-2"><Field label="Link" type="url" value={entry.link || ''} onChange={(event) => onChange(entries.map((item, i) => i === index ? { ...item, link: event.target.value } : item))} placeholder="https://..." /></div>
@@ -367,25 +367,6 @@ function ManageSectionsModal({ resume, onChange, onUndoableChange, onCustomAdded
   );
 }
 
-function ResumeWelcomeModal({ onStart, onArrange, onTemplates, onClose }) {
-  useEffect(() => {
-    const closeOnEscape = (event) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [onClose]);
-  return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="resume-welcome-title">
-    <motion.div initial={{ opacity: 0, y: 14, scale: .99 }} animate={{ opacity: 1, y: 0, scale: 1 }} className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
-      <div className="border-t-4 border-sky-500 bg-slate-950 px-6 py-7 text-white sm:px-8">
-        <div className="flex items-start justify-between gap-4"><div><div className="text-[10px] font-bold uppercase tracking-[.2em] text-sky-300">Prep Resume</div><h2 id="resume-welcome-title" className="mt-2 text-2xl font-black">Build your placement resume with confidence</h2><p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Your name and email are prefilled from your profile. Fill your details once and try them in {RESUME_TEMPLATE_CATALOG.length} professional templates. Every field is optional and the A4 preview updates as you type.</p></div><button type="button" onClick={onClose} aria-label="Close introduction" className="rounded-lg border border-white/15 p-2 hover:bg-white/10"><X className="h-4 w-4" /></button></div>
-      </div>
-      <div className="grid gap-3 p-5 sm:grid-cols-3 sm:p-7">
-        {[['01', 'Pick a template', `Browse ${RESUME_TEMPLATE_CATALOG.length} designs filled with sample details before you type anything.`], ['02', 'Fill your details once', 'Start in any section. Switching templates later never changes or removes what you wrote.'], ['03', 'Review and download', 'The A4 PDF matches the preview line for line, page for page.']].map(([number, title, text]) => <div key={number} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/50"><span className="text-[10px] font-black tracking-[.18em] text-sky-600">{number}</span><h3 className="mt-2 text-sm font-black text-slate-900 dark:text-white">{title}</h3><p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{text}</p></div>)}
-      </div>
-      <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:px-7"><div className="flex items-center gap-2 text-[10px] font-semibold text-slate-400"><Keyboard className="h-3.5 w-3.5" /> Ctrl/⌘ + S saves · Ctrl/⌘ + P previews</div><div className="flex flex-wrap gap-2"><button type="button" onClick={onArrange} className="rounded-lg border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-600 dark:border-slate-700 dark:text-slate-300">Arrange sections</button><button type="button" onClick={onTemplates} className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs font-bold text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300">Choose a template</button><button type="button" onClick={onStart} className="rounded-lg bg-sky-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-sky-700">Start building</button></div></div>
-    </motion.div>
-  </div>;
-}
-
 function DownloadStatus({ stage, complete, filename, onClose }) {
   if (!stage && !complete) return null;
   const labels = { saving: 'Saving your latest changes…', loading: 'Preparing the PDF engine…', generating: 'Typesetting your A4 resume…' };
@@ -416,12 +397,16 @@ export default function StudentResume() {
   const [downloading, setDownloading] = useState(false);
   const [downloadStage, setDownloadStage] = useState('');
   const [downloadComplete, setDownloadComplete] = useState(false);
-  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [importDialog, setImportDialog] = useState('');
+  const [importSession, setImportSession] = useState(null);
+  const importSessionRef = useRef(null);
+  const importCommitted = useRef(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryInitial, setGalleryInitial] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
   const [undoAction, setUndoAction] = useState(null);
-  const savingRef = useRef(false);
+  const savingRef = useRef(null);
+  const savedRevisionRef = useRef(0);
   const editRevisionRef = useRef(0);
   const resumeRef = useRef(null);
   const workspaceRef = useRef(null);
@@ -439,7 +424,7 @@ export default function StudentResume() {
       setResume(value);
       setCollapsed({ basics: true, education: true, experience: true, projects: true, skills: true, achievements: true, ...Object.fromEntries(value.customSections.map((section) => [`custom:${section.id}`, true])) });
       setSavedAt(value.updatedAt ? new Date(value.updatedAt) : null);
-      if (!value.exists && !window.localStorage.getItem('peerprep-resume-intro-v1')) setWelcomeOpen(true);
+      if (!value.exists && !window.location.search) setImportDialog('welcome');
     }).catch((loadError) => setError(loadError.message || 'Could not load your resume.')).finally(() => mounted && setLoading(false));
     return () => { mounted = false; };
   }, [user?.email, user?.name]);
@@ -476,7 +461,11 @@ export default function StudentResume() {
     if (loading || !resume) return;
     const focus = searchParams.get('focus');
     const templates = searchParams.get('templates');
-    if (!focus && !templates) return;
+    const openImport = searchParams.get('import') === '1';
+    const start = searchParams.get('start') === '1';
+    if (!focus && !templates && !openImport && !start) return;
+    if (openImport) setImportDialog('upload');
+    if (start) locateField('basics|name');
     // ?templates=<id> opens the gallery straight on that template's preview.
     if (templates) { setGalleryInitial(RESUME_TEMPLATE_CATALOG.some((item) => item.id === templates) ? templates : ''); setGalleryOpen(true); }
     if (focus) locateField(focus);
@@ -484,51 +473,121 @@ export default function StudentResume() {
   }, [loading, resume, searchParams, setSearchParams, locateField]);
 
   const updateResume = useCallback((next, { undoLabel = '' } = {}) => {
-    if (undoLabel && resumeRef.current) setUndoAction({ label: undoLabel, resume: JSON.parse(JSON.stringify(resumeRef.current)) });
+    if (importCommitted.current) return;
+    const current = resumeRef.current;
+    if (undoLabel && current) setUndoAction({ label: undoLabel, resume: current });
+    const updated = typeof next === 'function' ? next(current) : next;
     editRevisionRef.current += 1;
-    setResume((current) => {
-      const updated = typeof next === 'function' ? next(current) : next;
-      resumeRef.current = updated;
-      return updated;
-    });
+    resumeRef.current = updated;
+    setResume(updated);
     setDirty(true);
     setSaveState('editing');
   }, []);
 
-  const saveResume = useCallback(async ({ silent = false } = {}) => {
-    if (!resume || savingRef.current) return;
-    const savingRevision = editRevisionRef.current;
-    const payload = resume;
-    savingRef.current = true;
-    setSaveState('saving');
+  // A manual save or review waits for an in-flight autosave, including edits
+  // made after that request began. Import previews never enter this path
+  // until the student explicitly confirms the replacement.
+  const saveResume = useCallback(async ({ silent = false, confirmImport = false } = {}) => {
+    if (!resumeRef.current || (importSessionRef.current && !confirmImport)) return false;
     if (!silent) setError('');
-    try {
-      const result = await api.saveMyResume(payload);
-      const saved = normalizeClientResume(result?.resume);
-      if (editRevisionRef.current === savingRevision) {
-        const preservedDraft = mergeSavedResumeMetadata(payload, saved);
-        resumeRef.current = preservedDraft;
-        setResume(preservedDraft);
-        setDirty(false);
-        setSaveState('saved');
-        setSavedAt(new Date(saved.updatedAt || Date.now()));
+    do {
+      if (savingRef.current) {
+        if (!await savingRef.current) return false;
       } else {
-        setDirty(true);
-        setSaveState('editing');
+        if (savedRevisionRef.current === editRevisionRef.current && resumeRef.current.exists) return true;
+        const savingRevision = editRevisionRef.current;
+        const payload = resumeRef.current;
+        setSaveState('saving');
+        const request = (async () => {
+          try {
+            const { resume: saved } = await api.saveMyResume(payload);
+            savedRevisionRef.current = savingRevision;
+            const current = mergeSavedResumeMetadata(resumeRef.current, saved);
+            resumeRef.current = current;
+            setResume(current);
+            const synced = editRevisionRef.current === savingRevision;
+            setDirty(!synced);
+            setSaveState(synced ? 'saved' : 'editing');
+            setSavedAt(new Date(saved.updatedAt || Date.now()));
+            return true;
+          } catch (saveError) {
+            setSaveState('error');
+            setError(saveError.message || 'Could not save your resume.');
+            return false;
+          } finally {
+            savingRef.current = null;
+          }
+        })();
+        savingRef.current = request;
+        if (!await request) return false;
       }
-    } catch (saveError) {
-      setSaveState('error');
-      setError(saveError.message || 'Could not save your resume.');
-    } finally {
-      savingRef.current = false;
-    }
-  }, [resume]);
+    } while (!silent && savedRevisionRef.current !== editRevisionRef.current);
+    return true;
+  }, []);
 
   useEffect(() => {
-    if (!dirty || !resume || savingRef.current) return undefined;
+    if (!dirty || !resume || importSession || savingRef.current || saveState === 'error') return undefined;
     const timer = setTimeout(() => saveResume({ silent: true }), 1300);
     return () => clearTimeout(timer);
-  }, [dirty, resume, saveResume, saveState]);
+  }, [dirty, resume, importSession, saveResume, saveState]);
+
+  async function reviewImport(result, filename, stillOpen) {
+    if (!result?.resume) throw new Error('No resume details could be read from this file.');
+    if ((savingRef.current || savedRevisionRef.current !== editRevisionRef.current) && !await saveResume()) {
+      throw new Error('Your current edits could not be saved. Close the import and retry saving.');
+    }
+    if (!stillOpen()) return;
+    const original = resumeRef.current;
+    const extracted = normalizeClientResume({
+      ...result.resume, template: original.template, basicsVisibility: original.basicsVisibility,
+    });
+    const session = { original, extracted, filename, warnings: result.warnings || [] };
+    importSessionRef.current = session;
+    setImportSession(session);
+    setImportDialog('');
+    setUndoAction(null);
+    setError('');
+    updateResume(extracted);
+    setMobileTab('edit');
+    setEditorCollapsed(false);
+    setPreviewPage(0);
+    setActiveSection('basics');
+    setCollapsed((state) => ({ ...state, basics: false }));
+    window.scrollTo({ top: 0 });
+  }
+
+  function cancelImport() {
+    if (importCommitted.current || !importSessionRef.current) return;
+    const { original } = importSessionRef.current;
+    importSessionRef.current = null;
+    setImportSession(null);
+    resumeRef.current = original;
+    setResume(original);
+    savedRevisionRef.current = ++editRevisionRef.current;
+    setDirty(false);
+    setError('');
+    setUndoAction(null);
+    setSaveState(original.exists ? 'saved' : 'idle');
+  }
+
+  async function confirmImport() {
+    if (!importSessionRef.current || importCommitted.current) return;
+    importCommitted.current = true;
+    try {
+      if (await saveResume({ confirmImport: true })) {
+        importSessionRef.current = null;
+        setImportSession(null);
+        setUndoAction(null);
+      }
+    } finally {
+      importCommitted.current = false;
+    }
+  }
+
+  async function openReview() {
+    if (importSessionRef.current) return;
+    if (await saveResume()) navigate('/student/resume/review?run=1');
+  }
 
   // A section currently being edited must stay open while rows are added and
   // while autosave updates the resume metadata.
@@ -557,7 +616,7 @@ export default function StudentResume() {
   const previewLayoutRef = useRef(null);
   const handleLayoutChange = useCallback((info) => { previewLayoutRef.current = info; setPreviewLayout(info); }, []);
   const pages = useMemo(() => previewLayout?.pages || [{ main: [], side: [] }], [previewLayout]);
-  const readiness = useMemo(() => resume ? calculateReadiness(resume, { pageCount: previewLayout?.pages?.length }) : { percent: 0, suggestions: [] }, [resume, previewLayout]);
+  const requirements = useMemo(() => resume ? getResumeRequirements(resume) : null, [resume]);
 
   useEffect(() => { if (previewPage >= pages.length) setPreviewPage(Math.max(0, pages.length - 1)); }, [pages.length, previewPage]);
   useEffect(() => {
@@ -579,21 +638,50 @@ export default function StudentResume() {
   }, { undoLabel });
   const toggleHidden = (key) => updateResume((current) => ({ ...current, hiddenSections: current.hiddenSections.includes(key) ? current.hiddenSections.filter((item) => item !== key) : [...current.hiddenSections, key] }));
   const isReady = (key) => {
-    if (key === 'basics') return Object.values(resume.basics).some(Boolean);
-    if (key === 'education') return resume.education.some((entry) => Object.values(entry).some(Boolean));
-    if (key === 'skills') return resume.skills.some((entry) => entry.category || entry.skills);
-    if (key.startsWith('custom:')) return resume.customSections.find((section) => `custom:${section.id}` === key)?.entries.length > 0;
-    return resume[key]?.length > 0;
+    if (requirements.missing.some((item) => item.section === key)) return false;
+    if (key === 'basics') return true;
+    if (key === 'education') return resume.education.some((entry) => entry.degree?.trim() && entry.institute?.trim());
+    if (key === 'skills') return resume.skills.some((entry) => entry.skills?.trim());
+    if (key === 'projects' || key === 'experience') {
+      return resume[key].some((entry) => entry.title?.trim() && entry.bullets?.some((bullet) => String(bullet?.text ?? bullet).trim()));
+    }
+    if (key.startsWith('custom:')) return resume.customSections.find((section) => `custom:${section.id}` === key)?.entries.some((entry) => isDetailEntryMeaningful(entry) || entry.text?.trim());
+    return resume[key]?.some(isDetailEntryMeaningful);
+  };
+
+  const locateRequirement = ({ section, entryIndex, field, bulletIndex }) => {
+    const current = resumeRef.current;
+    const rows = current[section];
+    if (Array.isArray(rows) && entryIndex != null) {
+      const entries = [...rows];
+      if (!entries[entryIndex]) {
+        if (section === 'education') entries.push({ degree: '', institute: '', year: '', score: '' });
+        else if (section === 'skills') entries.push({ category: '', skills: '' });
+        else entries.push(createEmptyDetailEntry());
+      }
+      if (field === 'bullet' && entries[entryIndex] && !entries[entryIndex].bullets?.length) entries[entryIndex] = { ...entries[entryIndex], bullets: [{ text: '' }] };
+      if (entries.some((row, index) => row !== rows[index]) || current.hiddenSections.includes(section)) {
+        updateResume({ ...current, [section]: entries, hiddenSections: current.hiddenSections.filter(key => key !== section) });
+      }
+    }
+    locateField([section, entryIndex, field, bulletIndex].filter((value) => value != null).join('|'));
+  };
+
+  const sectionStatus = (key) => {
+    if (resume.hiddenSections.includes(key)) return 'Hidden';
+    if (isReady(key)) return 'Ready';
+    if (requirements.missing.some((item) => item.section === key) || resume[key]?.length) return 'Needs details';
+    return 'Not added';
   };
 
   const handleDownload = useCallback(async () => {
-    if (!resume || !hasResumeContent(resume) || downloading) return;
+    if (!resume || !hasResumeContent(resume) || downloading || importSessionRef.current) return;
     setDownloading(true);
     setDownloadComplete(false);
     try {
       if (dirty) {
         setDownloadStage('saving');
-        await saveResume();
+        if (!await saveResume()) { setDownloadStage(''); return; }
       }
       setDownloadStage('loading');
       const [{ pdf }, { default: ResumePdfDocument }] = await Promise.all([
@@ -634,9 +722,11 @@ export default function StudentResume() {
 
   const restorePrevious = async () => {
     try {
+      if (savingRef.current && !await savingRef.current) return;
       const result = await api.restorePreviousResume();
       const restored = normalizeClientResume(result.resume);
       resumeRef.current = restored;
+      savedRevisionRef.current = ++editRevisionRef.current;
       setResume(restored);
       setDirty(false);
       setSaveState('saved');
@@ -655,8 +745,7 @@ export default function StudentResume() {
   }, [undoAction]);
 
   const dismissWelcome = () => {
-    window.localStorage.setItem('peerprep-resume-intro-v1', 'seen');
-    setWelcomeOpen(false);
+    setImportDialog('');
   };
 
   const startEditorResize = useCallback((event) => {
@@ -682,7 +771,7 @@ export default function StudentResume() {
     const handler = (event) => {
       const command = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
-      if (command && key === 's') { event.preventDefault(); saveResume(); }
+      if (command && key === 's') { event.preventDefault(); if (!importSessionRef.current) saveResume(); }
       if (command && key === 'p') { event.preventDefault(); setFullPreview(true); }
       if (command && event.shiftKey && key === 'd') { event.preventDefault(); handleDownload(); }
       if (command && key === 'z' && undoAction) { event.preventDefault(); undoLastAction(); }
@@ -695,7 +784,7 @@ export default function StudentResume() {
   if (loading) return <div className="min-h-screen bg-slate-50 pt-3 dark:bg-slate-950"><div className="mx-auto grid max-w-[1600px] gap-6 px-4 py-6 lg:grid-cols-[minmax(0,.9fr)_minmax(540px,1.1fr)]"><div className="h-[700px] animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" /><div className="h-[700px] animate-pulse rounded-2xl bg-slate-300 dark:bg-slate-900" /></div></div>;
   if (!resume) return <div className="min-h-screen bg-slate-50 pt-24 text-center dark:bg-slate-950"><p className="text-slate-600 dark:text-slate-300">{error || 'Prep Resume is unavailable.'}</p><button onClick={() => navigate('/student/dashboard')} className="mt-4 rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white">Back to dashboard</button></div>;
 
-  const saveLabel = saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Retry save' : dirty ? 'Unsaved changes' : 'Save';
+  const saveLabel = importSession ? 'Import preview' : saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Retry save' : dirty ? 'Unsaved changes' : 'Save';
   const sectionItems = [{ key: 'basics', label: 'Basics' }, ...resume.sectionOrder.map((key) => ({ key, label: key.startsWith('custom:') ? resume.customSections.find((section) => `custom:${section.id}` === key)?.title || 'Custom' : FIXED_SECTION_META[key]?.label || key }))];
   const selectedTemplate = getTemplate(resume.template);
   const templateIndex = RESUME_TEMPLATE_CATALOG.findIndex((template) => template.id === selectedTemplate.id);
@@ -708,22 +797,24 @@ export default function StudentResume() {
 
   return (
     <RequirePasswordChange user={user}>
-      <div className="min-h-screen bg-slate-50 pb-10 dark:bg-slate-950">
+      <div className="min-h-screen bg-slate-50 pb-24 text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:pb-10">
         <div className="sticky top-0 z-30 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
           <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6" data-guide="rs-toolbar">
-            <button type="button" onClick={() => navigate('/student/resume')} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Back to Prep Resume" title="Back to Prep Resume"><ArrowLeft className="h-4 w-4" /></button>
+            <button type="button" onClick={async () => { if (importSession) cancelImport(); else if (!dirty || await saveResume()) navigate('/student/resume'); }} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Back to Prep Resume" title="Back to Prep Resume"><ArrowLeft className="h-4 w-4" /></button>
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <div className="hidden h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white sm:flex"><FileText className="h-5 w-5" /></div>
-              <div className="min-w-0"><div className="flex items-center gap-2"><h1 className="truncate text-base font-black text-slate-950 dark:text-white sm:text-lg"><span className="hidden font-semibold text-slate-400 sm:inline">Prep Resume / </span>Create resume</h1><PageGuideButton /><span className="hidden rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[.13em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 sm:inline">{RESUME_TEMPLATE_CATALOG.length} templates · A4</span></div><p className="hidden text-[11px] text-slate-500 sm:block">Enter your details once, then switch between professional templates freely.</p></div>
+              <div className="min-w-0"><div className="flex items-center gap-2"><h1 className="truncate text-base font-black text-slate-950 dark:text-white sm:text-lg"><span className="hidden font-semibold text-slate-400 sm:inline">Prep Resume / </span>Resume editor</h1><PageGuideButton /><span className="hidden rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[.13em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 sm:inline">{RESUME_TEMPLATE_CATALOG.length} templates · A4</span></div><p className="hidden text-[11px] text-slate-500 sm:block">Enter your details once, then switch between professional templates freely.</p></div>
             </div>
             <div className="hidden items-center gap-2 text-[11px] font-semibold text-slate-500 md:flex" data-guide="rs-save-state">{saveState === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-500" /> : saveState === 'saved' ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : dirty ? <span className="h-2 w-2 rounded-full bg-amber-400" /> : null}{saveLabel}{savedAt && saveState === 'saved' ? ` · ${savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</div>
             <button type="button" onClick={() => setManageOpen(true)} data-guide="rs-sections-button" className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:inline-flex"><Settings2 className="h-4 w-4" /> Sections</button>
-            <button type="button" onClick={() => saveResume()} data-guide="rs-save" className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300">{saveState === 'saving' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save</button>
-            <button type="button" onClick={async () => { if (dirty) await saveResume(); navigate('/student/resume/review'); }} disabled={!hasResumeContent(resume)} data-guide="rs-check" className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700 shadow-sm transition hover:border-violet-300 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"><AnviMark className="h-4 w-4" /><span className="hidden sm:inline">Check with ANVI</span></button>
-            <button type="button" onClick={handleDownload} disabled={!hasResumeContent(resume) || downloading} data-guide="rs-download" className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-40">{downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}<span className="hidden sm:inline">Download PDF</span></button>
+            {!importSession && <button type="button" aria-label="Import another resume" onClick={() => setImportDialog('upload')} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-sky-400 dark:border-slate-700 dark:text-slate-200"><FileUp className="h-4 w-4"/><span className="hidden sm:inline">Import</span></button>}
+            {!importSession && <button type="button" onClick={() => saveResume()} data-guide="rs-save" className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300">{saveState === 'saving' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save</button>}
+            <button type="button" onClick={openReview} aria-label="Check with ANVI" disabled={!hasContent || Boolean(importSession)} data-guide="rs-check" className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700 shadow-sm transition hover:border-violet-300 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"><AnviMark className="h-4 w-4" /><span className="hidden sm:inline">Check with ANVI</span></button>
+            <button type="button" onClick={handleDownload} disabled={!hasContent || downloading || Boolean(importSession)} aria-label="Download resume PDF" data-guide="rs-download" className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-40">{downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}<span className="hidden sm:inline">Download PDF</span></button>
           </div>
         </div>
 
+        {importSession && <ImportSummary session={importSession} resume={resume} onChoose={(key, value) => updateResume((current) => ({ ...current, basics: { ...current.basics, [key]: value } }))} onSave={confirmImport} onCancel={cancelImport} saveError={saveState === 'error' ? error : ''} saving={saveState === 'saving'} />}
         <div className="mx-auto mt-4 flex max-w-[1680px] gap-2 px-4 lg:hidden"><button type="button" onClick={() => setMobileTab('edit')} className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold ${mobileTab === 'edit' ? 'bg-sky-600 text-white' : 'bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300'}`}>Edit Resume</button><button type="button" onClick={() => setMobileTab('preview')} className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold ${mobileTab === 'preview' ? 'bg-sky-600 text-white' : 'bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300'}`}>Preview</button></div>
 
         <section className="mx-auto mt-3 max-w-[1680px] px-4 sm:px-6" aria-labelledby="resume-template-title" data-guide="rs-template">
@@ -749,40 +840,32 @@ export default function StudentResume() {
 
         <main ref={workspaceRef} className={`resume-workspace mx-auto max-w-[1680px] px-4 py-4 sm:px-6 ${editorCollapsed ? 'resume-workspace-collapsed' : ''}`} style={{ '--resume-editor-width': `${editorWidth}%` }}>
           <div className={`${mobileTab === 'preview' ? 'hidden lg:block' : 'block'} ${editorCollapsed ? 'lg:hidden' : ''} min-w-0 space-y-4`}>
-            {error ? <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span className="flex-1">{error}</span><button type="button" onClick={() => setError('')}><X className="h-4 w-4" /></button></div> : null}
-            <section data-guide="rs-quality" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[.16em] text-slate-400">Resume quality<GuideInfo step="rs-quality" /></div><h2 className="mt-1 text-sm font-black text-slate-900 dark:text-white">{readiness.percent >= 70 ? 'Strong foundation' : readiness.percent >= 35 ? 'Good progress' : 'Build at your own pace'}</h2></div>
-                <div className="flex items-center gap-3"><span className="text-sm font-black text-sky-700 dark:text-sky-300">{readiness.percent}%</span><button type="button" onClick={restorePrevious} data-guide="rs-restore" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"><RotateCcw className="h-3 w-3" /> Restore</button></div>
-              </div>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-sky-600 transition-all" style={{ width: `${readiness.percent}%` }} /></div>
-              <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-semibold text-slate-500 dark:text-slate-400" aria-label="Resume quality summary"><span className="inline-flex items-center gap-1.5"><ListChecks className="h-3 w-3" /> {readiness.metrics?.bulletCount || 0} bullets</span><span>{readiness.metrics?.measurableBullets || 0} with measurable results</span><span>{readiness.metrics?.pageCount || 1} page{readiness.metrics?.pageCount === 1 ? '' : 's'}</span></div>
-              {readiness.suggestions.length ? <div className="mt-3 flex items-start gap-2 border-t border-slate-100 pt-3 text-[11px] leading-5 text-slate-600 dark:border-slate-800 dark:text-slate-300"><Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" /><span>{readiness.suggestions[0]}</span></div> : null}
-            </section>
+            {error && !importSession ? <div role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span className="flex-1">{error}</span><button type="button" onClick={() => setError('')}><X className="h-4 w-4" /></button></div> : null}
+            <CoreDetailsChecklist requirements={requirements} onLocate={locateRequirement} pageCount={pages.length} onRestore={resume.exists && !importSession ? restorePrevious : null} />
 
             <div className="flex gap-2 overflow-x-auto pb-1" data-guide="rs-nav">{sectionItems.map((item) => <button type="button" key={item.key} onClick={() => { setActiveSection(item.key); setCollapsed((state) => ({ ...state, [item.key]: false })); requestAnimationFrame(() => document.getElementById(`resume-editor-${item.key.replace(':', '-')}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })); }} className={`shrink-0 rounded-full border px-3 py-1.5 text-[10px] font-bold ${activeSection === item.key ? 'border-sky-500 bg-sky-500 text-white' : isReady(item.key) ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-500 dark:border-slate-800 dark:bg-slate-900'}`}>{item.label}</button>)}</div>
 
-            <div data-guide="rs-basics"><SectionCard sectionKey="basics" title="Basic Details" help={SECTION_HELP.basics} icon={UserRound} active={activeSection === 'basics'} collapsed={collapsed.basics} onCollapse={() => setCollapsed((state) => ({ ...state, basics: !state.basics }))} onFocus={() => setActiveSection('basics')} status={isReady('basics') ? 'Ready' : 'Not added'}>
+            <div data-guide="rs-basics"><SectionCard sectionKey="basics" title="Basic Details" help={SECTION_HELP.basics} icon={UserRound} active={activeSection === 'basics'} collapsed={collapsed.basics} onCollapse={() => setCollapsed((state) => ({ ...state, basics: !state.basics }))} onFocus={() => setActiveSection('basics')} status={sectionStatus('basics')}>
               <div className="mb-4 rounded-xl bg-sky-50 px-3 py-2 text-[11px] leading-5 text-sky-800 dark:bg-sky-950/40 dark:text-sky-200">Profile information is used only as a starting point. Editing or hiding it here does not change your PeerPrep profile.</div>
               <div className="grid gap-3 sm:grid-cols-2">
                 {Object.entries({ name: 'Full Name', headline: 'Professional headline', location: 'Location', email: 'Email', mobile: 'Mobile', linkedin: 'LinkedIn', github: 'GitHub', portfolio: 'Portfolio' }).map(([key, label]) => (
-                  <div key={key} className={['headline', 'portfolio'].includes(key) ? 'sm:col-span-2' : ''}><Field data-review={`basics|${key}`} label={label} type={['email'].includes(key) ? key : key === 'mobile' ? 'tel' : ['linkedin', 'github', 'portfolio'].includes(key) ? 'url' : 'text'} value={resume.basics[key] || ''} onChange={(event) => updateResume((current) => ({ ...current, basics: { ...current.basics, [key]: event.target.value } }))} placeholder={key === 'name' ? 'Your full name' : key === 'headline' ? 'Software Engineer or Automation QA Engineer' : key === 'location' ? 'City, India' : key === 'email' ? 'you@example.com' : key === 'mobile' ? '+91...' : 'https://...'} visibility={['name', 'headline'].includes(key) ? undefined : resume.basicsVisibility[key]} onToggleVisibility={['name', 'headline'].includes(key) ? undefined : () => updateResume((current) => ({ ...current, basicsVisibility: { ...current.basicsVisibility, [key]: !current.basicsVisibility[key] } }))} /></div>
+                  <div key={key} className={['headline', 'portfolio'].includes(key) ? 'sm:col-span-2' : ''}><Field data-review={`basics|${key}`} label={label} fieldNote={key === 'name' ? 'For ATS check' : ['email', 'mobile'].includes(key) ? 'One contact for ATS' : undefined} type={['email'].includes(key) ? key : key === 'mobile' ? 'tel' : ['linkedin', 'github', 'portfolio'].includes(key) ? 'url' : 'text'} value={resume.basics[key] || ''} onChange={(event) => updateResume((current) => ({ ...current, basics: { ...current.basics, [key]: event.target.value } }))} placeholder={key === 'name' ? 'Your full name' : key === 'headline' ? 'Software Engineer or Automation QA Engineer' : key === 'location' ? 'City, India' : key === 'email' ? 'you@example.com' : key === 'mobile' ? '+91...' : 'https://...'} visibility={['name', 'headline'].includes(key) ? undefined : resume.basicsVisibility[key]} onToggleVisibility={['name', 'headline'].includes(key) ? undefined : () => updateResume((current) => ({ ...current, basicsVisibility: { ...current.basicsVisibility, [key]: !current.basicsVisibility[key] } }))} /></div>
                 ))}
               </div>
             </SectionCard></div>
 
-            <SectionCard sectionKey="education" title="Education" help={SECTION_HELP.education} icon={GraduationCap} active={activeSection === 'education'} collapsed={collapsed.education} onCollapse={() => setCollapsed((state) => ({ ...state, education: !state.education }))} onFocus={() => setActiveSection('education')} hidden={resume.hiddenSections.includes('education')} onToggleHidden={() => toggleHidden('education')} status={resume.hiddenSections.includes('education') ? 'Hidden' : isReady('education') ? 'Ready' : 'Not added'}>
-              {!resume.education.length ? <EmptySection title="No education added" description="Add college, secondary school, or other relevant education in your preferred wording." action="Add education" onClick={() => { setActiveSection('education'); setCollapsed((state) => ({ ...state, education: false })); setSection('education', [{ year: '', degree: '', institute: '', score: '' }]); }} /> : <div className="space-y-3">{resume.education.map((entry, index) => <EntryShell key={index} label="Education" index={index} onRemove={() => setSection('education', resume.education.filter((_, i) => i !== index), 'Education entry removed')} onMoveUp={() => { if (index > 0) { const next = [...resume.education]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; setSection('education', next); } }} onMoveDown={() => { if (index < resume.education.length - 1) { const next = [...resume.education]; [next[index + 1], next[index]] = [next[index], next[index + 1]]; setSection('education', next); } }}><div className="grid gap-3 sm:grid-cols-2"><Field label="Degree" value={entry.degree || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, degree: event.target.value } : item))} placeholder="B.Tech Computer Science and Engineering" /><Field label="Institute" value={entry.institute || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, institute: event.target.value } : item))} placeholder="College or school name" /><Field label="Year / Duration" value={entry.year || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, year: event.target.value } : item))} placeholder="2023 – Present" /><Field label="CGPA / Percentage" value={entry.score || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, score: event.target.value } : item))} placeholder="7.64 or 90%" /></div></EntryShell>)}<AddButton onClick={() => setSection('education', [...resume.education, { year: '', degree: '', institute: '', score: '' }])}>Add another education</AddButton></div>}
+            <SectionCard sectionKey="education" title="Education" help={SECTION_HELP.education} icon={GraduationCap} active={activeSection === 'education'} collapsed={collapsed.education} onCollapse={() => setCollapsed((state) => ({ ...state, education: !state.education }))} onFocus={() => setActiveSection('education')} hidden={resume.hiddenSections.includes('education')} onToggleHidden={() => toggleHidden('education')} status={sectionStatus('education')}>
+              {!resume.education.length ? <EmptySection title="No education added" description="Add college, secondary school, or other relevant education in your preferred wording." action="Add education" onClick={() => { setActiveSection('education'); setCollapsed((state) => ({ ...state, education: false })); setSection('education', [{ year: '', degree: '', institute: '', score: '' }]); }} /> : <div className="space-y-3">{resume.education.map((entry, index) => <EntryShell key={index} label="Education" index={index} onRemove={() => setSection('education', resume.education.filter((_, i) => i !== index), 'Education entry removed')} onMoveUp={() => { if (index > 0) { const next = [...resume.education]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; setSection('education', next); } }} onMoveDown={() => { if (index < resume.education.length - 1) { const next = [...resume.education]; [next[index + 1], next[index]] = [next[index], next[index + 1]]; setSection('education', next); } }}><div className="grid gap-3 sm:grid-cols-2"><Field data-review={`education|${index}|degree`} fieldNote="For ATS check" label="Degree" value={entry.degree || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, degree: event.target.value } : item))} placeholder="B.Tech Computer Science and Engineering" /><Field data-review={`education|${index}|institute`} fieldNote="For ATS check" label="Institute" value={entry.institute || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, institute: event.target.value } : item))} placeholder="College or school name" /><Field data-review={`education|${index}|year`} label="Year / Duration" value={entry.year || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, year: event.target.value } : item))} placeholder="2023 – Present" /><Field label="CGPA / Percentage" value={entry.score || ''} onChange={(event) => setSection('education', resume.education.map((item, i) => i === index ? { ...item, score: event.target.value } : item))} placeholder="7.64 or 90%" /></div></EntryShell>)}<AddButton onClick={() => setSection('education', [...resume.education, { year: '', degree: '', institute: '', score: '' }])}>Add another education</AddButton></div>}
             </SectionCard>
 
             {[
               { key: 'experience', noun: 'Experience', icon: BriefcaseBusiness, placeholders: { titleLabel: 'Company', title: 'Company or organization', subtitleLabel: 'Role', subtitle: 'Technical Intern', empty: 'Internships, employment, freelance work, and open-source contributions can be included here.' } },
               { key: 'projects', noun: 'Project', icon: FolderKanban, placeholders: { titleLabel: 'Project title', title: 'Project name', subtitleLabel: 'Supporting title', subtitle: 'Short project description', empty: 'Add academic, personal, hackathon, or production projects that demonstrate your skills.' } },
               { key: 'achievements', noun: 'Achievement', icon: Trophy, placeholders: { titleLabel: 'Achievement title', title: 'Award, certification, or milestone', subtitleLabel: 'Organization', subtitle: 'Issuing organization', empty: 'Awards, certifications, competitions, and notable milestones can appear here.' } },
-            ].map((config) => <SectionCard key={config.key} sectionKey={config.key} title={FIXED_SECTION_META[config.key].label} help={SECTION_HELP[config.key]} icon={config.icon} active={activeSection === config.key} collapsed={collapsed[config.key]} onCollapse={() => setCollapsed((state) => ({ ...state, [config.key]: !state[config.key] }))} onFocus={() => setActiveSection(config.key)} hidden={resume.hiddenSections.includes(config.key)} onToggleHidden={() => toggleHidden(config.key)} status={resume.hiddenSections.includes(config.key) ? 'Hidden' : isReady(config.key) ? 'Ready' : 'Not added'}><DetailSectionEditor sectionKey={config.key} entries={resume[config.key]} onChange={(entries) => setSection(config.key, entries)} onRemove={(index) => setSection(config.key, resume[config.key].filter((_, i) => i !== index), `${config.noun} removed`)} noun={config.noun} placeholders={config.placeholders} /></SectionCard>)}
+            ].map((config) => <SectionCard key={config.key} sectionKey={config.key} title={FIXED_SECTION_META[config.key].label} help={SECTION_HELP[config.key]} icon={config.icon} active={activeSection === config.key} collapsed={collapsed[config.key]} onCollapse={() => setCollapsed((state) => ({ ...state, [config.key]: !state[config.key] }))} onFocus={() => setActiveSection(config.key)} hidden={resume.hiddenSections.includes(config.key)} onToggleHidden={() => toggleHidden(config.key)} status={sectionStatus(config.key)}><DetailSectionEditor sectionKey={config.key} entries={resume[config.key]} onChange={(entries) => setSection(config.key, entries)} onRemove={(index) => setSection(config.key, resume[config.key].filter((_, i) => i !== index), `${config.noun} removed`)} noun={config.noun} placeholders={config.placeholders} /></SectionCard>)}
 
-            <SectionCard sectionKey="skills" title="Technical Skills" help={SECTION_HELP.skills} icon={Wrench} active={activeSection === 'skills'} collapsed={collapsed.skills} onCollapse={() => setCollapsed((state) => ({ ...state, skills: !state.skills }))} onFocus={() => setActiveSection('skills')} hidden={resume.hiddenSections.includes('skills')} onToggleHidden={() => toggleHidden('skills')} status={resume.hiddenSections.includes('skills') ? 'Hidden' : isReady('skills') ? 'Ready' : 'Not added'}>
-              {!resume.skills.length ? <EmptySection title="No technical skills added" description="Create clear categories such as Programming Languages, Full Stack Development, or Tools & Cloud." action="Add skill category" onClick={() => setSection('skills', [{ category: '', skills: '' }])} /> : <div className="space-y-3">{resume.skills.map((entry, index) => <EntryShell key={index} label="Skill category" index={index} onRemove={() => setSection('skills', resume.skills.filter((_, i) => i !== index), 'Skill category removed')} onMoveUp={() => { if (index > 0) { const next = [...resume.skills]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; setSection('skills', next); } }} onMoveDown={() => { if (index < resume.skills.length - 1) { const next = [...resume.skills]; [next[index + 1], next[index]] = [next[index], next[index + 1]]; setSection('skills', next); } }}><div className="grid gap-3 sm:grid-cols-[.42fr_.58fr]"><Field label="Category" value={entry.category || ''} onChange={(event) => setSection('skills', resume.skills.map((item, i) => i === index ? { ...item, category: event.target.value } : item))} placeholder="Programming Languages" /><Field label="Skills" value={entry.skills || ''} onChange={(event) => setSection('skills', resume.skills.map((item, i) => i === index ? { ...item, skills: event.target.value } : item))} placeholder="C, C++, Java, Python" hint="Separate skills with commas." /></div></EntryShell>)}<AddButton onClick={() => setSection('skills', [...resume.skills, { category: '', skills: '' }])}>Add skill category</AddButton></div>}
+            <SectionCard sectionKey="skills" title="Technical Skills" help={SECTION_HELP.skills} icon={Wrench} active={activeSection === 'skills'} collapsed={collapsed.skills} onCollapse={() => setCollapsed((state) => ({ ...state, skills: !state.skills }))} onFocus={() => setActiveSection('skills')} hidden={resume.hiddenSections.includes('skills')} onToggleHidden={() => toggleHidden('skills')} status={sectionStatus('skills')}>
+              {!resume.skills.length ? <EmptySection title="No technical skills added" description="Create clear categories such as Programming Languages, Full Stack Development, or Tools & Cloud." action="Add skill category" onClick={() => setSection('skills', [{ category: '', skills: '' }])} /> : <div className="space-y-3">{resume.skills.map((entry, index) => <EntryShell key={index} label="Skill category" index={index} onRemove={() => setSection('skills', resume.skills.filter((_, i) => i !== index), 'Skill category removed')} onMoveUp={() => { if (index > 0) { const next = [...resume.skills]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; setSection('skills', next); } }} onMoveDown={() => { if (index < resume.skills.length - 1) { const next = [...resume.skills]; [next[index + 1], next[index]] = [next[index], next[index + 1]]; setSection('skills', next); } }}><div className="grid gap-3 sm:grid-cols-[.42fr_.58fr]"><Field data-review={`skills|${index}|category`} label="Category" value={entry.category || ''} onChange={(event) => setSection('skills', resume.skills.map((item, i) => i === index ? { ...item, category: event.target.value } : item))} placeholder="Programming Languages" /><Field data-review={`skills|${index}|skills`} fieldNote="For ATS check" label="Skills" value={entry.skills || ''} onChange={(event) => setSection('skills', resume.skills.map((item, i) => i === index ? { ...item, skills: event.target.value } : item))} placeholder="C, C++, Java, Python" hint="Separate skills with commas." /></div></EntryShell>)}<AddButton onClick={() => setSection('skills', [...resume.skills, { category: '', skills: '' }])}>Add skill category</AddButton></div>}
             </SectionCard>
 
             {resume.customSections.map((section) => {
@@ -799,7 +882,7 @@ export default function StudentResume() {
                 };
               });
               const removeEntry = (index) => updateResume((current) => ({ ...current, customSections: current.customSections.map((item) => item.id === section.id ? { ...item, entries: item.entries.filter((_, i) => i !== index) } : item) }), { undoLabel: `${section.title} entry removed` });
-              return <SectionCard key={key} sectionKey={key} title={section.title} help="Add any combination of subsections, headings, formatted paragraphs, dates, links, and bullet points." icon={Sparkles} active={activeSection === key} collapsed={collapsed[key]} onCollapse={() => setCollapsed((state) => ({ ...state, [key]: !state[key] }))} onFocus={() => setActiveSection(key)} hidden={resume.hiddenSections.includes(key)} onToggleHidden={() => toggleHidden(key)} status={resume.hiddenSections.includes(key) ? 'Hidden' : isReady(key) ? 'Ready' : 'Not added'}>
+              return <SectionCard key={key} sectionKey={key} title={section.title} help="Add any combination of subsections, headings, formatted paragraphs, dates, links, and bullet points." icon={Sparkles} active={activeSection === key} collapsed={collapsed[key]} onCollapse={() => setCollapsed((state) => ({ ...state, [key]: !state[key] }))} onFocus={() => setActiveSection(key)} hidden={resume.hiddenSections.includes(key)} onToggleHidden={() => toggleHidden(key)} status={sectionStatus(key)}>
                 <FlexibleCustomSectionEditor sectionKey={key} sectionTitle={section.title} entries={section.entries || []} onChange={changeEntries} onRemove={removeEntry} />
               </SectionCard>;
             })}
@@ -817,13 +900,17 @@ export default function StudentResume() {
           </aside>
         </main>
 
-        <div className="fixed inset-x-3 bottom-3 z-40 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-2xl backdrop-blur lg:hidden dark:border-slate-700 dark:bg-slate-900/95"><button type="button" onClick={() => saveResume()} className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 py-2.5 text-xs font-bold dark:border-slate-700"><Save className="h-4 w-4" />Save</button><button type="button" onClick={() => setMobileTab(mobileTab === 'edit' ? 'preview' : 'edit')} className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 py-2.5 text-xs font-bold dark:border-slate-700"><Eye className="h-4 w-4" />{mobileTab === 'edit' ? 'Preview' : 'Edit'}</button><button type="button" onClick={handleDownload} disabled={!hasResumeContent(resume) || downloading} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 py-2.5 text-xs font-bold text-white disabled:opacity-40"><Download className="h-4 w-4" />PDF</button></div>
+        <div className="fixed inset-x-3 bottom-3 z-40 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-2xl backdrop-blur lg:hidden dark:border-slate-700 dark:bg-slate-900/95">
+          <button type="button" onClick={() => setMobileTab(mobileTab === 'edit' ? 'preview' : 'edit')} className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 py-2.5 text-xs font-bold dark:border-slate-700"><Eye className="h-4 w-4" />{mobileTab === 'edit' ? 'Preview' : 'Edit'}</button>
+          {importSession ? <button type="button" onClick={confirmImport} disabled={saveState === 'saving'} className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-sky-600 py-2.5 text-xs font-bold text-white"><Check size={15}/>{importSession.original.exists ? 'Replace saved draft' : 'Save imported draft'}</button> :
+            <button type="button" onClick={openReview} disabled={!hasContent} className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-sky-600 py-2.5 text-xs font-bold text-white disabled:opacity-50"><AnviMark className="h-4 w-4"/>Check with ANVI</button>}
+        </div>
 
         <AnimatePresence>{undoAction ? <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="fixed bottom-20 left-1/2 z-[85] flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-xs text-white shadow-2xl lg:bottom-6"><span>{undoAction.label}</span><button type="button" onClick={undoLastAction} className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-1.5 font-black text-sky-300 hover:bg-white/20"><Undo2 className="h-3.5 w-3.5" /> Undo</button><button type="button" onClick={() => setUndoAction(null)} aria-label="Dismiss undo" className="text-slate-400"><X className="h-3.5 w-3.5" /></button></motion.div> : null}</AnimatePresence>
         {manageOpen ? <ManageSectionsModal resume={resume} onChange={updateResume} onUndoableChange={(next, label) => updateResume(next, { undoLabel: label })} onCustomAdded={(key) => { setManageOpen(false); setCollapsed((state) => ({ ...state, [key]: false })); setActiveSection(key); requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(`resume-editor-${key.replace(':', '-')}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))); }} onClose={() => setManageOpen(false)} /> : null}
         {fullPreview ? <div className="fixed inset-0 z-[95] flex flex-col bg-slate-950/95 p-3 backdrop-blur"><div className="mx-auto flex w-full max-w-6xl items-center justify-between py-2 text-white"><div><div className="text-xs font-bold uppercase tracking-[.15em] text-sky-300">Resume preview</div><div className="mt-1 text-sm font-bold">{filenameForResume(resume)}</div></div><div className="flex gap-2"><button type="button" onClick={handleDownload} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold"><Download className="h-4 w-4" />Download</button><button type="button" onClick={() => setFullPreview(false)} className="rounded-lg border border-white/20 p-2"><X className="h-4 w-4" /></button></div></div><div className="mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-hidden rounded-xl bg-slate-900/40"><ResumePreview resume={previewResume} mode="scroll" sampleNotice={hasContent ? '' : 'Sample details — add your own to replace them'} /></div></div> : null}
         {galleryOpen ? <TemplateGallery currentId={resume.template} resume={resume} hasContent={hasContent} initialId={galleryInitial} onApply={(id) => { applyTemplate(id); setGalleryOpen(false); setGalleryInitial(''); }} onClose={() => { setGalleryOpen(false); setGalleryInitial(''); }} /> : null}
-        {welcomeOpen ? <ResumeWelcomeModal onClose={dismissWelcome} onStart={() => { dismissWelcome(); setActiveSection('basics'); setCollapsed((state) => ({ ...state, basics: false })); requestAnimationFrame(() => document.getElementById('resume-editor-basics')?.scrollIntoView({ behavior: 'smooth' })); }} onArrange={() => { dismissWelcome(); setManageOpen(true); }} onTemplates={() => { dismissWelcome(); setGalleryOpen(true); }} /> : null}
+        {importDialog && <ResumeImportDialog welcome={importDialog === 'welcome'} onClose={dismissWelcome} onStart={() => { dismissWelcome(); locateField('basics|name'); }} onReady={reviewImport} />}
         <DownloadStatus stage={downloadStage} complete={downloadComplete} filename={filenameForResume(resume)} onClose={() => setDownloadComplete(false)} />
       </div>
     </RequirePasswordChange>

@@ -73,6 +73,12 @@ export function withBuiltinFonts(theme) {
  * @param {object} [props.lineBreaks] measured line starts from the preview
  * @param {boolean} [props.safeFonts] use standard PDF fonts (fallback only)
  */
+function savedDate(value) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date : undefined;
+}
+
 export default function ResumePdfDocument({ resume, pages, lineBreaks = null, safeFonts = false }) {
   const baseTheme = getTemplateTheme(resume.template);
   const theme = safeFonts ? withBuiltinFonts(baseTheme) : baseTheme;
@@ -84,7 +90,7 @@ export default function ResumePdfDocument({ resume, pages, lineBreaks = null, sa
   const pageList = usable ? pages : singlePageLayout(layout);
   return (
     <BreaksContext.Provider value={usable && !safeFonts ? lineBreaks : null}>
-      <Document title={`${resume.basics?.name || 'Student'} Resume`} author={resume.basics?.name || 'Prep Resume'} creator="Prep Resume" subject={`${getTemplate(resume.template).name} template`}>
+      <Document title={`${resume.basics?.name || 'Student'} Resume`} author={resume.basics?.name || 'Prep Resume'} creator="Prep Resume" subject={`${getTemplate(resume.template).name} template`} creationDate={savedDate(resume.createdAt) || savedDate(resume.updatedAt)}>
         {pageList.map((page, index) => (
           <ResumePageBody key={index} P={PDF_PRIMITIVES} resume={resume} theme={theme} layout={layout} page={page} pageIndex={index} />
         ))}

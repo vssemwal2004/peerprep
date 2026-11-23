@@ -1,13 +1,15 @@
 // ANVI Resume Check panel: grammar + ATS readiness + job match, with a clear
 // answer to "what should I fix first, and where?".
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'framer-motion';
 import {
-  AlertTriangle, ArrowRight, BadgeCheck, Briefcase, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleDashed, Clock3,
-  EyeOff, FileSearch, Info, LayoutTemplate, Loader2, Lock, MapPin, RefreshCw, ScanText, ShieldCheck, Sparkles, SpellCheck2, Target, Wand2, X,
+  AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleDashed, Clock3,
+  EyeOff, FileSearch, Info, LayoutTemplate, Loader2, MapPin, RefreshCw, ScanText, Sparkles, SpellCheck2, Target, Wand2, X,
 } from 'lucide-react';
+import { describeAtsFinding } from './describeAtsFinding';
 import { getTemplate } from '../templates/catalog';
-import { AnviOrb as Orb, AnviGauge, AnviMessage, AnviScanSheet, AnviWord, VerdictPill } from './AnviVisuals';
+import { AnviOrb as Orb, AnviGauge, AnviWord } from './AnviVisuals';
+import { DraftChecklist, RewriteTool, ScanScene, UndoNotice } from './ReviewWorkspace';
 import { ATS_CATEGORY_LABELS, SECTION_LABEL, atsRuleInfo, fixFirst, groupIssues, locationLabel, verdictFor } from './reviewModel';
 
 const TONES = {
@@ -56,84 +58,19 @@ function AnviOrb({ size = 'h-16 w-16', busy = false, online = false }) {
 
 // ───────────── first run / scanning ─────────────
 
-function FirstRun({ onStart, templateName, disabled }) {
-  return (
-    <div className="space-y-3">
-      <AnviMessage>
-        Hi, I’m <AnviWord />. I read your resume the way recruiters and their software do, then tell you <b className="font-semibold text-slate-900 dark:text-white">what to fix first, and where</b>.
-      </AnviMessage>
-      <AnviMessage avatar={false} delay={0.15}>
-        <div className="text-[12px] font-semibold text-slate-900 dark:text-white">One check gives you:</div>
-        <ul className="mt-2 space-y-2.5">
-          {[
-            [ScanText, 'ATS readiness out of 100', `I export your PDF in ${templateName} and read it like an applicant tracking system: headings, layout, contacts, dates, 35 rules.`],
-            [SpellCheck2, 'Grammar and spelling', 'Every bullet, title and paragraph, with the exact words to change and a one-click fix.'],
-            [Target, 'Job match (optional)', 'Paste a job description to see the requirements you meet and the skills missing.'],
-          ].map(([Icon, title, text]) => (
-            <li key={title} className="flex gap-2.5">
-              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 ring-1 ring-inset ring-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-400/15"><Icon className="h-3.5 w-3.5" /></span>
-              <div className="min-w-0"><div className="text-[12px] font-semibold text-slate-900 dark:text-white">{title}</div><p className="text-[11.5px] leading-[1.45] text-slate-500 dark:text-zinc-400">{text}</p></div>
-            </li>
-          ))}
-        </ul>
-      </AnviMessage>
-      <div className="pl-9 pt-1">
-        <button type="button" onClick={onStart} disabled={disabled} className="anvi-button inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
-          <Sparkles className="h-4 w-4" />Check my resume with ANVI
-        </button>
-        {disabled ? <p className="mt-2 text-center text-[11px] text-slate-500 dark:text-zinc-400">Add some details to your resume first.</p> : null}
-      </div>
-      <p className="flex items-start gap-2 pl-9 text-[11px] leading-4 text-slate-400 dark:text-zinc-500"><Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />Grammar runs on your device. The PDF is read once for the score and not stored. The score comes from an open, rule-based ATS engine, so the same resume always gets the same score.</p>
-    </div>
-  );
-}
-
-function Step({ state, children }) {
-  const icon = state === 'done' ? <CircleCheck className="h-4 w-4 text-emerald-500" /> : state === 'active' ? <Loader2 className="h-4 w-4 animate-spin text-violet-500" /> : state === 'error' ? <CircleAlert className="h-4 w-4 text-rose-500" /> : <CircleDashed className="h-4 w-4 text-slate-300 dark:text-slate-600" />;
-  return <li className={`flex items-center gap-3 py-1.5 text-xs ${state === 'pending' ? 'text-slate-400' : state === 'error' ? 'text-rose-600' : 'text-slate-700 dark:text-slate-200'}`}>{icon}<span className={state === 'active' ? 'font-bold' : ''}>{children}</span></li>;
-}
-
-function Scanning({ check, templateName }) {
-  const { grammar, ats } = check;
-  const grammarState = grammar.status === 'done' ? 'done' : grammar.status === 'error' ? 'error' : grammar.status === 'running' ? (grammar.loadingEngine ? 'pending' : 'active') : 'pending';
-  const atsState = (stage) => (ats.status === 'done' ? 'done' : ats.status === 'error' ? 'error' : ats.status !== 'running' ? 'pending' : ats.stage === stage ? 'active' : stage === 'export' ? 'done' : 'pending');
-  const total = grammar.progress?.total || 0;
-  const done = grammar.progress?.done || 0;
-  return (
-    <div className="flex flex-col items-center py-4 text-center">
-      <div className="relative">
-        <AnviScanSheet width={128} scanning />
-        <span className="absolute -bottom-4 -right-5"><AnviOrb size="h-11 w-11" busy /></span>
-      </div>
-      <h3 className="mt-7 text-base font-semibold text-slate-950 dark:text-white"><AnviWord /> is checking your resume</h3>
-      <p className="mt-1 text-xs text-slate-500">This usually takes a few seconds.</p>
-      <div className="mt-4 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-        <motion.div className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-violet-500 to-fuchsia-500" animate={{ width: `${Math.round(((ats.status === 'done' ? 0.5 : ats.stage === 'read' ? 0.3 : 0.1) + (total ? (done / total) * 0.5 : grammar.status === 'done' ? 0.5 : 0)) * 100)}%` }} />
-      </div>
-      <ul className="mt-5 w-full max-w-sm text-left">
-        <Step state="done">Reading your resume sections</Step>
-        <Step state={grammar.loadingEngine ? 'active' : grammar.status === 'idle' ? 'pending' : 'done'}>Loading ANVI’s language engine{grammar.loadingEngine ? ' (first time only)' : ''}</Step>
-        <Step state={grammarState}>Checking grammar and spelling{total ? ` · ${done}/${total} lines` : ''}</Step>
-        <Step state={atsState('export')}>Exporting your PDF in {templateName}</Step>
-        <Step state={atsState('read')}>Reading the PDF the way an ATS does and scoring 35 rules</Step>
-      </ul>
-    </div>
-  );
-}
 
 // ───────────── grammar ─────────────
 
 function Highlight({ issue, suggestion }) {
-  const text = issue.plainText;
-  const from = Math.max(0, issue.start - 70);
-  const to = Math.min(text.length, issue.end + 70);
+  const before = issue.plainText.slice(0, issue.start);
+  const after = issue.plainText.slice(issue.end);
+  const prefix = before.length > 58 ? '…' + before.slice(-58) : before;
+  const suffix = after.length > 58 ? after.slice(0, 58) + '…' : after;
   return (
-    <p className="text-[12.5px] leading-6 text-slate-700 dark:text-slate-200">
-      {from > 0 ? '… ' : ''}{text.slice(from, issue.start)}
-      <span className="rounded-sm bg-rose-100 px-0.5 text-rose-700 line-through decoration-rose-500 decoration-2 dark:bg-rose-950 dark:text-rose-300">{issue.problem || ' '}</span>
-      {suggestion !== undefined ? <span className="ml-0.5 rounded-sm bg-emerald-100 px-0.5 font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">{suggestion || '(remove)'}</span> : null}
-      {text.slice(issue.end, to)}{to < text.length ? ' …' : ''}
-    </p>
+    <dl className="space-y-2 text-[13px] leading-5 text-slate-700 dark:text-slate-200">
+      <div><dt className="text-[10.5px] font-semibold text-slate-500 dark:text-zinc-400">Original</dt><dd>{prefix}<mark className="rounded bg-rose-100 px-0.5 text-rose-800 dark:bg-rose-950 dark:text-rose-300">{issue.problem}</mark>{suffix}</dd></div>
+      {suggestion !== undefined ? <div><dt className="text-[10.5px] font-semibold text-emerald-700 dark:text-emerald-300">Suggested</dt><dd>{prefix}<mark className="rounded bg-emerald-100 px-0.5 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">{suggestion}</mark>{suffix}</dd></div> : null}
+    </dl>
   );
 }
 
@@ -216,11 +153,11 @@ function GrammarTab({ check, resume, onLocate }) {
 
 // ───────────── ATS ─────────────
 
-function ErrorCard({ message, onRetry }) {
+function ErrorCard({ message, onRetry, retryLabel = 'Try again' }) {
   return (
     <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
       <div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span className="flex-1 leading-5">{message}</span></div>
-      <button type="button" onClick={onRetry} className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-rose-700"><RefreshCw className="h-3.5 w-3.5" />Try again</button>
+      <button type="button" onClick={onRetry} className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-rose-700"><RefreshCw className="h-3.5 w-3.5" />{retryLabel}</button>
     </div>
   );
 }
@@ -241,16 +178,16 @@ function JobMatch({ check }) {
   const report = check.ats.report;
   const [text, setText] = useState(check.jobText);
   const running = check.ats.status === 'running';
-  const job = report?.job;
+  const job = text.trim() === check.jobText.trim() ? report?.job : null;
   return (
     <section id="anvi-job-match" className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(16,24,40,0.05)] ring-1 ring-inset ring-black/[0.06] dark:bg-[#242424] dark:ring-white/[0.07]">
       <h4 className="flex items-center gap-2 text-sm font-black text-slate-900 dark:text-white"><Briefcase className="h-4 w-4 text-violet-500" />Job match <span className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-400">Optional</span></h4>
       <p className="mt-1 text-[11px] leading-4 text-slate-500">Paste a job description to compare it with your resume, requirement by requirement. This score is separate from ATS readiness.</p>
-      <textarea value={text} onChange={(event) => setText(event.target.value)} rows={4} maxLength={12000} placeholder="Paste the job description here…" className="mt-3 w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-violet-950" />
-      <div className="mt-2 flex items-center gap-2">
-        <button type="button" onClick={() => check.runJobMatch(text)} disabled={running || text.trim().length < 40} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-violet-700 disabled:opacity-50">{running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Target className="h-3.5 w-3.5" />}{job ? 'Match again' : 'Match to this job'}</button>
+      <textarea aria-label="Job description" value={text} onChange={(event) => setText(event.target.value)} rows={4} maxLength={12000} placeholder="Paste the job description here…" className="mt-3 w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-violet-950" />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => check.runJobMatch(text)} disabled={running || !text.trim()} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-violet-700 disabled:opacity-50">{running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Target className="h-3.5 w-3.5" />}{job ? 'Match again' : 'Match to this job'}</button>
         {text && text !== check.jobText ? <span className="text-[10px] text-slate-400">Not matched yet</span> : null}
-        {job && !text.trim() ? <button type="button" onClick={() => { setText(''); check.runJobMatch(''); }} className="text-[11px] font-bold text-slate-400 hover:text-rose-600">Remove job match</button> : null}
+        {report?.job && !text.trim() ? <button type="button" onClick={() => { setText(''); check.runJobMatch(''); }} className="text-[11px] font-bold text-slate-400 hover:text-rose-600">Remove job match</button> : null}
       </div>
       {job ? (
         <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
@@ -288,7 +225,7 @@ function AtsTab({ check, resume, onLocate, onBrowseTemplates }) {
   const { ats } = check;
   const [showText, setShowText] = useState(false);
   const [showPassed, setShowPassed] = useState(false);
-  if (ats.status === 'error') return <ErrorCard message={ats.error} onRetry={() => check.runCheck({ only: 'ats' })} />;
+  if (ats.status === 'error') return <ErrorCard message={ats.error} retryLabel="Retry PDF check" onRetry={() => check.runCheck({ only: 'ats' })} />;
   if (ats.status === 'running' && !ats.report) return <div className="flex items-center gap-2 py-8 text-xs text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />{ats.stage === 'export' ? 'Exporting your PDF…' : 'Reading the PDF like an ATS…'}</div>;
   const report = ats.report;
   if (!report) return null;
@@ -322,7 +259,7 @@ function AtsTab({ check, resume, onLocate, onBrowseTemplates }) {
           <h4 className="mb-2 text-[11px] font-black uppercase tracking-[.14em] text-slate-400">Needs attention · {report.failedChecks.length}</h4>
           <ul className="space-y-2">
             {report.failedChecks.map((item) => {
-              const info = atsRuleInfo(item.id, resume);
+              const info = describeAtsFinding(item, resume);
               const [label, badge] = SEVERITY[item.severity] || SEVERITY.info;
               return (
                 <li key={item.id} className="rounded-xl bg-white p-3.5 shadow-[0_1px_2px_rgba(16,24,40,0.05)] ring-1 ring-inset ring-black/[0.06] dark:bg-[#242424] dark:ring-white/[0.07]">
@@ -331,10 +268,10 @@ function AtsTab({ check, resume, onLocate, onBrowseTemplates }) {
                     <span className="flex-1 text-xs font-black text-slate-900 dark:text-white">{info.title}</span>
                     {item.scoreImpact ? <span className="text-[11px] font-black text-rose-500">−{item.scoreImpact} pts</span> : null}
                   </div>
-                  <p className="mt-2 border-l-2 border-slate-200 pl-2.5 text-[11px] italic leading-4 text-slate-500 dark:border-slate-700">{item.evidence}</p>
-                  <p className="mt-2 text-xs leading-5 text-slate-700 dark:text-slate-200"><b>Fix: </b>{item.fix}</p>
-                  <button type="button" onClick={() => (info.template ? onBrowseTemplates() : onLocate({ section: info.section }))} className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:border-sky-300 hover:text-sky-700 dark:border-slate-700 dark:text-slate-300">
-                    {info.template ? <><LayoutTemplate className="h-3.5 w-3.5" />Browse ATS-friendly templates</> : <><ArrowRight className="h-3.5 w-3.5" />Go to {SECTION_LABEL(resume, info.section)}</>}
+                  <details className="mt-2 text-xs text-slate-500 dark:text-zinc-400"><summary className="cursor-pointer">What the PDF reader found</summary><p className="mt-1 leading-5">{item.evidence}</p></details>
+                  <p className="mt-2 text-xs leading-5 text-slate-700 dark:text-slate-200">{info.instruction}</p>
+                  <button type="button" onClick={() => (info.template ? onBrowseTemplates() : onLocate(info.target))} className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:border-sky-300 hover:text-sky-700 dark:border-slate-700 dark:text-slate-300">
+                    {info.template ? <><LayoutTemplate className="h-3.5 w-3.5" />Browse ATS-friendly templates</> : <><ArrowRight className="h-3.5 w-3.5" />{info.target.field ? (info.target.field === 'bullet' ? 'Open bullet' : 'Open ' + info.target.field) : 'Open ' + SECTION_LABEL(resume, info.section)}</>}
                   </button>
                 </li>
               );
@@ -378,12 +315,12 @@ function FixFirst({ items, resume, onLocate, onBrowseTemplates }) {
     <section className="rounded-2xl bg-white p-3 shadow-[0_1px_2px_rgba(16,24,40,0.05)] ring-1 ring-inset ring-black/[0.06] dark:bg-[#242424] dark:ring-white/[0.07]">
       <div className="flex items-center justify-between gap-2 px-1 pb-2">
         <h4 className="flex items-center gap-2 text-[13.5px] font-semibold text-slate-900 dark:text-white"><span className="flex h-6 w-6 items-center justify-center rounded-md bg-violet-50 text-violet-600 ring-1 ring-inset ring-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-400/20"><Target className="h-3.5 w-3.5" /></span>Fix these first</h4>
-        <span className="text-[10.5px] text-slate-400 dark:text-zinc-500">Tap to open the exact place</span>
+        <span className="text-[10.5px] text-slate-400 dark:text-zinc-500">Open a finding to edit</span>
       </div>
       {/* Each fix is one button: it opens the builder at that section, entry or bullet. */}
       <ol className="space-y-1.5">
         {items.map((item, index) => {
-          const where = item.target.template ? 'Templates' : item.source === 'grammar' ? locationLabel(item.target).join(' › ') : SECTION_LABEL(resume, item.target.section);
+          const where = item.target.template ? 'Templates' : item.target.sectionLabel ? locationLabel(item.target).join(' › ') : [SECTION_LABEL(resume, item.target.section), item.target.field].filter(Boolean).join(' › ');
           return (
             <li key={item.key}>
               <button type="button" onClick={() => (item.target.template ? onBrowseTemplates() : onLocate(item.target))}
@@ -418,7 +355,7 @@ function ExplainCard({ check, resume, onLocate, onBrowseTemplates }) {
         <button type="button" onClick={check.runExplain} disabled={disabled} className="anvi-aura-inner group relative flex w-full items-center gap-3 overflow-hidden bg-white p-3.5 text-left transition dark:bg-[#242424]">
           <span className="pointer-events-none absolute inset-0 bg-gradient-to-r from-sky-50/60 via-violet-50/70 to-fuchsia-50/60 opacity-0 transition group-hover:opacity-100 dark:from-sky-500/[0.05] dark:via-violet-500/[0.08] dark:to-fuchsia-500/[0.05]" aria-hidden="true" />
           <AnviOrb size="h-11 w-11" />
-          <div className="relative flex-1"><div className="text-sm font-semibold text-slate-900 dark:text-zinc-50">Explain with <AnviWord /></div><div className="text-[11px] text-slate-500 dark:text-zinc-400">Your top three fixes in plain words, pointing to the exact place.</div></div>
+          <div className="relative flex-1"><div className="text-sm font-semibold text-slate-900 dark:text-zinc-50">Explain with <AnviWord /></div><div className="text-[11px] text-slate-500 dark:text-zinc-400">Get a short explanation of your findings.</div></div>
           <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 via-violet-600 to-fuchsia-600 text-white shadow-[0_6px_16px_-6px_rgba(124,58,237,0.8)] transition group-hover:scale-110"><Sparkles className="h-4 w-4" /></span>
         </button>
       </div>
@@ -428,8 +365,7 @@ function ExplainCard({ check, resume, onLocate, onBrowseTemplates }) {
     <section className="overflow-hidden rounded-2xl border border-violet-200 bg-white dark:border-violet-900 dark:bg-slate-900">
       <div className="flex items-center gap-3 border-b border-violet-100 bg-gradient-to-r from-violet-50 to-sky-50/60 px-4 py-3 dark:border-white/[0.06] dark:from-violet-500/10 dark:to-transparent">
         <AnviOrb size="h-9 w-9" busy={explain.status === 'running'} />
-        <div className="flex-1"><div className="text-sm font-semibold text-slate-900 dark:text-zinc-50">ANVI</div><div className="text-[10.5px] text-slate-500 dark:text-zinc-400">{explain.status === 'running' ? 'Reading your check…' : 'Based on your scan results.'}</div></div>
-        {explain.status !== 'running' ? <button type="button" onClick={check.runExplain} className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-violet-700 dark:hover:bg-white/10 dark:hover:text-white" aria-label="Explain again"><RefreshCw className="h-4 w-4" /></button> : null}
+        <div className="flex-1"><div className="text-sm font-semibold text-slate-900 dark:text-zinc-50">ANVI</div><div role="status" className="text-[10.5px] text-slate-500 dark:text-zinc-400">{explain.status === 'running' ? 'Preparing your suggestions…' : 'Based on your scan results.'}</div></div>
       </div>
       <div className="p-4">
         {explain.status === 'running' ? <div className="space-y-2">{[90, 75, 82].map((width) => <div key={width} className="h-3 animate-pulse rounded bg-slate-100 dark:bg-slate-800" style={{ width: `${width}%` }} />)}</div> : null}
@@ -463,162 +399,99 @@ function ExplainCard({ check, resume, onLocate, onBrowseTemplates }) {
 
 // ───────────── panel ─────────────
 
-/** Counts up to `value` once (skipped with reduced motion). Non-numbers show as they are. */
-function CountUp({ value }) {
-  const reduce = useReducedMotion();
-  const target = typeof value === 'number' && Number.isFinite(value) ? value : null;
-  const [shown, setShown] = useState(target === null || reduce ? value : 0);
+const EMPTY_ISSUES = [];
+const REVIEW_TOOLS = [
+  { id: 'ats', label: 'PDF checks', icon: FileSearch },
+  { id: 'grammar', label: 'Grammar fixes', icon: SpellCheck2 },
+  { id: 'job', label: 'Match a job', icon: Briefcase },
+  { id: 'rewrite', label: 'Improve a bullet', icon: Wand2 },
+];
+
+export default function ResumeCheckPanel({ check, resume, hasContent, onLocate, onBrowseTemplates, onClose = null, className = '', initialTab = 'overview', initialAction = '' }) {
+  const [view, setView] = useState(initialAction === 'rewrite' ? 'rewrite' : initialTab);
+  const scrollRef = useRef(null);
+  const headingRef = useRef(null);
+  const lastView = useRef(view);
   useEffect(() => {
-    if (target === null || reduce) { setShown(value); return undefined; }
-    let frame;
-    const start = performance.now();
-    const step = (now) => {
-      const t = Math.min(1, (now - start) / 650);
-      setShown(Math.round(target * (1 - (1 - t) ** 3)));
-      if (t < 1) frame = requestAnimationFrame(step);
-    };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [target, value, reduce]);
-  return <>{shown}</>;
-}
-
-const TILE_TONES = {
-  sky: { chip: 'bg-sky-50 text-sky-600 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/20', chipOn: 'bg-sky-600 text-white ring-sky-600', ring: 'ring-sky-300 dark:ring-sky-400/50', hint: 'text-sky-700 dark:text-sky-300', bar: 'from-sky-400 to-sky-600' },
-  violet: { chip: 'bg-violet-50 text-violet-600 ring-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-400/20', chipOn: 'bg-violet-600 text-white ring-violet-600', ring: 'ring-violet-300 dark:ring-violet-400/50', hint: 'text-violet-700 dark:text-violet-300', bar: 'from-violet-400 to-violet-600' },
-  fuchsia: { chip: 'bg-fuchsia-50 text-fuchsia-600 ring-fuchsia-100 dark:bg-fuchsia-500/10 dark:text-fuchsia-300 dark:ring-fuchsia-400/20', chipOn: 'bg-fuchsia-600 text-white ring-fuchsia-600', ring: 'ring-fuchsia-300 dark:ring-fuchsia-400/50', hint: 'text-fuchsia-700 dark:text-fuchsia-300', bar: 'from-fuchsia-400 to-fuchsia-600' },
-};
-
-/** One result tile. It is a tab: it opens that part of the check. */
-function CheckTile({ id, selected, onSelect, icon: Icon, label, value, unit, hint, tone, busy }) {
-  const t = TILE_TONES[tone];
-  return (
-    <button type="button" role="tab" id={`anvi-tab-${id}`} aria-selected={selected} aria-controls="anvi-tab-panel" onClick={onSelect}
-      className={`group relative flex min-w-0 flex-col rounded-xl bg-white px-2.5 pb-2 pt-2.5 text-left shadow-[0_1px_2px_rgba(16,24,40,0.05)] ring-1 ring-inset transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_18px_-12px_rgba(16,24,40,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:bg-[#242424] ${selected ? `ring-2 ${t.ring}` : 'ring-black/[0.06] dark:ring-white/[0.07]'}`}>
-      <span className="flex items-center gap-1.5">
-        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ring-inset transition-colors duration-200 ${selected ? t.chipOn : t.chip}`} aria-hidden="true">
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110" />}
-        </span>
-        <span className="truncate text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-zinc-400">{label}</span>
-      </span>
-      <span className="mt-2 flex items-baseline gap-1">
-        <span className="text-[22px] font-bold leading-none tabular-nums tracking-[-0.02em] text-slate-950 dark:text-white"><CountUp value={value} /></span>
-        {unit ? <span className="truncate text-[11px] font-medium text-slate-400 dark:text-zinc-500">{unit}</span> : null}
-      </span>
-      <span className={`mt-2 flex items-center gap-0.5 text-[11px] font-semibold ${t.hint}`}>
-        <span className="truncate">{hint}</span><ChevronRight className="h-3 w-3 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
-      </span>
-      {selected ? <motion.span layoutId="anvi-tile-bar" className={`absolute inset-x-3 -bottom-[3px] h-[3px] rounded-full bg-gradient-to-r ${t.bar}`} transition={{ type: 'spring', stiffness: 420, damping: 34 }} aria-hidden="true" /> : null}
-    </button>
-  );
-}
-
-/** Focuses the job description box once it is on screen. */
-function focusJobBox() {
-  let tries = 0;
-  const attempt = () => {
-    const box = document.getElementById('anvi-job-match');
-    if (!box) { if (tries < 15) { tries += 1; setTimeout(attempt, 80); } return; }
-    // Scroll inside the panel so the box sits just below the pinned result cards.
-    const scroller = box.closest('.overflow-y-auto');
-    const pinned = document.getElementById('anvi-tiles');
-    if (scroller) {
-      const offset = box.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
-      scroller.scrollTo({ top: Math.max(0, offset - (pinned?.offsetHeight || 0) - 8), behavior: 'smooth' });
-    } else box.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    box.querySelector('textarea')?.focus({ preventScroll: true });
-  };
-  setTimeout(attempt, 60);
-}
-
-/** `initialTab`: 'ats' | 'grammar' | 'job'. */
-export default function ResumeCheckPanel({ check, resume, hasContent, onLocate, onBrowseTemplates, onClose = null, className = '', initialTab = 'ats' }) {
-  const [tab, setTab] = useState(['ats', 'grammar', 'job'].includes(initialTab) ? initialTab : 'ats');
-  const jobFocused = useRef(false);
-  useEffect(() => {
-    if (initialTab !== 'job' || jobFocused.current || !check.ats.report) return;
-    jobFocused.current = true;
-    focusJobBox();
-  }, [initialTab, check.ats.report]);
+    if (lastView.current === view) return;
+    lastView.current = view;
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    headingRef.current?.focus({ preventScroll: true });
+  }, [view]);
   const templateName = getTemplate(resume.template).name;
-  const { grammar, ats } = check;
-  const showFirstRun = !check.hasResult && !check.running && grammar.status !== 'error' && ats.status !== 'error';
-  const scanning = check.running && !check.hasResult;
-  const top = useMemo(() => fixFirst({ report: ats.report, issues: check.visibleIssues, resume }), [ats.report, check.visibleIssues, resume]);
-  const outdated = check.grammarOutdated || check.atsOutdated;
-  const checkedAt = ats.checkedAt || grammar.checkedAt;
-  const verdict = verdictFor(ats.report?.readinessScore);
-  const failed = ats.report?.failedChecks.length ?? null;
-  const issues = check.visibleIssues.length;
-  const job = ats.report?.job || null;
-  const selectTab = (key) => { setTab(key); if (key === 'job') focusJobBox(); };
+  const { grammar, ats, requirements } = check;
+  const ready = requirements.ready;
+  const latest = ready && !check.atsOutdated ? ats.report : null;
+  const issues = check.grammarOutdated ? EMPTY_ISSUES : check.visibleIssues;
+  const top = useMemo(() => fixFirst({ report: latest, issues, resume }).map(item => {
+    if (item.source !== 'ats') return item;
+    const finding = latest.failedChecks.find(source => item.key === 'ats:' + source.id);
+    if (!finding) return item;
+    const info = describeAtsFinding(finding, resume);
+    return { ...item, target: info.target, detail: info.instruction };
+  }), [latest, issues, resume]);
+  const checkedAt = latest ? ats.checkedAt : null;
+  const overview = view === 'overview';
+  const pdfRunning = ats.status === 'running';
+  const grammarRunning = grammar.status === 'running';
+  const showScan = (overview && check.running) || (view === 'grammar' && grammarRunning) || (['ats', 'job'].includes(view) && pdfRunning);
+  const run = () => check.runCheck({ force: true });
+  const reducedMotion = useReducedMotion();
+  const selectView = id => {
+    setView(id);
+    if (id === 'grammar' && (grammar.status === 'idle' || check.grammarOutdated)) check.runCheck({ only: 'grammar' });
+  };
+  const issuesCount = grammar.status === 'done' && !check.grammarOutdated ? issues.length : null;
 
   return (
-    <div className={`flex min-h-0 flex-col ${className}`}>
-      <header className="relative flex items-center gap-3 border-b border-black/[0.06] bg-white px-4 py-3 dark:border-white/[0.06] dark:bg-[#242424]">
-        <AnviOrb size="h-9 w-9" busy={check.running} online={!check.running} />
-        <div className="min-w-0 flex-1">
-          <h2 className="flex items-center gap-2 text-[15px] font-semibold text-slate-950 dark:text-white"><AnviWord className="text-[16px]" /><span className="rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">Resume assistant</span></h2>
-          <p className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-slate-500 dark:text-zinc-400">{check.running ? 'Reading your resume…' : checkedAt ? <><Clock3 className="h-3 w-3" />Last check {timeAgo(checkedAt)}</> : <><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Online · grammar, ATS readiness, job match</>}</p>
-        </div>
-        {check.hasResult ? <button type="button" onClick={() => check.runCheck()} disabled={check.running || !hasContent} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-violet-700 shadow-sm transition hover:border-violet-300 hover:bg-violet-50 disabled:opacity-50 dark:border-violet-400/25 dark:bg-white/[0.04] dark:text-violet-200 dark:hover:bg-white/[0.08]"><RefreshCw className={`h-3.5 w-3.5 ${check.running ? 'animate-spin' : ''}`} />Run again</button> : null}
-        {onClose ? <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close check"><X className="h-4 w-4" /></button> : null}
-      </header>
+    <MotionConfig reducedMotion="user" transition={reducedMotion ? { duration: 0 } : undefined}>
+      <div className={`anvi-workspace flex min-h-0 flex-col ${className}`}>
+        <header className="flex shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white px-4 py-3.5 dark:border-white/10 dark:bg-zinc-900">
+          {overview ? <Orb size={39} busy={check.running} /> : <button type="button" onClick={() => setView('overview')} aria-label="Back to review overview" className="anvi-icon-button"><ArrowLeft size={17} /></button>}
+          <div className="min-w-0 flex-1">
+            <h2 ref={headingRef} tabIndex={-1} className="text-[16px] font-semibold tracking-tight text-slate-950 dark:text-white">{overview ? <>Ask <AnviWord /></> : REVIEW_TOOLS.find(item => item.id === view)?.label}</h2>
+            <p className="text-xs text-slate-500 dark:text-zinc-400">{checkedAt ? `Last checked ${timeAgo(checkedAt)}` : 'Prep Resume review'}</p>
+          </div>
+          {latest && !check.running ? <button type="button" className="anvi-secondary" onClick={run}><RefreshCw size={13} />Recheck</button> : null}
+          {onClose ? <button type="button" onClick={onClose} className="anvi-icon-button" aria-label="Close check"><X size={16} /></button> : null}
+        </header>
+        <div className="sr-only" role="status">{check.running ? 'Checking the current draft' : latest ? 'Your review is ready' : ''}</div>
+        <div className="px-4 [&:not(:empty)]:pt-3"><UndoNotice check={check} /></div>
+        <div ref={scrollRef} className="anvi-panel-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-4 [scrollbar-gutter:stable]">
+          {showScan ? <ScanScene check={check} templateName={templateName} resume={resume} /> : null}
+          {!check.running && !ready && ['overview', 'ats', 'job'].includes(view) ? <DraftChecklist requirements={requirements} onLocate={onLocate} /> : null}
+          {ats.status === 'error' && ['overview','job'].includes(view) ? <ErrorCard message={ats.error} retryLabel="Retry PDF check" onRetry={() => check.runCheck({ only: 'ats' })} /> : null}
+          {grammar.status === 'error' && overview ? <ErrorCard message={grammar.error} onRetry={() => check.runCheck({ only: 'grammar' })} /> : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4 [scrollbar-gutter:stable]">
-        {showFirstRun ? <FirstRun onStart={() => check.runCheck()} templateName={templateName} disabled={!hasContent} /> : null}
-        {scanning ? <Scanning check={check} templateName={templateName} /> : null}
-        {!showFirstRun && !scanning ? (
-          <div className="space-y-3">
-            {outdated && !check.running ? (
-              <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11.5px] text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
-                <Clock3 className="h-4 w-4 shrink-0" /><span className="flex-1">You changed your resume after this check{check.atsOutdated && !check.grammarOutdated ? ' (or its template)' : ''}. Results may be out of date.</span>
-                <button type="button" onClick={() => check.runCheck()} className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700">Run again</button>
+          {overview && (!check.running || latest || issuesCount !== null) ? <>
+            {latest ? <section className="anvi-review-card anvi-score-card anvi-reveal flex items-center gap-4">
+              <AnviGauge score={latest.readinessScore} size={82} stroke={7} />
+              <div><h3 className="text-[15px] font-semibold">ATS readiness</h3>
+                <p className="mt-1 text-[13px] leading-5 text-slate-600 dark:text-zinc-300">{latest.checksPassed} of {latest.checksTotal} checks passed on your {templateName} PDF.</p>
+                <button type="button" onClick={() => selectView('ats')} className="anvi-text-link mt-1">View PDF checks <ArrowRight size={13} /></button>
               </div>
-            ) : null}
-
-            {/* Score: the engine's number, never changed by ANVI */}
-            <section className="flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(16,24,40,0.05)] ring-1 ring-inset ring-black/[0.06] dark:bg-[#242424] dark:ring-white/[0.07]">
-              {ats.report ? <AnviGauge score={ats.report.readinessScore} size={96} stroke={9} /> : <span className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-slate-50 ring-1 ring-inset ring-slate-200 dark:bg-white/[0.04] dark:ring-white/10">{ats.status === 'running' ? <Loader2 className="h-7 w-7 animate-spin text-violet-500" /> : <AlertTriangle className="h-7 w-7 text-rose-500" />}</span>}
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[14px] font-semibold text-slate-950 dark:text-white">ATS readiness</span>
-                  {ats.report ? <VerdictPill score={ats.report.readinessScore} /> : <span className={`text-sm font-semibold ${TONES[verdict.tone].text}`}>{ats.status === 'running' ? 'Checking…' : 'Not available'}</span>}
-                </div>
-                {ats.report ? (
-                  <>
-                    <p className="mt-1.5 text-[12px] leading-5 text-slate-600 dark:text-zinc-300"><b className="font-semibold text-slate-900 dark:text-white">{ats.report.checksPassed} of {ats.report.checksTotal}</b> checks passed on your PDF in {templateName}.</p>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.07]" aria-hidden="true"><motion.div initial={{ width: 0 }} animate={{ width: `${(ats.report.checksPassed / Math.max(1, ats.report.checksTotal)) * 100}%` }} transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }} className="h-full rounded-full bg-gradient-to-r from-sky-400 via-violet-500 to-fuchsia-500" /></div>
-                    <p className="mt-2 flex items-center gap-1 text-[10.5px] text-slate-400 dark:text-zinc-500"><ShieldCheck className="h-3 w-3" />Open rule-based engine. ANVI explains the score, never changes it.</p>
-                  </>
-                ) : <p className="mt-1.5 text-[12px] text-slate-500">The ATS read did not finish.</p>}
+            </section> : ready && !check.running && ats.status !== 'error' ? <section className="anvi-review-card anvi-start-card">
+              <div className="relative"><span className="anvi-tool-icon mb-3"><ScanText size={20} /></span>
+                <h3 className="text-lg font-semibold tracking-tight">{check.atsOutdated ? 'Your draft has changed' : 'Ready for a résumé check?'}</h3>
+                <p className="mb-4 mt-1 text-[13px] leading-5 text-slate-600 dark:text-zinc-300">Check your {templateName} PDF for readable sections, contact details and wording.</p>
+                <button type="button" className="anvi-primary" disabled={!hasContent} onClick={run}><Sparkles size={15} />{check.atsOutdated ? 'Recheck this draft' : 'Check my résumé'}</button>
               </div>
-            </section>
+            </section> : null}
 
             <FixFirst items={top} resume={resume} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} />
-            <ExplainCard check={check} resume={resume} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} />
-
-            {/* The three results double as tabs, and stay on screen while you scroll. */}
-            <div id="anvi-tiles" className="sticky top-0 z-10 -mx-4 bg-[#f6f7f9]/95 px-4 pb-3 pt-2 backdrop-blur dark:bg-[#1c1c1c]/95">
-              <div className="mb-2 flex items-center justify-between text-[10.5px] font-semibold uppercase tracking-[0.1em] text-slate-400 dark:text-zinc-500"><span>Details</span><span className="normal-case tracking-normal">Tap a card to open it</span></div>
-              <div className="grid grid-cols-3 gap-2" role="tablist" aria-label="Check details">
-                <CheckTile id="ats" selected={tab === 'ats'} onSelect={() => selectTab('ats')} icon={ScanText} tone="sky" label="ATS checks"
-                  value={failed ?? '–'} unit={failed === null ? '' : failed === 0 ? 'all passed' : 'to fix'} hint={failed ? 'View checks' : 'See report'} busy={ats.status === 'running'} />
-                <CheckTile id="grammar" selected={tab === 'grammar'} onSelect={() => selectTab('grammar')} icon={SpellCheck2} tone="violet" label="Grammar"
-                  value={grammar.status === 'running' ? '…' : issues} unit={issues === 1 ? 'issue' : 'issues'} hint={issues ? 'Review fixes' : 'All clear'} busy={grammar.status === 'running'} />
-                <CheckTile id="job" selected={tab === 'job'} onSelect={() => selectTab('job')} icon={Briefcase} tone="fuchsia" label="Job match"
-                  value={job ? (job.score ?? '–') : '–'} unit={job ? '/100' : ''} hint={job ? 'See match' : 'Add a job'} />
-              </div>
-            </div>
-
-            <motion.div key={tab} id="anvi-tab-panel" role="tabpanel" aria-labelledby={`anvi-tab-${tab}`} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-              {tab === 'ats' ? <AtsTab check={check} resume={resume} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} /> : null}
-              {tab === 'grammar' ? <GrammarTab check={check} resume={resume} onLocate={onLocate} /> : null}
-              {tab === 'job' ? (ats.report ? <JobMatch check={check} /> : <ErrorCard message="Job match needs the ATS read. Run the check again." onRetry={() => check.runCheck({ only: 'ats' })} />) : null}
-            </motion.div>
-          </div>
-        ) : null}
+            {latest || issues.length ? <ExplainCard check={check} resume={resume} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} /> : null}
+            <nav aria-label="Review tools" className="grid grid-cols-2 gap-2">{REVIEW_TOOLS.map(({ id, label, icon: Icon }) =>
+              <button type="button" key={id} onClick={() => selectView(id)} className="anvi-action-card">
+                <Icon size={16} /><span>{label}{id === 'grammar' && issuesCount !== null ? ` (${issuesCount})` : ''}</span><ChevronRight size={13} />
+              </button>)}
+            </nav>
+          </> : null}
+          {view === 'rewrite' ? <RewriteTool resume={resume} check={check} onLocate={onLocate} /> : null}
+          {!grammarRunning && view === 'grammar' ? (grammar.status === 'idle' || check.grammarOutdated ? <button className="anvi-primary" type="button" onClick={() => check.runCheck({ only: 'grammar' })}><SpellCheck2 size={15} />Check grammar</button> : <GrammarTab check={check} resume={resume} onLocate={onLocate} />) : null}
+          {!pdfRunning && view === 'ats' && ready ? latest || ats.status === 'error' ? <AtsTab check={check} resume={resume} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} /> : <button type="button" className="anvi-primary" onClick={() => check.runCheck({ only: 'ats' })}><ScanText size={15} />Check this PDF</button> : null}
+          {view === 'job' && ready ? <div hidden={pdfRunning}><JobMatch check={check} /></div> : null}
+        </div>
       </div>
-    </div>
+    </MotionConfig>
   );
 }

@@ -121,6 +121,14 @@ test('column geometry leaves room for the banner on page 1 only', () => {
   assert.ok(first < theme.PAGE_HEIGHT_PX && first > 600);
 });
 
+test('two exports of the same saved resume retain identical PDF bytes', async () => {
+  const resume = utils.normalizeClientResume({ ...sample, exists: true, createdAt: '2026-10-07T10:20:30.000Z' });
+  const first = await renderToBuffer(createElement(ResumePdfDocument, { resume }));
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  const second = await renderToBuffer(createElement(ResumePdfDocument, { resume: { ...resume, updatedAt: '2026-10-08T15:30:00.000Z' } }));
+  assert.ok(first.equals(second), 'identical saved content must deduplicate across tabs even after a no-op save');
+});
+
 test('every template renders a real PDF for sample and long resumes', { timeout: 240000 }, async () => {
   const datasets = { sample: utils.normalizeClientResume(clone(sample)), long: utils.normalizeClientResume(longResume(sample)) };
   for (const id of catalog.RESUME_TEMPLATE_IDS) {

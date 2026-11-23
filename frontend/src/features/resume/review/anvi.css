@@ -68,3 +68,86 @@
   .anvi-spin, .anvi-typing span, .anvi-beam, .anvi-scanning .anvi-mark-hit { animation: none; }
   .anvi-scanning .anvi-mark-hit { opacity: 1; }
 }
+.anvi-workspace {
+  color: #162237;
+  --anvi-line: #dce4ec;
+  --anvi-surface: #fff;
+  --anvi-muted: #5c697a;
+  --anvi-sky: #0369a1;
+  --anvi-tint: #edf7ff;
+}
+.dark .anvi-workspace {
+  color: #eef2f7;
+  --anvi-line: #383b46;
+  --anvi-surface: #242428;
+  --anvi-muted: #abb6c5;
+  --anvi-sky: #7dd3fc;
+  --anvi-tint: #192d3c;
+}
+.anvi-review-card {
+  position: relative;
+  border: 1px solid var(--anvi-line);
+  border-radius: 1rem;
+  padding: 1rem;
+  background: var(--anvi-surface);
+  box-shadow: 0 2px 4px -3px #22344f2b;
+}
+.anvi-tool-icon, .anvi-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  flex-shrink: 0;
+  border-radius: .75rem;
+  background: var(--anvi-tint);
+  color: var(--anvi-sky);
+}
+.anvi-primary, .anvi-secondary, .anvi-action-card, .anvi-text-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  font-size: .8rem;
+  font-weight: 600;
+}
+.anvi-primary, .anvi-secondary { padding: .55rem .85rem; border-radius: .65rem; }
+.anvi-primary { background: linear-gradient(110deg,#0369a1,#6248be); color: white; box-shadow: 0 3px 8px -5px #4130a7; }
+.anvi-primary:hover { filter: brightness(1.08); }
+.anvi-primary:disabled,.anvi-secondary:disabled { opacity: .55; }
+.anvi-secondary,.anvi-action-card { background: var(--anvi-surface); border: 1px solid var(--anvi-line); }
+.anvi-text-link,.anvi-action-card > svg { color: var(--anvi-sky); }
+.anvi-action-card { justify-content: start; padding: .8rem .7rem; text-align: left; border-radius: .8rem; }
+.anvi-action-card > svg { flex: none; }
+.anvi-action-card > svg:last-child { margin-left: auto; color: var(--anvi-muted); }
+.anvi-action-card:hover,.anvi-secondary:hover { border-color: #78aacf; background: var(--anvi-tint); }
+.anvi-workspace :focus-visible { outline: 2px solid #338ac1; outline-offset: 2px; }
+.anvi-start-card,.anvi-score-card {
+  overflow: hidden;
+  background: radial-gradient(ellipse at right top,#a2caff35,transparent 62%),var(--anvi-surface);
+}
+.anvi-scan-stage {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  height: 184px;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 28% 92%,#c4eafe,transparent 60%),radial-gradient(ellipse at 75% 10%,#e5d9ff,transparent 66%),#f4f8ff;
+}
+.dark .anvi-scan-stage {
+  background: radial-gradient(ellipse at 28% 92%,#173b52,transparent 60%),radial-gradient(ellipse at 75% 10%,#37284c,transparent 66%),#1a2230;
+}
+.anvi-scan-grid { position: absolute; inset: 0; background: radial-gradient(#8b9ebe80 .8px,transparent 1px) 0 0/12px 12px; mask-image: radial-gradient(ellipse at center,black,transparent 78%); }
+.anvi-scan-orbit { position: absolute; width: 230px; height: 110px; transform: rotate(-16deg); border: 1px solid #8f94dd55; border-radius: 50%; }
+.anvi-scan-orbit::after { content: ''; position: absolute; right: 9%; top: 13%; width: 7px; height: 7px; border-radius: 50%; background: #7b79cb; box-shadow: 0 0 10px #9c83e8; }
+.anvi-scan-sheet { rotate: -6deg; filter: drop-shadow(0 8px 9px #5065a128); animation: anvi-sheet-in .45s ease-out both; }
+.anvi-scan-orb { position: absolute; left: calc(50% + 29px); top: 58%; }
+.anvi-scan-token { position: absolute; left: calc(50% - 99px); top: 27%; display: flex; align-items: center; gap: .3rem; border: 1px solid #a8c2dd; border-radius: .45rem; background: #f6fcff; padding: .25rem .45rem; color: #256692; font-size: .62rem; font-weight: 700; box-shadow: 0 2px 4px #6b8ba322; }
+.anvi-writing-status { display: flex; align-items: center; gap: .7rem; margin-top: .75rem; padding: .65rem; border-radius: .7rem; background: var(--anvi-tint); color: var(--anvi-sky); font-size: .8rem; font-weight: 600; }
+.anvi-reveal { animation: anvi-review-in .28s ease-out both; }
+@keyframes anvi-sheet-in { from { opacity: 0; translate: 0 7px; rotate: -1deg; } to { opacity: 1; translate: 0 0; rotate: -6deg; } }
+@keyframes anvi-review-in { from { opacity: .5; translate: 0 4px; } to { opacity: 1; translate: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .anvi-scan-sheet,.anvi-reveal,.anvi-workspace .animate-spin,.anvi-workspace .animate-pulse { animation: none; }
+}

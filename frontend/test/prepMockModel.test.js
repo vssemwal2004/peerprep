@@ -4,7 +4,7 @@ import {
   GENERAL_ROLE, OTHER_COMPANY, collectMocks, companyPath, filterCompanies, filterCounts, findCompany,
   groupByLetter, groupMocks, highlightParts, initialTone, initialsOf, isAlwaysOpen, journeyOf, letterOf,
   lettersPresent, matchedRole, mockState, nextChangeAt, pickRole, resultOf, sectionTypes, sortCompanies,
-  spotlightOf, summarize, totalMarksOf,
+  spotlightOf, summarize, totalMarksOf, pickMock, patternOf, instructionsOf, railEntries,
 } from '../src/student/prepMock/prepMockModel.js';
 
 const HOUR = 60 * 60 * 1000;
@@ -191,4 +191,67 @@ test('journey: totals, continue list, recent results, opening soon, best and lat
   const empty = journeyOf([], new Map());
   assert.equal(empty.best, null);
   assert.equal(empty.last, null);
+});
+
+test('pickMock: a mock id picks its own role; otherwise the role (or first role) and its first mock', () => {
+  const [company] = groupMocks([
+    live('a', { company: 'Acme', role: 'SDE 1' }), upcoming('b', { company: 'Acme', role: 'SDE 1' }),
+    live('c', { company: 'Acme', role: 'Analyst' }),
+  ]);
+  assert.deepEqual(Object.values(pickMock(company, 'sde 1', 'c')).map((entry) => entry.name || entry._id), ['Analyst', 'c'], 'mock id wins over ?role');
+  assert.equal(pickMock(company, 'SDE 1', '').mock._id, 'a', 'open mock comes first in its role');
+  assert.equal(pickMock(company, 'nope', 'missing').role.name, company.roles[0].name, 'unknown values fall back to the first role');
+  assert.deepEqual(pickMock(null), { role: null, mock: null });
+});
+
+test('patternOf: one row per section with marks, totals and the negative column only when set', () => {
+  const pattern = patternOf({
+    totalQuestions: 99,
+    sections: [
+      { sectionName: 'Numerical Ability', type: 'mcq', questionCount: 20, marksPerQuestion: 1, totalMarks: 20, negativeMarksPerQuestion: 0.25 },
+      { sectionName: '  Advanced   Coding ', type: 'coding', questionCount: 3, marksPerQuestion: 10, totalMarks: 0 },
+    ],
+  });
+  assert.deepEqual(pattern.rows.map((row) => [row.name, row.type, row.questions, row.marks, row.negative]), [
+    ['Numerical Ability', 'MCQ', 20, 20, 0.25],
+    ['Advanced Coding', 'Coding', 3, 30, 0],
+  ]);
+  assert.equal(pattern.questions, 23);
+  assert.equal(pattern.marks, 50);
+  assert.equal(pattern.hasNegative, true);
+  assert.equal(patternOf({ sections: [{ type: 'mcq', questionCount: 5, marksPerQuestion: 2 }] }).hasNegative, false);
+  assert.deepEqual(patternOf({ totalQuestions: 7, totalMarks: 14 }), { rows: [], questions: 7, marks: 14, hasNegative: false });
+});
+
+test('instructionsOf: plain-text paragraphs from text or HTML, and the custom rules', () => {
+  assert.deepEqual(instructionsOf({ instructions: '<p>Read <b>all</b> questions.</p><p>No tabs.</p>', customInstructions: [' Camera on ', ''] }),
+    { paragraphs: ['Read all questions.', 'No tabs.'], rules: ['Camera on'] });
+  assert.deepEqual(instructionsOf({ instructions: 'Line one\n\nLine two' }), { paragraphs: ['Line one', 'Line two'], rules: [] });
+  assert.deepEqual(instructionsOf({}), { paragraphs: [], rules: [] });
+});
+
+test('railEntries: filter, sort, and search by company, role or mock title', () => {
+  const companies = groupMocks([
+    live('1', { company: 'Google', role: 'SDE 1', title: 'Online Test A' }),
+    upcoming('2', { company: 'Google', role: 'SDE 2', title: 'Phone Screen' }),
+    upcoming('3', { company: 'Amazon', role: 'SDE 1', title: 'Loop Practice' }),
+    done('4', { company: 'Adobe', role: 'MTS', title: 'Final Round' }),
+    upcoming('5', { company: 'Adobe', role: 'Intern', title: 'Warm up' }),
+  ]);
+  const names = (entries) => entries.map((entry) => entry.company.name);
+  assert.deepEqual(names(railEntries(companies)), ['Google', 'Adobe', 'Amazon'], 'default: open now first, then more mocks');
+  assert.deepEqual(names(railEntries(companies, { sort: 'az' })), ['Adobe', 'Amazon', 'Google']);
+  assert.deepEqual(names(railEntries(companies, { filter: 'upcoming' })), ['Google', 'Adobe', 'Amazon']);
+  assert.deepEqual(names(railEntries(companies, { filter: 'completed' })), ['Adobe']);
+  const byName = railEntries(companies, { query: 'goo' });
+  assert.equal(byName[0].matched, false, 'company-name hit lists every role');
+  assert.equal(byName[0].roles.length, 2);
+  const byRole = railEntries(companies, { query: 'sde 1' });
+  assert.deepEqual(names(byRole), ['Google', 'Amazon']);
+  assert.deepEqual(byRole[0].roles.map((role) => role.name), ['SDE 1'], 'role hit lists only that role');
+  assert.equal(byRole[0].matched, true);
+  const byMock = railEntries(companies, { query: 'phone screen' });
+  assert.deepEqual(names(byMock), ['Google']);
+  assert.deepEqual(byMock[0].roles.map((role) => role.name), ['SDE 2'], 'mock-title hit lists its role');
+  assert.deepEqual(railEntries(companies, { query: 'zzz' }), []);
 });

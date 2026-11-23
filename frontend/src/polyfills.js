@@ -6,6 +6,10 @@ function defineMissing(target, name, value) {
   Object.defineProperty(target, name, { value, writable: true, configurable: true, enumerable: false });
 }
 
+defineMissing(globalThis.AbortSignal?.prototype, 'throwIfAborted', function throwIfAborted() {
+  if (this.aborted) throw this.reason || new DOMException('Request cancelled', 'AbortError');
+});
+
 // arr.at(-1), str.at(0)
 function at(index) {
   const length = this.length >>> 0;

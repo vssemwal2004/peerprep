@@ -32,6 +32,29 @@ function faultyResume() {
   return resume;
 }
 
+test('ATS eligibility needs visible, complete entries and accepts a project in place of employment', () => {
+  const resume = utils.createEmptyResume();
+  resume.basics = { name: 'Riya', headline: 'Student', location: 'Pune', email: 'riya@example.com' };
+  const partial = utils.getResumeRequirements(resume);
+  assert.equal(partial.ready, false);
+  assert.equal(partial.complete, 2);
+  assert.equal(partial.missing.length, 5);
+  resume.education = [{ degree: 'B.Tech' }, { institute: 'Pune Institute' }];
+  resume.skills = [{ category: 'Languages' }];
+  resume.projects = [{ title: 'Course project', bullets: [] }, { bullets: [{ text: 'Created a study planner.' }] }];
+  assert.deepEqual(utils.getResumeRequirements(resume).missing.map(item => item.id), ['institute', 'skills', 'work-bullet']);
+  resume.education[0].institute = 'Pune Institute';
+  resume.skills[0].skills = 'Python';
+  resume.projects[0].bullets = ['Built a study planner.'];
+  assert.equal(utils.getResumeRequirements(resume).percent, 100);
+  resume.hiddenSections = ['projects'];
+  resume.basicsVisibility.email = false;
+  assert.deepEqual(utils.getResumeRequirements(resume).missing.map(item => item.id), ['contact', 'work-title', 'work-bullet']);
+  resume.basics.mobile = '+91 98765 43210';
+  resume.experience = [{ title: 'Library', bullets: ['Organised the catalogue.'] }];
+  assert.equal(utils.getResumeRequirements(resume).ready, true);
+});
+
 test('formatting markers are invisible to the checker and fixes land in the right place', () => {
   const raw = 'Built a **role-based** dashbord for *staff*.';
   const plain = model.toPlain(raw);
@@ -86,6 +109,10 @@ test('the sample resume is clean and a faulty resume gets precise, located fixes
   assert.equal(find('Lead')?.suggestions[0], 'Led');
   assert.ok(find('Certifed'), 'titles get spelling checks');
   assert.ok(issues.some((item) => item.ruleId === 'anvi.weakOpener'));
+  const technical = await engine.lintUnit(await engine.loadGrammarEngine(), {
+    ...model.collectTextUnits(resume)[0], raw: 'Cached project data in Valkey.',
+  });
+  assert.ok(!technical.some(item => item.problem === 'Valkey'));
 
   // Apply every first suggestion (one per line, then re-check): the fixable problems go away.
   let fixed = resume;

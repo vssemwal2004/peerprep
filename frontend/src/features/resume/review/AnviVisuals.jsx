@@ -124,13 +124,13 @@ export function QuickReplies({ items, delay = 0 }) {
  * A mini resume sheet. With `scanning`, a light beam sweeps down and marks
  * appear on a few lines; otherwise it is still. Purely decorative.
  */
-export function AnviScanSheet({ width = 150, scanning = false, className = '' }) {
+export function AnviScanSheet({ width = 150, scanning = false, headings = [], className = '' }) {
   const height = Math.round(width * 1.414);
   const lines = [
     { y: 0.08, w: 0.5, bold: true }, { y: 0.13, w: 0.72 },
-    { y: 0.22, w: 0.3, bold: true }, { y: 0.27, w: 0.86 }, { y: 0.31, w: 0.78, hit: 'rose' }, { y: 0.35, w: 0.64 },
-    { y: 0.44, w: 0.34, bold: true }, { y: 0.49, w: 0.9 }, { y: 0.53, w: 0.7 }, { y: 0.57, w: 0.82, hit: 'amber' },
-    { y: 0.66, w: 0.28, bold: true }, { y: 0.71, w: 0.88, hit: 'emerald' }, { y: 0.75, w: 0.6 },
+    { y: 0.22, w: 0.3, bold: true, label: headings[0] }, { y: 0.27, w: 0.86 }, { y: 0.31, w: 0.78, hit: 'rose' }, { y: 0.35, w: 0.64 },
+    { y: 0.44, w: 0.34, bold: true, label: headings[1] }, { y: 0.49, w: 0.9 }, { y: 0.53, w: 0.7 }, { y: 0.57, w: 0.82, hit: 'amber' },
+    { y: 0.66, w: 0.28, bold: true, label: headings[2] }, { y: 0.71, w: 0.88, hit: 'emerald' }, { y: 0.75, w: 0.6 },
     { y: 0.84, w: 0.32, bold: true }, { y: 0.89, w: 0.76 },
   ];
   const hitTone = { rose: 'bg-rose-400/30 ring-rose-400/50', amber: 'bg-amber-300/35 ring-amber-400/50', emerald: 'bg-emerald-300/35 ring-emerald-400/50' };
@@ -138,7 +138,7 @@ export function AnviScanSheet({ width = 150, scanning = false, className = '' })
     <div className={`relative overflow-hidden rounded-md bg-white shadow-[0_18px_40px_-22px_rgba(15,23,42,0.45)] ring-1 ring-black/[0.06] dark:bg-zinc-100 ${scanning ? 'anvi-scanning' : ''} ${className}`} style={{ width, height }} aria-hidden="true">
       {lines.map((line, index) => (
         <span key={index} className="absolute left-[9%] block" style={{ top: `${line.y * 100}%`, width: `${line.w * 82}%`, height: line.bold ? 4 : 3 }}>
-          <span className={`block h-full rounded-full ${line.bold ? 'bg-slate-700' : 'bg-slate-300'}`} />
+          {line.label ? <span className="absolute -top-0.5 left-0 whitespace-nowrap text-[5px] font-bold uppercase leading-none tracking-wide text-slate-800">{line.label}</span> : <span className={`block h-full rounded-full ${line.bold ? 'bg-slate-700' : 'bg-slate-300'}`} />}
           {line.hit ? <span className={`anvi-mark-hit absolute -inset-x-1 -inset-y-[3px] rounded-sm ring-1 ${hitTone[line.hit]}`} style={{ '--anvi-delay': `${line.y * 2}s` }} /> : null}
         </span>
       ))}

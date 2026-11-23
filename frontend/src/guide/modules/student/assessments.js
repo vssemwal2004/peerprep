@@ -93,12 +93,12 @@ export default [
       {
         id: "pmock-header", target: "pmock-header", chapter: "overview", quick: true,
         title: "Welcome to Prep Mock",
-        body: "Practise real company tests, role by role. Every mock here was set up by your admin for a specific company and job role. The ring shows how many of your mocks you have completed.",
+        body: "Practise real company tests, role by role. Every mock here was set up by your admin for a specific company and job role. The chips beside the title show how many mocks are open now and how many you have completed.",
       },
       {
         id: "pmock-stats", target: "pmock-stats", chapter: "layout",
         title: "Your progress",
-        body: "Mocks open now, how many companies you have tried, and your best and latest result. Results show only once they are announced.",
+        body: "The ring shows how many of your mocks you have completed. Below it: mocks open now, how many companies you have tried, and your best and latest result. Results show only once they are announced.",
       },
       {
         id: "pmock-spotlight", target: "pmock-spotlight", chapter: "parts", quick: true,
@@ -108,7 +108,7 @@ export default [
       {
         id: "pmock-search", target: "pmock-search", chapter: "parts",
         title: "Find a company",
-        body: "Type a company name, or a role such as SDE or Analyst. Matches are marked, and a company found by its role shows that role on its tile.",
+        body: "Type a company name, a role such as SDE or Analyst, or a mock's name. Matches are marked, and a company found by a role or mock opens to show just those roles.",
       },
       {
         id: "pmock-filters", target: "pmock-filters", chapter: "parts",
@@ -117,8 +117,8 @@ export default [
       },
       {
         id: "pmock-sort", target: "pmock-sort", chapter: "parts",
-        title: "Sort and layout",
-        body: "Sort by open now, most mocks or A–Z, and switch between tiles and a list. Your layout choice is remembered on this device.",
+        title: "Sort the companies",
+        body: "Sort the left bar by open now, most mocks or A–Z. A–Z also groups the companies under their first letter.",
       },
       {
         id: "pmock-az", target: "pmock-az", chapter: "parts",
@@ -128,7 +128,7 @@ export default [
       {
         id: "pmock-companies", target: "pmock-companies", chapter: "actions", quick: true, tryIt: "Open a company",
         title: "Pick a company",
-        body: "Each tile shows the logo, roles and mocks, and a ring for how many you have completed. A green dot means a mock is open now. Click a company to see its roles.",
+        body: "The left bar lists every company with its roles and mocks, how many are open now or upcoming, and how many you have done. Click a company to open it on the right, or use the arrow to show its roles and jump straight to one. Overview at the top brings you back here.",
       },
       {
         id: "pmock-journey", target: "pmock-journey", chapter: "parts",
@@ -138,7 +138,7 @@ export default [
       {
         id: "pmock-banner", target: "pmock-banner", chapter: "layout",
         title: "The company",
-        body: "The company you opened, its roles and mocks, and how many you have completed. Use All companies above it to go back.",
+        body: "The company you opened, its roles and mocks, and how many you have completed. Pick another company in the left bar, or use Prep Mock above it (All companies on a phone) to go back.",
       },
       {
         id: "pmock-rules", target: "pmock-rules", chapter: "tips",
@@ -148,12 +148,12 @@ export default [
       {
         id: "pmock-roles", target: "pmock-roles", chapter: "parts", quick: true,
         title: "Choose a role",
-        body: "Pick the job you are preparing for. Each role shows its number of mocks, and a green dot when one is open now. Mocks saved without a role are under General. Arrow keys move between roles.",
+        body: "Pick the job you are preparing for: tabs for a few roles, a list for many (the left bar shows them too). A green dot means a mock is open now, and the bar shows how many of the role's mocks you have done. Mocks saved without a role are under General.",
       },
       {
         id: "pmock-mocks", target: "pmock-mocks", chapter: "parts",
         title: "The role's mocks",
-        body: "Open mocks come first, then upcoming, then finished ones. Each row shows status, question types, duration, questions, sections, marks and when it is open. Always open means no closing date.",
+        body: "Open mocks come first, then upcoming, then finished ones. Click a mock to see its overview below: the key facts, the exam pattern section by section with marks and negative marking, and your admin's instructions. Always open means no closing date.",
       },
       {
         id: "pmock-start", target: "pmock-start", chapter: "actions", quick: true,

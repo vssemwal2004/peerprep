@@ -46,14 +46,20 @@ function Row({ company, children, aside }) {
 
 const subHeading = 'mt-5 mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-zinc-500';
 
-/** The student's own Prep Mock journey: status breakdown, recent results, what opens next. */
+/**
+ * The student's own Prep Mock journey: status breakdown, recent results, what opens next. In the wide
+ * right panel the three parts sit side by side from md up.
+ */
 export default function JourneyRail({ journey, counts, onViewResult }) {
   return (
-    <section data-guide="pmock-journey" aria-labelledby="pmock-journey-title" className={`p-5 ${card}`}>
-      <PanelTitle id="pmock-journey-title" glyph={PathGlyph} tone="violet" title="Your mock journey" subtitle={`${journey.completed} of ${journey.total} mocks completed`} info={<GuideInfo step="pmock-journey" />} />
-      <Breakdown counts={counts} />
+    <section data-guide="pmock-journey" aria-labelledby="pmock-journey-title" className={`grid gap-x-8 p-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.2fr)] ${card}`}>
+      <div className="min-w-0">
+        <PanelTitle id="pmock-journey-title" glyph={PathGlyph} tone="violet" title="Your mock journey" subtitle={`${journey.completed} of ${journey.total} mocks completed`} info={<GuideInfo step="pmock-journey" />} />
+        <Breakdown counts={counts} />
+      </div>
 
-      <h3 className={subHeading}>Recently completed</h3>
+      <div className="min-w-0">
+      <h3 className={`${subHeading} md:mt-0`}>Recently completed</h3>
       {journey.recent.length ? (
         <ul className="divide-y divide-[#eef0f3] dark:divide-white/[0.06]">
           {journey.recent.map(({ mock, company, report, result }) => (
@@ -70,8 +76,10 @@ export default function JourneyRail({ journey, counts, onViewResult }) {
           ))}
         </ul>
       ) : <p className="py-2 text-[12px] text-slate-500 dark:text-zinc-400">Your finished mocks and their results will show here.</p>}
+      </div>
 
-      <h3 className={subHeading}>Opening soon</h3>
+      <div className="min-w-0">
+      <h3 className={`${subHeading} md:mt-0`}>Opening soon</h3>
       {journey.upcoming.length ? (
         <ul className="divide-y divide-[#eef0f3] dark:divide-white/[0.06]">
           {journey.upcoming.map(({ mock, company }) => (
@@ -84,6 +92,7 @@ export default function JourneyRail({ journey, counts, onViewResult }) {
           ))}
         </ul>
       ) : <p className="py-2 text-[12px] text-slate-500 dark:text-zinc-400">No scheduled mocks coming up.</p>}
+      </div>
     </section>
   );
 }

@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Lock } from 'lucide-react';
-import MockHero from './MockHero';
+import MockHero, { PrepMockHeader } from './MockHero';
 import Spotlight from './Spotlight';
 import JourneyRail from './JourneyRail';
-import CompanyDirectory from './CompanyDirectory';
+import CompanyRail from './CompanyRail';
 import CompanyView, { BackLink } from './CompanyView';
 import { TowerGlyph, GlyphTile } from './prepMockGlyphs';
 import { usePrepMocks } from './usePrepMocks';
-import { countsOf, findCompany, journeyOf, spotlightOf } from './prepMockModel';
+import { countsOf, findCompany, journeyOf, pickMock, spotlightOf, summarize } from './prepMockModel';
 import AssessmentLaunchModal from '../assessment-dashboard/AssessmentLaunchModal';
 import AssessmentReportModal from '../assessment-dashboard/AssessmentReportModal';
 import { useAssessmentLauncher } from '../assessment-dashboard/useAssessmentLauncher';
@@ -20,7 +20,32 @@ import PageGuideButton from '../../guide/platform/PageGuideButton';
 function Shell({ children }) {
   return (
     <div className="min-h-full bg-[#f6f7f9] font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:text-zinc-100">
-      <div className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 lg:px-10 lg:py-8">{children}</div>
+      <div className="mx-auto max-w-[1480px] px-4 py-6 sm:px-6 lg:px-8 lg:py-7">{children}</div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------------------- workspace */
+
+// Same structure as the admin's All Mocks: the company bar on the left, the chosen view on the right.
+const WORKSPACE = 'grid grid-cols-1 gap-6 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-start xl:grid-cols-[320px_minmax(0,1fr)] xl:gap-7';
+const RAIL_SLOT = 'min-w-0 lg:sticky lg:top-[81px] lg:col-start-1 lg:row-start-1 lg:flex lg:max-h-[calc(100dvh-97px)] lg:flex-col';
+const PANEL_SLOT = 'min-w-0 lg:col-start-2 lg:row-start-1';
+
+/**
+ * One tree for the overview and a company, so the bar keeps its search, filter and scroll while the
+ * student moves between them. Overview on phones: progress, Right now, the company list, then the
+ * journey (`contents` lets the panel's parts take their own place in the single column). A company on
+ * phones: its view only, with a back link (the bar is hidden).
+ */
+function Workspace({ landing, totals, rail, children }) {
+  return (
+    <div>
+      <PrepMockHeader totals={totals} />
+      <div className={WORKSPACE}>
+        <div className={`${landing ? 'order-3 lg:order-none' : 'hidden'} ${RAIL_SLOT}`}>{rail}</div>
+        <div className={`${landing ? 'contents lg:block lg:space-y-7' : ''} ${PANEL_SLOT}`}>{children}</div>
+      </div>
     </div>
   );
 }
@@ -64,50 +89,59 @@ function PlainHeader() {
   );
 }
 
+function RailSkeleton({ className = '' }) {
+  return (
+    <div className={`space-y-2 rounded-2xl border border-[#e9eaee] bg-white p-3 dark:border-white/[0.07] dark:bg-[#242424] ${className}`}>
+      <Skeleton className="h-9 rounded-xl" />
+      <Skeleton className="h-7 w-3/4 rounded-lg" />
+      {Array.from({ length: 7 }, (_, key) => <Skeleton key={key} className="h-[62px] rounded-xl" />)}
+    </div>
+  );
+}
+
 function LandingSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Loading Prep Mock" className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="min-w-0 space-y-6">
+    <div aria-busy="true" aria-label="Loading Prep Mock" className={WORKSPACE}>
+      <div className={`hidden ${RAIL_SLOT}`}><RailSkeleton /></div>
+      <div className={`${PANEL_SLOT} space-y-6`}>
         <Skeleton className="h-[236px] rounded-3xl" />
         <div className="flex gap-3 overflow-hidden">{[0, 1, 2, 3].map((key) => <Skeleton key={key} className="h-[150px] w-[232px] shrink-0 rounded-2xl" />)}</div>
-        <Skeleton className="h-10 rounded-xl" />
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(212px,1fr))] sm:gap-2.5">{Array.from({ length: 12 }, (_, key) => <Skeleton key={key} className="h-[72px] rounded-2xl" />)}</div>
+        <Skeleton className="h-[200px] rounded-2xl" />
       </div>
-      <Skeleton className="hidden h-[420px] rounded-2xl lg:block" />
     </div>
   );
 }
 
 function CompanySkeleton() {
   return (
-    <div aria-busy="true" aria-label="Loading company mocks">
-      <Skeleton className="h-5 w-32" />
-      <Skeleton className="mt-3 h-[150px] rounded-3xl" />
-      <Skeleton className="mt-6 h-[54px] rounded-2xl" />
-      <Skeleton className="mt-5 h-[380px] rounded-2xl" />
+    <div aria-busy="true" aria-label="Loading company mocks" className={WORKSPACE}>
+      <div className={`hidden ${RAIL_SLOT}`}><RailSkeleton /></div>
+      <div className={`${PANEL_SLOT} space-y-4`}>
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-[140px] rounded-2xl" />
+        <Skeleton className="h-[150px] rounded-2xl" />
+        <Skeleton className="h-[380px] rounded-2xl" />
+      </div>
     </div>
   );
 }
 
 /* ----------------------------------------------------------------------------- landing */
 
-function Landing({ companies, mocks, reports, onContinue, onViewResult }) {
+/** No company chosen: the overview on the right of the bar (progress, Right now, journey). */
+function Overview({ companies, mocks, reports, onContinue, onViewResult }) {
   const { user } = useAuth();
   const journey = useMemo(() => journeyOf(companies, reports), [companies, reports]);
   const counts = useMemo(() => countsOf(mocks), [mocks]);
   const spotlight = useMemo(() => spotlightOf(companies), [companies]);
+  const hasSpotlight = journey.inProgress.length > 0 || spotlight.length > 0;
 
   return (
-    <div className="grid grid-cols-1 gap-x-8 gap-y-7 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="min-w-0 space-y-7">
-        <MockHero journey={journey} userName={user?.name} />
-        <Spotlight inProgress={journey.inProgress} companies={spotlight} onContinue={onContinue} />
-        <CompanyDirectory companies={companies} />
-      </div>
-      <aside aria-label="Your mock journey" className="min-w-0 lg:sticky lg:top-[81px] lg:self-start lg:max-h-[calc(100dvh-97px)] lg:overflow-y-auto lg:overscroll-contain">
-        <JourneyRail journey={journey} counts={counts} onViewResult={onViewResult} />
-      </aside>
-    </div>
+    <>
+      <div className="order-1 min-w-0 lg:order-none"><MockHero journey={journey} userName={user?.name} /></div>
+      {hasSpotlight && <div className="order-2 min-w-0 lg:order-none"><Spotlight inProgress={journey.inProgress} companies={spotlight} onContinue={onContinue} /></div>}
+      <div className="order-4 min-w-0 lg:order-none"><JourneyRail journey={journey} counts={counts} onViewResult={onViewResult} /></div>
+    </>
   );
 }
 
@@ -116,33 +150,45 @@ function Landing({ companies, mocks, reports, onContinue, onViewResult }) {
 /** /student/prep-mock (your progress + company directory) and /student/prep-mock/:company (roles, then mocks). */
 export default function PrepMockPage() {
   const { company: companyParam } = useParams();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
   const { loading, error, disabled, data, mocks, companies, reports, refresh } = usePrepMocks();
   const launcher = useAssessmentLauncher();
   const [report, setReport] = useState(null);
   const company = companyParam ? findCompany(companies, companyParam) : null;
+  const selectedRoleKey = company ? pickMock(company, params.get('role') || '', params.get('mock') || '').role?.key || '' : '';
+  const totals = useMemo(() => summarize(companies), [companies]);
+  const rail = <CompanyRail companies={companies} selectedKey={company?.key || ''} selectedRoleKey={selectedRoleKey} />;
 
   let body;
   if (disabled) body = <NotEnabled />;
-  else if (loading) body = companyParam ? <CompanySkeleton /> : <LandingSkeleton />;
+  else if (loading) body = <><PrepMockHeader />{companyParam ? <CompanySkeleton /> : <LandingSkeleton />}</>;
   else if (error && !data) body = <Unavailable message={error} onRetry={refresh} className="mt-2" />;
   else if (companyParam) {
     let decoded = companyParam;
     try { decoded = decodeURIComponent(companyParam); } catch { /* keep the raw param */ }
-    body = company
-      ? <CompanyView company={company} reports={reports} onStart={launcher.launch} onViewResult={setReport} onFeedback={(mock) => navigate(`/student/assessment/${mock._id}/feedback?from=prep-mock`)} />
-      : (
-        <>
-          <BackLink />
-          <div className="mt-4">
-            <StateCard icon={TowerGlyph} title={`No mocks for ${decoded || 'this company'}`} text="This company has no mocks for you right now. It may have been renamed or its mocks taken down.">
-              <Link to="/student/prep-mock" className={`mt-6 inline-flex h-10 items-center rounded-xl bg-slate-900 px-4 text-[13px] font-semibold text-white hover:bg-slate-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 ${focusRing}`}>See all companies</Link>
-            </StateCard>
-          </div>
-        </>
-      );
+    body = (
+      <Workspace totals={totals} rail={rail}>
+        {company
+          ? <CompanyView company={company} reports={reports} onStart={launcher.launch} onViewResult={setReport} onFeedback={(mock) => navigate(`/student/assessment/${mock._id}/feedback?from=prep-mock`)} />
+          : (
+            <>
+              <BackLink />
+              <div className="mt-4">
+                <StateCard icon={TowerGlyph} title={`No mocks for ${decoded || 'this company'}`} text="This company has no mocks for you right now. It may have been renamed or its mocks taken down.">
+                  <Link to="/student/prep-mock" className={`mt-6 inline-flex h-10 items-center rounded-xl bg-slate-900 px-4 text-[13px] font-semibold text-white hover:bg-slate-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 ${focusRing}`}>See all companies</Link>
+                </StateCard>
+              </div>
+            </>
+          )}
+      </Workspace>
+    );
   } else if (companies.length) {
-    body = <Landing companies={companies} mocks={mocks} reports={reports} onContinue={launcher.launch} onViewResult={setReport} />;
+    body = (
+      <Workspace landing totals={totals} rail={rail}>
+        <Overview companies={companies} mocks={mocks} reports={reports} onContinue={launcher.launch} onViewResult={setReport} />
+      </Workspace>
+    );
   } else {
     body = (
       <>

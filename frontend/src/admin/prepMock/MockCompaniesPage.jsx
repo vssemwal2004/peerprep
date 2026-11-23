@@ -255,7 +255,8 @@ export default function MockCompaniesPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [search, setSearch] = useState('');
+  // ?company=Google (from a company's menu on All Mocks) opens the page searched to that company.
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('company') || '');
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('mocks');
   const [shown, setShown] = useState(PAGE_SIZE);

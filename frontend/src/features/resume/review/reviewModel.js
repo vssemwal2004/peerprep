@@ -96,7 +96,7 @@ export function replaceInRaw(raw, plainInfo, start, end, replacement) {
 
 /** Correct spellings of common tech names (ATS keyword match and recruiter polish). */
 export const TECH_TERMS = Object.fromEntries([
-  'JavaScript', 'TypeScript', 'Node.js', 'React', 'React Native', 'Next.js', 'Vue.js', 'Angular', 'Express.js', 'MongoDB', 'MySQL', 'PostgreSQL', 'SQLite', 'Redis',
+  'JavaScript', 'TypeScript', 'Node.js', 'React', 'React Native', 'Next.js', 'Vue.js', 'Angular', 'Express.js', 'MongoDB', 'MySQL', 'PostgreSQL', 'SQLite', 'Redis', 'Valkey',
   'GitHub', 'GitLab', 'Git', 'Docker', 'Kubernetes', 'AWS', 'GCP', 'Azure', 'Firebase', 'Supabase', 'HTML', 'CSS', 'Tailwind CSS', 'Bootstrap', 'jQuery',
   'Python', 'Java', 'Kotlin', 'Swift', 'Flutter', 'Dart', 'Golang', 'Rust', 'C++', 'C#', 'PHP', 'Laravel', 'Django', 'Flask', 'FastAPI', 'Spring Boot',
   'TensorFlow', 'PyTorch', 'scikit-learn', 'NumPy', 'pandas', 'Matplotlib', 'OpenCV', 'Keras', 'LangChain', 'Hugging Face',
@@ -282,7 +282,9 @@ export function groupIssues(issues, resume) {
 }
 
 /** Signature of the text the grammar check read; edits change it. */
-export const grammarSignature = (resume) => hashText(collectTextUnits(resume).map((unit) => `${unit.id}=${unit.raw}`).join('\n'));
+export const grammarSignature = (resume) => hashText(JSON.stringify([
+  dictionaryWords(resume), collectTextUnits(resume).map(unit => [unit.id, unit.raw]),
+]));
 
 /** Signature of everything that shapes the exported PDF. */
 const NOT_CONTENT = new Set(['exists', 'updatedAt', 'completion', 'previousVersion', '_id', '__v', 'createdAt', 'student', 'sample']);

@@ -2062,6 +2062,8 @@ function buildStudentSectionSummary(sections = []) {
       questionCount,
       totalQuestions: questionCount,
       totalMarks: Number(section?.totalMarks || 0) || (questionCount * marksPerQuestion),
+      // Shown in the exam pattern before a student starts (Prep Mock overview), like any test paper.
+      negativeMarksPerQuestion: Math.max(0, Number(section?.negativeMarksPerQuestion || 0) || 0),
     };
   });
 }

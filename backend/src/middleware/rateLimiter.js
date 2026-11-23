@@ -315,7 +315,7 @@ export const apiLimiter = rateLimit({
   skip: (req) => req.path === '/health'
     || req.path === '/api/health'
     || verifiedSharedInternalRequest(req)
-    || (req.method === 'GET' && /^\/(?:u\/[a-z0-9-]+\/)?results\//.test(req.path)),
+    || (req.method === 'GET' && /^\/(?:u\/[a-z0-9-]+\/)?(?:results\/|resume\/review\/ats\/jobs\/[a-f0-9]{64}$)/.test(req.path)),
   store: buildRateLimitStore('rl:api:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] API rate limit exceeded for ${req.ip} on ${req.path}`);

@@ -1026,6 +1026,20 @@ export default function CreateAssessment({ viewOnly = false }) {
     loadAssessment();
   }, [id, isMock, toast, viewOnly]);
 
+  // Prep Mock "Create mock" from a company or role folder on All Mocks: start with that company and
+  // role. Runs after the draft restore above, so a restored draft keeps its own company and role.
+  const mockPrefill = !id && isMock ? location.state?.mockPrefill : null;
+  useEffect(() => {
+    if (!mockPrefill?.company) return;
+    setForm((prev) => (String(prev.company || '').trim() ? prev : {
+      ...prev,
+      company: String(mockPrefill.company),
+      role: String(mockPrefill.role || ''),
+    }));
+    // Once, on open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const drafts = listCodingDrafts(assessmentKey);
     if (viewOnly || !drafts.length) return;

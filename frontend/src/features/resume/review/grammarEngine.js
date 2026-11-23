@@ -111,14 +111,17 @@ export async function lintUnit(linter, unit, dictionary = new Set()) {
  * Checks every line of the resume. `onProgress(done, total)` reports lines checked.
  * Returns { issues, signature, lineCount }.
  */
-export async function checkGrammar(resume, { onProgress = () => {}, createLinter = null } = {}) {
+export async function checkGrammar(resume, { onProgress = () => {}, createLinter = null, signal } = {}) {
+  signal?.throwIfAborted();
   const linter = await loadGrammarEngine(createLinter);
+  signal?.throwIfAborted();
   const words = dictionaryWords(resume);
   if (words.length && linter.importWords) await linter.importWords(words);
   const dictionary = new Set(words.map((word) => word.toLowerCase()));
   const units = collectTextUnits(resume);
   const issues = [];
   for (let index = 0; index < units.length; index += 1) {
+    signal?.throwIfAborted();
     issues.push(...await lintUnit(linter, units[index], dictionary));
     onProgress(index + 1, units.length);
   }

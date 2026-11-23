@@ -60,15 +60,23 @@ export function shapeAtsReport(report, { text = '', layout = null, jobDescriptio
   };
 }
 
-/** Reads the uploaded PDF in the extraction child and scores it. */
-export async function checkResumePdf(buffer, { jobDescription = '', extractor = sharedExtractor(), now = new Date() } = {}) {
+export function validateResumePdf(buffer) {
   if (!buffer?.length) throw new HttpError(400, 'Send the exported resume PDF in the "file" field.', { code: 'RESUME_PDF_REQUIRED' });
   if (buffer.length > MAX_PDF_BYTES) throw new HttpError(413, 'The exported PDF is larger than 3 MB.', { code: 'RESUME_PDF_TOO_LARGE' });
   if (buffer.subarray(0, 5).toString('latin1') !== '%PDF-') throw new HttpError(400, 'The file is not a PDF.', { code: 'RESUME_PDF_INVALID' });
-  const job = clean(jobDescription, MAX_JOB_CHARS);
-  const { text, layout } = await extractor.extractPdf(buffer);
-  const report = check(text, undefined, { layout, file: { format: 'pdf', bytes: buffer.length }, now, ...(job ? { jobDescription: job } : {}) });
-  return shapeAtsReport(report, { text, layout, jobDescription: job });
+}
+
+export function scoreExtractedResume({ text, layout }, bytes, { now, jobDescription }) {
+  const report = check(text, undefined, { layout, file: { format: 'pdf', bytes }, now, ...(jobDescription ? { jobDescription } : {}) });
+  return shapeAtsReport(report, { text, layout, jobDescription });
+}
+
+/** Keep PDF parsing, ATS scoring and job matching off the API event loop. */
+export async function checkResumePdf(buffer, { jobDescription = '', extractor = sharedExtractor(), now = new Date() } = {}) {
+  validateResumePdf(buffer);
+  const options = { jobDescription: clean(jobDescription, MAX_JOB_CHARS), now };
+  if (extractor.scanPdf) return extractor.scanPdf(buffer, options);
+  return scoreExtractedResume(await extractor.extractPdf(buffer), buffer.length, options);
 }
 
 // ───────────── Explain with ANVI ─────────────

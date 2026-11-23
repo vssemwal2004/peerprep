@@ -1,16 +1,12 @@
-// Prep Resume hub: two clear paths. Create resume (the builder, where your
-// details live) and Your resume (the finished resume, checked by ANVI).
-// Follows the student pages' look (Prep Mock / dashboard): neutral cards that
-// follow light and dark theme, sky for actions, violet for ANVI.
 import { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
-import { ArrowRight, ArrowUp, CheckCircle2, Circle, Clock3, Download, FileText, HelpCircle, LayoutTemplate, ListChecks, PencilLine, RefreshCw, ScanText, ShieldCheck, Sparkles, SpellCheck2, Target } from 'lucide-react';
+import { MotionConfig } from 'framer-motion';
+import { ArrowRight, Check, Download, FileUp, GraduationCap, LayoutTemplate, ListChecks, PencilLine, ScanText, ShieldCheck, Sparkles, Target, UserRound, Wrench, BriefcaseBusiness } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import PageGuideButton from '../../guide/platform/PageGuideButton';
 import { ResumeThumbnail } from '../../features/resume/ResumePreview';
-import { FIXED_SECTION_META, calculateReadiness, hasResumeContent, normalizeClientResume, visibleSectionKeys } from '../../features/resume/resumeUtils';
-import { AnviAura, AnviGauge, AnviMessage, AnviOrb, AnviWord, QuickReplies, TypingDots, useTyping, VerdictPill } from '../../features/resume/review/AnviVisuals';
+import { getResumeRequirements, normalizeClientResume } from '../../features/resume/resumeUtils';
+import { AnviAura, AnviOrb, AnviWord } from '../../features/resume/review/AnviVisuals';
 import { readLastCheck } from '../../features/resume/review/useResumeCheck';
 import { atsSignature } from '../../features/resume/review/reviewModel';
 import { RESUME_TEMPLATE_CATALOG, TEMPLATE_CATEGORIES, getTemplate } from '../../features/resume/templates/catalog';
@@ -19,7 +15,6 @@ import { card, focusRing, SectionHeader, Skeleton } from '../dashboard/ui';
 import { api } from '../../utils/api';
 import RequirePasswordChange from '../RequirePasswordChange';
 
-const SECTIONS = [['basics', 'Basic details'], ...Object.entries(FIXED_SECTION_META).map(([key, meta]) => [key, meta.label])];
 const TEMPLATE_PICKS = ['harvard', 'aurora', 'timeline', 'emerald', 'peerprep-circuit'];
 const CATEGORY_LABEL = Object.fromEntries(TEMPLATE_CATEGORIES.map((item) => [item.id, item.label]));
 
@@ -40,42 +35,8 @@ function TitleUnderline() {
   </svg>;
 }
 
-function CompletionMedal({ percent, loading }) {
-  const radius = 40;
-  const ring = 2 * Math.PI * radius;
-  const share = Math.max(0, Math.min(1, (percent || 0) / 100));
-  return (
-    <div className="relative h-[104px] w-[104px] shrink-0" role="img" aria-label={`Resume ${percent}% complete`}>
-      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
-        <defs><linearGradient id="presume-medal" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#38bdf8" /><stop offset="1" stopColor="#0369a1" /></linearGradient></defs>
-        <circle cx="50" cy="50" r={radius} fill="none" strokeWidth="9" className="stroke-sky-100 dark:stroke-white/[0.07]" />
-        {share > 0 && !loading && <motion.circle cx="50" cy="50" r={radius} fill="none" strokeWidth="9" strokeLinecap="round" stroke="url(#presume-medal)" strokeDasharray={ring} initial={{ strokeDashoffset: ring }} animate={{ strokeDashoffset: ring * (1 - share) }} transition={{ duration: 0.9, ease: 'easeOut' }} />}
-      </svg>
-      <span className="absolute inset-0 flex flex-col items-center justify-center" aria-hidden="true">
-        <span className="text-[24px] font-bold leading-none tabular-nums tracking-[-0.03em] text-slate-950 dark:text-white">{loading ? '–' : percent}<span className="text-[13px] font-semibold text-slate-400 dark:text-zinc-500">%</span></span>
-        <span className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-zinc-400">ready</span>
-      </span>
-    </div>
-  );
-}
-
-function Stat({ label, value, detail, className = '' }) {
-  return (
-    <div className={`min-w-0 border-black/[0.05] px-4 py-3 sm:px-5 dark:border-white/[0.06] ${className}`}>
-      <dt className="text-[11.5px] text-slate-500 dark:text-zinc-400">{label}</dt>
-      <dd className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-[18px] font-bold leading-tight tabular-nums text-slate-900 dark:text-white">
-        <span className="truncate">{value}</span>{detail ? <span className="shrink-0 truncate text-[12px] font-medium text-slate-400 dark:text-zinc-500">{detail}</span> : null}
-      </dd>
-    </div>
-  );
-}
-
-function AtsBadge() {
-  return <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/15"><ShieldCheck className="h-3 w-3" aria-hidden="true" />ATS-friendly</span>;
-}
-
 /** The student's own details in three templates, fanned: one resume, any design. */
-function TemplateFan({ resume, currentId, report, stale, loading }) {
+function TemplateFan({ resume, currentId, loading }) {
   const ids = useMemo(() => [currentId, ...['aurora', 'emerald', 'timeline', 'harvard'].filter((id) => id !== currentId)].slice(0, 3), [currentId]);
   const sheets = useMemo(() => ids.map((id) => ({ id, data: { ...resume, template: id } })), [ids, resume]);
   // sheets[0] is the student's template (front, centre); 1 fans left, 2 fans right.
@@ -95,239 +56,68 @@ function TemplateFan({ resume, currentId, report, stale, loading }) {
           </div>
         );
       })}
-      <span className="absolute -right-1 top-1 z-20 inline-flex items-center gap-2 rounded-2xl bg-white/90 px-2.5 py-1.5 shadow-[0_12px_30px_-14px_rgba(76,29,149,0.5)] ring-1 ring-violet-100 backdrop-blur dark:bg-[#2a2a2a]/90 dark:ring-violet-400/20">
-        <AnviOrb size={26} />
-        <span className="leading-tight"><span className="block text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400 dark:text-zinc-500">ATS</span><span className="block text-[14px] font-bold tabular-nums text-slate-900 dark:text-white">{report && !stale ? `${report.readinessScore}/100` : report ? 'Re-check' : 'Not checked'}</span></span>
-      </span>
-      <span className="absolute bottom-0 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-900 px-3 py-1 text-[10.5px] font-semibold text-white shadow-lg dark:bg-white dark:text-zinc-900">Same details · {RESUME_TEMPLATE_CATALOG.length} designs</span>
     </div>
   );
 }
 
-function StepTag({ number, tone }) {
-  const tones = { sky: 'text-sky-700 bg-sky-50 ring-sky-100 dark:text-sky-300 dark:bg-sky-500/10 dark:ring-sky-400/15', violet: 'text-violet-700 bg-violet-50 ring-violet-100 dark:text-violet-300 dark:bg-violet-500/10 dark:ring-violet-400/15' };
-  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.1em] ring-1 ring-inset ${tones[tone]}`}>Step {number}</span>;
-}
-
-/** A resume sheet on a dotted desk, with a second sheet behind it. Never clipped. */
-function PaperStage({ resume, loading, sample, templateName }) {
-  return (
-    <div className="relative flex h-full min-h-[300px] items-center justify-center overflow-hidden bg-[#f3f5f8] bg-[radial-gradient(rgba(15,23,42,0.07)_1px,transparent_1px)] [background-size:14px_14px] dark:bg-[#1e1e1e] dark:bg-[radial-gradient(rgba(255,255,255,0.06)_1px,transparent_1px)]">
-      <div className="pointer-events-none absolute h-[249px] w-[176px] translate-x-3 translate-y-2 rotate-[5deg] rounded-[4px] bg-white shadow-[0_10px_30px_-18px_rgba(15,23,42,0.45)] ring-1 ring-black/[0.04] dark:bg-zinc-200" aria-hidden="true" />
-      <div className="relative overflow-hidden rounded-[4px] bg-white shadow-[0_22px_44px_-22px_rgba(15,23,42,0.55)] ring-1 ring-black/[0.06] transition duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_28px_50px_-22px_rgba(15,23,42,0.6)]">
-        {loading ? <div className="h-[249px] w-[176px] animate-pulse bg-white" /> : <ResumeThumbnail resume={resume} width={176} />}
-      </div>
-      <span className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1 whitespace-nowrap rounded-full bg-white/90 px-2.5 py-1 text-[10.5px] font-semibold text-slate-600 shadow-sm ring-1 ring-black/[0.05] backdrop-blur dark:bg-[#2a2a2a]/90 dark:text-zinc-300 dark:ring-white/[0.08]">
-        <LayoutTemplate className="h-3 w-3" aria-hidden="true" />{sample ? `${templateName} · sample` : templateName}
-      </span>
-    </div>
-  );
-}
-
-/* ─────────────────────────────── the two paths ─────────────────────────────── */
-
-function CreateCard({ loading, hasContent, readiness, filled, template, thumb, onOpen, onTemplates }) {
-  return (
-    <motion.article data-guide="pr-create" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`group relative grid overflow-hidden sm:grid-cols-[minmax(0,1fr)_210px] xl:grid-cols-[minmax(0,1fr)_230px] ${card} transition-[border-color,box-shadow] duration-200 hover:border-sky-200 hover:shadow-[0_18px_40px_-26px_rgba(2,132,199,0.45)] dark:hover:border-sky-400/25`}>
-      <div className="flex min-w-0 flex-col p-5 sm:p-6">
-        <div className="flex items-center gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-[0_8px_18px_-8px_rgba(2,132,199,0.8)]" aria-hidden="true"><PencilLine className="h-5 w-5" strokeWidth={1.9} /></span>
-          <StepTag number={1} tone="sky" />
-        </div>
-        <h2 className="mt-4 text-[20px] font-semibold tracking-[-0.02em] text-slate-900 dark:text-zinc-50">{hasContent ? 'Edit your resume' : 'Create your resume'}</h2>
-        <p className="mt-1.5 text-[13.5px] leading-6 text-slate-500 dark:text-zinc-400">Add your details once. Every template reads the same details, so switching designs never loses anything.</p>
-
-        <div className="mt-5">
-          <div className="flex items-center justify-between text-[12px]">
-            <span className="font-semibold text-slate-700 dark:text-zinc-200">{loading ? 'Loading…' : `${filled.size} of ${SECTIONS.length} sections filled`}</span>
-            <span className="tabular-nums text-slate-500 dark:text-zinc-400">{loading ? '' : `${readiness.percent}%`}</span>
-          </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#eef0f3] dark:bg-white/[0.08]"><motion.div initial={{ width: 0 }} animate={{ width: `${loading ? 0 : readiness.percent}%` }} transition={{ duration: 0.8, ease: 'easeOut' }} className="h-full rounded-full bg-sky-500" /></div>
-          <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2">
-            {SECTIONS.map(([key, label]) => {
-              const done = filled.has(key);
-              return <li key={key} className={`flex min-w-0 items-center gap-2 text-[12.5px] ${done ? 'text-slate-700 dark:text-zinc-200' : 'text-slate-400 dark:text-zinc-500'}`}>
-                {done ? <CheckCircle2 className="h-4 w-4 shrink-0 text-sky-500" aria-hidden="true" /> : <Circle className="h-4 w-4 shrink-0 text-slate-300 dark:text-zinc-600" aria-hidden="true" />}
-                <span className="truncate">{label}</span><span className="sr-only">{done ? ' (filled)' : ' (empty)'}</span>
-              </li>;
-            })}
-          </ul>
-        </div>
-
-        <div className="mt-auto flex flex-wrap items-center gap-2 pt-6">
-          <button type="button" onClick={onOpen} className={`inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-[13px] font-semibold text-white shadow-[0_8px_18px_-10px_rgba(2,132,199,0.9)] transition hover:bg-sky-700 ${focusRing}`}>
-            {hasContent ? 'Continue editing' : 'Start building'}<ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" aria-hidden="true" />
-          </button>
-          <button type="button" onClick={onTemplates} className={`inline-flex h-10 items-center gap-2 rounded-xl border border-[#e3e5ea] bg-white px-3.5 text-[13px] font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700 dark:border-white/[0.1] dark:bg-transparent dark:text-zinc-200 dark:hover:border-sky-400/30 dark:hover:text-sky-300 ${focusRing}`}>
-            <LayoutTemplate className="h-4 w-4" aria-hidden="true" />{RESUME_TEMPLATE_CATALOG.length} templates
-          </button>
-        </div>
-      </div>
-      <button type="button" onClick={onOpen} tabIndex={-1} aria-hidden="true" className="hidden border-l border-[#eef0f3] sm:block dark:border-white/[0.06]">
-        <PaperStage resume={thumb} loading={loading} sample={!hasContent} templateName={template.name} />
-      </button>
-    </motion.article>
-  );
-}
-
-/** One honest line from ANVI, built only from the last check's numbers. */
-function anviSays({ report, grammarCount, stale, hasContent }) {
-  if (!report) return hasContent ? 'Ready when you are. One check reads your PDF like an ATS and every line for grammar.' : 'Add your details first, then I can read your resume.';
-  if (stale) return 'You edited your resume after my last check. Run it again for a fresh score.';
-  const failed = report.failedChecks?.length || 0;
-  if (report.readinessScore < 70) return `${failed} ATS ${failed === 1 ? 'check is' : 'checks are'} costing you points. Open your resume to see what to fix first, and where.`;
-  if (grammarCount) return `${grammarCount} grammar and spelling ${grammarCount === 1 ? 'slip' : 'slips'} left. Each one has a one-click fix.`;
-  if (!report.job) return 'Looking strong. Paste a job description to see how well you match it.';
-  return 'Looking strong. Check the missing skills in your job match before you apply.';
-}
-
-/** A user's question, shown on the right like a sent message. */
-function UserBubble({ children }) {
-  return (
-    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="flex justify-end pl-12">
-      <span className="rounded-2xl rounded-br-md bg-sky-600 px-3.5 py-2 text-[13px] font-medium text-white shadow-[0_6px_16px_-10px_rgba(2,132,199,0.9)]">{children}</span>
-    </motion.div>
-  );
-}
-
-function ResultTile({ label, value, detail, tone }) {
-  const tones = {
-    sky: 'bg-sky-50/80 ring-sky-100 dark:bg-sky-500/[0.07] dark:ring-sky-400/15',
-    violet: 'bg-violet-50/80 ring-violet-100 dark:bg-violet-500/[0.07] dark:ring-violet-400/15',
-    fuchsia: 'bg-fuchsia-50/80 ring-fuchsia-100 dark:bg-fuchsia-500/[0.07] dark:ring-fuchsia-400/15',
-  };
-  return (
-    <div className={`min-w-0 rounded-xl px-2.5 py-2 ring-1 ring-inset ${tones[tone]}`}>
-      <div className="truncate text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-zinc-400">{label}</div>
-      <div className="mt-0.5 truncate text-[17px] font-bold leading-tight tabular-nums text-slate-900 dark:text-white">{value}<span className="ml-0.5 text-[11px] font-medium text-slate-400 dark:text-zinc-500">{detail}</span></div>
-    </div>
-  );
-}
-
-/** The last check, as a result card inside ANVI's message. */
-function ResultCard({ report, grammarCount, checkedAt, stale }) {
-  const jobScore = report.job ? report.job.score : null;
-  return (
-    <div className="-mx-1 mt-1">
-      <div className="flex items-center gap-3.5">
-        <AnviGauge score={report.readinessScore} size={84} stroke={8} />
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2"><span className="text-[13px] font-semibold text-slate-900 dark:text-white">ATS readiness</span><VerdictPill score={report.readinessScore} /></div>
-          {report.checksTotal ? <div className="mt-1 text-[12px] text-slate-500 dark:text-zinc-400"><b className="font-semibold text-slate-800 dark:text-zinc-100">{report.checksPassed} of {report.checksTotal}</b> ATS checks passed</div> : null}
-          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400 dark:text-zinc-500">
-            <Clock3 className="h-3 w-3" aria-hidden="true" />Checked {ago(checkedAt)}
-            {stale ? <span className="rounded-md bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">edited since</span> : null}
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <ResultTile label="ATS score" value={report.readinessScore} detail="/100" tone="sky" />
-        <ResultTile label="Grammar" value={grammarCount === null ? '–' : grammarCount} detail={grammarCount === null ? '' : grammarCount === 1 ? ' issue' : ' issues'} tone="violet" />
-        <ResultTile label="Job match" value={jobScore ?? '–'} detail={jobScore === null || jobScore === undefined ? '' : '/100'} tone="fuchsia" />
-      </div>
-    </div>
-  );
-}
-
-const CHECKS_LIST = [
-  [ScanText, 'ATS readiness out of 100', 'I export your PDF and read it like recruiter software: headings, layout, contacts, dates, 35 rules.'],
-  [SpellCheck2, 'Grammar and spelling', 'Every bullet and title, with the exact words to change and a one-click fix.'],
-  [Target, 'Job match', 'Paste a job description and I list the requirements you meet and the skills missing.'],
+const essentials = [
+  { label: 'Contact details', ids: ['name', 'contact'], Icon: UserRound, section: 'basics' },
+  { label: 'Education', ids: ['degree', 'institute'], Icon: GraduationCap, section: 'education' },
+  { label: 'Skills', ids: ['skills'], Icon: Wrench, section: 'skills' },
+  { label: 'Project or experience', ids: ['work-title', 'work-bullet'], Icon: BriefcaseBusiness, section: 'projects' },
 ];
 
-/**
- * Step 2 as ANVI's assistant panel: a short conversation built only from the
- * last check's numbers, suggested replies that open the right place, and a
- * message bar that opens the full check.
- */
-function ReviewCard({ hasContent, report, grammarCount, checkedAt, stale, firstName, templateName, navigate }) {
-  const typing = useTyping(700);
-  const [asked, setAsked] = useState(false);
-  const open = (query = '') => navigate(`/student/resume/review${query}`);
-  const greeting = firstName ? `Hi ${firstName}.` : 'Hi.';
-  const message = anviSays({ report, grammarCount, stale, hasContent });
-
-  let replies;
-  if (!hasContent) {
-    replies = [{ label: 'Start building', icon: PencilLine, primary: true, onClick: () => navigate('/student/resume/create') }];
-  } else if (!report) {
-    replies = [
-      { label: 'Check my resume', icon: Sparkles, primary: true, onClick: () => open('?run=1') },
-      ...(asked ? [] : [{ label: 'What do you check?', icon: HelpCircle, onClick: () => setAsked(true) }]),
-      { label: 'Match me to a job', icon: Target, onClick: () => open('?run=1&tab=job') },
-    ];
-  } else {
-    replies = [
-      ...(stale ? [{ label: 'Check again', icon: RefreshCw, primary: true, onClick: () => open('?run=1') }] : []),
-      { label: 'What should I fix first?', icon: ListChecks, primary: !stale, onClick: () => open() },
-      ...(grammarCount ? [{ label: `Fix ${grammarCount} grammar ${grammarCount === 1 ? 'issue' : 'issues'}`, icon: SpellCheck2, onClick: () => open('?tab=grammar') }] : []),
-      { label: report.job ? 'See job match' : 'Match me to a job', icon: Target, onClick: () => open('?tab=job') },
-    ];
-  }
-
-  return (
-    <motion.div data-guide="pr-review" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }} className="h-full">
-      <AnviAura radius="1rem" className="h-full" innerClassName="flex h-full flex-col">
-        {/* Assistant header */}
-        <header className="flex items-center gap-3 border-b border-black/[0.06] px-5 py-3.5 dark:border-white/[0.06]">
-          <AnviOrb size={42} online />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2"><AnviWord className="text-[19px] leading-none" /><span className="rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">Resume assistant</span></div>
-            <div className="mt-1 flex items-center gap-1.5 text-[11.5px] text-slate-500 dark:text-zinc-400"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />Online · checks ATS readiness, grammar and job match</div>
-          </div>
-          <StepTag number={2} tone="violet" />
-        </header>
-
-        {/* Conversation */}
-        <div className="anvi-thread flex flex-1 flex-col gap-3 px-4 py-4 sm:px-5" aria-live="polite">
-          {typing ? (
-            <div className="flex items-end gap-2"><AnviOrb size={28} /><TypingDots /></div>
-          ) : (
-            <>
-              <AnviMessage>
-                {report
-                  ? <>{greeting} I read your resume in <b className="font-semibold text-slate-900 dark:text-white">{templateName}</b>. Here is where it stands:<ResultCard report={report} grammarCount={grammarCount} checkedAt={checkedAt} stale={stale} /></>
-                  : <>{greeting} I’m <AnviWord />, your resume assistant. I read your resume the way recruiters and their software do, then tell you what to fix first, and where.</>}
-              </AnviMessage>
-              <AnviMessage avatar={false} delay={0.12}>{message}</AnviMessage>
-              {asked ? (
-                <>
-                  <UserBubble>What do you check?</UserBubble>
-                  <AnviMessage delay={0.1}>
-                    <ul className="space-y-2.5">
-                      {CHECKS_LIST.map(([Icon, title, text]) => (
-                        <li key={title} className="flex gap-2.5">
-                          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 ring-1 ring-inset ring-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-400/15" aria-hidden="true"><Icon className="h-3.5 w-3.5" /></span>
-                          <div className="min-w-0"><div className="text-[12.5px] font-semibold text-slate-900 dark:text-white">{title}</div><p className="text-[12px] leading-[1.45] text-slate-500 dark:text-zinc-400">{text}</p></div>
-                        </li>
-                      ))}
-                    </ul>
-                  </AnviMessage>
-                </>
-              ) : null}
-              <div className="mt-auto pt-1"><QuickReplies items={replies} delay={0.22} /></div>
-            </>
-          )}
-        </div>
-
-        {/* Message bar: opens the full check */}
-        <div className="border-t border-black/[0.06] px-4 py-3 dark:border-white/[0.06]">
-          <button type="button" onClick={() => (hasContent ? open(report ? '' : '?run=1') : navigate('/student/resume/create'))} className={`group flex w-full items-center gap-3 rounded-xl border border-[#e3e5ea] bg-white py-1.5 pl-3.5 pr-1.5 text-left transition hover:border-violet-300 hover:shadow-[0_8px_20px_-14px_rgba(124,58,237,0.6)] dark:border-white/[0.1] dark:bg-white/[0.03] dark:hover:border-violet-400/40 ${focusRing}`}>
-            <Sparkles className="h-4 w-4 shrink-0 text-violet-500" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate text-[13px] text-slate-500 dark:text-zinc-400">{!hasContent ? 'Add your details, then ask ANVI to check them' : report ? 'Open your resume with ANVI’s full check' : 'Ask ANVI to check your resume'}</span>
-            <span className="anvi-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white" aria-hidden="true"><ArrowUp className="h-4 w-4 transition group-hover:-translate-y-0.5" /></span>
-          </button>
-          <p className="mt-2 text-center text-[10.5px] text-slate-400 dark:text-zinc-500">The ATS score comes from an open, rule-based engine. ANVI explains it and never changes it.</p>
-        </div>
-      </AnviAura>
-    </motion.div>
-  );
+function EssentialsCard({ requirements, hasDraft, onEdit }) {
+  return <section className={card + ' p-5 sm:p-6'} aria-labelledby="resume-essentials">
+    <div className="flex items-center justify-between gap-3">
+      <h2 id="resume-essentials" className="text-lg font-semibold tracking-tight">Résumé essentials</h2>
+      {hasDraft && <span className="text-sm font-semibold tabular-nums text-sky-700 dark:text-sky-300">{requirements.complete} / {requirements.total}</span>}
+    </div>
+    <p className="mt-1 text-sm text-slate-500 dark:text-zinc-400">{!hasDraft ? 'What you’ll need for your first ATS check.' : requirements.ready ? 'Your draft has the details needed for an ATS check.' : requirements.missing.length + ' details to finish before your ATS check.'}</p>
+    <ul className="mt-4 divide-y divide-slate-100 dark:divide-white/[.06]">
+      {essentials.map(({ label, ids, Icon, section }) => {
+        const remaining = requirements.missing.filter(item => ids.includes(item.id));
+        const next = remaining[0];
+        return <li key={section}><button type="button" onClick={() => onEdit(next || { section })} className={'flex w-full items-center gap-3 rounded-md py-2.5 text-left hover:text-sky-700 dark:hover:text-sky-300 ' + focusRing}>
+          <Icon size={16} className="shrink-0 text-slate-400" aria-hidden="true" />
+          <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{label}</span>
+            {hasDraft && next && <span className="block text-xs text-slate-500 dark:text-zinc-400">{next.label}</span>}
+          </span>
+          {hasDraft && !next ? <Check size={16} aria-label="Complete" className="text-emerald-600" /> : <ArrowRight size={15} aria-hidden="true" className="text-slate-400" />}
+        </button></li>;
+      })}
+    </ul>
+  </section>;
 }
 
-/* ─────────────────────────────── lower sections ─────────────────────────────── */
+function ReviewCard({ ready, report, stale, hasDraft, open, onFirstMissing }) {
+  const options = [
+    { label: !ready ? 'Finish missing details' : report ? 'What should I fix first?' : stale ? 'Recheck my résumé' : 'Check my résumé', Icon: ScanText, onClick: () => ready ? open(report ? '?action=fixes' : '?run=1') : onFirstMissing() },
+    { label: 'Improve a bullet', Icon: PencilLine, onClick: () => open('?action=rewrite') },
+    { label: 'Check my writing', Icon: ListChecks, onClick: () => open('?tab=grammar') },
+    { label: 'Match a job', Icon: Target, onClick: () => open('?tab=job') },
+  ];
+  return <section data-guide="pr-review" aria-label="Ask ANVI" className="h-full">
+    <AnviAura className="h-full" innerClassName="h-full p-5 sm:p-6">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(139,92,246,.12),transparent_56%)]" />
+      <div className="relative flex items-center gap-3"><AnviOrb size={48} /><div>
+        <h2 className="text-xl font-semibold tracking-tight">Ask <AnviWord /></h2>
+        <p className="mt-0.5 text-sm text-slate-500 dark:text-zinc-400">Your résumé review</p>
+      </div></div>
+      <p className="relative mt-4 text-sm leading-6 text-slate-600 dark:text-zinc-300">{report ? 'Your latest PDF scored ' + report.readinessScore + '/100 on the ATS check. Open your feedback to see what to improve.' : stale ? 'Your draft has changed. Run a fresh check on the latest version.' : hasDraft ? 'Review your writing, improve a bullet or compare your skills with a job description.' : 'Add your résumé to get feedback on its content, writing and PDF layout.'}</p>
+      {!hasDraft ? <ul className="relative mt-4 grid gap-x-4 gap-y-2.5 text-[13px] text-slate-600 sm:grid-cols-2 dark:text-zinc-300">
+        {[[ScanText, 'PDF readability'], [PencilLine, 'Bullet rewrites'], [ListChecks, 'Grammar and spelling'], [Target, 'Job matching']].map(([Icon, label]) => <li key={label} className="flex items-center gap-2"><Icon size={16} className="text-violet-600 dark:text-violet-300" />{label}</li>)}
+      </ul> : <div className="relative mt-4 grid gap-2 sm:grid-cols-2">
+        {options.map(({ label, Icon, onClick }) => <button type="button" key={label} onClick={onClick} className={'group flex min-h-12 items-center gap-2.5 rounded-xl border border-violet-100 bg-white/80 px-3 py-2.5 text-left text-[13px] font-semibold text-slate-700 transition hover:border-violet-300 hover:bg-violet-50 dark:border-violet-400/20 dark:bg-zinc-900/60 dark:text-zinc-200 dark:hover:bg-violet-500/10 ' + focusRing}>
+          <Icon size={16} className="shrink-0 text-violet-600 dark:text-violet-300" /><span className="flex-1">{label}</span><ArrowRight size={13} className="text-slate-400 transition-transform group-hover:translate-x-0.5" />
+        </button>)}
+      </div>}
+    </AnviAura>
+  </section>;
+}
 
 const FLOW = [
-  [PencilLine, 'Add your details', 'Education, projects, skills: once.'],
+  [FileUp, 'Add your résumé', 'Upload a PDF or Word file, or start from scratch.'],
   [LayoutTemplate, 'Pick a template', `${RESUME_TEMPLATE_CATALOG.length} designs, switch any time.`],
   [Sparkles, 'Check with ANVI', 'ATS, grammar and job match.'],
   [Download, 'Download the PDF', 'Exactly what the preview shows.'],
@@ -342,7 +132,7 @@ function HowItWorks() {
           <li key={title} className="relative flex items-start gap-3 bg-white p-4 dark:bg-[#242424]">
             <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ring-1 ring-inset ${index === 2 ? 'bg-violet-50 text-violet-600 ring-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-400/15' : 'bg-sky-50 text-sky-600 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/15'}`} aria-hidden="true"><Icon className="h-4 w-4" /></span>
             <div className="min-w-0">
-              <div className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-slate-400 dark:text-zinc-500">0{index + 1}</div>
+
               <div className="text-[13.5px] font-semibold text-slate-900 dark:text-zinc-50">{title}</div>
               <p className="mt-0.5 text-[12px] leading-5 text-slate-500 dark:text-zinc-400">{text}</p>
             </div>
@@ -387,78 +177,77 @@ export default function PrepResumeHome() {
   const { user } = useAuth();
   const [resume, setResume] = useState(null);
   const [loading, setLoading] = useState(true);
-
+  const [loadError, setLoadError] = useState('');
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
-    api.getMyResume().then((result) => live && setResume(normalizeClientResume(result?.resume))).catch(() => live && setResume(normalizeClientResume({}))).finally(() => live && setLoading(false));
+    setLoading(true);
+    setLoadError('');
+    api.getMyResume().then(({ resume: draft }) => {
+      if (live) setResume(normalizeClientResume(draft));
+    }).catch(() => {
+      if (live) setLoadError('Your draft could not be loaded.');
+    }).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, []);
+  }, [attempt, user?._id, user?.id]);
 
-  const lastCheck = useMemo(() => readLastCheck(user?._id || user?.id), [user]);
-  const hasContent = resume ? hasResumeContent(resume) : false;
-  const thumb = resume && hasContent ? resume : sampleResumeFor(resume?.template);
-  const readiness = useMemo(() => (resume ? calculateReadiness(resume) : { percent: 0 }), [resume]);
-  const filled = useMemo(() => {
-    if (!resume) return new Set();
-    const keys = new Set(visibleSectionKeys(resume).filter((key) => SECTIONS.some(([id]) => id === key)));
-    if (Object.values(resume.basics || {}).some(Boolean)) keys.add('basics');
-    return keys;
-  }, [resume]);
+  const hasDraft = Boolean(resume?.exists);
+  const requirements = getResumeRequirements(hasDraft ? resume : {});
+  const last = useMemo(() => readLastCheck(user?._id || user?.id), [user]);
+  const stale = Boolean(last?.ats?.report && last.ats.signature !== atsSignature(resume));
+  const report = hasDraft && requirements.ready && !stale ? last?.ats?.report : null;
   const template = getTemplate(resume?.template);
-  const report = lastCheck?.ats?.report || null;
-  const grammarCount = lastCheck?.grammar?.issues ? lastCheck.grammar.issues.filter((item) => !(lastCheck.ignored || []).includes(item.ignoreKey)).length : null;
-  const checkedAt = lastCheck?.ats?.checkedAt || lastCheck?.grammar?.checkedAt;
-  const stale = Boolean(report && resume && lastCheck.ats.signature !== atsSignature(resume));
-  const firstName = String(user?.name || '').trim().split(/\s+/)[0];
+  const thumb = hasDraft ? resume : sampleResumeFor(template.id);
+  const editor = (query = '') => navigate('/student/resume/create' + query);
+  const review = (query = '') => navigate('/student/resume/review' + query);
+  const editField = (target) => {
+    const parts = [target?.section || 'basics', target?.entryIndex, target?.field, target?.bulletIndex].filter(value => value != null);
+    editor('?focus=' + encodeURIComponent(parts.join('|')) + (hasDraft ? '' : '&start=1'));
+  };
+  const openTemplates = (id = '1') => editor('?templates=' + encodeURIComponent(id));
 
-  const openBuilder = () => navigate('/student/resume/create');
-  const openTemplates = (id = '1') => navigate(`/student/resume/create?templates=${encodeURIComponent(id)}`);
+  let mainLabel = 'Upload your résumé';
+  let mainAction = () => editor('?import=1');
+  if (hasDraft && requirements.ready) {
+    mainLabel = report ? 'View my review' : stale ? 'Recheck résumé' : 'Check résumé';
+    mainAction = () => review(report ? '?action=fixes' : '?run=1');
+  } else if (hasDraft) {
+    mainLabel = 'Continue editing';
+    mainAction = () => editor();
+  }
+  const resumeEditing = hasDraft && requirements.ready;
+  const secondaryLabel = resumeEditing ? 'Continue editing' : hasDraft ? 'Import another résumé' : 'Start from scratch';
+  const secondaryQuery = resumeEditing ? '' : hasDraft ? '?import=1' : '?start=1';
 
-  return (
-    <RequirePasswordChange user={user}>
-      <div className="min-h-full bg-[#f6f7f9] pb-12 font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:text-zinc-100">
-        <div className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
-          {/* Hero: what this is, and where the student stands */}
-          <section data-guide="pr-header" aria-labelledby="pr-title" className="relative overflow-hidden rounded-3xl border border-[#e4ecf4] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-[#242424]">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_100%_at_0%_0%,rgba(14,165,233,0.13),transparent_65%),radial-gradient(45%_90%_at_100%_0%,rgba(139,92,246,0.10),transparent_65%)]" aria-hidden="true" />
-            <div className="relative flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-              <div className="min-w-0">
-                <p className="inline-flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.13em] text-sky-700 dark:text-sky-300"><FileText className="h-4 w-4" aria-hidden="true" />Placement resume</p>
-                <h1 id="pr-title" className="mt-1.5 text-[30px] font-medium leading-tight tracking-[-0.03em] text-slate-900 sm:text-[34px] dark:text-zinc-50">
-                  Prep <span className="relative inline-block font-bold text-sky-600 dark:text-sky-400">Resume<TitleUnderline /></span>
-                  <PageGuideButton className="ml-3 align-middle" />
-                </h1>
-                <p className="mt-3 max-w-xl text-[14px] leading-6 text-slate-500 dark:text-zinc-400">
-                  {firstName ? `${firstName}, build` : 'Build'} your resume once, switch between {RESUME_TEMPLATE_CATALOG.length} professional templates, and let ANVI check it the way recruiters and their software read it.
-                </p>
-              </div>
-              <div className="md:hidden"><CompletionMedal percent={readiness.percent} loading={loading} /></div>
-              <TemplateFan resume={thumb} currentId={template.id} report={report} stale={stale} loading={loading} />
+  return <RequirePasswordChange user={user}><MotionConfig reducedMotion="user">
+    <main className="min-h-full bg-[#f6f7f9] pb-12 font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:text-zinc-100">
+      <div className="mx-auto max-w-[1320px] px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+        <section data-guide="pr-header" aria-labelledby="pr-title" className="relative overflow-hidden rounded-3xl border border-sky-100 bg-white shadow-sm dark:border-white/[.08] dark:bg-[#242424]">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(14,165,233,.13),transparent_52%)]" />
+          <div data-guide="pr-create" className="relative flex items-center justify-between gap-6 px-5 py-7 sm:p-8">
+            <div className="min-w-0 max-w-xl">
+              <h1 id="pr-title" className="flex items-center gap-2 text-3xl font-semibold tracking-tight sm:text-4xl">Prep <span className="relative text-sky-600 dark:text-sky-400">Resume<TitleUnderline /></span><PageGuideButton className="ml-1" /></h1>
+              <p className="mt-4 text-sm leading-6 text-slate-600 sm:text-base dark:text-zinc-300">{hasDraft ? 'Continue your draft, try a template, or review the latest PDF with ANVI.' : 'Bring your current résumé into a PeerPrep template, or build your first draft here.'}</p>
+              {loadError ? <div role="alert" className="mt-4 text-sm">{loadError} <button onClick={() => setAttempt(n => n + 1)} className="font-semibold text-sky-700 underline dark:text-sky-300">Try again</button></div> : loading ? <Skeleton className="mt-5 h-11 w-56 rounded-xl" /> : <div className="mt-5 flex flex-wrap gap-2">
+                <button type="button" onClick={mainAction} className={'inline-flex min-h-11 items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 ' + focusRing}>
+                  {hasDraft ? requirements.ready ? <Sparkles size={16} /> : <PencilLine size={16} /> : <FileUp size={17} />}
+                  {mainLabel}
+                </button>
+                <button type="button" onClick={() => editor(secondaryQuery)} className={'min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold hover:border-sky-300 dark:border-white/15 dark:bg-white/5 ' + focusRing}>{secondaryLabel}</button>
+                {hasDraft && requirements.ready && <button type="button" onClick={() => editor('?import=1')} className={'px-2 py-2 text-sm font-medium text-sky-700 dark:text-sky-300 ' + focusRing}>Import another résumé</button>}
+              </div>}
+              <div className="mt-3 text-xs text-slate-500 dark:text-zinc-400">{hasDraft ? template.name + (resume.updatedAt ? ' · Last saved ' + ago(resume.updatedAt) : ' · Saved draft') : 'PDF or DOCX · Up to 5 MB'}</div>
             </div>
-            <dl className="relative grid grid-cols-2 border-t border-black/[0.05] bg-white/55 backdrop-blur sm:grid-cols-4 dark:border-white/[0.06] dark:bg-white/[0.02]">
-              <Stat label="Sections filled" value={loading ? '–' : filled.size} detail={`of ${SECTIONS.length}`} />
-              <Stat label="Template" value={loading ? '–' : template.name} detail={!loading && template.ats ? <AtsBadge /> : ''} className="border-l" />
-              <Stat label="ATS readiness" value={report ? report.readinessScore : '–'} detail={report ? `/100${stale ? ' · edited since' : ''}` : 'not checked'} className="border-t sm:border-l sm:border-t-0" />
-              <Stat label="Grammar & spelling" value={grammarCount === null ? '–' : grammarCount} detail={grammarCount === null ? 'not checked' : grammarCount === 1 ? 'issue' : 'issues'} className="border-l border-t sm:border-t-0" />
-            </dl>
-          </section>
-
-          {/* The two paths */}
-          <div className="mt-6 grid gap-5 lg:grid-cols-2">
-            {loading && !resume ? <><Skeleton className="h-[380px] rounded-2xl" /><Skeleton className="h-[380px] rounded-2xl" /></> : (
-              <>
-                <CreateCard loading={loading} hasContent={hasContent} readiness={readiness} filled={filled} template={template} thumb={thumb} onOpen={openBuilder} onTemplates={() => openTemplates()} />
-                <ReviewCard hasContent={hasContent} report={report} grammarCount={grammarCount} checkedAt={checkedAt} stale={stale} firstName={firstName} templateName={getTemplate(lastCheck?.ats?.template || resume?.template).name} navigate={navigate} />
-              </>
-            )}
+            <TemplateFan resume={thumb} currentId={template.id} loading={loading} />
           </div>
-
-          <HowItWorks />
-          <TemplatePicks onPick={(id) => openTemplates(id)} onAll={() => openTemplates()} />
-
-          <p className="mt-6 flex items-start gap-1.5 text-[11.5px] leading-5 text-slate-500 dark:text-zinc-500"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />The ATS score comes from an open, rule-based engine, so the same resume always gets the same score. ANVI explains it and never changes it. Grammar runs on your device; your PDF is read once and not stored.</p>
-        </div>
+        </section>
+        {!loading && !loadError && <div className="mt-5 grid gap-4 lg:grid-cols-[1.12fr_1fr]">
+          <ReviewCard ready={requirements.ready} report={report} stale={stale} hasDraft={hasDraft} open={review} onFirstMissing={() => hasDraft ? editField(requirements.missing[0]) : editor('?import=1')} />
+          <EssentialsCard requirements={requirements} hasDraft={hasDraft} onEdit={editField} />
+        </div>}
+        <TemplatePicks onPick={openTemplates} onAll={() => openTemplates()} />
+        <HowItWorks />
       </div>
-    </RequirePasswordChange>
-  );
+    </main>
+  </MotionConfig></RequirePasswordChange>;
 }

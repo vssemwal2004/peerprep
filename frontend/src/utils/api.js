@@ -636,17 +636,27 @@ export const api = {
   updateMyProfile: (body) => request("/auth/me", { method: "PUT", body }),
   savePracticeLanguage: (language) => request("/auth/me/practice-language", { method: "PUT", body: { language } }),
   getMyResume: () => request("/resume/me", { skipCache: true }),
+  importResume: (file) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request("/resume/import", { method: "POST", formData, timeoutMs: 90_000, skipQueue: true });
+  },
+  resumeWritingAdvice: (body) =>
+    request("/resume/review/rewrite", { method: "POST", body, timeoutMs: 60_000, skipQueue: true }),
   saveMyResume: (body) =>
     request("/resume/me", { method: "PUT", body, skipQueue: true }),
   restorePreviousResume: () =>
     request("/resume/me/restore", { method: "POST", skipQueue: true }),
   // ANVI resume check: the server reads the exported PDF the way an ATS does.
-  checkResumeAts: (pdfBlob, jobDescription = "") => {
+  checkResumeAts: (pdfBlob, jobDescription = "", { background = false, signal } = {}) => {
     const formData = new FormData();
     formData.append("file", pdfBlob, "resume.pdf");
     if (jobDescription) formData.append("jobDescription", jobDescription);
-    return request("/resume/review/ats", { method: "POST", formData, timeoutMs: 90 * 1000, skipQueue: true });
+    return request("/resume/review/ats", { method: "POST", formData, headers: background ? { Prefer: "respond-async" } : {}, signal, timeoutMs: 90 * 1000, skipQueue: true });
   },
+  getResumeAtsJob: (jobId, signal) => request(`/resume/review/ats/jobs/${encodeURIComponent(jobId)}`, {
+    signal, skipCache: true, skipDedupe: true, skipQueue: true,
+  }),
   explainResumeCheck: (body) =>
     request("/resume/review/explain", { method: "POST", body, timeoutMs: 60 * 1000, skipQueue: true }),
   getStudentResume: (studentId) =>

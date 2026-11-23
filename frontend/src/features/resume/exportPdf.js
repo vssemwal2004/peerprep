@@ -12,7 +12,8 @@ export async function buildResumePdfBlob(resume, measured = null) {
     import('./ResumePdf'),
   ]);
   const documentResume = normalizeClientResume(resume);
-  const layout = measured?.template === documentResume.template ? measured : null;
+  const measuredLayout = typeof measured === 'function' ? measured() : measured;
+  const layout = measuredLayout?.template === documentResume.template ? measuredLayout : null;
   const lineBreaks = layout?.getLineBreaks?.() || null;
   let blob;
   try {

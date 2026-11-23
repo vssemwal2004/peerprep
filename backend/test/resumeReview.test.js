@@ -3,8 +3,28 @@ import { EventEmitter } from 'node:events';
 import { after, test } from 'node:test';
 import PDFDocument from 'pdfkit';
 import { createExtractor } from '../src/modules/resumeReview/resumeReview.extractor.js';
-import { perStudentLimit } from '../src/modules/resumeReview/resumeReview.routes.js';
+import { pendingResumeAction } from '../src/middleware/pendingResumeAction.js';
 import { checkResumePdf, explainReview, sanitizeExplainInput } from '../src/modules/resumeReview/resumeReview.service.js';
+import { rewriteBullet, explainWithAnvi } from '../src/modules/resumeReview/resumeReview.advice.js';
+
+test('bullet rewriting keeps source numbers and reports provider failures without changing a draft', async () => {
+  const body = { original: 'I built 2 mock exams.' };
+  const model = suggestion => ({ configured: true, generateJson: async () => ({ suggestion }) });
+  assert.deepEqual(await rewriteBullet(body, model('Built 2 mock exams.')), { suggestion: 'Built 2 mock exams.' });
+  await assert.rejects(rewriteBullet(body, model('Built 20 mock exams.')), error => error.status === 422);
+  await assert.rejects(rewriteBullet(body, model('Built mock exams.')), error => error.status === 422);
+  await assert.rejects(rewriteBullet(body, { configured: false }), error => error.status === 503);
+  await assert.rejects(rewriteBullet({ original: 'x'.repeat(1201) }, model('ok')), error => error.status === 400);
+});
+
+test('the explanation keeps the original locations and works when Gemini is unavailable', async () => {
+  const data = { ats: { failedChecks: [{ title: 'Skills', section: 'skills', fix: 'Add a skills heading.', scoreImpact: 4 }] } };
+  const expected = explainReview(data);
+  assert.deepEqual(await explainWithAnvi(data, { configured: true, generateJson: async () => { throw Error(); } }), expected);
+  const ai = await explainWithAnvi(data, { configured: true, generateJson: async () => ({ summary: 'Label the section containing your skills.' }) });
+  assert.deepEqual(ai.fixes, expected.fixes);
+  assert.equal(ai.summary, 'Label the section containing your skills.');
+});
 
 const extractor = createExtractor();
 after(() => extractor.close());
@@ -45,14 +65,55 @@ test('uploads that are not PDFs are refused before reaching the reader', async (
   await assert.rejects(checkResumePdf(Buffer.alloc(0), { extractor }), (error) => error.status === 400);
 });
 
-function fakeChild(behaviour) {
+function fakeChild(behaviour, ready = true) {
   const child = new EventEmitter();
   child.connected = true;
   child.killed = false;
   child.kill = () => { child.killed = true; child.connected = false; setImmediate(() => child.emit('exit', null, 'SIGKILL')); };
   child.send = (message) => behaviour(child, message);
+  if (ready) queueMicrotask(() => child.emit('message', { ready: true }));
   return child;
 }
+
+test('worker startup has its own deadline and binary PDF jobs run on separate workers', async () => {
+  const children = [];
+  const pool = createExtractor({
+    concurrency: 2, timeoutMs: 30, startupTimeoutMs: 3000,
+    spawn: () => {
+      const child = fakeChild((self, { buffer, id }) => {
+        assert.ok(Buffer.isBuffer(buffer));
+        queueMicrotask(() => self.emit('message', { id, ok: true, text: buffer.toString() }));
+      }, false);
+      children.push(child);
+      return child;
+    },
+  });
+  try {
+    const work = Promise.all(['one', 'two', 'three'].map((text) => pool.extractPdf(Buffer.from(text))));
+    assert.equal(children.length, 2);
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    for (const child of children) child.emit('message', { ready: true });
+    assert.deepEqual((await work).map((item) => item.text), ['one', 'two', 'three']);
+    assert.equal(pool.pending, 0);
+  } finally { pool.close(); }
+});
+
+test('startup failures and shutdown release all queued callers, including prewarmed workers', async () => {
+  const children = [];
+  const pool = createExtractor({
+    concurrency: 1, maxQueuedBytes: 4,
+    spawn: () => { const child = fakeChild(() => {}, false); children.push(child); return child; },
+  });
+  pool.warm();
+  const first = pool.extractPdf(Buffer.from('one'));
+  const waiting = pool.extractPdf(Buffer.from('two'));
+  await assert.rejects(pool.extractPdf(Buffer.from('three')), (error) => error.details.code === 'RESUME_READER_BUSY');
+  children[0].emit('error', new Error('spawn failed'));
+  await assert.rejects(first, (error) => error.details.code === 'RESUME_READER_UNAVAILABLE');
+  pool.close();
+  await assert.rejects(waiting, (error) => error.status === 503);
+  await assert.rejects(pool.extractPdf(Buffer.from('new')), (error) => error.status === 503);
+});
 
 test('a stuck extraction is killed at the timeout and the next job gets a fresh child', async () => {
   const spawned = [];
@@ -71,7 +132,7 @@ test('a stuck extraction is killed at the timeout and the next job gets a fresh 
 });
 
 test('a crashed reader fails only the running job; a full queue is refused politely', async () => {
-  const crashing = createExtractor({ maxQueue: 1, spawn: () => fakeChild((self) => setImmediate(() => { self.connected = false; self.emit('exit', 1); })) });
+  const crashing = createExtractor({ concurrency: 1, maxQueue: 1, spawn: () => fakeChild((self) => setImmediate(() => { self.connected = false; self.emit('exit', 1); })) });
   const first = crashing.extractPdf(Buffer.from('%PDF-1'));
   const second = crashing.extractPdf(Buffer.from('%PDF-1'));
   await assert.rejects(crashing.extractPdf(Buffer.from('%PDF-1')), (error) => error.status === 503 && error.details.code === 'RESUME_READER_BUSY');
@@ -118,14 +179,16 @@ test('a full explanation uses only the scan results without an outbound request'
   assert.equal(outbound.mock.callCount(), 0);
 });
 
-test('per-student limiter returns 429 with Retry-After once the window is full', () => {
-  const limit = perStudentLimit({ max: 2, windowMs: 60_000, message: 'slow down', code: 'X' });
+test('a student can repeat completed resume actions and a second click while pending is ignored', () => {
+  const guard = pendingResumeAction();
   const req = { user: { _id: 'u1' } };
-  const headers = {};
-  const res = { set: (key, value) => { headers[key] = value; } };
-  const outcomes = [];
-  for (let i = 0; i < 3; i += 1) limit(req, res, (error) => outcomes.push(error?.status || 'ok'));
-  assert.deepEqual(outcomes, ['ok', 'ok', 429]);
-  assert.ok(Number(headers['Retry-After']) > 0);
-  limit({ user: { _id: 'u2' } }, res, (error) => assert.equal(error, undefined, 'other students are unaffected'));
+  const accepted = (error) => assert.equal(error, undefined);
+  for (let i = 0; i < 40; i += 1) {
+    const response = new EventEmitter();
+    guard(req, response, accepted);
+    guard(req, new EventEmitter(), (error) => assert.equal(error.status, 409));
+    response.emit(i % 2 ? 'finish' : 'close');
+  }
+  guard(req, new EventEmitter(), accepted);
+  guard({ user: { _id: 'u2' } }, new EventEmitter(), accepted);
 });

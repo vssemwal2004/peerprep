@@ -203,6 +203,61 @@ export function pickRole(company, param = '') {
   return (key && company.roles.find((role) => role.key === key)) || company.roles[0];
 }
 
+/**
+ * The role and mock for ?role= and ?mock=. A mock id wins: it picks its own role, so a shared link
+ * always opens that mock. Otherwise the role's first mock (open ones come first).
+ */
+export function pickMock(company, roleParam = '', mockParam = '') {
+  if (!company?.roles?.length) return { role: null, mock: null };
+  const id = String(mockParam || '');
+  if (id) {
+    for (const role of company.roles) {
+      const mock = role.mocks.find((entry) => String(entry?._id) === id);
+      if (mock) return { role, mock };
+    }
+  }
+  const role = pickRole(company, roleParam);
+  return { role, mock: role?.mocks?.[0] || null };
+}
+
+/**
+ * A mock's exam pattern for the overview table: one row per section (name, type, questions, marks per
+ * question, marks, negative marks per question) and totals. `hasNegative` says whether to show that column.
+ */
+export function patternOf(mock) {
+  const sections = Array.isArray(mock?.sections) ? mock.sections : [];
+  const rows = sections.map((section, index) => {
+    const questions = Number(section?.questionCount ?? section?.totalQuestions ?? section?.questions?.length) || 0;
+    const perQuestion = Number(section?.marksPerQuestion) || 0;
+    return {
+      key: `${index}-${clean(section?.sectionName || section?.title)}`,
+      name: clean(section?.sectionName || section?.title) || `Section ${index + 1}`,
+      type: sectionTypeLabel(section?.type),
+      questions,
+      perQuestion,
+      marks: Number(section?.totalMarks) || questions * perQuestion,
+      negative: Math.max(0, Number(section?.negativeMarksPerQuestion) || 0),
+    };
+  });
+  const questions = rows.reduce((sum, row) => sum + row.questions, 0);
+  const marks = rows.reduce((sum, row) => sum + row.marks, 0);
+  return {
+    rows,
+    questions: questions || Number(mock?.totalQuestions) || 0,
+    marks: marks || Number(mock?.totalMarks) || 0,
+    hasNegative: rows.some((row) => row.negative > 0),
+  };
+}
+
+/** Admin-written guidance for a mock: plain-text paragraphs and the custom rule list. */
+export function instructionsOf(mock) {
+  const paragraphs = String(mock?.instructions ?? '')
+    .replace(/<\s*br\s*\/?>/gi, '\n').replace(/<\/(p|div|li)>/gi, '\n')
+    .split(/\n+/).map(plainText).filter(Boolean);
+  const rules = (Array.isArray(mock?.customInstructions) ? mock.customInstructions : []).map(plainText).filter(Boolean);
+  return { paragraphs, rules };
+}
+
 /** When the list can change by itself (an upcoming mock opens or a scheduled one closes); null when never. */
 export function nextChangeAt(mocks = [], now = Date.now()) {
   let next = null;
@@ -344,6 +399,25 @@ export function matchedRole(company, query = '') {
   const needle = nameKey(query);
   if (!needle || company?.key?.includes(needle)) return null;
   return company?.roles?.find((role) => role.key.includes(needle))?.name || null;
+}
+
+/**
+ * The company rail: filtered and sorted companies, each with the roles to list under it. A search hits
+ * the company name, a role name or a mock title; on a role or mock hit only those roles are listed and
+ * `matched` is true (the rail opens that company so the hit is visible).
+ */
+export function railEntries(companies = [], { query = '', filter = 'all', sort = 'open' } = {}) {
+  const needle = nameKey(query);
+  const entries = [];
+  for (const company of sortCompanies(filterCompanies(companies, { filter }), sort)) {
+    if (!needle || company.key.includes(needle)) {
+      entries.push({ company, roles: company.roles, matched: false });
+      continue;
+    }
+    const roles = company.roles.filter((role) => role.key.includes(needle) || role.mocks.some((mock) => nameKey(mock?.title).includes(needle)));
+    if (roles.length) entries.push({ company, roles, matched: true });
+  }
+  return entries;
 }
 
 /** Companies with a mock open now, most open first (the spotlight row). */
