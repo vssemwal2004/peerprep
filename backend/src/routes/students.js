@@ -48,7 +48,7 @@ router.get('/:studentId/prep-readiness', requireAuth, requireCoordinatorPermissi
     const student = await User.findOne(query).select('-password').lean();
     if (!student) return res.status(404).json({ error: 'Student not found' });
     res.set('Cache-Control', 'private, no-store');
-    if (String(req.query.view) === 'summary') return res.json(await readinessSummary(student, { sync: true }));
+    if (String(req.query.view) === 'summary') return res.json(await readinessSummary(student, { sync: true, withTrend: true }));
     return res.json(await readinessFor(student, { range: String(req.query.range || '30d') }));
   } catch (error) { return next(error); }
 });

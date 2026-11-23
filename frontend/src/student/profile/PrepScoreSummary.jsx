@@ -31,7 +31,7 @@ export default function PrepScoreSummary({ ranking, loading = false, className =
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-inset ring-white/25"><Gauge className="h-4 w-4" aria-hidden="true" /></span>
         <div className="min-w-0 flex-1">
           <h2 id="profile-prep-score-title" className="flex items-center gap-1.5 text-[14px] font-semibold">Your Prep Score<GuideInfo step="pf-score" /></h2>
-          <p className="truncate text-[11px] text-sky-100">Activity points from practice</p>
+          <p className="truncate text-[11px] text-sky-100">Grows with your practice</p>
         </div>
       </header>
       <div className="relative flex flex-1 flex-wrap items-end justify-between gap-3 px-4 pt-3">

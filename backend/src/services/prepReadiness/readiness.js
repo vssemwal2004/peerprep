@@ -149,19 +149,31 @@ export async function readinessFor(student, { range = '30d', sync = true, now = 
   };
 }
 
-/** Compact summary (profile cards, staff, Prep Mates): scores only, from stored evidence. */
-export async function readinessSummary(student, { sync = false, now = new Date() } = {}) {
+/**
+ * Compact summary (profile cards, staff, Prep Mates): scores only, from stored evidence.
+ * withTrend adds the last `trendDays` daily values per track (the card's up/down line), the same
+ * series as the growth chart. Prep Mates never get it (sharedSummaryFor picks fields).
+ */
+export async function readinessSummary(student, { sync = false, now = new Date(), withTrend = false, trendDays = 30 } = {}) {
   const access = await readinessAccess(student);
   if (!access.coding) return { available: false, reason: 'not_licensed' };
   const sharedCatalog = sync ? await getSharedCodingCatalog().catch(() => []) : [];
-  const [policy, evidenceMap] = await Promise.all([
+  const [policy, evidenceMap, published] = await Promise.all([
     getActiveReadinessPolicy(),
     sync ? syncEvidence([student._id], { sharedCatalog, now }) : storedEvidence([student._id]),
+    withTrend ? getPublishedReadinessPolicies() : null,
   ]);
-  const mapped = (evidenceMap.get(String(student._id)) || []).filter((row) => row.topic);
+  const evidence = evidenceMap.get(String(student._id)) || [];
+  const mapped = evidence.filter((row) => row.topic);
   const result = scoreReadiness(policy, countsFromEvidence(mapped));
   const lastSolveAt = mapped.reduce((max, row) => (!max || row.solvedAt > max ? row.solvedAt : max), null);
-  return { available: true, computedAt: now.toISOString(), policyVersion: policy.version, tracks: trackCards(result), hasEvidence: mapped.length > 0, evidenceCount: mapped.length, lastSolveAt };
+  const summary = { available: true, computedAt: now.toISOString(), policyVersion: policy.version, tracks: trackCards(result), hasEvidence: mapped.length > 0, evidenceCount: mapped.length, lastSolveAt };
+  if (withTrend) {
+    const firstRecordedAt = evidence.reduce((min, row) => (row.createdAt && (!min || row.createdAt < min) ? row.createdAt : min), null);
+    const { days } = growthSeries(evidence, published, { days: trendDays, now, firstRecordedAt });
+    summary.trend = { days: days.map((row) => ({ day: row.day, sbc: round(row.sbc, 2), pbc: round(row.pbc, 2) })) };
+  }
+  return summary;
 }
 
 /**

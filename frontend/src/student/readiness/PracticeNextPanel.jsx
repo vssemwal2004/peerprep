@@ -39,7 +39,7 @@ export default function PracticeNextPanel({ track, insights }) {
 
   return (
     <section aria-labelledby="practice-next-title" data-guide="an-readiness-next"
-      className="rounded-2xl border border-violet-200/70 bg-gradient-to-br from-violet-50/70 via-white to-white p-4 dark:border-violet-400/15 dark:from-violet-500/[0.07] dark:via-[#232325] dark:to-[#232325]">
+      className="rounded-2xl border border-sky-200/70 bg-gradient-to-br from-sky-50/70 via-white to-white p-4 dark:border-sky-400/15 dark:from-sky-500/[0.07] dark:via-[#232325] dark:to-[#232325]">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h3 id="practice-next-title" className="flex items-center gap-2 text-[14px] font-semibold text-slate-900 dark:text-white">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" /></span>
@@ -57,26 +57,26 @@ export default function PracticeNextPanel({ track, insights }) {
         <ul className="mt-3 space-y-2" aria-hidden="true">{[0, 1, 2].map((key) => <li key={key} className="h-[74px] animate-pulse rounded-xl bg-white/80 dark:bg-white/[0.04]" />)}</ul>
       ) : error && !data ? (
         <p className="mt-3 flex items-center gap-2 text-[12.5px] text-slate-600 dark:text-zinc-300">Suggestions could not be loaded.
-          <button type="button" onClick={reload} className={`inline-flex items-center gap-1 font-semibold text-violet-700 dark:text-violet-300 ${focusRing}`}><RefreshCw className="h-3.5 w-3.5" />Retry</button></p>
+          <button type="button" onClick={reload} className={`inline-flex items-center gap-1 font-semibold text-sky-700 dark:text-sky-300 ${focusRing}`}><RefreshCw className="h-3.5 w-3.5" />Retry</button></p>
       ) : data?.items?.length ? (
         <ol className="mt-3 space-y-2">
           {data.items.map((item, index) => (
             <li key={item.problemKey}>
-              <Link to={item.url} className={`group flex items-start gap-3 rounded-xl border border-slate-200/80 bg-white p-3 transition hover:border-violet-300 hover:shadow-sm dark:border-white/[0.08] dark:bg-white/[0.03] dark:hover:border-violet-400/40 ${focusRing}`}>
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{index + 1}</span>
+              <Link to={item.url} className={`group flex items-start gap-3 rounded-xl border border-slate-200/80 bg-white p-3 transition hover:border-sky-300 hover:shadow-sm dark:border-white/[0.08] dark:bg-white/[0.03] dark:hover:border-sky-400/40 ${focusRing}`}>
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-100 text-[11px] font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">{index + 1}</span>
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-1.5">
-                    <span className="truncate text-[13px] font-semibold text-slate-900 group-hover:text-violet-700 dark:text-zinc-50 dark:group-hover:text-violet-300">{item.title}</span>
+                    <span className="truncate text-[13px] font-semibold text-slate-900 group-hover:text-sky-700 dark:text-zinc-50 dark:group-hover:text-sky-300">{item.title}</span>
                     <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${DIFFICULTY[item.difficulty]}`}>{item.difficulty}</span>
-                    <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-500/10 dark:text-violet-200">{item.topicLabel}</span>
+                    <span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-200">{item.topicLabel}</span>
                   </span>
                   <span className="mt-1 block text-[12px] leading-snug text-slate-600 dark:text-zinc-300">{item.reason}</span>
                   <span className={`mt-1 block text-[11px] font-medium ${QUOTA[item.quota.state].cls}`}>{QUOTA[item.quota.state].label}</span>
                 </span>
                 <span className="shrink-0 text-right">
-                  <span className="block text-[13px] font-bold tabular-nums text-violet-700 dark:text-violet-300">+{item.gain.toFixed(2)}</span>
+                  <span className="block text-[13px] font-bold tabular-nums text-sky-700 dark:text-sky-300">+{item.gain.toFixed(2)}</span>
                   <span className="block text-[10px] text-slate-400">{meta.label}</span>
-                  <ArrowRight className="ml-auto mt-1 h-3.5 w-3.5 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-violet-500" aria-hidden="true" />
+                  <ArrowRight className="ml-auto mt-1 h-3.5 w-3.5 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-sky-500" aria-hidden="true" />
                 </span>
               </Link>
             </li>

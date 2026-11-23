@@ -13,7 +13,7 @@ const fmt = (value) => (Math.round(value * 100) / 100).toString();
 function Block({ icon: Icon, title, children }) {
   return (
     <section className="rounded-2xl border border-slate-200/80 p-4 dark:border-white/[0.08]">
-      <h3 className="flex items-center gap-2 text-[13.5px] font-semibold text-slate-900 dark:text-white"><Icon className="h-4 w-4 text-violet-600 dark:text-violet-300" aria-hidden="true" />{title}</h3>
+      <h3 className="flex items-center gap-2 text-[13.5px] font-semibold text-slate-900 dark:text-white"><Icon className="h-4 w-4 text-sky-600 dark:text-sky-300" aria-hidden="true" />{title}</h3>
       <div className="mt-2 space-y-2 text-[12.5px] leading-relaxed text-slate-600 dark:text-zinc-300">{children}</div>
     </section>
   );
@@ -55,9 +55,9 @@ export default function ReadinessExplainDialog({ open, onClose, tracks = DEFAULT
           <motion.div role="dialog" aria-modal="true" aria-labelledby="readiness-explain-title"
             className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#1f1f22] sm:rounded-3xl"
             initial={reduce ? { opacity: 0 } : { opacity: 0, y: 24 }} animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0 }} exit={reduce ? { opacity: 0 } : { opacity: 0, y: 16 }}>
-            <header className="flex items-start gap-3 border-b border-slate-100 bg-gradient-to-r from-violet-600 to-purple-600 px-5 py-4 text-white dark:border-white/10">
+            <header className="flex items-start gap-3 border-b border-slate-100 bg-gradient-to-r from-sky-600 to-sky-800 px-5 py-4 text-white dark:border-white/10">
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-violet-100">Prep Readiness</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-sky-100">Prep Readiness</p>
                 <h2 id="readiness-explain-title" className="text-[17px] font-bold">How your readiness is calculated</h2>
               </div>
               <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-white/85 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"><X className="h-4 w-4" /></button>

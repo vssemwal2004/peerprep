@@ -62,11 +62,11 @@ function SharedCompareRow({ shared, mateName }) {
     ? null
     : <span className="inline-flex items-center gap-1 text-[12px] font-medium text-slate-400 dark:text-zinc-500"><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />Private</span>);
   return (
-    <section className="mt-4 rounded-2xl border border-violet-200/70 bg-gradient-to-br from-violet-50/80 via-white to-white p-4 dark:border-violet-400/15 dark:from-violet-500/[0.07] dark:via-[#242424] dark:to-[#242424]" aria-labelledby="shared-compare-title" data-guide="cmp-shared">
+    <section className="mt-4 rounded-2xl border border-sky-200/70 bg-gradient-to-br from-sky-50/80 via-white to-white p-4 dark:border-sky-400/15 dark:from-sky-500/[0.07] dark:via-[#242424] dark:to-[#242424]" aria-labelledby="shared-compare-title" data-guide="cmp-shared">
       <h2 id="shared-compare-title" className="text-[13.5px] font-semibold text-slate-900 dark:text-white">Prep Score and Prep Readiness <span className="font-normal text-slate-500 dark:text-zinc-400">· shared by choice</span></h2>
       <ul className="mt-2.5 grid gap-2 sm:grid-cols-3">
         {rows.map((row) => (
-          <li key={row.key} className="rounded-xl bg-white/90 px-3 py-2.5 ring-1 ring-inset ring-violet-100 dark:bg-white/[0.03] dark:ring-white/[0.07]">
+          <li key={row.key} className="rounded-xl bg-white/90 px-3 py-2.5 ring-1 ring-inset ring-sky-100 dark:bg-white/[0.03] dark:ring-white/[0.07]">
             <p className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400">{row.label}</p>
             <p className="mt-1 flex items-baseline justify-between gap-2 tabular-nums">
               {cell(shared.you, YOU_COLOR) || <span className="text-[18px] font-bold" style={{ color: YOU_COLOR }}>{row.pick(shared.you)}<span className="ml-1 text-[10.5px] font-medium text-slate-400">You</span></span>}

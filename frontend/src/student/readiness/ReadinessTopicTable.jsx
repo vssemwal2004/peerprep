@@ -21,7 +21,7 @@ function Priority({ value }) {
   if (!value) return <span className="text-slate-300 dark:text-zinc-600">—</span>;
   return (
     <span className="inline-flex items-center gap-0.5" aria-label={`Priority ${value} of 5`} title={`Priority ${value} of 5`}>
-      {Array.from({ length: 5 }, (_, index) => <span key={index} className={`h-1.5 w-1.5 rounded-full ${index < value ? 'bg-violet-500' : 'bg-slate-200 dark:bg-white/10'}`} />)}
+      {Array.from({ length: 5 }, (_, index) => <span key={index} className={`h-1.5 w-1.5 rounded-full ${index < value ? 'bg-sky-500' : 'bg-slate-200 dark:bg-white/10'}`} />)}
     </span>
   );
 }
@@ -78,7 +78,7 @@ export default function ReadinessTopicTable({ topics = [], track = 'pbc', quota 
       <div className="mt-2 flex flex-wrap gap-1" role="group" aria-label="Filter topics">
         {FILTERS.map((item) => (
           <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => setFilter(item.id)}
-            className={`rounded-full px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${focusRing} ${filter === item.id ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/[0.06] dark:text-zinc-300 dark:hover:bg-white/10'}`}>
+            className={`rounded-full px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${focusRing} ${filter === item.id ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/[0.06] dark:text-zinc-300 dark:hover:bg-white/10'}`}>
             {item.label}
           </button>
         ))}
@@ -134,7 +134,7 @@ export default function ReadinessTopicTable({ topics = [], track = 'pbc', quota 
                   {!readOnly ? (
                     <td className="px-3 py-2 text-right">
                       {!row.excluded && !row.complete ? (
-                        <Link to={`/problems?topic=${encodeURIComponent(topic.label)}`} className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-semibold text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-500/10 ${focusRing}`}>
+                        <Link to={`/problems?topic=${encodeURIComponent(topic.label)}`} className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-semibold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10 ${focusRing}`}>
                           Practice<ArrowRight className="h-3 w-3" aria-hidden="true" />
                         </Link>
                       ) : null}

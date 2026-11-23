@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { Crosshair, X } from 'lucide-react';
 import { api } from '../../utils/api';
 import ReadinessSummaryCard from '../../student/readiness/ReadinessSummaryCard';
 import ReadinessView from '../../student/readiness/ReadinessView';
@@ -29,12 +29,16 @@ function StaffReadinessDialog({ studentId, studentName, open, onClose }) {
     <div className="fixed inset-0 z-[160] flex items-stretch justify-center bg-slate-950/55 p-0 backdrop-blur-[2px] sm:p-4" role="presentation"
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div role="dialog" aria-modal="true" aria-labelledby="staff-readiness-title" className="flex w-full max-w-6xl flex-col overflow-hidden bg-[#f6f7f9] shadow-2xl dark:bg-[#1a1a1a] sm:rounded-2xl">
-        <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-[#232325]">
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-300">Prep Readiness · read only</p>
-            <h2 id="staff-readiness-title" className="truncate text-[15px] font-semibold text-slate-900 dark:text-white">{studentName || 'Student'}</h2>
+        <header className="relative flex items-center gap-3 overflow-hidden bg-gradient-to-r from-sky-700 via-sky-800 to-slate-900 px-4 py-3.5 text-white sm:px-5">
+          <span className="pointer-events-none absolute -right-10 -top-14 h-40 w-40 rounded-full bg-sky-300/20 blur-2xl" aria-hidden="true" />
+          <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-inset ring-white/25"><Crosshair className="h-5 w-5" aria-hidden="true" /></span>
+          <div className="relative min-w-0 flex-1">
+            <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-sky-100">
+              Prep Readiness<span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] normal-case tracking-normal ring-1 ring-inset ring-white/25">Read only</span>
+            </p>
+            <h2 id="staff-readiness-title" className="truncate text-[16px] font-semibold">{studentName || 'Student'}</h2>
           </div>
-          <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:hover:bg-white/10"><X className="h-4 w-4" /></button>
+          <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="relative rounded-lg p-1.5 text-sky-100 hover:bg-white/15 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"><X className="h-4 w-4" /></button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
           <ReadinessView {...state} range={range} onRange={setRange} mode="staff" />

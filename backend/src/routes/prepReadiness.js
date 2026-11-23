@@ -21,7 +21,7 @@ router.get('/', asyncRoute(async (req, res) => {
 }));
 
 router.get('/summary', asyncRoute(async (req, res) => {
-  const summary = await readinessSummary(req.user, { sync: true });
+  const summary = await readinessSummary(req.user, { sync: true, withTrend: true });
   noStore(res).json({ ...summary, sharing: req.user.sharePrepReadiness === true });
 }));
 
