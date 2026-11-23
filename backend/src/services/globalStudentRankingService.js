@@ -23,7 +23,7 @@ export async function syncUniversityGlobalRanking() {
     const scores = new Map(), counts = new Map();
     for (const row of rows) {
       const exact = Number(row.total || 0);
-      const score = snapshotScore(exact, row.hasProgress, scorePolicy.config.formula.decimalPlaces);
+      const score = snapshotScore(exact, row.hasProgress, scorePolicy.config.points?.decimalPlaces ?? scorePolicy.config.formula.decimalPlaces);
       scores.set(String(row.studentId), { score, exact, hasProgress: row.hasProgress });
       counts.set(score, (counts.get(score) || 0) + 1);
     }

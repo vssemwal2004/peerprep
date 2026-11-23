@@ -329,7 +329,9 @@ async function buildContext(user, range, modules, parts, assessmentScope) {
   const policy = await getPrepScorePolicyVersion(stored.version);
   attachStoredScores(rows, stored.scores, {
     features: { coding: modules.has('coding'), learning: modules.has('learning'), interview: modules.has('interview'), assessment: modules.has('assessment') },
-    points: policy.config.modules.coding.points,
+    // The ledger's solve points (what a solve really earns), so the Easy/Medium/Hard split of a bar
+    // matches how the score was earned; the formula module points are only the fallback.
+    points: policy.config.points?.solve || policy.config.modules.coding.points,
   });
   return {
     rows, scoreVersion: stored.version, topics: coding.topics, batchNames: cohort.batchNames, truncated: cohort.truncated, loadedAt: new Date(),

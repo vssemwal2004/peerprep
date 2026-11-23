@@ -7,6 +7,7 @@ import Problem from '../src/models/Problem.js';
 import Submission from '../src/models/Submission.js';
 import PrepScorePolicy from '../src/models/PrepScorePolicy.js';
 import { PrepScoreState, StudentPrepScore } from '../src/models/StudentPrepScore.js';
+import { StudentDailyLogin } from '../src/models/MonthlyBadge.js';
 import { getStudentDashboardData, getStudentUniversityRanking } from '../src/services/studentDashboardService.js';
 import { prepScoreSyncStatus, syncPrepScores } from '../src/services/prepScore/sync.js';
 import { previewPolicyImpact } from '../src/services/prepScore/impact.js';
@@ -34,7 +35,7 @@ after(async () => {
   else process.env.PEERPREP_DEPLOYMENT_ROLE = originalRole;
 });
 beforeEach(async () => {
-  await Promise.all([User, Problem, Submission, PrepScorePolicy, StudentPrepScore, PrepScoreState].map((model) => model.deleteMany({})));
+  await Promise.all([User, Problem, Submission, PrepScorePolicy, StudentPrepScore, PrepScoreState, StudentDailyLogin].map((model) => model.deleteMany({})));
   clearPrepScorePolicyCache();
   problems = { Easy: id(), Medium: id(), Hard: id(), Easy2: id() };
   await Problem.collection.insertMany(Object.entries(problems).map(([key, problemId]) => ({
@@ -110,6 +111,20 @@ test('publishing a policy rebuilds stored scores, then serves the new version; d
   assert.equal(rank.score, hardScore);
   assert.equal(rank.policyVersion, active.version);
   assert.equal((await syncPrepScores()).status, 'current', 'nothing left to do');
+});
+
+test('a login point reaches the stored score on the next pass, not only at the 6-hourly rebuild', async () => {
+  const learner = await student(['Easy']);
+  await getStudentUniversityRanking(learner);
+  const before = await StudentPrepScore.findOne({ studentId: learner._id }).lean();
+  assert.deepEqual(await syncPrepScores(), { status: 'current', updated: 0 });
+  const day = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+  await StudentDailyLogin.create({ studentId: learner._id, day, at: new Date() });
+  assert.deepEqual(await syncPrepScores(), { status: 'current', updated: 1 }, 'the login is picked up by its insert time');
+  const after = await StudentPrepScore.findOne({ studentId: learner._id }).lean();
+  assert.ok(after.total > before.total, `stored score grew (${before.total} -> ${after.total})`);
+  const { ranking } = await getStudentDashboardData(learner);
+  assert.equal(after.total, ranking.score, 'admin views (stored) and the student\'s own page agree');
 });
 
 test('a change in licensed features rebuilds; a quiet pass touches nobody', async () => {

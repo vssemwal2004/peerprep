@@ -63,7 +63,7 @@ function Bar({ label, value, max, color, right, sub }) {
 function CodingScore({ coding }) {
   return (
     <div className="flex w-[124px] shrink-0 flex-col items-center gap-1.5 text-center">
-      <span className="text-[10.5px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Prep Coding</span>
+      <span className="text-[10.5px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Prep Score</span>
       <span className="text-[22px] font-extrabold leading-6 tabular-nums text-slate-900 dark:text-white">{formatScore(coding.prepScore)}</span>
       <span className="text-[10.5px] leading-tight text-slate-500 dark:text-slate-400">Current score, as the student sees it</span>
     </div>
@@ -452,11 +452,11 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Prep Score · Prep Coding</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Prep Score</p>
                     <p className="mt-1"><ScoreValue value={profile.prepScore.total} size="lg" /></p>
                   </div>
                 </div>
-                <p className="max-w-[220px] text-right text-[11px] text-slate-500">Calculated from verified coding solves using the active Master Admin policy.</p>
+                <p className="max-w-[220px] text-right text-[11px] text-slate-500">Same score the student and rankings see.</p>
               </div>
               <ModuleScores prepScore={profile.prepScore} className="mt-3" />
             </section>

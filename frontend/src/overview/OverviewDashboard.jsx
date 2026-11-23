@@ -5,6 +5,7 @@ import {
   Gauge, Library, Megaphone, MessageSquare, ShieldCheck, Trophy, UserCog, UserPlus, Users,
 } from 'lucide-react';
 import OverviewHeader from './OverviewHeader';
+import { formatScore } from '../student/prepScore/formatScore';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { ActivityTrendChart, BandChart, BarRows, DonutChart } from './charts';
@@ -219,7 +220,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
   const kpis = data ? [
     data.access?.students && { label: data.ownScope ? 'My students' : 'Students', value: formatNumber(people.students), helper: `+${formatNumber(people.newStudents)} joined in 30 days`, Icon: Users, color: '#0284c7', to: links.students },
     { label: 'Active this week', value: formatNumber(people.activeWeek), helper: `${percent(people.activeWeek, people.students)}% of students · ${formatNumber(people.activeToday)} today`, Icon: Activity, color: '#10b981', trend: view.totals, delta: weekChange(view.totals) },
-    data.prepScore && { label: 'Average Prep Score', value: data.prepScore.average == null ? '—' : data.prepScore.average, helper: `${formatNumber(data.prepScore.scored)} students scored`, Icon: Gauge, color: '#0ea5e9', to: links.analysis },
+    data.prepScore && { label: 'Average Prep Score', value: data.prepScore.average == null ? '—' : formatScore(data.prepScore.average), helper: `${formatNumber(data.prepScore.scored)} students scored`, Icon: Gauge, color: '#0ea5e9', to: links.analysis },
     data.coding && { label: 'Coding acceptance', value: data.coding.acceptanceRate == null ? '—' : `${Math.round(data.coding.acceptanceRate)}%`, helper: `${formatNumber(data.coding.attempts)} submissions · ${short}`, Icon: Code2, color: MODULE_META.coding.color, trend: view.trend.map((row) => row.coding), delta: weekChange(view.trend.map((row) => row.coding)), to: links.coding },
     data.assessments && { label: 'Assessment average', value: data.assessments.averageScore == null ? '—' : `${Math.round(data.assessments.averageScore)}%`, helper: `${formatNumber(data.assessments.submissions)} submissions · ${short}`, Icon: ClipboardList, color: MODULE_META.assessments.color, trend: view.trend.map((row) => row.assessments), delta: weekChange(view.trend.map((row) => row.assessments)), to: links.reports },
     (data.mockInterviews || data.aiInterviews) && { label: 'Interviews', value: formatNumber((data.mockInterviews?.feedback || 0) + (data.aiInterviews?.completed || 0)), helper: data.mockInterviews ? `${data.mockInterviews.upcoming} upcoming events` : `AI interviews · ${short}`, Icon: MessageSquare, color: MODULE_META.interviews.color, trend: view.trend.map((row) => row.interviews), delta: weekChange(view.trend.map((row) => row.interviews)), to: data.mockInterviews ? links.interviews : links.aiInterviews },
@@ -336,7 +337,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
                   <li key={student.id} className="flex items-center gap-3 rounded-xl px-2 py-1.5">
                     <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold ${index === 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-200' : 'bg-slate-900/[0.05] text-slate-600 dark:bg-white/[0.06] dark:text-slate-300'}`}>{index + 1}</span>
                     <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-slate-900 dark:text-white">{student.name}</span><span className="block truncate text-[11px] text-slate-500">{student.rollNumber}</span></span>
-                    <span className="text-sm font-semibold tabular-nums text-sky-700 dark:text-sky-300">{student.score}</span>
+                    <span className="text-sm font-semibold tabular-nums text-sky-700 dark:text-sky-300">{formatScore(student.score)}</span>
                   </li>
                 ))}
               </ol>

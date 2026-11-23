@@ -11,7 +11,10 @@ import Progress from '../../models/Progress.js';
 import AssessmentSubmission from '../../models/AssessmentSubmission.js';
 import Feedback from '../../models/Feedback.js';
 import QuestionPracticeAttempt from '../../models/QuestionPracticeAttempt.js';
-import { InterviewEngagementReceipt } from '../../models/AdaptiveEngagement.js';
+import { EngagementReward, InterviewEngagementReceipt } from '../../models/AdaptiveEngagement.js';
+import { BadgeLevelAward, StudentDailyLogin } from '../../models/MonthlyBadge.js';
+import { LifetimeBadgeAward } from '../../models/LifetimeBadge.js';
+import { PrepScoreAllocation } from '../../models/PrepReadiness.js';
 import { PrepScoreState, StudentPrepScore } from '../../models/StudentPrepScore.js';
 import { isUniversity } from '../../platform/deployment.js';
 import { currentTenant } from '../../platform/tenantContext.js';
@@ -36,10 +39,20 @@ const PERMISSION_KEYS = ['questions', 'learning', 'assessments', 'interviews', '
 // rebuild also applies each day's inactivity rule to students with no new activity.
 const ENGINE_KEY = 'points-7';
 const STUDENT_FIELDS = '_id role semester college isActive accessScope';
-// [model, student field, extra filter]. Runs and live-test heartbeats never change a score.
+// [model, student field, extra filter]: rows changed since the watermark (indexed on updatedAt).
+// Runs and live-test heartbeats never change a score.
 const ACTIVITY_SOURCES = [
   [Submission, 'user', { mode: 'submit' }], [QuestionPracticeAttempt, 'studentId'], [Progress, 'studentId'],
   [AssessmentSubmission, 'studentId', { status: 'submitted' }], [Feedback, 'to'], [InterviewEngagementReceipt, 'studentId'],
+];
+// [model, student field]: insert-once Prep Score point events (pointFacts.js), found by their _id
+// time so no extra index is needed. Without these, a login, a daily challenge or sheet win
+// (EngagementReward), a badge or a topic allocation reached stored scores (admin profile, Prep
+// Analysis, other students' ranks) only at the 6-hourly rebuild, while the student's own page
+// already showed it.
+const POINT_EVENT_SOURCES = [
+  [StudentDailyLogin, 'studentId'], [EngagementReward, 'studentId'], [BadgeLevelAward, 'studentId'],
+  [LifetimeBadgeAward, 'studentId'], [PrepScoreAllocation, 'studentId'],
 ];
 
 const tenantKey = () => currentTenant()?.universityId || 'platform';
@@ -160,7 +173,11 @@ export async function storedScoresFor(studentIds) {
 
 async function studentsChangedSince(since) {
   const filter = { updatedAt: { $gte: since } };
-  const ids = await Promise.all(ACTIVITY_SOURCES.map(([model, path, extra = {}]) => model.distinct(path, { ...extra, ...filter }).maxTimeMS(QUERY_TIMEOUT_MS)));
+  const insertedSince = { _id: { $gte: mongoose.Types.ObjectId.createFromTime(Math.floor(since.getTime() / 1000)) } };
+  const ids = await Promise.all([
+    ...ACTIVITY_SOURCES.map(([model, path, extra = {}]) => model.distinct(path, { ...extra, ...filter }).maxTimeMS(QUERY_TIMEOUT_MS)),
+    ...POINT_EVENT_SOURCES.map(([model, path]) => model.distinct(path, insertedSince).maxTimeMS(QUERY_TIMEOUT_MS)),
+  ]);
   return [...new Set(ids.flat().filter(Boolean).map(String))];
 }
 

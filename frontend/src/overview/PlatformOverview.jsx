@@ -7,6 +7,7 @@ import {
 import OverviewHeader from './OverviewHeader';
 import GuideInfo from '../guide/platform/GuideInfo';
 import { api } from '../utils/api';
+import { formatScore } from '../student/prepScore/formatScore';
 import { useAuth } from '../context/AuthContext';
 import { ActivityTrendChart, BandChart, BarRows, DonutChart, StackedBars } from './charts';
 import { CardHeader, CardLink, EmptyHint, Glass, KpiTile, MiniStat, OverviewShell, Segmented, SkeletonRows, ToneDot } from './ui';
@@ -209,7 +210,7 @@ export default function PlatformOverview() {
     { label: 'Active this week', value: formatNumber(model.activeWeek), helper: `${percent(model.activeWeek, model.students)}% of students`, Icon: Activity, color: '#10b981', trend: model.totals, delta: weekChange(model.totals) },
     { label: 'Not signed in yet', value: formatNumber(ws?.pending?.notActivated), helper: 'Main database accounts', Icon: UserX, color: '#e11d48', to: '/admin/students' },
     { label: 'Coding submissions', value: formatNumber(model.codingSubmissions), helper: ws?.coding?.acceptanceRate != null ? `${Math.round(ws.coding.acceptanceRate)}% accepted · ${short}` : periodLabel, Icon: Code2, color: MODULE_META.coding.color, trend: model.trend.map((day) => day.coding), delta: weekChange(model.trend.map((day) => day.coding)), to: '/admin/analysis?source=coding' },
-    { label: 'Average Prep Score', value: ws?.prepScore?.average ?? '—', helper: `${formatNumber(ws?.prepScore?.scored)} scored · ${central?.prepScore.version ? `policy v${central.prepScore.version}` : 'default policy'}`, Icon: Gauge, color: '#0ea5e9', to: '/admin/analysis' },
+    { label: 'Average Prep Score', value: ws?.prepScore?.average == null ? '—' : formatScore(ws.prepScore.average), helper: `${formatNumber(ws?.prepScore?.scored)} scored · ${central?.prepScore.version ? `policy v${central.prepScore.version}` : 'default policy'}`, Icon: Gauge, color: '#0ea5e9', to: '/admin/analysis' },
     {
       label: 'Coding problems', value: formatNumber(problemTotal), helper: problems ? `${formatNumber(problems.published)} published · ${formatNumber(problems.draft)} drafts` : 'Shared catalogue', Icon: FileQuestion, color: '#d97706', to: '/admin/library/coding/problems',
       footer: problems ? (
@@ -460,8 +461,8 @@ export default function PlatformOverview() {
         <Glass data-guide="pov-prep-score" className="p-5 xl:col-span-4">
           <CardHeader title="Prep Score" subtitle={central?.prepScore.version ? `Policy v${central.prepScore.version} · published ${relativeTime(central.prepScore.publishedAt)}` : 'Default policy · not yet published'} Icon={Gauge} action={<CardLink to="/admin/settings/prep-score-adjustment">Adjust</CardLink>} />
           <div className="grid grid-cols-3 gap-2">
-            <MiniStat label="Average" value={ws?.prepScore?.average ?? '—'} tone="text-sky-700 dark:text-sky-300" />
-            <MiniStat label="Highest" value={ws?.prepScore?.highest ?? '—'} />
+            <MiniStat label="Average" value={ws?.prepScore?.average == null ? '—' : formatScore(ws.prepScore.average)} tone="text-sky-700 dark:text-sky-300" />
+            <MiniStat label="Highest" value={ws?.prepScore?.highest == null ? '—' : formatScore(ws.prepScore.highest)} />
             <MiniStat label="Scored" value={formatNumber(ws?.prepScore?.scored)} />
           </div>
           {ws?.prepScore?.bands?.length ? (
@@ -481,7 +482,7 @@ export default function PlatformOverview() {
                   <Link to={`/admin/students/${student.id}`} className="flex items-center gap-3 rounded-xl px-2 py-1.5 transition hover:bg-slate-900/[0.04] dark:hover:bg-white/[0.05]">
                     <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold ${index === 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-200' : 'bg-slate-900/[0.05] text-slate-600 dark:bg-white/[0.06] dark:text-slate-300'}`}>{index + 1}</span>
                     <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-slate-900 dark:text-white">{student.name}</span><span className="block truncate text-[11px] text-slate-500">{student.rollNumber}</span></span>
-                    <span className="text-sm font-semibold tabular-nums text-sky-700 dark:text-sky-300">{student.score}</span>
+                    <span className="text-sm font-semibold tabular-nums text-sky-700 dark:text-sky-300">{formatScore(student.score)}</span>
                   </Link>
                 </li>
               ))}

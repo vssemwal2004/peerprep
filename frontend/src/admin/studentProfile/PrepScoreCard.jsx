@@ -37,7 +37,7 @@ export default function PrepScoreCard({ prepScore, visible = {} }) {
               {formatScore(prepScore.total)}
             </p>
             <p className="mt-1.5 text-[11.5px] text-sky-100">
-              {prepScore.hasProgress ? 'From verified coding solves' : 'No scored coding solves yet'}
+              {prepScore.total > 0 ? 'From verified practice activity' : 'No points yet'}
             </p>
           </div>
         </div>
