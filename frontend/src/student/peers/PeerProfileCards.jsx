@@ -82,7 +82,7 @@ export function PeerIdentityCard({ profile, progress, network, relation, isSelf,
   const LevelIcon = theme.Icon;
   const firstName = firstNameOf(profile.name);
   // Earned milestone badges for the shelf under the name (same medals as the own profile).
-  const badgeItems = progress?.badgeMetrics ? computeAwards(progress.badgeMetrics).awards.map(fromAward) : [];
+  const badgeItems = progress?.badgeMetrics ? computeAwards(progress.badgeMetrics, { features: progress.badgeFeatures || null }).awards.map(fromAward) : [];
   const badgeCollection = { items: badgeItems, ...orderBadges(badgeItems), total: badgeItems.length };
   const score = shared?.prepScore;
 

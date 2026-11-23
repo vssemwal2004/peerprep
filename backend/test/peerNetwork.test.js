@@ -80,7 +80,9 @@ test('peer network: same-university scope, private fields and Prep Mate states',
     assert.deepEqual(profile.progress.modules.map((module) => module.key), ['quickprep'], 'practice modules only: no assessment or interview records');
     // Exact allow-list of what another student receives.
     assert.deepEqual(Object.keys(profile.profile).sort(), ['avatarUrl', 'bio', 'branch', 'course', 'id', 'links', 'name', 'semester']);
-    assert.deepEqual(Object.keys(profile.progress).sort(), ['activity', 'badgeMetrics', 'badges', 'coding', 'level', 'modules', 'quickPrepSheets']);
+    assert.deepEqual(Object.keys(profile.progress).sort(), ['activity', 'badgeFeatures', 'badgeMetrics', 'badges', 'coding', 'level', 'modules', 'quickPrepSheets']);
+  // Which badge areas the classmate can use: booleans only, never counts or marks.
+  assert.ok(Object.values(profile.progress.badgeFeatures).every((value) => typeof value === 'boolean'));
 
     // Heat map: practice submissions and completed topics count; assessment submissions and
     // logins never do.

@@ -183,7 +183,7 @@ export default function OverviewTab({
           description="Solved of attempted problems, by difficulty"
           action={null}
         />}
-        {visible.questions !== false && <BadgesCard
+        {awards?.awards?.length > 0 && <BadgesCard
           className="h-full"
           level={level}
           awards={awards}

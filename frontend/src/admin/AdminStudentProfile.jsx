@@ -23,6 +23,7 @@ import OverviewStrip from './studentProfile/OverviewStrip';
 import PrepScoreCard from './studentProfile/PrepScoreCard';
 import StaffReadiness from './studentProfile/StaffReadiness';
 import { fromAward, orderBadges } from '../student/badges/badgeModel';
+import { hasStudentFeature } from '../student/studentFeatureAccess';
 
 /** Awards ({ awards }) → the badge shelf collection (earned newest first, then locked). */
 function badgeCollectionOf(awards) {
@@ -263,6 +264,13 @@ export default function AdminStudentProfile() {
     interviewScore: num(interviewMetrics.avgScore),
   }), [bestStreak, currentStreak, interviewMetrics.avgScore, levelAssessmentScore, levelSolved]);
 
+  // A badge (earned or locked) only for areas this student can use: the university licence AND the
+  // student's own feature access.
+  const awardFeatures = useMemo(() => ({
+    coding: allowsModule('questions') && hasStudentFeature(student, 'prep_coding'),
+    assessments: allowsModule('assessments') && hasStudentFeature(student, 'assessments'),
+    interviews: allowsModule('events') && hasStudentFeature(student, 'interviews'),
+  }), [allowsModule, student]);
   const awards = useMemo(() => computeAwards({
     solved: levelSolved,
     hardSolved: codingTotals.hardSolved,
@@ -271,9 +279,10 @@ export default function AdminStudentProfile() {
     languages: stats?.languagesUsed?.length || 0,
     assessments: num(assessmentMetrics.attempts),
     interviews: num(interviewMetrics.feedbackReceived),
-  }), [
+  }, { features: awardFeatures }), [
     activeDays,
     assessmentMetrics.attempts,
+    awardFeatures,
     bestStreak,
     codingTotals.hardSolved,
     currentStreak,
@@ -506,7 +515,7 @@ export default function AdminStudentProfile() {
               onViewResume={visible.resumes ? () => navigate(`${rolePrefix}/students/${studentId}/resume`) : undefined}
               onOpenLevels={() => setBadgesGallery('levels')}
               prepScore={visible.questions ? prepScore : null}
-              badgeCollection={visible.questions ? badgeCollectionOf(awards) : null}
+              badgeCollection={awards.awards.length ? badgeCollectionOf(awards) : null}
               onOpenBadges={() => setBadgesGallery('awards')}
             />
           </StickySidebar>

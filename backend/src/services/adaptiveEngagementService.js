@@ -3,6 +3,7 @@ import StudentChallenge from '../models/StudentChallenge.js';
 import { MissionAssignment, EngagementReward, EngagementActivity, StudentProgression, StudentBadge, AchievementEvent, MonthlyProgressSnapshot, QuestEnrollment } from '../models/AdaptiveEngagement.js';
 import { engagementTenant, engagementPermissions, getEngagementPolicy } from './engagementPolicyService.js';
 import { loadEvidenceAndCandidates } from './engagementEvidenceService.js';
+import { studentDomains, studentFeatureFlags } from './studentEffectiveAccess.js';
 import { BADGES, LEVELS, DOMAIN_ACCESS, dayKey, periodsAt, enabledDomains, abilityFrom, selectDailyMissions, evaluateGoals, assignmentComplete, assignmentCompletedAt, assignmentPaused, progressionView, bestStreak, badgeCategoryAllowed } from './adaptiveEngagementRules.js';
 import { getStudentProgressSummary } from './studentDashboardService.js';
 import { requireEngagementUniqueIndex } from '../utils/engagementIndexes.js';
@@ -47,7 +48,10 @@ async function deliverNotices(scope, notices, now) {
 async function refresh(student, now) {
   const scope = engagementScope(student);
   const [permissions, policy] = await Promise.all([engagementPermissions(student), getEngagementPolicy(scope.tenantKey, student.semester)]);
-  const domains = enabledDomains(permissions, policy);
+  // University licence AND the student's own feature access: no missions, badges or targets for a
+  // feature this student cannot open.
+  const domains = studentDomains(student, enabledDomains(permissions, policy));
+  const badgeAccess = { quickprep: permissions.quickprep !== false && studentFeatureFlags(student).quickprep };
   const enabled = policy.enabled && (!policy.pauseUntil || new Date(policy.pauseUntil) <= now);
   // These guards fail closed when a deployment has not installed the unique receipt indexes.
   await Promise.all([
@@ -193,7 +197,7 @@ async function refresh(student, now) {
     questsCompleted,
     ...Object.fromEntries(domains.map((domain) => [domain, new Set(events.filter((e) => e.domain === domain).map((e) => e.contentKey)).size])),
   };
-  const definitions = [...BADGES, ...(policy.customBadges || [])].filter((b) => badgeCategoryAllowed(b.category, domains) && (b.metric !== 'domainsUsed' || domains.length >= b.target));
+  const definitions = [...BADGES, ...(policy.customBadges || [])].filter((b) => badgeCategoryAllowed(b.category, domains, badgeAccess) && (b.metric !== 'domainsUsed' || domains.length >= b.target));
   const badgeMap = new Map(savedBadges.map((b) => [b.badgeId, b]));
   for (const def of definitions) {
     if (!enabled || (metrics[def.metric] || 0) < def.target || progression.level < def.minimumLevel) continue;
@@ -210,7 +214,7 @@ async function refresh(student, now) {
     await createAchievement(scope, `badge:${def.id}`, { type: 'badge', award: { ...earned.definition, earned: true } }, earned.evidence?.imported ? now : null);
   }
   // Retired definitions remain in the collection; disabled feature definitions stay out of this university's UI.
-  for (const saved of badgeMap.values()) if (!definitions.some((b) => b.id === saved.badgeId) && badgeCategoryAllowed(saved.definition.category, domains)) definitions.push(saved.definition);
+  for (const saved of badgeMap.values()) if (!definitions.some((b) => b.id === saved.badgeId) && badgeCategoryAllowed(saved.definition.category, domains, badgeAccess)) definitions.push(saved.definition);
   const badges = definitions.map((def) => ({ ...def, ...(badgeMap.get(def.id)?.definition || {}), value: badgeMap.has(def.id) ? (badgeMap.get(def.id)?.definition.target || def.target) : Math.min(def.target, metrics[def.metric] || 0), progress: badgeMap.has(def.id) ? 100 : Math.min(100, Math.round((metrics[def.metric] || 0) / def.target * 100)),
     earned: badgeMap.has(def.id), earnedAt: badgeMap.get(def.id)?.earnedAt || null, evidence: badgeMap.get(def.id)?.evidence || null }));
   const activityByDate = {}, breakdownByDate = {};
@@ -226,7 +230,7 @@ async function refresh(student, now) {
   const milestoneDates = domains.length ? [
     ...rewards.filter((reward) => ['daily', 'weekly', 'monthly'].includes(reward.kind)).map((reward) => reward.earnedAt),
     ...[...badgeMap.values()].filter((badge) => !badge.evidence?.imported && !String(badge.badgeId).startsWith('edition-')
-      && badgeCategoryAllowed(badge.definition?.category, domains)).map((badge) => badge.earnedAt),
+      && badgeCategoryAllowed(badge.definition?.category, domains, badgeAccess)).map((badge) => badge.earnedAt),
     ...(progression.levelHistory || []).filter((entry) => !entry.imported).map((entry) => entry.achievedAt),
   ] : [];
   for (const date of milestoneDates) {
@@ -288,7 +292,7 @@ export async function acceptChallenge(student, kind, periodKey, now = new Date()
   const scope = engagementScope(student);
   const [permissions, policy] = await Promise.all([engagementPermissions(student), getEngagementPolicy(scope.tenantKey, student.semester)]);
   if (!policy.enabled || (policy.pauseUntil && new Date(policy.pauseUntil) > now)) throw new HttpError(409, 'Challenges are paused by your university.');
-  const domains = enabledDomains(permissions, policy);
+  const domains = studentDomains(student, enabledDomains(permissions, policy));
   const filter = { ...scope, kind, periodKey, startsAt: { $lte: now }, endsAt: { $gt: now } };
   let assignment = await MissionAssignment.findOne(filter).maxTimeMS(8000).lean();
   if (!assignment) throw new HttpError(404, 'No assigned challenge is available. Refresh your challenges.');
@@ -304,14 +308,15 @@ export async function acceptChallenge(student, kind, periodKey, now = new Date()
 export async function claimAchievement(student) {
   const scope = engagementScope(student);
   const [permissions, policy] = await Promise.all([engagementPermissions(student), getEngagementPolicy(scope.tenantKey, student.semester)]);
-  const domains = enabledDomains(permissions, policy);
+  const domains = studentDomains(student, enabledDomains(permissions, policy));
+  const quickprep = permissions.quickprep !== false && studentFeatureFlags(student).quickprep;
   if (!policy.enabled) return { events: [] };
   const events = [];
   for (let i = 0; i < 8; i += 1) {
     // Atomic consume before delivery provides at-most-once automatic display across tabs/devices.
     // A response lost in transit remains in the achievement history, never loops a popup.
     const event = await AchievementEvent.findOneAndUpdate({ ...scope, deliveredAt: null,
-      $or: [{ 'payload.type': 'level' }, { 'payload.award.category': { $in: [...domains, 'growth', 'momentum', ...(domains.includes('coding') ? ['quests'] : [])] } }] },
+      $or: [{ 'payload.type': 'level' }, { 'payload.award.category': { $in: [...domains, 'growth', ...(domains.length ? ['momentum'] : []), ...(quickprep && domains.includes('coding') ? ['quests'] : [])] } }] },
     { $set: { deliveredAt: new Date() } }, { sort: { createdAt: 1 }, new: true }).maxTimeMS(8000).lean();
     if (!event) break;
     events.push({ id: String(event._id), ...event.payload });

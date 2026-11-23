@@ -402,6 +402,12 @@ async function buildPeerProgress(peer) {
       activeDays: nonNegative(metrics.activeDays), languages: nonNegative(metrics.languages),
       assessments: Math.min(1, nonNegative(metrics.assessments)), interviews: Math.min(1, nonNegative(metrics.interviews)),
     },
+    // Badges are shown only for areas this classmate can use (licence AND their own access).
+    badgeFeatures: {
+      coding: Boolean(has('prep_coding') && permissions.questions),
+      assessments: Boolean(has('assessments') && permissions.assessments),
+      interviews: Boolean(has('interviews') && permissions.events),
+    },
     coding: canCoding ? { attempted: nonNegative(row.attemptedProblems), recentSolved } : null,
     quickPrepSheets: sheets,
     activity,

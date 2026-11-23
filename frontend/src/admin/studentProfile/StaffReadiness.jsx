@@ -59,6 +59,8 @@ export default function StaffReadiness({ studentId, studentName }) {
   const fetcher = useCallback(() => api.getStudentPrepReadinessByAdmin(studentId, { view: 'summary' }), [studentId]);
   const summary = useReadiness(fetcher, [studentId], { enabled: Boolean(studentId) });
   if (summary.error?.response?.status === 404 || summary.error?.response?.status === 403) return null;
+  // No Prep Coding for this student (licence or their own access): no readiness targets at all.
+  if (summary.data?.available === false) return null;
   return (
     <>
       {/* The card renders data-guide="sp-readiness" (admin and coordinator profile tours). */}

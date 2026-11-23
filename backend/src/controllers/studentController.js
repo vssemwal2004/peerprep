@@ -578,7 +578,7 @@ export async function getStudentById(req, res) {
       : { _id: studentId, role: 'student' };
 
     const student = await User.findOne(query)
-      .select('name email username studentId course branch college semester group section teacherIds avatarUrl createdAt isSpecialStudent isActive bio linkedinUrl githubUrl portfolioUrl learnerProgress')
+      .select('name email username studentId course branch college semester group section teacherIds avatarUrl createdAt isSpecialStudent isActive bio linkedinUrl githubUrl portfolioUrl learnerProgress accessScope featureAccess')
       .lean();
 
     if (!student) {
@@ -589,6 +589,8 @@ export async function getStudentById(req, res) {
       student: {
         ...student,
         teacherId: Array.isArray(student.teacherIds) ? student.teacherIds.join(', ') : (student.teacherIds || ''),
+        // The profile hides badges and targets for features this student cannot use.
+        featureAccess: normalizeStudentFeatureAccess(student.featureAccess, { legacyAccessScope: student.accessScope }),
       },
       // Staff-only route (admin / coordinator with profile permission), so module scores may be included.
       prepScore: await storedPrepScoreFor(student._id),

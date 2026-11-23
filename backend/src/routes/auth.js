@@ -96,7 +96,9 @@ router.post('/daily-checkin', requireAuth, requireStudent, requireFullStudent, a
 router.get('/badges/monthly', requireAuth, requireStudent, requireFullStudent, async (req, res, next) => {
   try {
     res.set('Cache-Control', 'private, no-store');
-    const [current, history] = await Promise.all([evaluateMonthlyBadges(req.user), badgeHistory(req.user._id)]);
+    const current = await evaluateMonthlyBadges(req.user);
+    // No Prep Coding access: no monthly badges at all, past months included.
+    const history = current.available === false ? [] : await badgeHistory(req.user._id);
     res.json({ ...current, history });
   } catch (error) { next(error); }
 });

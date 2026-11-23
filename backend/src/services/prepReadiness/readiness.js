@@ -1,6 +1,7 @@
 // Prep Readiness read model: the student's SBC/PBC scores, topic breakdown, daily growth and the
 // compact summary for profiles. All numbers come from engine.js over stored evidence.
 import { dashboardPermissions, getSharedCodingCatalog } from '../studentDashboardService.js';
+import { studentHasFeature } from '../studentFeatureAccess.js';
 import { ledgerOf } from '../prepScore/submitOutcome.js';
 import { storedScoresFor } from '../prepScore/sync.js';
 import { istDay, topicUsageOn } from '../prepScore/points.js';
@@ -18,10 +19,13 @@ const round = (value, places = 4) => Math.round((Number(value) + Number.EPSILON)
 const dayEnd = (day) => new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10))) + DAY_MS - IST_OFFSET_MS - 1);
 const shiftDay = (day, delta) => new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10))) + delta * DAY_MS).toISOString().slice(0, 10);
 
-/** Who may have readiness at all: Prep Coding licensed for the student. */
+/**
+ * Who may have readiness at all: Prep Coding licensed for the university AND turned on for the
+ * student (their own feature access). Without it there are no readiness targets to show.
+ */
 export async function readinessAccess(student) {
   const permissions = await dashboardPermissions(student);
-  return { coding: permissions.questions === true, permissions };
+  return { coding: permissions.questions === true && studentHasFeature(student, 'prep_coding'), permissions };
 }
 
 /** Score cards for both tracks: { sbc: { score, display, cutoff, met, remaining, evidence }, pbc }. */

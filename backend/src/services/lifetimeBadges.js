@@ -15,16 +15,21 @@ import { notifyOnce } from './notificationService.js';
 import { loadPointFacts } from './prepScore/pointFacts.js';
 import { istDay } from './prepScore/points.js';
 import { prepStreakFor } from './prepStreak.js';
+import { effectiveStudentAccess } from './studentEffectiveAccess.js';
 
-// [track, title, unit, [[threshold, tier], ...]]
+// [track, title, unit, [[threshold, tier], ...]]. `feature`: the effective access key
+// (studentEffectiveAccess.js) a student needs to see or earn the track: every count here comes
+// from Prep Coding (solves, practice days, coding daily challenges) or Quick Prep sheets.
 export const LIFETIME_TRACKS = Object.freeze([
-  { key: 'solved', title: 'Problems solved', unit: 'problems', steps: [[50, 1], [100, 2], [200, 2], [300, 3], [500, 4], [750, 4], [1000, 5]] },
-  { key: 'hard', title: 'Hard problems', unit: 'Hard problems', steps: [[25, 2], [50, 3], [100, 4]] },
-  { key: 'active', title: 'Active days', unit: 'active days', steps: [[50, 1], [100, 2], [200, 3], [365, 4], [500, 5]] },
-  { key: 'streak', title: 'Prep Streak', unit: 'day streak', steps: [[7, 1], [30, 2], [60, 3], [100, 4], [365, 5]] },
-  { key: 'challenge', title: 'Daily challenges', unit: 'challenges', steps: [[25, 1], [50, 2], [100, 3], [250, 4], [365, 5]] },
-  { key: 'sheets', title: 'Sheets completed', unit: 'sheets', steps: [[5, 1], [10, 2], [25, 3]] },
+  { key: 'solved', feature: 'coding', title: 'Problems solved', unit: 'problems', steps: [[50, 1], [100, 2], [200, 2], [300, 3], [500, 4], [750, 4], [1000, 5]] },
+  { key: 'hard', feature: 'coding', title: 'Hard problems', unit: 'Hard problems', steps: [[25, 2], [50, 3], [100, 4]] },
+  { key: 'active', feature: 'coding', title: 'Active days', unit: 'active days', steps: [[50, 1], [100, 2], [200, 3], [365, 4], [500, 5]] },
+  { key: 'streak', feature: 'coding', title: 'Prep Streak', unit: 'day streak', steps: [[7, 1], [30, 2], [60, 3], [100, 4], [365, 5]] },
+  { key: 'challenge', feature: 'coding', title: 'Daily challenges', unit: 'challenges', steps: [[25, 1], [50, 2], [100, 3], [250, 4], [365, 5]] },
+  { key: 'sheets', feature: 'quickprep', title: 'Sheets completed', unit: 'sheets', steps: [[5, 1], [10, 2], [25, 3]] },
 ]);
+/** Track keys this student may see and earn. */
+export const allowedLifetimeTracks = (access) => new Set(LIFETIME_TRACKS.filter((track) => access?.[track.feature] === true).map((track) => track.key));
 export const TIER_NAMES = Object.freeze(['Bronze', 'Silver', 'Gold', 'Platinum', 'Legend']);
 // Coins per tier unless the Master Admin set others (Prep Coin earning settings).
 export const DEFAULT_MILESTONE_COINS = Object.freeze([2, 3, 5, 8, 12]);
@@ -87,10 +92,13 @@ async function studentCounts(student, { coding = true, sharedCatalog = [] } = {}
 /** Awards newly crossed milestones. Returns the badges awarded by this call. */
 export async function evaluateLifetimeBadges(student, now = new Date()) {
   if (!student?._id || (student.role && student.role !== 'student') || student.accessScope === 'assessment_only') return [];
-  const { dashboardPermissions, getSharedCodingCatalog } = await import('./studentDashboardService.js');
-  const permissions = await dashboardPermissions(student);
-  const sharedCatalog = permissions.questions ? await getSharedCodingCatalog() : [];
-  const crossed = crossedMilestones({ ...(await studentCounts(student, { coding: permissions.questions === true, sharedCatalog })), now });
+  const { getSharedCodingCatalog } = await import('./studentDashboardService.js');
+  const access = await effectiveStudentAccess(student);
+  const allowed = allowedLifetimeTracks(access);
+  if (!allowed.size) return [];
+  const sharedCatalog = access.coding ? await getSharedCodingCatalog() : [];
+  const crossed = new Map([...crossedMilestones({ ...(await studentCounts(student, { coding: access.coding, sharedCatalog })), now })]
+    .filter(([, item]) => allowed.has(item.track)));
   if (!crossed.size) return [];
   const studentId = new mongoose.Types.ObjectId(String(student._id));
   const existing = new Set((await LifetimeBadgeAward.find({ studentId }).select('badgeId').lean()).map((row) => row.badgeId));
@@ -138,19 +146,25 @@ export function evaluateLifetimeBadgesQuietly(student) {
   return run;
 }
 
-/** Every track with the student's progress and earned badges (profile + dashboard). */
+/**
+ * The tracks this student can use (university licence AND their own feature access), with progress
+ * and earned badges (profile + dashboard). A track for a feature they cannot open is left out
+ * entirely: no locked badge, no target.
+ */
 export async function lifetimeBadgeBoard(student) {
-  const { dashboardPermissions, getSharedCodingCatalog } = await import('./studentDashboardService.js');
-  const permissions = await dashboardPermissions(student);
-  const sharedCatalog = permissions.questions ? await getSharedCodingCatalog() : [];
-  const counts = await studentCounts(student, { coding: permissions.questions === true, sharedCatalog });
+  const { getSharedCodingCatalog } = await import('./studentDashboardService.js');
+  const access = await effectiveStudentAccess(student);
+  const allowed = allowedLifetimeTracks(access);
+  if (!allowed.size) return [];
+  const sharedCatalog = access.coding ? await getSharedCodingCatalog() : [];
+  const counts = await studentCounts(student, { coding: access.coding, sharedCatalog });
   const values = {
     solved: counts.solveTimes.length, hard: counts.hardTimes.length, active: new Set(counts.activeDays).size,
     streak: counts.bestStreak, challenge: new Set(counts.challengeDays).size, sheets: counts.sheetTimes.length,
   };
   const awards = await LifetimeBadgeAward.find({ studentId: new mongoose.Types.ObjectId(String(student._id)) }).select('badgeId earnedAt coins').lean();
   const earned = new Map(awards.map((row) => [row.badgeId, row]));
-  return LIFETIME_TRACKS.map((track) => {
+  return LIFETIME_TRACKS.filter((track) => allowed.has(track.key)).map((track) => {
     const steps = track.steps.map(([threshold, tier]) => {
       const award = earned.get(badgeId(track.key, threshold));
       return { id: badgeId(track.key, threshold), threshold, tier, tierName: TIER_NAMES[tier - 1], earned: Boolean(award), earnedAt: award?.earnedAt || null, earnedDay: award ? istDay(award.earnedAt) : null };

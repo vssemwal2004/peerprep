@@ -22,6 +22,7 @@ import { personalRoom } from '../utils/realtime.js';
 import { notifyOnce } from './notificationService.js';
 import { getSharedCodingCatalog } from './studentDashboardService.js';
 import { istDay } from './prepScore/topicQuota.js';
+import { effectiveStudentAccess } from './studentEffectiveAccess.js';
 
 const IST_OFFSET_MS = 330 * 60_000;
 const QUERY_TIMEOUT_MS = 8_000;
@@ -204,6 +205,12 @@ function trackView(track, ladderTrack, value, earned, coinsByLevel) {
 async function evaluate(student, now) {
   const studentId = objectId(student._id);
   const month = monthOf(now);
+  // Every monthly track counts Prep Coding work (solves, practice days, coding daily challenges):
+  // without Prep Coding (university licence or the student's own access) there are no levels to
+  // earn and no targets to show.
+  if (!(await effectiveStudentAccess(student)).coding) {
+    return { month, resetsAt: monthStart(shiftMonth(month, 1)).toISOString(), tracks: [], newLevels: [], coinsThisMonth: 0, available: false };
+  }
   const [ladder, values, config] = await Promise.all([
     ladderFor(studentId, month), monthlyValues(studentId, month, month), getEarningConfig(),
   ]);

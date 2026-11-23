@@ -93,8 +93,17 @@ export const BADGES = [
   tier('confident-speaker', 'Confident Speaker', 'interviews', 'interviews', 5, 'Rare', 'Complete 5 different AI interviews.'),
   tier('peer-debut', 'Peer Interview Debut', 'events', 'events', 1, 'Common', 'Receive verified feedback from a scheduled peer interview.'),
 ];
-/** Quest badges need coding; every other category follows its feature allocation. */
-export const badgeCategoryAllowed = (category, domains) => category === 'quests' ? domains.includes('coding') : (!DOMAIN_ACCESS[category] || domains.includes(category));
+/**
+ * Whether a badge category is shown and earnable. `domains` = the university's enabled domains
+ * already narrowed to the student's own features. Quick Prep badges need coding and Quick Prep;
+ * daily-challenge ("momentum") badges need at least one feature that challenges come from; every
+ * other category follows its own domain.
+ */
+export const badgeCategoryAllowed = (category, domains, { quickprep = true } = {}) => {
+  if (category === 'quests') return quickprep && domains.includes('coding');
+  if (category === 'momentum') return domains.length > 0;
+  return !DOMAIN_ACCESS[category] || domains.includes(category);
+};
 
 const nextDayKey = (key) => new Date(Date.parse(`${key}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
 /** Longest run of consecutive day keys. Earned streak badges never expire, so the best run counts. */
