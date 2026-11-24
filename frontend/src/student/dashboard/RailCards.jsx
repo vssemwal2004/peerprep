@@ -5,6 +5,8 @@ import { ArrowRight, ArrowUpRight, CalendarClock, ChevronDown, Megaphone, Trophy
 import { formatScore } from '../prepScore/formatScore';
 import { formatRelativeTime, formatSchedule, isImportantAnnouncement, numeric } from './dashboardUtils';
 import { card, CardTitle, focusRing, Skeleton, textLink, Unavailable } from './ui';
+import AnnouncementDialog from '../../components/announcements/AnnouncementDialog';
+import { categoryOf, labelOf, themeOf } from '../../components/announcements/announcementMeta';
 
 // Rail cards are kept compact so the whole rail fits beside the scrolling main column.
 const railCard = `p-4 ${card}`;
@@ -84,25 +86,36 @@ export function ComingUpCard({ items, loading, error, onRetry, canAssessments, c
   </section>;
 }
 
-function Notice({ announcement, now }) {
-  const [open, setOpen] = useState(false);
+/** One announcement in the rail: its own name (Notice, Exam ...) and colour; opens in full. */
+function Notice({ announcement, now, onOpen }) {
   const message = String(announcement.message || '');
-  const long = message.length > 110;
   const important = isImportantAnnouncement(announcement);
-  const rule = important ? 'before:bg-rose-500' : announcement.type === 'motivation' ? 'before:bg-[#43866a]' : 'before:bg-sky-500';
-  return <li className={`relative py-2.5 pl-3.5 before:absolute before:bottom-2.5 before:left-0 before:top-2.5 before:w-[3px] before:rounded-full ${rule}`}>
+  const theme = themeOf(announcement);
+  const { Icon } = categoryOf(announcement);
+  return <li className={`relative py-2.5 pl-3.5 before:absolute before:bottom-2.5 before:left-0 before:top-2.5 before:w-[3px] before:rounded-full ${theme.rule}`}>
     <div className="flex items-center justify-between gap-2 text-[11px]">
-      <span className={`font-semibold uppercase tracking-[0.08em] ${important ? 'text-rose-600 dark:text-rose-300' : 'text-slate-400 dark:text-zinc-500'}`}>{announcement.priority === 'high' ? 'Important' : announcement.type === 'alert' ? 'Notice' : announcement.type === 'motivation' ? 'From your university' : 'Update'}</span>
+      <span className={`inline-flex min-w-0 items-center gap-1 font-semibold uppercase tracking-[0.08em] ${theme.text}`}>
+        <Icon className="h-3 w-3 shrink-0" aria-hidden="true" /><span className="truncate">{labelOf(announcement)}</span>
+        {important ? <span className="ml-1 rounded bg-rose-500 px-1 py-px text-[9.5px] text-white">Important</span> : null}
+      </span>
       <time dateTime={announcement.createdAt} className="shrink-0 text-slate-400 dark:text-zinc-500">{formatRelativeTime(announcement.createdAt, now)}</time>
     </div>
-    <h3 className="mt-0.5 text-[13.5px] font-semibold leading-snug text-slate-900 dark:text-zinc-100">{announcement.title}</h3>
-    <p className={`mt-0.5 whitespace-pre-line text-[12.5px] leading-relaxed text-slate-600 dark:text-zinc-400 ${long && !open ? 'line-clamp-2' : ''}`}>{message}</p>
-    {long && <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} className={`mt-0.5 text-[12px] font-medium text-sky-700 dark:text-sky-400 ${focusRing}`}>{open ? 'Show less' : 'Read more'}</button>}
+    <button type="button" onClick={onOpen} className={`group mt-0.5 block w-full rounded-md text-left ${focusRing}`}>
+      <span className="flex items-start gap-2.5">
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13.5px] font-semibold leading-snug text-slate-900 group-hover:text-sky-700 dark:text-zinc-100 dark:group-hover:text-sky-300">{announcement.title}</span>
+          <span className="mt-0.5 line-clamp-2 whitespace-pre-line text-[12.5px] leading-relaxed text-slate-600 dark:text-zinc-400">{message}</span>
+        </span>
+        {announcement.imageUrl ? <img src={announcement.imageUrl} alt="" className="mt-0.5 h-11 w-11 shrink-0 rounded-lg object-cover" loading="lazy" /> : null}
+      </span>
+      <span className="mt-0.5 inline-flex items-center gap-0.5 text-[12px] font-medium text-sky-700 dark:text-sky-400">Open<ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" aria-hidden="true" /></span>
+    </button>
   </li>;
 }
 
 /** Rendered only when there is something to say; announcements lead the rail. */
 export function AnnouncementsCard({ items, section, onRetry, now, showAll, onToggleAll }) {
+  const [reading, setReading] = useState(null);
   const visible = showAll ? items : items.slice(0, 2);
   return <section id="dashboard-announcements" tabIndex={-1} aria-labelledby="announcements-title"
     className={`${railCard} scroll-mt-24 outline-none transition-shadow focus:ring-2 focus:ring-sky-300 dark:focus:ring-sky-500/50`}>
@@ -110,7 +123,9 @@ export function AnnouncementsCard({ items, section, onRetry, now, showAll, onTog
       action={items.length > 0 ? <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11.5px] font-semibold tabular-nums text-white">{items.length}</span> : null} />
     {section.error && !items.length
       ? <Unavailable className="mt-3" message="Announcements could not be loaded." onRetry={onRetry} />
-      : <ul className="mt-1 max-h-[300px] divide-y divide-[#f0f1f4] overflow-y-auto overscroll-contain dark:divide-white/[0.06]">{visible.map((announcement) => <Notice key={announcement._id} announcement={announcement} now={now} />)}</ul>}
+      : <ul className="mt-1 max-h-[300px] divide-y divide-[#f0f1f4] overflow-y-auto overscroll-contain dark:divide-white/[0.06]">{visible.map((announcement) => <Notice key={announcement._id} announcement={announcement} now={now}
+        onOpen={() => setReading(items.findIndex((item) => item._id === announcement._id))} />)}</ul>}
     {items.length > 2 && <button type="button" onClick={onToggleAll} className={`mt-1 ${textLink}`}>{showAll ? 'Show fewer' : `View all ${items.length}`}<ArrowRight className="h-3 w-3" aria-hidden="true" /></button>}
+    {reading !== null && reading >= 0 ? <AnnouncementDialog items={items} startIndex={reading} onClose={() => setReading(null)} doneLabel="Close" /> : null}
   </section>;
 }

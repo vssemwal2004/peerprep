@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Eye, Mail, X } from 'lucide-react';
+import AnnouncementEmailDialog from './announcements/AnnouncementEmailDialog';
+import { EmailToggle } from './announcements/EmailToggle';
 import { api } from '../utils/api';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
 import PageGuideButton from '../guide/platform/PageGuideButton';
+import AnnouncementEditor, { formFromAnnouncement, payloadFromForm } from './announcements/AnnouncementEditor';
+import AnnouncementDialog from '../components/announcements/AnnouncementDialog';
+import { CATEGORIES, DESIGNS, categoryOf, labelOf, themeOf } from '../components/announcements/announcementMeta';
 
-const typeOptions = [
-  { value: '', label: 'All Types' },
-  { value: 'motivation', label: 'Motivation' },
-  { value: 'info', label: 'Info' },
-  { value: 'alert', label: 'Alert' }
-];
+const typeOptions = [{ value: '', label: 'All kinds' }, ...CATEGORIES.map((item) => ({ value: item.key, label: item.label }))];
 
 const statusOptions = [
   { value: '', label: 'All Status' },
@@ -26,6 +28,7 @@ const PRIORITY_RANK = { high: 3, normal: 2, low: 1 };
 
 const announcementSortValue = (ann, key) => {
   if (key === 'priority') return PRIORITY_RANK[ann.priority] || PRIORITY_RANK.normal;
+  if (key === 'type') return labelOf(ann);
   if (key === 'expiryDate' || key === 'createdAt') return ann[key] ? new Date(ann[key]) : null;
   return ann?.[key];
 };
@@ -44,24 +47,19 @@ export default function AnnouncementManage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({
-    title: '',
-    message: '',
-    type: 'motivation',
-    status: 'inactive',
-    priority: 'normal',
-    expiryDate: '',
-    showAsPopup: false
-  });
+  const [previewing, setPreviewing] = useState(null);
+  const [form, setForm] = useState(() => formFromAnnouncement(null));
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+  // Email: { announcement (form values), id } for the email dialog.
+  const [emailFor, setEmailFor] = useState(null);
 
   const loadAnnouncements = async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await api.listAnnouncementsAdmin({
-        status: statusFilter || undefined,
-        type: typeFilter || undefined
-      });
+      // The kind filter runs here: older announcements carry only the legacy type.
+      const data = await api.listAnnouncementsAdmin({ status: statusFilter || undefined });
       setAnnouncements(Array.isArray(data?.announcements) ? data.announcements : []);
     } catch (err) {
       setError(err?.message || 'Failed to load announcements');
@@ -72,19 +70,12 @@ export default function AnnouncementManage() {
 
   useEffect(() => {
     loadAnnouncements();
-  }, [statusFilter, typeFilter]);
+  }, [statusFilter]);
 
   const openEdit = (announcement) => {
     setEditing(announcement);
-    setForm({
-      title: announcement.title || '',
-      message: announcement.message || '',
-      type: announcement.type || 'motivation',
-      status: announcement.status || 'inactive',
-      priority: announcement.priority || 'normal',
-      expiryDate: announcement.expiryDate ? new Date(announcement.expiryDate).toISOString().slice(0, 10) : '',
-      showAsPopup: Boolean(announcement.showAsPopup)
-    });
+    setEditError('');
+    setForm(formFromAnnouncement(announcement));
   };
 
   const closeEdit = () => {
@@ -93,21 +84,17 @@ export default function AnnouncementManage() {
 
   const handleSave = async () => {
     if (!editing) return;
-    setError('');
+    if (!form.title.trim() || !form.messageHtml.trim()) { setEditError('Title and message are required.'); return; }
+    setEditError('');
+    setSaving(true);
     try {
-      const res = await api.updateAnnouncement(editing._id, {
-        title: form.title,
-        message: form.message,
-        type: form.type,
-        status: form.status,
-        priority: form.priority,
-        expiryDate: form.expiryDate || null,
-        showAsPopup: form.showAsPopup
-      });
+      const res = await api.updateAnnouncement(editing._id, payloadFromForm(form));
       setAnnouncements((prev) => prev.map((a) => (a._id === editing._id ? res.announcement : a)));
       closeEdit();
     } catch (err) {
-      setError(err?.message || 'Failed to update announcement');
+      setEditError(err?.message || 'Failed to update announcement');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -133,7 +120,7 @@ export default function AnnouncementManage() {
     }
   };
 
-  const filteredAnnouncements = useMemo(() => announcements, [announcements]);
+  const filteredAnnouncements = useMemo(() => (typeFilter ? announcements.filter((ann) => categoryOf(ann).key === typeFilter) : announcements), [announcements, typeFilter]);
   const table = useClientTable(filteredAnnouncements, { getValue: announcementSortValue, resetKey: `${statusFilter}|${typeFilter}` });
 
   return (
@@ -179,7 +166,7 @@ export default function AnnouncementManage() {
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-gray-700 dark:text-slate-400">
                 <tr>
-                  {[['title', 'Title'], ['type', 'Type'], ['status', 'Status'], ['priority', 'Priority'], ['expiryDate', 'Expiry'], ['createdAt', 'Created']].map(([key, label]) => (
+                  {[['title', 'Title'], ['type', 'Shown as'], ['status', 'Status'], ['priority', 'Priority'], ['expiryDate', 'Expiry'], ['createdAt', 'Created']].map(([key, label]) => (
                     <SortHeader key={key} sortKey={key} sort={table.sort} onSort={table.toggleSort} className="px-5 py-3">{label}</SortHeader>
                   ))}
                   <SortHeader sortable={false} align="right" className="px-5 py-3">Actions</SortHeader>
@@ -205,9 +192,15 @@ export default function AnnouncementManage() {
                         <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 line-clamp-2">{ann.message}</div>
                       </td>
                       <td className="px-5 py-4">
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-300">
-                          {ann.type}
-                        </span>
+                        {(() => {
+                          const { Icon } = categoryOf(ann);
+                          return (
+                            <span className="flex flex-col items-start gap-1">
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${themeOf(ann).soft}`}><Icon className="h-3 w-3" aria-hidden="true" />{labelOf(ann)}</span>
+                              <span className="text-[11px] text-slate-400">{DESIGNS.find((design) => design.key === (ann.design || 'classic'))?.label} design</span>
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-5 py-4">
                         <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${ann.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
@@ -219,6 +212,22 @@ export default function AnnouncementManage() {
                       <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(ann.createdAt)}</td>
                       <td className="px-5 py-4">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => setPreviewing(ann)}
+                            aria-label={`Preview ${ann.title}`}
+                            title="Preview as student"
+                            className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-slate-200 dark:hover:bg-gray-800"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setEmailFor({ announcement: payloadFromForm(formFromAnnouncement(ann)), id: ann._id })}
+                            aria-label={`Email ${ann.title} to students`}
+                            title="Send as email"
+                            className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-slate-200 dark:hover:bg-gray-800"
+                          >
+                            <Mail className="h-3.5 w-3.5" />
+                          </button>
                           <button
                             onClick={() => openEdit(ann)}
                             className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-slate-200 dark:hover:bg-gray-800"
@@ -249,97 +258,27 @@ export default function AnnouncementManage() {
         </div>
       </div>
 
-      {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Edit Announcement</h2>
-              <button
-                onClick={closeEdit}
-                className="text-sm font-semibold text-slate-500 hover:text-slate-700"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mt-4 grid gap-4">
-              <input
-                value={form.title}
-                onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                placeholder="Title"
-              />
-              <textarea
-                value={form.message}
-                onChange={(e) => setForm((prev) => ({ ...prev, message: e.target.value }))}
-                rows={4}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                placeholder="Message"
-              />
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <select
-                  value={form.type}
-                  onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value }))}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                >
-                  {typeOptions.slice(1).map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-                <select
-                  value={form.status}
-                  onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                >
-                  {statusOptions.slice(1).map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <select
-                  value={form.priority}
-                  onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value }))}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                >
-                  <option value="high">High</option>
-                  <option value="normal">Normal</option>
-                  <option value="low">Low</option>
-                </select>
-                <input
-                  type="date"
-                  value={form.expiryDate}
-                  onChange={(e) => setForm((prev) => ({ ...prev, expiryDate: e.target.value }))}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                />
-              </div>
-              <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 dark:border-gray-700 dark:bg-gray-800/60 dark:text-white">
-                <input
-                  type="checkbox"
-                  checked={form.showAsPopup}
-                  onChange={(e) => setForm((prev) => ({ ...prev, showAsPopup: e.target.checked }))}
-                  className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                />
-                Show as popup when students log in
-              </label>
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  onClick={closeEdit}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-slate-200 dark:hover:bg-gray-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSave}
-                  className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500"
-                >
-                  Save
-                </button>
-              </div>
+      {editing ? createPortal(
+        <div className="fixed inset-0 z-[150] flex flex-col bg-slate-50 dark:bg-gray-900" role="dialog" aria-modal="true" aria-labelledby="edit-announcement-title">
+          <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 dark:border-gray-700 dark:bg-gray-900">
+            <h2 id="edit-announcement-title" className="min-w-0 flex-1 truncate text-lg font-semibold text-slate-900 dark:text-white">Edit announcement</h2>
+            <button type="button" onClick={closeEdit} aria-label="Close" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"><X className="h-4 w-4" /></button>
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+            <div className="mx-auto max-w-7xl">
+              <AnnouncementEditor form={form} setForm={setForm} error={editError}
+                extra={<EmailToggle onOpen={() => setEmailFor({ announcement: payloadFromForm(form), id: editing._id })} />}
+                actions={<>
+                  <button type="button" onClick={closeEdit} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-slate-200 dark:hover:bg-gray-800">Cancel</button>
+                  <button type="button" onClick={handleSave} disabled={saving} className="rounded-xl bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-60">{saving ? 'Saving…' : 'Save changes'}</button>
+                </>} />
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+        document.body,
+      ) : null}
+      <AnnouncementEmailDialog open={Boolean(emailFor)} onClose={() => setEmailFor(null)} announcement={emailFor?.announcement} announcementId={emailFor?.id} />
+      {previewing ? <AnnouncementDialog items={[previewing]} onClose={() => setPreviewing(null)} zIndex="z-[200]" doneLabel="Close preview" preview /> : null}
     </div>
   );
 }

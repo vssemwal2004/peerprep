@@ -1,5 +1,12 @@
+import { randomUUID } from 'node:crypto';
+import multer from 'multer';
 import Announcement from '../models/Announcement.js';
+import { announcementFields, categoryFor } from '../services/announcementContent.js';
+import { isCloudinaryConfigured, uploadAnnouncementImage } from '../utils/cloudinary.js';
+import { detectedImageType, mapImageStorageError } from './problemAssetController.js';
 import { HttpError } from '../utils/errors.js';
+
+const MAX_ANNOUNCEMENT_IMAGE_BYTES = 2 * 1024 * 1024;
 import { getIo } from '../utils/io.js';
 import { logActivity } from './adminActivityController.js';
 
@@ -32,15 +39,11 @@ function emitAnnouncementUpdate() {
 }
 
 export async function createAnnouncement(req, res) {
-  const { title, message, type, status, priority, expiryDate, showAsPopup } = req.body || {};
-  if (!title || !message) throw new HttpError(400, 'Title and message are required');
+  const { expiryDate, showAsPopup } = req.body || {};
+  const fields = announcementFields(req.body || {});
 
   const announcement = await Announcement.create({
-    title: String(title).trim(),
-    message: String(message).trim(),
-    type: type || 'motivation',
-    status: status || 'inactive',
-    priority: priority || 'normal',
+    ...fields,
     showAsPopup: parseShowAsPopup(showAsPopup),
     createdBy: req.user?._id,
     expiryDate: parseExpiryDate(expiryDate)
@@ -88,28 +91,16 @@ export async function updateAnnouncement(req, res) {
   const before = await Announcement.findById(id).lean();
   if (!before) throw new HttpError(404, 'Announcement not found');
 
-  const updates = {};
-  const fields = ['title', 'message', 'type', 'status', 'priority', 'expiryDate', 'showAsPopup'];
-  fields.forEach((field) => {
-    if (Object.prototype.hasOwnProperty.call(req.body || {}, field)) {
-      updates[field] = req.body[field];
-    }
-  });
-
-  if (Object.prototype.hasOwnProperty.call(updates, 'title')) {
-    updates.title = String(updates.title).trim();
+  const body = req.body || {};
+  const updates = announcementFields(body, { partial: true });
+  if (Object.prototype.hasOwnProperty.call(body, 'expiryDate')) {
+    updates.expiryDate = parseExpiryDate(body.expiryDate) || null;
   }
-  if (Object.prototype.hasOwnProperty.call(updates, 'message')) {
-    updates.message = String(updates.message).trim();
-  }
-  if (Object.prototype.hasOwnProperty.call(updates, 'expiryDate')) {
-    updates.expiryDate = parseExpiryDate(updates.expiryDate) || null;
-  }
-  if (Object.prototype.hasOwnProperty.call(updates, 'showAsPopup')) {
-    updates.showAsPopup = parseShowAsPopup(updates.showAsPopup);
+  if (Object.prototype.hasOwnProperty.call(body, 'showAsPopup')) {
+    updates.showAsPopup = parseShowAsPopup(body.showAsPopup);
   }
 
-  const announcement = await Announcement.findByIdAndUpdate(id, updates, { new: true });
+  const announcement = await Announcement.findByIdAndUpdate(id, updates, { new: true, runValidators: true });
   if (!announcement) throw new HttpError(404, 'Announcement not found');
 
   const changes = {};
@@ -173,5 +164,33 @@ export async function listAnnouncementsStudent(req, res) {
     return new Date(b.createdAt) - new Date(a.createdAt);
   });
 
-  res.json({ announcements: sorted });
+  // Announcements saved before categories existed get theirs from the old type.
+  res.json({ announcements: sorted.map((item) => ({ ...item, category: categoryFor(item) })) });
+}
+
+const announcementImageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_ANNOUNCEMENT_IMAGE_BYTES, files: 1, fields: 0 } });
+
+/** Parses one multipart image from the `image` field into req.file, with specific messages. */
+export function acceptAnnouncementImage(req, res, next) {
+  announcementImageUpload.single('image')(req, res, (error) => {
+    if (!error) return next();
+    const message = error.code === 'LIMIT_FILE_SIZE' ? 'Image must be 2 MB or smaller.' : 'Upload one JPG, PNG, WebP or GIF image up to 2 MB in the "image" field.';
+    return res.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: message });
+  });
+}
+
+/** Stores an announcement image (popup banner / side image) and returns its https URL. */
+export async function uploadAnnouncementImageHandler(req, res) {
+  if (!req.file) throw new HttpError(400, 'Select an image to upload.');
+  const detected = detectedImageType(req.file.buffer);
+  if (!detected || detected !== req.file.mimetype) throw new HttpError(415, 'Use a valid JPG, PNG, WebP or GIF image.');
+  if (!isCloudinaryConfigured()) throw new HttpError(503, 'Image storage is not configured.');
+  try {
+    const uploaded = await uploadAnnouncementImage(req.file.buffer, { publicId: `announcement-${Date.now()}-${randomUUID()}` });
+    res.status(201).json({ image: { url: uploaded.url, width: uploaded.width, height: uploaded.height } });
+  } catch (error) {
+    console.error('Announcement image upload failed:', error?.message || error);
+    const mapped = mapImageStorageError(error);
+    res.status(mapped.status).json({ error: mapped.error });
+  }
 }

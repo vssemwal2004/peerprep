@@ -89,6 +89,28 @@ export async function uploadProblemAsset(fileBuffer, { ownerId = 'admin', public
   });
 }
 
+/** Uploads a validated announcement image (popup banner) under the university's folder. */
+export async function uploadAnnouncementImage(fileBuffer, { publicId }) {
+  if (!isCloudinaryConfigured()) throw new Error('Cloudinary not configured');
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: `peerprep/announcements/${deploymentRole() === 'shared' ? (currentTenant()?.universityId || 'platform') : 'main'}`,
+        public_id: publicId,
+        resource_type: 'image',
+        overwrite: false,
+        unique_filename: false,
+        use_filename: false,
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve({ url: result.secure_url, publicId: result.public_id, width: result.width, height: result.height, bytes: result.bytes });
+      },
+    );
+    uploadStream.end(fileBuffer);
+  });
+}
+
 /** Uploads a validated university logo under its own folder. The caller supplies a unique public ID. */
 export async function uploadUniversityLogo(fileBuffer, { universityId, publicId }) {
   if (!isCloudinaryConfigured()) throw new Error('Cloudinary not configured');

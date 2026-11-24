@@ -813,6 +813,17 @@ export const api = {
     request(`/admin/announcements/${id}`, { method: "PUT", body }),
   deleteAnnouncement: (id) =>
     request(`/admin/announcements/${id}`, { method: "DELETE" }),
+  // "Also send as email": body { templateId, draft: { subject, html }, announcement: {…form}, studentId | studentIds }.
+  announcementEmailTemplates: () => request("/admin/announcements/email/templates", { skipCache: true }),
+  announcementEmailPreview: (body) => request("/admin/announcements/email/preview", { method: "POST", body }),
+  announcementEmailTest: (body) => request("/admin/announcements/email/test", { method: "POST", body }),
+  announcementEmailSend: (body) => request("/admin/announcements/email/send", { method: "POST", body }),
+  /** One popup image (JPG/PNG/WebP/GIF, 2 MB) → { image: { url, width, height } }. */
+  uploadAnnouncementImage: (file) => {
+    const fd = new FormData();
+    fd.append("image", file);
+    return request("/admin/announcements/image", { method: "POST", formData: fd });
+  },
   listStudentAnnouncements: () =>
     request(`/student/announcements?ts=${Date.now()}`, { skipCache: true }),
 

@@ -31,7 +31,8 @@ export function acceptProblemAsset(req, res, next) {
   });
 }
 
-function detectedImageType(buffer) {
+/** The image type from the file's own bytes (never trust the client's mimetype alone). */
+export function detectedImageType(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 12) return '';
   if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
   if (buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return 'image/png';

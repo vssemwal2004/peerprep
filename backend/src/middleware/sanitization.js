@@ -49,7 +49,9 @@ export const mongoSanitizeMiddleware = mongoSanitize({
  */
 export const xssProtectionMiddleware = xss();
 
-const STUDENT_MAIL_DRAFT_PATH = /^(?:\/api)?(?:\/u\/[a-z0-9][a-z0-9-]{1,62})?\/admin\/prep-analysis\/email\/(?:preview|test|send)$/i;
+// Prep Analysis "Send email" and Announcements "Also send as email" (whose draft is additionally
+// passed through the email HTML sanitiser, since coordinators may use it: announcementEmail.js).
+const STUDENT_MAIL_DRAFT_PATH = /^(?:\/api)?(?:\/u\/[a-z0-9][a-z0-9-]{1,62})?\/admin\/(?:prep-analysis|announcements)\/email\/(?:preview|test|send)$/i;
 
 /**
  * Prep Analysis "Send email": the admin's edited draft ({ subject, html }) is email HTML, like the
