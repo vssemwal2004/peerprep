@@ -26,39 +26,47 @@ function describe(row) {
   return { title: `Received from ${row.fromName}`, Icon: ArrowDownLeft, sign: '+', group: 'in', tone: 'text-emerald-700 dark:text-emerald-300', chip: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300' };
 }
 
-const range = (values = []) => {
-  const paid = values.filter((value) => Number(value) > 0);
-  if (!paid.length) return '0';
-  return paid[0] === paid.at(-1) ? `+${paid[0]}` : `+${paid[0]} to +${paid.at(-1)}`;
-};
+const LIFETIME_TIER_NAMES = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Legend'];
+
+/** Exact amounts per step, paying steps only: [{ label, coins }]. */
+const steps = (values = [], labelOf) => values
+  .map((value, index) => ({ label: labelOf(index), coins: Number(value) || 0 }))
+  .filter((step) => step.coins > 0);
 
 /**
- * Every way a student earns Prep Coins, with the live amounts (2026-11-26 student feedback: coins felt
- * random because solving pays none while sheets and badge levels do).
+ * The ways a student earns Prep Coins, with the live amounts. Only sources that pay are listed, each
+ * with its exact amount (a fixed reward, or one chip per paying level or tier).
  */
 function earningRows(earning) {
-  const badge = earning.badgeLevels || [];
-  const firstPaidLevel = badge.findIndex((value) => Number(value) > 0) + 1;
   return [
-    { what: 'Solving a question', coins: '0', when: 'Solving raises your Prep Score, not your coins.' },
-    { what: 'Daily login', coins: `+${earning.login}`, when: 'First time you open PeerPrep each day.' },
-    { what: 'Daily challenge', coins: `+${earning.challenge}`, when: 'Solve the day’s challenge question.' },
-    { what: 'Sheet completed', coins: `+${earning.sheet}`, when: 'Once, when the last question of a QuickPrep sheet is solved.' },
-    { what: 'Monthly badge level', coins: range(badge), when: `${firstPaidLevel > 1 ? `Levels 1–${firstPaidLevel - 1} are honour only; coins start at level ${firstPaidLevel}. ` : ''}Targets reset every month.` },
-    { what: 'Lifetime badge', coins: range(earning.milestoneTiers), when: 'Bronze to Legend, e.g. 50, 100, 200 problems solved.' },
-    { what: 'Elite level (8–12)', coins: range(earning.levelCoins), when: 'Once per level.' },
-  ];
+    { what: 'Daily login', when: 'First time you open PeerPrep each day', coins: Number(earning.login) || 0 },
+    { what: 'Daily challenge', when: 'Solve the day’s challenge question', coins: Number(earning.challenge) || 0 },
+    { what: 'Sheet completed', when: 'Once per QuickPrep sheet, when its last question is solved', coins: Number(earning.sheet) || 0 },
+    { what: 'Monthly badge', when: 'Each level reached this month', steps: steps(earning.badgeLevels, (index) => `Level ${index + 1}`) },
+    { what: 'Lifetime badge', when: 'Each badge earned, once', steps: steps(earning.milestoneTiers, (index) => LIFETIME_TIER_NAMES[index] || `Tier ${index + 1}`) },
+    { what: 'Learner level', when: 'Each level reached, once', steps: steps(earning.levelCoins, (index) => `Level ${index + 1}`) },
+  ].filter((row) => row.coins > 0 || row.steps?.length);
 }
+
+const Coins = ({ value, size = 14 }) => <strong className="inline-flex shrink-0 items-center gap-1 tabular-nums text-amber-700 dark:text-amber-300">+{value}<PrepCoinIcon size={size} /></strong>;
 
 function HowToEarn({ earning }) {
   if (!earning) return null;
+  const rows = earningRows(earning);
+  if (!rows.length) return null;
   return <section className={card} aria-labelledby="coin-earn-title" data-guide="wl-earn">
     <h2 id="coin-earn-title" className="text-base font-semibold">How to earn Prep Coins</h2>
-    <p className="mt-1 text-sm text-slate-500 dark:text-zinc-400">A coin popup right after a solve comes from a sheet, a badge level or the daily challenge, not from the question itself.</p>
     <ul className="mt-3 divide-y divide-slate-100 dark:divide-zinc-800">
-      {earningRows(earning).map((row) => <li key={row.what} className="flex items-center gap-3 py-2.5 text-sm">
-        <span className="min-w-0 flex-1"><span className="block font-medium">{row.what}</span><span className="block text-xs text-slate-500 dark:text-zinc-400">{row.when}</span></span>
-        <strong className={`inline-flex shrink-0 items-center gap-1 tabular-nums ${row.coins === '0' ? 'text-slate-400 dark:text-zinc-500' : 'text-amber-700 dark:text-amber-300'}`}>{row.coins}<PrepCoinIcon size={14} /></strong>
+      {rows.map((row) => <li key={row.what} className="py-3 text-sm">
+        <div className="flex items-center gap-3">
+          <span className="min-w-0 flex-1"><span className="block font-medium">{row.what}</span><span className="block text-xs text-slate-500 dark:text-zinc-400">{row.when}</span></span>
+          {row.coins > 0 && <Coins value={row.coins} />}
+        </div>
+        {row.steps?.length > 0 && <ul className="mt-2 flex flex-wrap gap-1.5" aria-label={`${row.what} coins`}>
+          {row.steps.map((step) => <li key={step.label} className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2 py-1 text-xs ring-1 ring-inset ring-amber-200/70 dark:bg-amber-500/10 dark:ring-amber-500/20">
+            <span className="text-slate-600 dark:text-zinc-300">{step.label}</span><Coins value={step.coins} size={12} />
+          </li>)}
+        </ul>}
       </li>)}
     </ul>
   </section>;
