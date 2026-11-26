@@ -130,6 +130,28 @@ const assessmentSchema = new mongoose.Schema({
   // Prep Mock exam pattern (PrepMockPattern) and the copy students and universities see.
   patternId: { type: mongoose.Schema.Types.ObjectId, default: null },
   mockPattern: { type: mongoose.Schema.Types.Mixed, default: null },
+  // Prep Mock: Master Admin's own platform students (kept apart from assignedStudents, which mock
+  // edits clear) and the date-time window in which they see it (null = no limit on that side).
+  ownStudents: { type: [mongoose.Schema.Types.ObjectId], default: [] },
+  // One grant per own student with its own window (null = no limit on that side). ownStudents stays
+  // the id index (same students, kept in sync by services/prepMockOwnStudents grantPipeline). A
+  // student in ownStudents without a grant (older data) uses ownAccess. No default: a document saved
+  // by mongoose never writes an empty list over grants written atomically elsewhere.
+  ownGrants: {
+    type: [new mongoose.Schema({
+      student: { type: mongoose.Schema.Types.ObjectId, required: true },
+      startTime: { type: Date, default: null },
+      endTime: { type: Date, default: null },
+      grantedAt: { type: Date, default: null },
+      grantedBy: { type: mongoose.Schema.Types.ObjectId, default: null },
+    }, { _id: false })],
+    default: undefined,
+  },
+  // The mock's default window: what the "Assign own students" dialog offers for new students.
+  ownAccess: {
+    type: new mongoose.Schema({ startTime: { type: Date, default: null }, endTime: { type: Date, default: null } }, { _id: false }),
+    default: null,
+  },
   mockAudienceMode: { type: String, enum: ['students', 'universities'], default: 'students' },
   mockUniversityIds: { type: [String], default: [] },
   title: { type: String },
@@ -175,6 +197,7 @@ assessmentSchema.index({ startTime: 1, endTime: 1 });
 assessmentSchema.index({ createdBy: 1, createdAt: -1 });
 assessmentSchema.index({ kind: 1, createdAt: -1 });
 assessmentSchema.index({ patternId: 1 }, { sparse: true });
+assessmentSchema.index({ ownStudents: 1 });
 assessmentSchema.index({ lifecycleStatus: 1, startTime: 1, endTime: 1 });
 assessmentSchema.index({ assignedStudents: 1, lifecycleStatus: 1, startTime: 1 });
 

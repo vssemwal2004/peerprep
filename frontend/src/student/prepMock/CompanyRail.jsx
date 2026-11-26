@@ -36,13 +36,14 @@ function CompanyChips({ counts }) {
   );
 }
 
-function CompanyRow({ entry, query, active, activeRoleKey, open, onToggle }) {
+function CompanyRow({ entry, query, active, activeRoleKey, open, onToggle, onCompanyClick }) {
   const { company, roles, matched } = entry;
-  const roleShown = active && activeRoleKey;
+  // The company row is the current place unless its roles are open with the current role marked there.
+  const roleShown = active && open && activeRoleKey;
   return (
     <li className="py-1.5">
       <div className={`flex items-start gap-1 rounded-xl pr-1 transition-colors ${active && !roleShown ? 'bg-violet-50 ring-1 ring-inset ring-violet-200 dark:bg-violet-500/10 dark:ring-violet-400/25' : active ? 'bg-[#f6f7f9] dark:bg-white/[0.04]' : 'hover:bg-[#f6f7f9] dark:hover:bg-white/[0.03]'}`}>
-        <Link to={company.path} data-guide="pmock-company" aria-label={describe(company)} aria-current={active && !roleShown ? 'page' : undefined}
+        <Link to={company.path} onClick={(event) => onCompanyClick?.(event, company.key)} data-guide="pmock-company" aria-label={describe(company)} aria-current={active && !roleShown ? 'page' : undefined}
           className={`flex min-w-0 flex-1 items-start gap-3 rounded-xl py-2 pl-2.5 text-left ${rowFocus}`}>
           <CompanyLogo name={company.name} logo={company.logo} size="tile" />
           <span className="min-w-0 flex-1">
@@ -91,7 +92,7 @@ function CompanyRow({ entry, query, active, activeRoleKey, open, onToggle }) {
  * nested under it. Built for hundreds: search (company, role or mock), status filters, sort, an A–Z index
  * and "Show more" in chunks. Desktop: sticky with its own scroll; phones: a plain list in the page.
  */
-export default function CompanyRail({ companies, selectedKey = '', selectedRoleKey = '' }) {
+export default function CompanyRail({ companies, selectedKey = '', selectedRoleKey = '', onCompanyClick }) {
   const reduceMotion = useReducedMotion();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
@@ -118,11 +119,9 @@ export default function CompanyRail({ companies, selectedKey = '', selectedRoleK
     setJumpTo(null);
   }, [jumpTo, reduceMotion]);
 
-  // The chosen company is open by default; "-key" remembers that the student closed it by hand.
-  const isOpen = (key, matched) => matched || expanded.has(key) || (key === selectedKey && !expanded.has(`-${key}`));
   const toggle = (key) => setExpanded((current) => {
     const next = new Set(current);
-    if (isOpen(key, false)) { next.delete(key); next.add(`-${key}`); } else { next.add(key); next.delete(`-${key}`); }
+    if (next.has(key)) next.delete(key); else next.add(key);
     return next;
   });
   const reset = (apply) => { apply(); setLimit(DIRECTORY_CHUNK); };
@@ -136,14 +135,14 @@ export default function CompanyRail({ companies, selectedKey = '', selectedRoleK
 
   const rows = (list) => list.map((entry) => (
     <CompanyRow key={entry.company.key} entry={entry} query={query} active={entry.company.key === selectedKey} activeRoleKey={selectedRoleKey}
-      open={isOpen(entry.company.key, entry.matched)} onToggle={() => toggle(entry.company.key)} />
+      open={entry.matched || expanded.has(entry.company.key)} onToggle={() => toggle(entry.company.key)} onCompanyClick={onCompanyClick} />
   ));
   const groups = sort === 'az'
     ? groupByLetter(shown.map((entry) => entry.company)).map((group) => ({ letter: group.letter, entries: shown.filter((entry) => group.companies.includes(entry.company)) }))
     : null;
 
   return (
-    <aside aria-label="Companies" className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[#e9eaee] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-[#242424]">
+    <aside aria-label="Companies" data-pmock-rail className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[#e9eaee] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-[#242424]">
       <div className="shrink-0 space-y-2.5 border-b border-[#eef0f3] px-3 pb-3 pt-3.5 dark:border-white/[0.06]">
         <div className="flex items-center justify-between gap-2 px-1">
           <h2 className="flex items-center gap-1.5 whitespace-nowrap text-[11.5px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-zinc-400">

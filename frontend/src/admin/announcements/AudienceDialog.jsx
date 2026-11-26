@@ -34,7 +34,9 @@ function download(name, text) {
 }
 
 /** Upload tab: template, drop zone, then the matched rows with filters and checkboxes. */
-function UploadList({ selected, onChange, result, setResult }) {
+const DEFAULT_UPLOAD_HINT = 'Only students already registered on PeerPrep can see announcements. Rows that do not match are listed so you can fix and upload them again; nothing is saved until you publish.';
+
+function UploadList({ selected, onChange, result, setResult, hint = DEFAULT_UPLOAD_HINT }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -109,7 +111,7 @@ function UploadList({ selected, onChange, result, setResult }) {
             <button type="button" className={`${primary} mt-3`} disabled={busy} onClick={() => inputRef.current?.click()}><FileSpreadsheet className="h-4 w-4" />Choose file</button>
           </div>
         </div>
-        <p className="text-[12px] text-slate-500 dark:text-slate-400">Only students already registered on PeerPrep can see announcements. Rows that do not match are listed so you can fix and upload them again; nothing is saved until you publish.</p>
+        <p className="text-[12px] text-slate-500 dark:text-slate-400">{hint}</p>
         {error ? <p role="alert" className="flex items-start gap-2 rounded-lg bg-rose-50 px-3 py-2 text-[12.5px] text-rose-800 dark:bg-rose-500/10 dark:text-rose-200"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{error}</p> : null}
       </div>
     );
@@ -270,8 +272,20 @@ function ChosenList({ selected, onChange, hiddenCount }) {
  * "Choose students" for an announcement: tick registered students (search + filters + select all
  * filtered) or upload a CSV/Excel list (name + email; semester, college, branch optional), see who
  * is chosen on the right, then confirm. Works on a copy: Cancel changes nothing.
+ * Other pages reuse it (Prep Mock "Assign own students") with their own wording: `title`,
+ * `subtitle`, `uploadHint`, `summary(count)` (footer text) and `doneLabel(count)`; every one
+ * defaults to the announcement wording.
  */
-export default function AudienceDialog({ open, students = [], hiddenCount = 0, limit = 20000, onClose, onDone }) {
+export default function AudienceDialog({
+  open, students = [], hiddenCount = 0, limit = 20000, onClose, onDone,
+  title = 'Choose who sees this announcement',
+  subtitle = 'Pick registered students, upload your own list, or both. Only the chosen students will see it.',
+  uploadHint = DEFAULT_UPLOAD_HINT,
+  summary = null,
+  doneLabel = null,
+  // Prep Mock on a university: list only the students uploaded for Prep Mock.
+  prepMockOnly = false,
+}) {
   const titleId = useId();
   const [tab, setTab] = useState('registered');
   const [draft, setDraft] = useState(students);
@@ -297,8 +311,8 @@ export default function AudienceDialog({ open, students = [], hiddenCount = 0, l
         <header className="flex items-start gap-3 border-b border-slate-200 px-5 py-3.5 dark:border-gray-700">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300"><Users className="h-4 w-4" /></span>
           <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="text-[15px] font-bold text-slate-900 dark:text-white">Choose who sees this announcement</h2>
-            <p className="text-[12px] text-slate-500 dark:text-slate-400">Pick registered students, upload your own list, or both. Only the chosen students will see it.</p>
+            <h2 id={titleId} className="text-[15px] font-bold text-slate-900 dark:text-white">{title}</h2>
+            <p className="text-[12px] text-slate-500 dark:text-slate-400">{subtitle}</p>
           </div>
           <button type="button" onClick={close} aria-label="Close" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"><X className="h-4 w-4" /></button>
         </header>
@@ -314,8 +328,8 @@ export default function AudienceDialog({ open, students = [], hiddenCount = 0, l
               ))}
             </div>
             {tab === 'registered'
-              ? <StudentSelector selected={draft} onChange={setDraft} onBusyChange={setBusy} selectAllMode="add" showSelectedList={false} />
-              : <UploadList selected={draft} onChange={setDraft} result={upload} setResult={setUpload} />}
+              ? <StudentSelector selected={draft} onChange={setDraft} onBusyChange={setBusy} selectAllMode="add" showSelectedList={false} prepMockOnly={prepMockOnly} />
+              : <UploadList selected={draft} onChange={setDraft} result={upload} setResult={setUpload} hint={uploadHint} />}
           </div>
           <ChosenList selected={draft} onChange={setDraft} hiddenCount={hiddenCount} />
         </div>
@@ -323,12 +337,13 @@ export default function AudienceDialog({ open, students = [], hiddenCount = 0, l
         <footer className="flex flex-wrap items-center gap-2 border-t border-slate-200 px-5 py-3 dark:border-gray-700">
           <p className={`min-w-0 flex-1 text-[12.5px] ${over ? 'text-rose-600' : 'text-slate-600 dark:text-slate-300'}`}>
             {over ? <><AlertTriangle className="mr-1 inline h-4 w-4" />Up to {limit.toLocaleString()} students can be chosen. Use “All students” for more.</>
-              : draft.length ? <>Only these <strong>{(draft.length + hiddenCount).toLocaleString()}</strong> student{draft.length + hiddenCount === 1 ? '' : 's'} will see this announcement.</>
-                : 'Choose at least one student.'}
+              : summary ? summary(draft.length + hiddenCount)
+                : draft.length ? <>Only these <strong>{(draft.length + hiddenCount).toLocaleString()}</strong> student{draft.length + hiddenCount === 1 ? '' : 's'} will see this announcement.</>
+                  : 'Choose at least one student.'}
           </p>
           <button type="button" className={secondary} onClick={close} disabled={busy}>Cancel</button>
           <button type="button" className={primary} disabled={busy || !draft.length || over} onClick={() => onDone(draft)}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Use {draft.length.toLocaleString()} student{draft.length === 1 ? '' : 's'}
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{doneLabel ? doneLabel(draft.length) : `Use ${draft.length.toLocaleString()} student${draft.length === 1 ? '' : 's'}`}
           </button>
         </footer>
       </section>

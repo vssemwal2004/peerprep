@@ -277,12 +277,14 @@ test('violation report projects the assessment and validates identifiers', async
 
 test('Prep Mock: company mocks only for students given the feature, and never in the Prep Assessment list', async () => {
   const window = { lifecycleStatus: 'published', targetType: 'all', startTime: new Date(Date.now() - 600000), endTime: new Date(Date.now() + 3600000), duration: 30, createdBy: ownerId };
-  const [mock, test] = await Assessment.create([
-    { ...window, kind: 'mock', title: 'Acme SDE mock', company: 'Acme', role: 'SDE 1', companyLogo: { url: 'https://img.example/acme.png', width: 128, height: 128 } },
-    { ...window, title: 'Weekly test' },
-  ]);
   const plain = { _id: new mongoose.Types.ObjectId(), role: 'student', accessScope: 'platform' };
   const given = { ...plain, _id: new mongoose.Types.ObjectId(), prepMockEnrolledAt: new Date(), featureAccess: { mode: 'custom', features: ['assessments', 'prep_mock'] } };
+  const unassigned = { ...given, _id: new mongoose.Types.ObjectId() };
+  // A platform mock reaches only the students the Master Admin assigned ("Assign own students").
+  const [mock, test] = await Assessment.create([
+    { ...window, kind: 'mock', title: 'Acme SDE mock', company: 'Acme', role: 'SDE 1', ownStudents: [given._id], companyLogo: { url: 'https://img.example/acme.png', width: 128, height: 128 } },
+    { ...window, title: 'Weekly test' },
+  ]);
   const ids = (body) => body.ongoingAssessments.map((card) => String(card._id));
 
   const normal = await call(plain, '/student/assessment-dashboard');
@@ -296,4 +298,7 @@ test('Prep Mock: company mocks only for students given the feature, and never in
   const card = mocks.body.ongoingAssessments[0];
   assert.deepEqual([card.kind, card.company, card.role, card.companyLogo?.url], ['mock', 'Acme', 'SDE 1', 'https://img.example/acme.png']);
   assert.ok(!ids((await call(given, '/student/assessment-dashboard')).body).includes(String(mock._id)));
+  const other = await call(unassigned, '/student/assessment-dashboard?kind=mock');
+  assert.equal(other.status, 200);
+  assert.ok(!ids(other.body).includes(String(mock._id)), 'a Prep Mock student who was not assigned does not see it');
 });

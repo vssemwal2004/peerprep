@@ -6,6 +6,10 @@ import { acceptLogoUpload } from '../platform/universityLogo.js';
 import {
   addMockRole, fetchMissingLogos, listMockCatalogCompanies, mockRolesFor, removeCompanyLogo, setLogoFromUpload, setLogoFromWebsite,
 } from '../services/prepMockCatalog.js';
+import { createPattern, deletePattern, listPatterns, updatePattern } from '../services/prepMockPattern.js';
+import { changeMockOwnStudents, mockOwnStudents } from '../services/prepMockOwnStudents.js';
+import { bulkChangeOwnStudents, bulkPublishMocks, bulkUnpublishMocks } from '../services/prepMockBulk.js';
+import { changeUniversityAssignment, universityAssignment } from '../services/prepMockUniversityAssign.js';
 import { universityPolicy } from '../platform/client.js';
 import { permissionAllowed } from '../platform/enforcePolicy.js';
 import Assessment from '../models/Assessment.js';
@@ -26,6 +30,7 @@ import {
   updateAssessment,
   resetMock,
   unpublishMock,
+  publishMock,
   deleteAssessment,
   resetAssessmentSubmissions,
   listAssessmentEligibleStudents,
@@ -193,6 +198,33 @@ router.post('/assessment/mock-companies/logos/fetch-missing', ...mockAuthor, rou
   noStore(res).json(await fetchMissingLogos({ limit: req.body?.limit, skip: req.body?.skip, userId: req.user?._id }));
 }));
 router.post('/assessment/create', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), (req, res, next) => req.body?.kind === 'mock' ? spocCannotEditMock(req, res, next) : next(), invalidateResponseCache('assessments'), createAssessment);
+// ---- Prep Mock exam patterns (Master Admin; per company + role, one per OA month/year). Editing
+// one refreshes the copy on every mock that uses it, so the assessments cache is cleared too.
+// Reading patterns is Master Admin only as well: patterns carry admin-only notes and draft layouts,
+// and only the mock builder (Master Admin, platform) reads them; universities never author them.
+const patternViewer = [...mockViewer, (req, _res, next) => (currentTenant() || req.user?.role !== 'admin'
+  ? next(new HttpError(403, 'Only the Master Admin can view Prep Mock exam patterns.'))
+  : next())];
+router.get('/assessment/mock-patterns', ...patternViewer, route(async (req, res) => {
+  noStore(res).json(await listPatterns({ company: req.query.company, role: req.query.role }));
+}));
+router.post('/assessment/mock-patterns', ...mockAuthor, route(async (req, res) => {
+  noStore(res).status(201).json(await createPattern(req.body || {}, req.user));
+}));
+router.put('/assessment/mock-patterns/:patternId', ...mockAuthor, invalidateResponseCache('assessments'), route(async (req, res) => {
+  noStore(res).json(await updatePattern(req.params.patternId, req.body || {}, req.user));
+}));
+router.delete('/assessment/mock-patterns/:patternId', ...mockAuthor, route(async (req, res) => {
+  noStore(res).json(await deletePattern(req.params.patternId));
+}));
+// ---- University "Assign students" for a live Prep Mock (university SPOC): chosen Prep Mock
+// students and a date-time window. Every enrolled student still sees every live mock.
+router.get('/assessment/mock-assignments/:mockId', requireAuth, requireAdmin, route(async (req, res) => {
+  noStore(res).json(await universityAssignment(req.params.mockId, req.user));
+}));
+router.post('/assessment/mock-assignments/:mockId', requireAuth, requireAdmin, route(async (req, res) => {
+  noStore(res).json(await changeUniversityAssignment(req.params.mockId, req.body || {}, req.user));
+}));
 router.post('/assessment/test-email', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), sendAssessmentTestEmail);
 router.get('/assessment/list', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), cacheJsonResponse({ namespace: 'assessments', ttlSeconds: Number(process.env.RESPONSE_CACHE_ASSESSMENTS_TTL_SECONDS || 30) }), listAssessments);
 router.get('/assessment/reports', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), universityMockReportScope, cacheJsonResponse({ namespace: 'assessments', ttlSeconds: Number(process.env.RESPONSE_CACHE_ASSESSMENT_REPORTS_TTL_SECONDS || 15) }), getAssessmentReports);
@@ -225,7 +257,27 @@ router.get('/assessment/:id', requireAuth, requireCoordinatorPermission('coordin
 router.get('/assessment/:id/eligible-students', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), listAssessmentEligibleStudents);
 router.post('/assessment/:id/reset-submissions', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), resetAssessmentSubmissions);
 router.post('/assessment/:id/reset-mock', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), resetMock);
+// ---- Prep Mock bulk actions (Master Admin, platform): scope = { mockIds } | { company[, role] } | { all }
+// (+ statuses). Registered before '/assessment/:id/…' so "mock-bulk" is never read as a mock id.
+const mockBulk = [requireAuth, requireAdmin, spocCannotEditMock, invalidateResponseCache('assessments')];
+router.post('/assessment/mock-bulk/own-students', ...mockBulk, route(async (req, res) => {
+  noStore(res).json(await bulkChangeOwnStudents(req.body || {}, req.user));
+}));
+router.post('/assessment/mock-bulk/publish', ...mockBulk, route(async (req, res) => {
+  noStore(res).json(await bulkPublishMocks(req.body || {}, req.user));
+}));
+router.post('/assessment/mock-bulk/unpublish', ...mockBulk, route(async (req, res) => {
+  noStore(res).json(await bulkUnpublishMocks(req.body || {}, req.user));
+}));
 router.post('/assessment/:id/unpublish-mock', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), unpublishMock);
+router.post('/assessment/:id/publish-mock', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), spocCannotEditMock, invalidateResponseCache('assessments'), publishMock);
+// Prep Mock "Assign own students": Master Admin's platform students and their date-time window.
+router.get('/assessment/:id/own-students', requireAuth, requireAdmin, spocCannotEditMock, route(async (req, res) => {
+  noStore(res).json(await mockOwnStudents(req.params.id, req.user));
+}));
+router.post('/assessment/:id/own-students', requireAuth, requireAdmin, spocCannotEditMock, invalidateResponseCache('assessments'), route(async (req, res) => {
+  noStore(res).json(await changeMockOwnStudents(req.params.id, req.body || {}, req.user));
+}));
 router.post('/assessment/:id/students', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), addAssessmentEligibleStudents);
 router.patch('/assessment/:id/students/sets', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), updateAssessmentStudentSets);
 router.post('/assessment/:id/students/remove', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), removeAssessmentEligibleStudents);

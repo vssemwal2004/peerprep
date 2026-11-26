@@ -3,9 +3,12 @@ import { createPortal } from 'react-dom';
 import {
   AlertTriangle, ArrowLeft, BarChart3, BriefcaseBusiness, Building2, CalendarClock, Check, ChevronDown,
   ChevronRight, ClipboardList, Eye, FolderOpen, Globe, History, Layers, ListChecks, Loader2, Lock,
-  MoreVertical, Pencil, Plus, Repeat, RotateCcw, Search, ShieldCheck, ShieldOff, SlidersHorizontal, Timer, X,
+  MoreVertical, Pencil, Plus, Repeat, RotateCcw, Search, ShieldCheck, ShieldOff, SlidersHorizontal, Table2, Timer, UserPlus, Users, X,
 } from 'lucide-react';
 import CompanyLogo from './CompanyLogo';
+import { PublishSwitch } from './PublishToggle';
+import { NO_ROLE_KEY, isBulkEligible, isLiveMock, isReadyMock, pageSelectionState, rangeIds } from './mockAccessModel';
+import MockPatternTable from '../../features/prepMock/MockPatternTable';
 import { formatPatternFrom } from '../../features/prepMock/patternModel';
 import { TablePager, nextSort, sortRows } from '../../components/table';
 import GridSortButton from '../assessment/components/GridSortButton';
@@ -21,19 +24,22 @@ import {
 //           mocks table; or, for a chosen role, its pattern (worked out from its mocks) and its mocks.
 // Every action lives in the page (AssessmentDashboard) and comes in through props.
 
-export const NO_ROLE = '__no_role__';
+export const NO_ROLE = NO_ROLE_KEY;
 
 const SECTION_TYPES = { coding: 'Coding', mcq: 'MCQ', short: 'Short answer', one_line: 'One line' };
 const DIFFICULTIES = [['Easy'], ['Medium'], ['Hard']];
-// Each header cell sorts by one or two keys (date + time, status + access share a cell to keep the mock name wide).
+// Each header cell sorts by one or more keys. Prep Mocks are always open (no dates): the second
+// column says who has the mock, the last one is the Live / Draft publish switch.
 const MOCK_COLUMNS = [
   [['title', 'Mock']],
   [['date', 'Availability']],
   [['content', 'Content']],
   [['completion', 'Completion']],
-  [['status', 'Status'], ['access', 'Access']],
+  [['live', 'Publish']],
 ];
-const ROW_GRID = 'xl:grid-cols-[minmax(220px,1.8fr)_124px_108px_minmax(96px,1fr)_144px_36px]';
+const ROW_GRID = 'xl:grid-cols-[minmax(220px,1.8fr)_140px_120px_minmax(96px,1fr)_112px_36px]';
+/** A mock's admin-written exam pattern (company + role), or null for older mocks without one. */
+const writtenPatternOf = (mock) => (mock?.mockPattern?.rows?.length ? mock.mockPattern : null);
 const ROLE_COLUMNS = [
   ['label', 'Role'], ['count', 'Mocks'], ['published', 'Live'], ['drafts', 'Drafts'], ['duration', 'Duration'],
   ['mix', 'Question mix'], ['attempts', 'Attempts'], ['avg', 'Avg score'], ['updated', 'Updated'],
@@ -78,6 +84,7 @@ const isPublished = (mock) => mock.lifecycleStatus === 'published';
 const isDraft = (mock) => mock.lifecycleStatus === 'draft';
 const fieldClass = 'h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/30';
 const iconButton = 'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white';
+const roleRailMenuButton = 'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2';
 const searchClass = 'h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-2 text-xs text-slate-700 outline-none focus:border-sky-400 focus:bg-white dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200';
 
 const ago = (value) => {
@@ -139,7 +146,7 @@ function mockPattern(mock) {
   });
   return {
     sections,
-    patternFrom: formatPatternFrom(mock.patternFrom),
+    patternFrom: formatPatternFrom(mock.mockPattern?.patternFrom || mock.patternFrom),
     types,
     difficulty,
     sets: mock.questionSets?.length || 0,
@@ -221,26 +228,36 @@ const roleValue = (row, key) => ROLE_VALUES[key]?.(row);
 
 // --- Small building blocks ------------------------------------------------------------------
 
-/** A three-dot menu that renders above everything (the rail and panes scroll and clip). */
-function DotsMenu({ label, items, size = 'md', className = '' }) {
+/**
+ * A three-dot menu that renders above everything (the rail and panes scroll and clip). Items:
+ * { label, icon, onClick, danger } | { divider: true, key } | { heading, key } (a group label);
+ * falsy items are skipped. `buttonClass` replaces the trigger's look (e.g. the bordered global ⋮).
+ */
+function DotsMenu({ label, items, size = 'md', className = '', buttonClass = '', width: menuWidth = 232 }) {
   const [open, setOpen] = useState(false);
   const [style, setStyle] = useState(null);
   const buttonRef = useRef(null);
   const menuRef = useRef(null);
-  const visible = items.filter(Boolean);
+  const visible = [];
+  for (const item of items.filter(Boolean)) {
+    if (!item.divider || (visible.length && !visible.at(-1).divider)) visible.push(item);
+  }
+  if (visible.at(-1)?.divider) visible.pop();
 
   useLayoutEffect(() => {
     if (!open) { setStyle(null); return undefined; }
+    const first = window.requestAnimationFrame(() => menuRef.current?.querySelector('[role="menuitem"]')?.focus());
     const place = () => {
       const rect = buttonRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const width = 232;
+      const width = Math.min(menuWidth, window.innerWidth - 16);
       const height = menuRef.current?.scrollHeight || 40 * visible.length;
       const up = rect.bottom + height + 8 > window.innerHeight;
       setStyle({
         width,
+        maxHeight: window.innerHeight - 16,
         left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)),
-        top: Math.max(8, up ? rect.top - height - 6 : rect.bottom + 6),
+        top: Math.max(8, Math.min(up ? rect.top - height - 6 : rect.bottom + 6, window.innerHeight - Math.min(height, window.innerHeight - 16) - 8)),
       });
     };
     place();
@@ -248,35 +265,48 @@ function DotsMenu({ label, items, size = 'md', className = '' }) {
       if (buttonRef.current?.contains(event.target) || menuRef.current?.contains(event.target)) return;
       setOpen(false);
     };
-    const onKey = (event) => { if (event.key === 'Escape') { setOpen(false); buttonRef.current?.focus(); } };
+    const onKey = (event) => {
+      if (event.key === 'Escape') { setOpen(false); buttonRef.current?.focus(); return; }
+      if (event.key === 'Tab') { setOpen(false); return; }
+      const entries = [...(menuRef.current?.querySelectorAll('[role="menuitem"]') || [])];
+      if (!entries.length || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const at = entries.indexOf(document.activeElement);
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? entries.length - 1
+        : (at + (event.key === 'ArrowDown' ? 1 : -1) + entries.length) % entries.length;
+      entries[next].focus();
+    };
     const onScroll = (event) => { if (!menuRef.current?.contains(event.target)) setOpen(false); };
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', place);
     window.addEventListener('scroll', onScroll, true);
     return () => {
+      window.cancelAnimationFrame(first);
       document.removeEventListener('mousedown', close);
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', onScroll, true);
     };
-  }, [open, visible.length]);
+  }, [open, visible.length, menuWidth]);
 
-  if (!visible.length) return null;
+  if (!visible.some((item) => !item.divider && !item.heading)) return null;
   return (
     <>
       <button ref={buttonRef} type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open}
         onClick={(event) => { event.stopPropagation(); setOpen((value) => !value); }}
-        className={`${iconButton} ${size === 'sm' ? 'h-7 w-7' : ''} ${open ? 'bg-slate-100 text-slate-800 dark:bg-gray-800 dark:text-white' : ''} ${className}`}>
+        className={`${buttonClass || `${iconButton} ${size === 'sm' ? 'h-7 w-7' : ''}`} ${open ? 'bg-slate-100 text-slate-800 dark:bg-gray-800 dark:text-white' : ''} ${className}`}>
         <MoreVertical className="h-4 w-4" />
       </button>
       {open && createPortal(
         <div ref={menuRef} role="menu" aria-label={label} style={style || { visibility: 'hidden', position: 'fixed' }}
           onClick={(event) => event.stopPropagation()}
-          className="fixed z-[1000] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900">
+          className="fixed z-[1000] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white py-1 shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900">
           {visible.map((item) => (item.divider
-            ? <div key={item.key} className="my-1 h-px bg-slate-100 dark:bg-gray-800" />
-            : <button key={item.label} type="button" role="menuitem" onClick={() => { setOpen(false); item.onClick(); }}
+            ? <div key={item.key} role="separator" className="my-1 h-px bg-slate-100 dark:bg-gray-800" />
+            : item.heading
+              ? <div key={item.key} role="presentation" className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400 dark:text-gray-500">{item.heading}</div>
+            : <button key={item.label} type="button" role="menuitem" onClick={() => { setOpen(false); buttonRef.current?.focus(); item.onClick(); }}
               className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium transition-colors hover:bg-slate-50 dark:hover:bg-gray-800 ${item.danger ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-gray-200'}`}>
               {item.icon}<span className="min-w-0 flex-1 truncate">{item.label}</span>
             </button>))}
@@ -339,7 +369,8 @@ function CountChips({ published, drafts, noRole }) {
 
 // --- Filter bar (replaces the assessment filter rail on All Mocks) --------------------------
 
-export function MockFilterBar({ filters, setFilters, status, counts, onStatus, testTypes, total, loading, onRefresh, onSortChange }) {
+/** `actions`: items for the global ⋮ (bulk actions over every mock), or undefined to hide it. */
+export function MockFilterBar({ filters, setFilters, status, counts, onStatus, testTypes, total, loading, onRefresh, onSortChange, actions }) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef(null);
   const activeFilters = (filters.creationWindow !== 'any' ? 1 : 0) + (filters.testType !== 'all' ? 1 : 0);
@@ -425,6 +456,8 @@ export function MockFilterBar({ filters, setFilters, status, counts, onStatus, t
         <button type="button" onClick={onRefresh} disabled={loading} title="Refresh mocks" aria-label="Refresh mocks" className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
           <RotateCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
+        {actions && <DotsMenu label="Actions for all mocks" items={actions} width={272}
+          buttonClass="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800" />}
       </div>
     </div>
   );
@@ -432,7 +465,7 @@ export function MockFilterBar({ filters, setFilters, status, counts, onStatus, t
 
 // --- Company tree (left) ----------------------------------------------------------------------
 
-function CompanyRail({ companies, selectedKey, selectedRole, onSelect, onSelectRole, companyMenu, sort, onSort }) {
+function CompanyRail({ companies, selectedKey, selectedRole, onSelect, onSelectRole, companyMenu, roleMenu, sort, onSort }) {
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(() => new Set());
   const term = query.trim().toLocaleLowerCase();
@@ -525,14 +558,18 @@ function CompanyRail({ companies, selectedKey, selectedRole, onSelect, onSelectR
                       const roleActive = active && selectedRole === role.key;
                       const noRole = role.key === NO_ROLE;
                       return (
-                        <li key={role.key}>
+                        <li key={role.key} className={`flex min-w-0 items-center gap-0.5 rounded-lg pr-0.5 transition-colors ${roleActive ? 'bg-sky-600 text-white' : noRole ? 'text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-500/10' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
                           <button type="button" onClick={() => onSelectRole(company.name, role.key)} aria-current={roleActive ? 'page' : undefined}
-                            className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${roleActive ? 'bg-sky-600 font-semibold text-white' : noRole ? 'text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-500/10' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
+                            className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${roleActive ? 'font-semibold' : ''}`}>
                             {noRole ? <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" /> : <BriefcaseBusiness className={`h-3 w-3 shrink-0 ${roleActive ? '' : 'opacity-50'}`} aria-hidden="true" />}
                             <span className="min-w-0 flex-1 truncate">{role.label}</span>
                             {role.drafts > 0 && !roleActive && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" title={plural(role.drafts, 'draft')} aria-hidden="true" />}
                             <span className={`shrink-0 tabular-nums ${roleActive ? 'text-white/80' : 'text-slate-400 dark:text-gray-500'}`}>{role.count}</span>
                           </button>
+                          <DotsMenu label={`${company.name} ${role.label} actions`} items={roleMenu(company, role)}
+                            buttonClass={`${roleRailMenuButton} ${roleActive
+                              ? 'text-white hover:bg-white/20 focus-visible:ring-inset focus-visible:ring-white aria-expanded:bg-white/20 aria-expanded:text-white'
+                              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus-visible:ring-sky-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'}`} />
                         </li>
                       );
                     })}
@@ -549,65 +586,139 @@ function CompanyRail({ companies, selectedKey, selectedRole, onSelect, onSelectR
 
 // --- Overview (no company chosen) ------------------------------------------------------------
 
-function Overview({ companies, mocks, logoOf, onJump, canCreate, onCreateMock }) {
-  const roleCount = companies.reduce((sum, company) => sum + company.roleCount, 0);
-  const published = mocks.filter(isPublished).length;
-  const drafts = mocks.filter(isDraft).length;
-  const withoutRole = mocks.filter((mock) => !roleOf(mock));
-  // Published before the OA date existed: editing asks for it, so flag them for the admin.
-  const withoutDate = mocks.filter((mock) => !isDraft(mock) && roleOf(mock) && !formatPatternFrom(mock.patternFrom));
-  const attention = [
-    ...withoutRole.map((mock) => ({ mock, reason: 'No role', tone: 'amber' })),
-    ...withoutDate.map((mock) => ({ mock, reason: 'No OA date', tone: 'amber' })),
-    ...mocks.filter((mock) => isDraft(mock) && roleOf(mock)).map((mock) => ({ mock, reason: 'Draft', tone: 'slate' })),
-  ].slice(0, 8);
-  const recent = [...mocks].sort((left, right) => timeOf(right.updatedAt || right.createdAt) - timeOf(left.updatedAt || left.createdAt)).slice(0, 8);
+/** Publish state of one mock for the overview: live | hidden | ready | draft. */
+const publishStateOf = (mock) => (isLiveMock(mock) ? 'live' : isPublished(mock) ? 'hidden' : isReadyMock(mock) ? 'ready' : 'draft');
+const PUBLISH_STATES = [
+  { key: 'live', label: 'Live', bar: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-300', hint: 'Open to every university with an active Prep Mock package' },
+  { key: 'ready', label: 'Ready to publish', bar: 'bg-sky-500', text: 'text-sky-700 dark:text-sky-300', hint: 'Complete; turn on its Publish switch to make it live' },
+  { key: 'draft', label: 'Draft', bar: 'bg-slate-300 dark:bg-gray-600', text: 'text-slate-600 dark:text-gray-300', hint: 'Still missing a pattern, questions or the test length' },
+  { key: 'hidden', label: 'Hidden', bar: 'bg-amber-400', text: 'text-amber-700 dark:text-amber-300', hint: 'Published earlier, now hidden from students' },
+];
+const countStates = (mocks) => mocks.reduce((counts, mock) => { counts[publishStateOf(mock)] += 1; return counts; }, { live: 0, ready: 0, draft: 0, hidden: 0 });
 
-  const row = ({ mock, reason, tone }) => (
-    <li key={`${mock._id}-${reason || 'recent'}`}>
-      <button type="button" onClick={() => onJump(companyNameOf(mock), roleKeyOf(mock))}
-        className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:hover:bg-gray-800/60">
-        <CompanyLogo name={companyNameOf(mock)} logo={logoOf(mock.company, mock.companyLogo)} size="sm" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium text-slate-800 dark:text-gray-100">{mock.title || 'Untitled mock'}</span>
-          <span className="block truncate text-[11px] text-slate-500 dark:text-gray-400">{companyNameOf(mock)}{roleOf(mock) ? ` · ${roleOf(mock)}` : ''}</span>
-        </span>
-        {reason
-          ? <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${tone === 'amber' ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' : 'bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300'}`}>{reason}</span>
-          : <span className="shrink-0 text-[11px] text-slate-400 dark:text-gray-500">{ago(mock.updatedAt || mock.createdAt)}</span>}
-      </button>
-    </li>
+/** One horizontal bar split by publish state. */
+function StateBar({ counts, total, height = 'h-2' }) {
+  return (
+    <div className={`flex ${height} w-full overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800`} role="img"
+      aria-label={PUBLISH_STATES.map((state) => `${counts[state.key]} ${state.label.toLowerCase()}`).join(', ')}>
+      {total > 0 && PUBLISH_STATES.map((state) => counts[state.key] > 0 && (
+        <span key={state.key} className={state.bar} style={{ width: `${(counts[state.key] / total) * 100}%` }} />
+      ))}
+    </div>
   );
+}
+
+/** Roles of the given companies with at least one mock, and how many have a written exam pattern. */
+function patternCoverage(companies) {
+  const roles = companies.flatMap((company) => company.roles.filter((role) => role.key !== NO_ROLE));
+  const withPattern = roles.filter((role) => role.mocks.some(writtenPatternOf)).length;
+  return { roles: roles.length, withPattern };
+}
+
+const OVERVIEW_COMPANIES = 12;
+
+function Overview({ companies, mocks, onJump, canCreate, onCreateMock }) {
+  const roleCount = companies.reduce((sum, company) => sum + company.roleCount, 0);
+  const states = countStates(mocks);
+  const coverage = patternCoverage(companies);
+  const coveragePercent = coverage.roles ? Math.round((coverage.withPattern / coverage.roles) * 100) : 0;
+  const mocksWithPattern = mocks.filter(writtenPatternOf).length;
+  const withoutRole = mocks.filter((mock) => !roleOf(mock)).length;
+  const lengths = range(mocks.map((mock) => Number(mock.duration)), ' min');
+  const topCompanies = [...companies].sort((left, right) => right.count - left.count || left.name.localeCompare(right.name)).slice(0, OVERVIEW_COMPANIES);
+  const card = 'rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900';
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-slate-950 dark:text-white">Overview</h2>
-          <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">Pick a company on the left, or open one of its roles, to see the pattern and the mocks.</p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">Live mocks reach every university with an active Prep Mock package. Open a company to see its roles, patterns and mocks.</p>
         </div>
         {canCreate && <button type="button" onClick={() => onCreateMock({})} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"><Plus className="h-4 w-4" /> New mock</button>}
       </div>
+
       <StatStrip>
         <Stat label="Companies" value={companies.length} />
         <Stat label="Roles" value={roleCount} tone="sky" hint="Company and role pairs with at least one mock" />
         <Stat label="Mocks" value={mocks.length} />
-        <Stat label="Published" value={published} tone="emerald" />
-        <Stat label="Drafts" value={drafts} />
+        <Stat label="Live" value={states.live} tone="emerald" hint="Open to students now" />
+        <Stat label="Ready to publish" value={states.ready} tone="sky" hint="Complete drafts waiting for the Publish switch" />
         <Stat label="Attempts" value={attemptsOf(mocks).toLocaleString()} hint="Started student attempts across these mocks" />
       </StatStrip>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <SectionTitle icon={AlertTriangle} aside={withoutRole.length > 0 && <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">{plural(withoutRole.length, 'mock')} without a role</span>}>Needs attention</SectionTitle>
-          {attention.length ? <ul className="-mx-2">{attention.map(row)}</ul> : (
-            <p className="flex items-center gap-2 py-4 text-xs text-slate-500 dark:text-gray-400"><Check className="h-4 w-4 text-emerald-500" /> Every mock has a role and an OA date, and nothing is waiting in draft.</p>
-          )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className={card} aria-labelledby="overview-publishing">
+          <SectionTitle icon={Globe}><span id="overview-publishing">Publishing</span></SectionTitle>
+          <StateBar counts={states} total={mocks.length} height="h-3" />
+          <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {PUBLISH_STATES.map((state) => (
+              <div key={state.key} title={state.hint} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-gray-950/60">
+                <dt className="flex items-center gap-1.5 truncate text-[11px] text-slate-500 dark:text-gray-400"><span className={`h-2 w-2 shrink-0 rounded-full ${state.bar}`} aria-hidden="true" />{state.label}</dt>
+                <dd className={`mt-0.5 text-lg font-semibold tabular-nums ${state.text}`}>{states[state.key]}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-3 text-[11.5px] leading-relaxed text-slate-500 dark:text-gray-400">
+            {canCreate ? 'Mocks are saved ready from the builder and published with the switch on each mock. ' : ''}Test lengths: <span className="font-semibold text-slate-700 dark:text-gray-200">{lengths}</span>.
+          </p>
         </section>
-        <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <SectionTitle icon={History}>Recently updated</SectionTitle>
-          <ul className="-mx-2">{recent.map((mock) => row({ mock }))}</ul>
+
+        <section className={card} aria-labelledby="overview-patterns">
+          <SectionTitle icon={Table2}><span id="overview-patterns">Exam patterns</span></SectionTitle>
+          <div className="flex items-end justify-between gap-3">
+            <p className="text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">{coverage.withPattern}<span className="text-base font-medium text-slate-400 dark:text-gray-500"> / {coverage.roles}</span></p>
+            <p className="text-right text-[11.5px] text-slate-500 dark:text-gray-400">roles have a written pattern</p>
+          </div>
+          <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800" role="img" aria-label={`${coveragePercent}% of roles have a pattern`}>
+            <span className="block h-full rounded-full bg-violet-500" style={{ width: `${coveragePercent}%` }} />
+          </div>
+          <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-gray-950/60"><dt className="text-[11px] text-slate-500 dark:text-gray-400">Mocks with a pattern</dt><dd className="mt-0.5 text-lg font-semibold tabular-nums text-violet-700 dark:text-violet-300">{mocksWithPattern}</dd></div>
+            <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-gray-950/60"><dt className="text-[11px] text-slate-500 dark:text-gray-400">Without a pattern</dt><dd className="mt-0.5 text-lg font-semibold tabular-nums text-slate-700 dark:text-gray-200">{mocks.length - mocksWithPattern}</dd></div>
+            <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-gray-950/60"><dt className="text-[11px] text-slate-500 dark:text-gray-400">Without a role</dt><dd className={`mt-0.5 text-lg font-semibold tabular-nums ${withoutRole ? 'text-amber-700 dark:text-amber-300' : 'text-slate-700 dark:text-gray-200'}`}>{withoutRole}</dd></div>
+          </dl>
+          {canCreate && <p className="mt-3 text-[11.5px] leading-relaxed text-slate-500 dark:text-gray-400">A pattern is written once per company and role (with its OA month) and is needed before a mock is saved ready in the builder.</p>}
         </section>
       </div>
+
+      <section aria-labelledby="overview-companies">
+        <SectionTitle icon={Building2} aside={companies.length > OVERVIEW_COMPANIES && <span className="text-[11px] text-slate-400 dark:text-gray-500">Top {OVERVIEW_COMPANIES} by mocks · all {companies.length} on the left</span>}>
+          <span id="overview-companies">Companies</span>
+        </SectionTitle>
+        {topCompanies.length ? (
+          <ul className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+            {topCompanies.map((company) => {
+              const counts = countStates(company.mocks);
+              const covered = patternCoverage([company]);
+              return (
+                <li key={company.key}>
+                  <button type="button" onClick={() => onJump(company.name, '')}
+                    className="flex h-full w-full flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3.5 text-left transition hover:border-sky-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800">
+                    <span className="flex min-w-0 items-center gap-3">
+                      <CompanyLogo name={company.name} logo={company.logo} size="sm" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13.5px] font-semibold text-slate-900 dark:text-white">{company.name}</span>
+                        <span className="block truncate text-[11px] text-slate-500 dark:text-gray-400">{plural(company.roleCount, 'role')} · {plural(company.count, 'mock')}</span>
+                      </span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 dark:text-gray-600" aria-hidden="true" />
+                    </span>
+                    <StateBar counts={counts} total={company.count} />
+                    <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                      {PUBLISH_STATES.filter((state) => counts[state.key] > 0).map((state) => (
+                        <span key={state.key} className={`inline-flex items-center gap-1 font-semibold ${state.text}`}><span className={`h-1.5 w-1.5 rounded-full ${state.bar}`} aria-hidden="true" />{counts[state.key]} {state.label.toLowerCase()}</span>
+                      ))}
+                      <span className="ml-auto text-slate-400 dark:text-gray-500">{covered.withPattern}/{covered.roles} patterns</span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-xs text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">No mocks yet. Create the first mock to see companies here.</p>
+        )}
+      </section>
     </div>
   );
 }
@@ -687,7 +798,7 @@ function PatternFacts({ pattern, mock }) {
     { icon: BarChart3, label: 'Marks', value: pattern.marks || '—' },
     { icon: Repeat, label: 'Attempts', value: pattern.attempts },
     { icon: pattern.proctored ? ShieldCheck : ShieldOff, label: 'AI proctoring', value: pattern.proctored ? 'On' : 'Off' },
-    { icon: CalendarClock, label: 'Availability', value: pattern.always ? 'Always on' : 'Scheduled' },
+    { icon: CalendarClock, label: 'Availability', value: pattern.always ? 'Always open' : 'Scheduled' },
     mock?.passwordEnabled && { icon: Lock, label: 'Password', value: 'Required' },
     pattern.sets > 1 && { icon: Layers, label: 'Question sets', value: pattern.sets },
   ].filter(Boolean);
@@ -725,8 +836,12 @@ function patternGroups(mocks) {
   const map = new Map();
   mocks.forEach((mock) => {
     const pattern = mockPattern(mock);
-    // Same OA date and same structure (including suggested section times) = one pattern.
-    const key = JSON.stringify([pattern.patternFrom, pattern.duration, pattern.sections.map((section) => [section.name.trim().toLowerCase(), section.type, section.count, section.marks, section.negative, section.minutes])]);
+    const written = writtenPatternOf(mock);
+    // A written pattern (one per company + role + OA month) groups its mocks; older mocks without
+    // one group by the same OA date and structure (including suggested section times).
+    const key = written
+      ? `written:${String(mock.patternId || written.patternId || '') || JSON.stringify([written.patternFrom, written.rows])}`
+      : JSON.stringify([pattern.patternFrom, pattern.duration, pattern.sections.map((section) => [section.name.trim().toLowerCase(), section.type, section.count, section.marks, section.negative, section.minutes])]);
     const group = map.get(key) || { key, mocks: [] };
     group.mocks.push(mock);
     map.set(key, group);
@@ -741,13 +856,31 @@ function patternGroups(mocks) {
 
 // --- Mock list --------------------------------------------------------------------------------
 
+/** The written exam pattern when the mock has one (what students read), else the old section-derived table. */
+function PatternBlock({ mock, pattern, onEditPattern }) {
+  const written = writtenPatternOf(mock);
+  if (written) return <MockPatternTable pattern={written} caption={`${mock.company || ''} ${mock.role || ''} exam pattern`} className="bg-white dark:bg-gray-900" />;
+  return (
+    <div className="space-y-2">
+      <PatternTable pattern={pattern} />
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-amber-700 dark:text-amber-300">
+        <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
+        {/* Read-only viewers (universities) cannot add a pattern, so they get no instruction. */}
+        {onEditPattern ? 'No written exam pattern yet: worked out from the questions. Add one so students see the company\'s pattern.' : 'Exam pattern worked out from the questions.'}
+        {onEditPattern && <button type="button" onClick={onEditPattern} className="font-semibold underline underline-offset-2">Add pattern</button>}
+      </p>
+    </div>
+  );
+}
+
 function MockDetails({ mock, onOpenPath, openPath, assessmentRoot }) {
   const pattern = mockPattern(mock);
+  const editPattern = mock.shared ? null : () => onOpenPath(`${assessmentRoot}/${mock._id}/edit?step=pattern`);
   return (
     <div className="space-y-3 border-t border-slate-100 bg-slate-50/70 px-4 py-4 dark:border-gray-800 dark:bg-gray-950/40">
       <PatternFacts pattern={pattern} mock={mock} />
       <div className={PATTERN_GRID}>
-        <PatternTable pattern={pattern} />
+        <PatternBlock mock={mock} pattern={pattern} onEditPattern={editPattern} />
         <AdminNotes mock={mock} />
       </div>
       <div className="min-w-0">
@@ -755,6 +888,7 @@ function MockDetails({ mock, onOpenPath, openPath, assessmentRoot }) {
           <span>{mock.createdBy?.name ? `By ${mock.createdBy.name} · ` : ''}Created {formatShortDate(mock.createdAt)} · Updated {ago(mock.updatedAt || mock.createdAt)}</span>
           <span className="flex gap-1.5">
             <button type="button" onClick={() => onOpenPath(`${assessmentRoot}/preview/${mock._id}`)} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><Eye className="h-3 w-3" /> Preview</button>
+            {editPattern && <button type="button" onClick={editPattern} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><Table2 className="h-3 w-3" /> Edit pattern</button>}
             {!mock.shared && <button type="button" onClick={() => onOpenPath(`${assessmentRoot}/${mock._id}/edit`)} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><Pencil className="h-3 w-3" /> Edit</button>}
             <button type="button" onClick={() => onOpenPath(openPath)} className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-2 py-1 font-semibold text-white hover:bg-slate-700 dark:bg-white dark:text-gray-950">Open <ChevronRight className="h-3 w-3" /></button>
           </span>
@@ -764,21 +898,57 @@ function MockDetails({ mock, onOpenPath, openPath, assessmentRoot }) {
   );
 }
 
-function MockList({ table, showRole, openPathOf, onOpenPath, renderActions, assessmentRoot, emptyText }) {
+const checkboxClass = 'h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-sky-600 focus:ring-2 focus:ring-sky-500 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:bg-gray-900';
+
+/** "Select every mock on this page" — tri-state (indeterminate when some are ticked). */
+function PageCheckbox({ rows, selection, onSelect, className = '' }) {
+  const state = pageSelectionState(selection, rows);
+  const selectable = rows.filter(isBulkEligible);
+  return (
+    <input type="checkbox" aria-label={`Select all ${selectable.length} mocks on this page`} disabled={!selectable.length}
+      checked={state === 'all'} ref={(node) => { if (node) node.indeterminate = state === 'some'; }}
+      onChange={() => onSelect(selectable.map((mock) => String(mock._id)), state !== 'all')}
+      className={`${checkboxClass} ${className}`} />
+  );
+}
+
+/**
+ * Mocks of the chosen company / role. With `selection` (a Set of mock ids, owned by the page) and
+ * `onSelect(ids, on)`, every row gets a checkbox (shift-click ticks a range on this page) and the
+ * header a page checkbox; without them (university, read-only) the list has no checkboxes.
+ */
+function MockList({ table, showRole, openPathOf, onOpenPath, renderActions, assessmentRoot, emptyText, onTogglePublish, selection, onSelect }) {
   const [expanded, setExpanded] = useState(() => new Set());
+  const lastTicked = useRef(null);
+  const selectable = Boolean(selection && onSelect);
   const toggle = (id) => setExpanded((current) => {
     const next = new Set(current);
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
+  const tick = (mock, event) => {
+    const id = String(mock._id);
+    const on = !selection.has(id);
+    const range = event?.nativeEvent?.shiftKey && lastTicked.current ? rangeIds(table.pageRows, lastTicked.current, id) : [id];
+    onSelect(range.length ? range : [id], on);
+    lastTicked.current = id;
+  };
 
   if (!table.total) return <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">{emptyText}</div>;
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      {selectable && (
+        // Below xl the column header is hidden: a slim bar keeps "select this page" reachable.
+        <label className="flex items-center gap-2.5 border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-[11px] font-semibold text-slate-500 xl:hidden dark:border-gray-800 dark:bg-gray-950/60 dark:text-gray-400">
+          <PageCheckbox rows={table.pageRows} selection={selection} onSelect={onSelect} />
+          Select this page
+        </label>
+      )}
       <div className={`hidden items-center gap-x-3 border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xl:grid dark:border-gray-800 dark:bg-gray-950/60 dark:text-gray-500 ${ROW_GRID}`}>
-        {MOCK_COLUMNS.map((keys) => (
+        {MOCK_COLUMNS.map((keys, column) => (
           <span key={keys[0][0]} className="flex min-w-0 items-center gap-1">
+            {column === 0 && selectable && <PageCheckbox rows={table.pageRows} selection={selection} onSelect={onSelect} className="mr-1.5" />}
             {keys.map(([key, label], index) => (
               <span key={key} className="flex min-w-0 items-center gap-1">
                 {index > 0 && <span aria-hidden="true" className="text-slate-300 dark:text-gray-700">/</span>}
@@ -796,15 +966,20 @@ function MockList({ table, showRole, openPathOf, onOpenPath, renderActions, asse
           const completed = Number(mock.completedCount || 0);
           const assigned = assignedCountOf(mock);
           const percent = assigned > 0 ? Math.min(100, Math.round((completed / assigned) * 100)) : 0;
-          const visible = mock.isVisible !== false && !isDraft(mock);
           const always = isPublished(mock) && mock.isVisible !== false;
+          const ticked = selectable && selection.has(String(mock._id));
           return (
             <li key={mock._id}>
               <div role="link" tabIndex={0}
-                onClick={(event) => { if (!event.target.closest('button, a, input, select, textarea')) onOpenPath(openPath); }}
+                onClick={(event) => { if (!event.target.closest('button, a, input, select, textarea, label')) onOpenPath(openPath); }}
                 onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && event.target === event.currentTarget) { event.preventDefault(); onOpenPath(openPath); } }}
-                className={`group grid cursor-pointer grid-cols-1 items-center gap-x-3 gap-y-2.5 px-4 py-3 transition-colors hover:bg-sky-50/40 focus:outline-none focus-visible:bg-sky-50/60 md:grid-cols-2 dark:hover:bg-white/[0.02] ${ROW_GRID}`}>
+                className={`group grid cursor-pointer grid-cols-1 items-center gap-x-3 gap-y-2.5 px-4 py-3 transition-colors focus:outline-none md:grid-cols-2 ${ticked ? 'bg-sky-50/70 hover:bg-sky-50 focus-visible:bg-sky-50 dark:bg-sky-500/[0.07] dark:hover:bg-sky-500/10' : 'hover:bg-sky-50/40 focus-visible:bg-sky-50/60 dark:hover:bg-white/[0.02]'} ${ROW_GRID}`}>
                 <div className="flex min-w-0 items-center gap-2.5 md:col-span-2 xl:col-span-1">
+                  {selectable && (
+                    <input type="checkbox" checked={ticked} disabled={!isBulkEligible(mock)} onChange={(event) => tick(mock, event)}
+                      aria-label={`Select ${mock.title || 'mock'}`} title={isBulkEligible(mock) ? 'Select (Shift-click to select a range)' : 'Shared mocks cannot be changed here'}
+                      className={checkboxClass} />
+                  )}
                   <button type="button" aria-expanded={open} aria-label={open ? 'Hide mock details' : 'Show mock details'} onClick={() => toggle(mock._id)} className={`${iconButton} h-7 w-7`}>
                     <ChevronDown className={`h-4 w-4 transition-transform ${open ? '' : '-rotate-90'}`} />
                   </button>
@@ -827,7 +1002,7 @@ function MockList({ table, showRole, openPathOf, onOpenPath, renderActions, asse
                 </div>
                 <div className="min-w-0 text-xs">
                   <div className="truncate font-semibold text-slate-700 dark:text-gray-200">{always ? 'Always on' : isPublished(mock) ? 'Hidden' : 'Not published'}</div>
-                  <div className="mt-0.5 truncate text-[11px] text-slate-400 dark:text-gray-500">{always ? 'Until unpublished' : isPublished(mock) ? 'Unhide to make available' : 'Publish to make available'}</div>
+                  <div className="mt-0.5 truncate text-[11px] text-slate-400 dark:text-gray-500">{always ? 'Until unpublished' : 'Publish to make available'}</div>
                 </div>
                 <div className="text-xs">
                   <div className="font-semibold text-slate-700 dark:text-gray-200">{plural(Number(mock.totalQuestions || 0), 'question')}</div>
@@ -840,11 +1015,9 @@ function MockList({ table, showRole, openPathOf, onOpenPath, renderActions, asse
                   </div>
                   <div className="mt-0.5 truncate text-[11px] text-slate-400 dark:text-gray-500">All eligible universities</div>
                 </div>
-                <div className="flex flex-col items-start gap-1">
-                  <StatusBadge mock={mock} />
-                  <span className={`inline-flex items-center gap-1 text-[10.5px] font-medium ${visible ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-400 dark:text-gray-500'}`}>
-                    {visible ? <Globe className="h-3 w-3" /> : <ShieldOff className="h-3 w-3" />}{visible ? 'Visible' : 'Hidden'}
-                  </span>
+                <div className="flex items-center gap-2 xl:flex-col xl:items-start xl:gap-1">
+                  <PublishSwitch mock={mock} disabled={Boolean(mock.shared) || !onTogglePublish} onToggle={() => onTogglePublish?.(mock)} />
+                  {mock.status === 'Completed' && <StatusBadge mock={mock} />}
                 </div>
                 <div className="flex justify-start md:justify-end">{renderActions(mock, openPath)}</div>
               </div>
@@ -860,7 +1033,8 @@ function MockList({ table, showRole, openPathOf, onOpenPath, renderActions, asse
 
 // --- Roles table ------------------------------------------------------------------------------
 
-function RolesTable({ roles, onOpenRole, roleMenu }) {
+function RolesTable({ company, onOpenRole, roleMenu }) {
+  const { roles } = company;
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState(null);
   const term = query.trim().toLocaleLowerCase();
@@ -905,7 +1079,7 @@ function RolesTable({ roles, onOpenRole, roleMenu }) {
                   <span className="tabular-nums text-slate-600 dark:text-gray-300"><span className="text-slate-400 lg:hidden">Attempts </span>{role.attempts.toLocaleString()}</span>
                   <span className={`tabular-nums text-slate-600 dark:text-gray-300 ${ROLE_TIER.avg}`}><span className="text-slate-400 2xl:hidden">Avg </span>{role.avg !== null ? `${role.avg}%` : '—'}</span>
                   <span className={`text-slate-400 dark:text-gray-500 ${ROLE_TIER.updated}`}>{ago(role.updated)}</span>
-                  <span className="flex justify-end"><DotsMenu label={`${role.label} actions`} size="sm" items={roleMenu(role)} /></span>
+                  <span className="flex justify-end"><DotsMenu label={`${company.name} ${role.label} actions`} size="sm" items={roleMenu(company, role)} /></span>
                 </div>
               </li>
             );
@@ -920,10 +1094,10 @@ function RolesTable({ roles, onOpenRole, roleMenu }) {
 
 /**
  * The role's exam pattern as students meet it: facts (duration, attempts, proctoring...), a section
- * table with totals, and the admin's own instructions beside it. Mocks of the role that share the same
- * structure form one pattern; when the role has several structures, tabs switch between them.
+ * table with totals, and the admin's own instructions beside it. Mocks that use the same written
+ * pattern (or, for older mocks, the same structure) form one pattern; tabs switch between several.
  */
-function RolePattern({ mocks }) {
+function RolePattern({ mocks, onOpenPath, assessmentRoot }) {
   const [open, setOpen] = useState(true);
   const groups = useMemo(() => patternGroups(mocks), [mocks]);
   const [active, setActive] = useState(0);
@@ -931,6 +1105,8 @@ function RolePattern({ mocks }) {
   const students = rolePattern(mocks);
   if (!group) return null;
   const { pattern, sample } = group;
+  const written = writtenPatternOf(sample);
+  const editPattern = sample.shared || !onOpenPath ? null : () => onOpenPath(`${assessmentRoot}/${sample._id}/edit?step=pattern`);
   return (
     <section aria-label="Role pattern" className="rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
@@ -938,11 +1114,14 @@ function RolePattern({ mocks }) {
           className="flex min-w-0 items-center gap-2 rounded text-left text-sm font-semibold text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-white">
           <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? '' : '-rotate-90'}`} aria-hidden="true" />
           Exam pattern
-          {!open && <span className="truncate font-normal text-slate-500 dark:text-gray-400">· {pattern.sections.length} sections · {pattern.questions} questions · {pattern.duration ? `${pattern.duration} min` : 'no time'}</span>}
+          {!open && <span className="truncate font-normal text-slate-500 dark:text-gray-400">· {written ? `${written.rows.length} sections` : `${pattern.sections.length} sections · ${pattern.questions} questions`} · {pattern.duration ? `${pattern.duration} min` : 'no time'}</span>}
         </button>
-        <span className="text-[11px] text-slate-400 dark:text-gray-500">
-          {groups.length > 1 ? `${groups.length} patterns across ${plural(mocks.length, 'mock')}` : `Same for all ${plural(mocks.length, 'mock')}`}
-          {' · '}{plural(students.studentAttempts, 'student attempt')}{students.avgScore !== null ? ` · avg ${students.avgScore}%` : ''}
+        <span className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 dark:text-gray-500">
+          <span>
+            {groups.length > 1 ? `${groups.length} patterns across ${plural(mocks.length, 'mock')}` : `Same for all ${plural(mocks.length, 'mock')}`}
+            {' · '}{plural(students.studentAttempts, 'student attempt')}{students.avgScore !== null ? ` · avg ${students.avgScore}%` : ''}
+          </span>
+          {editPattern && <button type="button" onClick={editPattern} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><Table2 className="h-3 w-3" /> {written ? 'Edit pattern' : 'Add pattern'}</button>}
         </span>
       </div>
       {open && (
@@ -959,11 +1138,12 @@ function RolePattern({ mocks }) {
           )}
           <PatternFacts pattern={pattern} mock={sample} />
           <div className={PATTERN_GRID}>
-            <PatternTable pattern={pattern} />
+            <PatternBlock mock={sample} pattern={pattern} onEditPattern={editPattern} />
             <AdminNotes mock={sample} title={group.mocks.length > 1 ? 'Instructions from admin (latest mock)' : 'Instructions from admin'} />
           </div>
           <p className="text-[11px] text-slate-400 dark:text-gray-500">
-            Used by: {group.mocks.map((mock) => mock.title || 'Untitled mock').join(', ')}. Edit a mock to change its pattern.
+            Used by: {group.mocks.map((mock) => mock.title || 'Untitled mock').join(', ')}.
+            {editPattern && (written ? ' Editing this pattern updates every mock that uses it.' : ' Edit a mock to add its pattern.')}
           </p>
         </div>
       )}
@@ -972,18 +1152,13 @@ function RolePattern({ mocks }) {
 }
 
 function CompanyDetail({
-  company, selectedRole, onSelectRole, onClose, canCreate, onCreateMock, companyMenu,
-  table, openPathOf, onOpenPath, renderActions, assessmentRoot,
+  company, selectedRole, onSelectRole, onClose, canCreate, onCreateMock, companyMenu, roleMenu,
+  table, openPathOf, onOpenPath, renderActions, assessmentRoot, onTogglePublish, selection, onToggleSelection,
 }) {
+  const listProps = { table, openPathOf, onOpenPath, renderActions, assessmentRoot, onTogglePublish, selection, onSelect: onToggleSelection };
   const [tab, setTab] = useState('roles');
   const activeRole = company.roles.find((entry) => entry.key === selectedRole) || null;
   const realRole = activeRole && activeRole.key !== NO_ROLE ? activeRole : null;
-  const roleMenu = (role) => [
-    { label: 'Open role', icon: <FolderOpen className="h-3.5 w-3.5" />, onClick: () => onSelectRole(role.key) },
-    canCreate && role.key !== NO_ROLE && { label: `Create mock for ${role.label}`, icon: <Plus className="h-3.5 w-3.5" />, onClick: () => onCreateMock({ company: company.name, role: role.label }) },
-    role.count === 1 && !role.mocks[0].shared && { label: 'Edit its mock', icon: <Pencil className="h-3.5 w-3.5" />, onClick: () => onOpenPath(`${assessmentRoot}/${role.mocks[0]._id}/edit`) },
-    role.mocks.some((mock) => !isDraft(mock)) && { label: 'Preview latest mock', icon: <Eye className="h-3.5 w-3.5" />, onClick: () => onOpenPath(`${assessmentRoot}/preview/${[...role.mocks].sort((a, b) => timeOf(b.updatedAt) - timeOf(a.updatedAt))[0]._id}`) },
-  ];
 
   return (
     <div className="space-y-4">
@@ -1011,8 +1186,8 @@ function CompanyDetail({
             className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
             <Plus className="h-4 w-4" /> New mock{realRole ? ` for ${realRole.label}` : ''}
           </button>}
-          <DotsMenu label={`${activeRole ? activeRole.label : company.name} actions`} items={activeRole
-            ? [...roleMenu(activeRole).slice(1), { divider: true, key: 'd1' }, { label: `Back to ${company.name} roles`, icon: <ArrowLeft className="h-3.5 w-3.5" />, onClick: () => onSelectRole('') }]
+          <DotsMenu label={`${company.name}${activeRole ? ` ${activeRole.label}` : ''} actions`} items={activeRole
+            ? roleMenu(company, activeRole, { inDetail: true })
             : companyMenu(company, { inDetail: true, onClose })} />
         </div>
       </header>
@@ -1045,17 +1220,16 @@ function CompanyDetail({
         </div>
 
         {tab === 'roles'
-          ? <RolesTable roles={company.roles} onOpenRole={onSelectRole} roleMenu={roleMenu} />
-          : <MockList table={table} showRole openPathOf={openPathOf} onOpenPath={onOpenPath} renderActions={renderActions} assessmentRoot={assessmentRoot} emptyText={`No mocks in ${company.name} match the filters.`} />}
+          ? <RolesTable company={company} onOpenRole={onSelectRole} roleMenu={roleMenu} />
+          : <MockList {...listProps} showRole emptyText={`No mocks in ${company.name} match the filters.`} />}
       </>}
 
       {activeRole && <>
         <button type="button" onClick={() => onSelectRole('')} className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 dark:text-gray-400 dark:hover:text-white"><ArrowLeft className="h-3.5 w-3.5" /> All {company.name} roles</button>
-        {realRole && <RolePattern key={realRole.key} mocks={realRole.mocks} />}
+        {realRole && <RolePattern key={realRole.key} mocks={realRole.mocks} onOpenPath={onOpenPath} assessmentRoot={assessmentRoot} />}
         <section aria-label={`${activeRole.label} mocks`}>
           <SectionTitle icon={ClipboardList} aside={<span className="text-[11px] tabular-nums text-slate-400 dark:text-gray-500">{plural(table.total, 'mock')}</span>}>{activeRole.label} mocks</SectionTitle>
-          <MockList table={table} showRole={!realRole} openPathOf={openPathOf} onOpenPath={onOpenPath} renderActions={renderActions} assessmentRoot={assessmentRoot}
-            emptyText={`No ${activeRole.label} mocks in ${company.name} match the filters.`} />
+          <MockList {...listProps} showRole={!realRole} emptyText={`No ${activeRole.label} mocks in ${company.name} match the filters.`} />
         </section>
       </>}
     </div>
@@ -1067,6 +1241,7 @@ function CompanyDetail({
 export default function MockWorkspace({
   loading, error, mocks, companyInfo, logoOf, selectedCompany, onSelectCompany, selectedRole, onSelectRole,
   table, openPathOf, onOpenPath, renderActions, assessmentRoot, canCreate, onCreateMock, onManageCompany, onClearFilters,
+  onTogglePublish, scopeActions, selection, onToggleSelection,
 }) {
   const [railSort, setRailSort] = useState('name');
   const companies = useMemo(() => {
@@ -1102,6 +1277,8 @@ export default function MockWorkspace({
 
   // Shared by the company row in the tree and the company header.
   const companyMenu = (entry, { open, toggle, inDetail, onClose } = {}) => [
+    ...(scopeActions?.({ company: entry.name }) || []),
+    { divider: true, key: 'company-scope' },
     !inDetail && { label: `Open ${entry.name}`, icon: <FolderOpen className="h-3.5 w-3.5" />, onClick: () => onSelectCompany(entry.name) },
     canCreate && { label: `Create mock for ${entry.name}`, icon: <Plus className="h-3.5 w-3.5" />, onClick: () => onCreateMock({ company: entry.name }) },
     toggle && { label: open ? 'Hide roles' : `Show ${plural(entry.roles.length, 'role')}`, icon: <BriefcaseBusiness className="h-3.5 w-3.5" />, onClick: toggle },
@@ -1111,6 +1288,24 @@ export default function MockWorkspace({
     entry.domain && { label: `Visit ${entry.domain}`, icon: <Globe className="h-3.5 w-3.5" />, onClick: () => window.open(`https://${entry.domain}`, '_blank', 'noopener,noreferrer') },
     inDetail && { divider: true, key: 'd2' },
     inDetail && { label: 'Close company', icon: <X className="h-3.5 w-3.5" />, onClick: onClose },
+  ];
+
+  const roleMenu = (entry, role, { inDetail = false } = {}) => [
+    ...(scopeActions?.({ company: entry.name, roleKey: role.key, role: role.label }) || []),
+    { divider: true, key: 'role-scope' },
+    !inDetail && { label: 'Open role', icon: <FolderOpen className="h-3.5 w-3.5" />, onClick: () => jump(entry.name, role.key) },
+    canCreate && role.key !== NO_ROLE && { label: `Create mock for ${role.label}`, icon: <Plus className="h-3.5 w-3.5" />, onClick: () => onCreateMock({ company: entry.name, role: role.label }) },
+    role.count === 1 && !role.mocks[0].shared && { label: 'Edit its mock', icon: <Pencil className="h-3.5 w-3.5" />, onClick: () => onOpenPath(`${assessmentRoot}/${role.mocks[0]._id}/edit`) },
+    role.mocks.some((mock) => !isDraft(mock)) && {
+      label: 'Preview latest mock',
+      icon: <Eye className="h-3.5 w-3.5" />,
+      onClick: () => {
+        const latest = role.mocks.filter((mock) => !isDraft(mock)).sort((a, b) => timeOf(b.updatedAt) - timeOf(a.updatedAt))[0];
+        onOpenPath(`${assessmentRoot}/preview/${latest._id}`);
+      },
+    },
+    inDetail && { divider: true, key: 'back-to-roles' },
+    inDetail && { label: `Back to ${entry.name} roles`, icon: <ArrowLeft className="h-3.5 w-3.5" />, onClick: () => onSelectRole('') },
   ];
 
   let body;
@@ -1140,8 +1335,9 @@ export default function MockWorkspace({
   } else if (company) {
     body = (
       <CompanyDetail key={company.key} company={company} selectedRole={selectedRole} onSelectRole={onSelectRole} onClose={() => onSelectCompany('')}
-        canCreate={canCreate} onCreateMock={onCreateMock} companyMenu={companyMenu}
-        table={table} openPathOf={openPathOf} onOpenPath={onOpenPath} renderActions={renderActions} assessmentRoot={assessmentRoot} />
+        canCreate={canCreate} onCreateMock={onCreateMock} companyMenu={companyMenu} roleMenu={roleMenu}
+        table={table} openPathOf={openPathOf} onOpenPath={onOpenPath} renderActions={renderActions} assessmentRoot={assessmentRoot}
+        onTogglePublish={onTogglePublish} selection={selection} onToggleSelection={onToggleSelection} />
     );
   } else {
     body = <Overview companies={companies} mocks={mocks} logoOf={logoOf} onJump={jump} canCreate={canCreate} onCreateMock={onCreateMock} />;
@@ -1152,7 +1348,7 @@ export default function MockWorkspace({
       {/* Phones: the company tree, or the chosen company with a back link; desktop: both side by side. */}
       <div className={`${selectedKey ? 'hidden lg:flex' : 'flex'} min-h-0 flex-col`}>
         <CompanyRail companies={companies} selectedKey={company ? selectedKey : ''} selectedRole={selectedRole}
-          onSelect={onSelectCompany} onSelectRole={jump} companyMenu={companyMenu} sort={railSort} onSort={setRailSort} />
+          onSelect={onSelectCompany} onSelectRole={jump} companyMenu={companyMenu} roleMenu={roleMenu} sort={railSort} onSort={setRailSort} />
       </div>
       <div className={`${selectedKey ? 'block' : 'hidden lg:block'} min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5`}>{body}</div>
     </div>

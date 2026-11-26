@@ -128,7 +128,7 @@ export default [
       {
         id: "pmock-companies", target: "pmock-companies", chapter: "actions", quick: true, tryIt: "Open a company",
         title: "Pick a company",
-        body: "The left bar lists every company with its roles and mocks, how many are open now or upcoming, and how many you have done. Click a company to open it on the right, or use the arrow to show its roles and jump straight to one. Overview at the top brings you back here.",
+        body: "Pick a company from the left bar to see its roles, or use the arrow beside a company to jump straight to a role. Overview at the top brings you back here.",
       },
       {
         id: "pmock-journey", target: "pmock-journey", chapter: "parts",
@@ -148,12 +148,12 @@ export default [
       {
         id: "pmock-roles", target: "pmock-roles", chapter: "parts", quick: true,
         title: "Choose a role",
-        body: "Pick the job you are preparing for: tabs for a few roles, a list for many (the left bar shows them too). A green dot means a mock is open now, and the bar shows how many of the role's mocks you have done. Mocks saved without a role are under General.",
+        body: "Choose the job you are preparing for. On a desktop, the role picker closes and the exam pattern and mocks appear on the right. On a phone, choose a role above the exam pattern. Mocks saved without a role are under General.",
       },
       {
         id: "pmock-mocks", target: "pmock-mocks", chapter: "parts",
         title: "The role's mocks",
-        body: "Open mocks come first, then upcoming, then finished ones. Click a mock to see its overview below: the key facts, the exam pattern section by section with marks and negative marking, and your admin's instructions. Always open means no closing date.",
+        body: "All mocks for the chosen role appear below the exam pattern. Select a mock to update the pattern above and see its details and instructions below. Start or continue a mock while it is open.",
       },
       {
         id: "pmock-start", target: "pmock-start", chapter: "actions", quick: true,

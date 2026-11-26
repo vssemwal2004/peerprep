@@ -7,12 +7,14 @@ import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from './coordinatorPermissions';
-import { isUniversityDeployment } from '../platform/universityPermissions';
+import { isControlDeployment, isUniversityDeployment } from '../platform/universityPermissions';
+import MockStudentsDialog from './prepMock/MockStudentsDialog';
+import { isUniversitySpoc } from '../platform/adminAccess';
 import {
   ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
   Pencil, Copy, X, MoreVertical, Lock, Unlock, Globe, ShieldOff,
   RotateCcw, CheckCircle2, AlertTriangle, FileCheck2, Mail, Send, Loader2,
-  Users, UserMinus, UserPlus, BarChart3, Building2,
+  Users, UserMinus, UserPlus, BarChart3, Building2, Table2, ListChecks,
 } from 'lucide-react';
 import AssessmentLifecycleSidebar from './assessment/components/AssessmentLifecycleSidebar';
 import PageGuideButton from '../guide/platform/PageGuideButton';
@@ -24,6 +26,10 @@ import {
   assessmentLifecycleLabel, assignedCountOf, statusStyles, displayStatus, formatShortDate, formatTime,
 } from './assessment/assessmentListShared';
 import MockWorkspace, { MockFilterBar, NO_ROLE } from './prepMock/MockWorkspace';
+import BulkAssignDialog from './prepMock/BulkAssignDialog';
+import BulkPublishDialog from './prepMock/BulkPublishDialog';
+import { PublishConfirmDialog } from './prepMock/PublishToggle';
+import { isLiveMock, mocksForScope, pruneSelection, toggleSelection } from './prepMock/mockAccessModel';
 
 const ELIGIBLE_VIOLATIONS = (student) => Number(student.submission?.tabSwitches || 0)
   + Number(student.submission?.fullscreenExits || 0)
@@ -67,6 +73,8 @@ const ASSESSMENT_VALUES = {
   completion: (row) => (assignedCountOf(row) > 0 ? Number(row.completedCount || 0) / assignedCountOf(row) : 0),
   access: (row) => (row.isVisible !== false ? 'Visible' : 'Hidden'),
   status: (row) => assessmentLifecycleLabel(row) || null,
+  // Prep Mock column: live first.
+  live: (row) => (isLiveMock(row) ? 1 : 0),
 };
 const assessmentValue = (row, key) => ASSESSMENT_VALUES[key]?.(row);
 const ASSESSMENT_COLUMNS = [['title', 'Assessment'], ['date', 'Date'], ['time', 'Time'], ['content', 'Content'], ['completion', 'Completion'], ['access', 'Access'], ['status', 'Status']];
@@ -82,7 +90,7 @@ const getStudentAddedBadgeClass = (createdAt) => {
   return 'border-slate-200 bg-slate-50 text-slate-500';
 };
 
-function ThreeDotsMenu({ assessment, isMock, readOnly = false, onOpen, onPreview, onViewReport, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onAddStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers, onPublishMock, onUnpublishMock, onResetMock }) {
+function ThreeDotsMenu({ assessment, isMock, readOnly = false, onOpen, onPreview, onViewReport, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onAddStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers, onEditPattern, onTogglePublish, onAssignOwnStudents, onAssignUniversityStudents }) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState(null);
   const [menuDirection, setMenuDirection] = useState('down');
@@ -156,7 +164,9 @@ function ThreeDotsMenu({ assessment, isMock, readOnly = false, onOpen, onPreview
     <button
       type="button"
       role="menuitem"
-      onClick={(event) => { event.preventDefault(); event.stopPropagation(); onClick(); setOpen(false); }}
+      // Focus goes back to the ⋮ button first: the menu item is removed as the menu closes, so a
+      // dialog opened from it (e.g. the publish confirm) returns focus to the row, not to <body>.
+      onClick={(event) => { event.preventDefault(); event.stopPropagation(); buttonRef.current?.focus(); onClick(); setOpen(false); }}
       className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium transition-colors hover:bg-slate-50 dark:hover:bg-gray-700 ${danger ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-gray-200'}`}
     >
       {icon}
@@ -165,6 +175,40 @@ function ThreeDotsMenu({ assessment, isMock, readOnly = false, onOpen, onPreview
   );
 
   const isVisible = assessment.isVisible !== false;
+  const divider = (key) => <div key={key} className="my-1 h-px bg-slate-100 dark:bg-gray-700" />;
+  const completed = assessment.status === 'Completed' || assessment.manuallyCompletedAt;
+  // Prep Mock: always open, no dates, no password or sets. A published mock reaches every university
+  // with an active PrepMock package; a university admin only views (readOnly).
+  const mockItems = () => {
+    const live = isLiveMock(assessment);
+    return <>
+      {item(<ClipboardList className="h-3.5 w-3.5" />, !readOnly && assessment.lifecycleStatus === 'draft' && !assessment.shared ? 'Continue in builder' : completed ? 'View Report' : 'View Mock', onOpen)}
+      {item(<Eye className="h-3.5 w-3.5" />, 'Preview Mock', onPreview)}
+      {item(<BarChart3 className="h-3.5 w-3.5" />, 'View Report', onViewReport)}
+      {!assessment.shared && !readOnly && <>
+        {item(<Copy className="h-3.5 w-3.5" />, 'Copy Mock', onDuplicate)}
+        {divider('m1')}
+        {item(<Pencil className="h-3.5 w-3.5" />, 'Edit mock', onEdit)}
+        {item(<Table2 className="h-3.5 w-3.5" />, 'Edit pattern', onEditPattern)}
+        {live
+          ? item(<EyeOff className="h-3.5 w-3.5" />, 'Unpublish', () => onTogglePublish(false))
+          : item(<Globe className="h-3.5 w-3.5" />, 'Publish', () => onTogglePublish(true))}
+        {onAssignOwnStudents && <>
+          {divider('m2')}
+          {item(<UserPlus className="h-3.5 w-3.5" />, 'Assign own students', onAssignOwnStudents)}
+        </>}
+        {divider('m3')}
+        {item(<FileCheck2 className="h-3.5 w-3.5" />, 'Generate Answers', onReleaseAnswers)}
+        {divider('m4')}
+        {item(<Trash2 className="h-3.5 w-3.5" />, 'Delete Mock', onDelete, true)}
+      </>}
+      {/* University SPOC: assign this live mock to chosen Prep Mock students, with dates. */}
+      {readOnly && onAssignUniversityStudents && <>
+        {divider('u1')}
+        {item(<UserPlus className="h-3.5 w-3.5" />, 'Assign students', onAssignUniversityStudents)}
+      </>}
+    </>;
+  };
   const menu = (
     <AnimatePresence>
       {open && menuStyle && (
@@ -184,31 +228,30 @@ function ThreeDotsMenu({ assessment, isMock, readOnly = false, onOpen, onPreview
           style={menuStyle}
           className="fixed z-[1000] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
         >
-          {item(<ClipboardList className="h-3.5 w-3.5" />, readOnly ? 'View Mock' : isMock && assessment.lifecycleStatus === 'draft' ? 'Publish Mock' : assessment.status === 'Completed' || assessment.manuallyCompletedAt ? 'View Report' : isMock ? 'View Mock' : 'View Assessment', onOpen)}
-          {item(<Eye className="h-3.5 w-3.5" />, isMock ? 'Preview Mock' : 'Preview Assessment', onPreview)}
+          {isMock ? mockItems() : <>
+          {item(<ClipboardList className="h-3.5 w-3.5" />, completed ? 'View Report' : 'View Assessment', onOpen)}
+          {item(<Eye className="h-3.5 w-3.5" />, 'Preview Assessment', onPreview)}
           {item(<BarChart3 className="h-3.5 w-3.5" />, 'View Report', onViewReport)}
           {!assessment.shared && !readOnly && <>
-          {item(<Copy className="h-3.5 w-3.5" />, isMock ? 'Copy Mock' : 'Copy Assessment', onDuplicate)}
+          {item(<Copy className="h-3.5 w-3.5" />, 'Copy Assessment', onDuplicate)}
           <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
-          {item(<Pencil className="h-3.5 w-3.5" />, isMock ? 'Edit Mock Questions' : 'Edit Assessment', onEdit)}
-          {isMock && assessment.lifecycleStatus === 'draft' && item(<Send className="h-3.5 w-3.5" />, 'Publish Mock', onPublishMock)}
-          {isMock && assessment.lifecycleStatus === 'published' && item(<EyeOff className="h-3.5 w-3.5" />, 'Unpublish Mock', onUnpublishMock)}
-          {isMock && item(<RotateCcw className="h-3.5 w-3.5" />, 'Reset Mock', onResetMock, true)}
+          {item(<Pencil className="h-3.5 w-3.5" />, 'Edit Assessment', onEdit)}
           {item(<Lock className="h-3.5 w-3.5" />, 'Edit Password', onEditPassword)}
           {assessment.lifecycleStatus !== 'draft' && item(<Users className="h-3.5 w-3.5" />, 'View Students & Sets', onEligibleStudents)}
           {assessment.lifecycleStatus !== 'draft' && item(<UserPlus className="h-3.5 w-3.5" />, 'Add Student', onAddStudents)}
           {assessment.lifecycleStatus !== 'draft' && item(<Mail className="h-3.5 w-3.5" />, 'Send Mail to Eligible Students', onSendInvitations)}
-          {!isMock && item(
+          {item(
             isVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />,
             isVisible ? 'Archive Assessment' : 'Restore Assessment',
             onToggleVisibility,
           )}
           <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
-          {!isMock && item(<RotateCcw className="h-3.5 w-3.5" />, 'Reset Test Submissions', onResetSubmissions)}
-          {!isMock && item(<CheckCircle2 className="h-3.5 w-3.5" />, 'Mark as Complete', onMarkComplete)}
+          {item(<RotateCcw className="h-3.5 w-3.5" />, 'Reset Test Submissions', onResetSubmissions)}
+          {item(<CheckCircle2 className="h-3.5 w-3.5" />, 'Mark as Complete', onMarkComplete)}
           {item(<FileCheck2 className="h-3.5 w-3.5" />, 'Generate Answers', onReleaseAnswers)}
           <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
-          {item(<Trash2 className="h-3.5 w-3.5" />, isMock ? 'Delete Mock' : 'Delete Assessment', onDelete, true)}
+          {item(<Trash2 className="h-3.5 w-3.5" />, 'Delete Assessment', onDelete, true)}
+          </>}
           </>}
         </motion.div>
       )}
@@ -1190,6 +1233,15 @@ export default function AssessmentDashboard() {
   const [invitationTarget, setInvitationTarget] = useState(null);
   const [eligibleTarget, setEligibleTarget] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
+  // Prep Mock: publish / unpublish popup ({ mock, publish }) and "Assign own students".
+  const [publishTarget, setPublishTarget] = useState(null);
+  const [ownStudentsTarget, setOwnStudentsTarget] = useState(null);
+  const [bulkAction, setBulkAction] = useState(null);
+  const [selectedMockIds, setSelectedMockIds] = useState(() => new Set());
+  // Own (platform) students are given by the platform's full Master Admin only (server checks the same).
+  const canAssignOwnStudents = isMock && !readOnlyMock && isControlDeployment && user?.role === 'admin' && user?.adminAccess !== 'limited';
+  // A university SPOC assigns live mocks to its own Prep Mock students (with dates).
+  const canAssignUniversityStudents = readOnlyMock && isUniversitySpoc(user);
   const [activeTab, setActiveTab] = useState('all');
   const [selectedCompanyFolder, setSelectedCompanyFolderState] = useState('');
   // Prep Mock: '' = every role, NO_ROLE = mocks without a role, otherwise the role name (lower case).
@@ -1206,20 +1258,28 @@ export default function AssessmentDashboard() {
     sort: 'updated',
   });
 
-  const loadAssessments = async () => {
-    setLoading(true);
-    setError('');
+  // `silent`: refresh in place (after a mock publish or access change) without the loading screen.
+  // silent: a background refresh after a change that already worked; a failure keeps the list
+  // on screen and shows a toast instead of replacing it with an error.
+  const loadAssessments = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const data = await api.listAssessments(isMock ? { kind: 'mock' } : {});
-      setAssessments(data.assessments || []);
+      const rows = data.assessments || [];
+      setAssessments(rows);
+      setSelectedMockIds((current) => pruneSelection(current, rows));
     } catch (err) {
-      setError(err.message || 'Failed to load assessments');
+      if (silent) toast.error(`Could not refresh the list: ${err.message || 'try reloading the page'}`);
+      else setError(err.message || 'Failed to load assessments');
     } finally {
       setLoading(false);
     }
-  };
+  }, [isMock, toast]);
 
-  useEffect(() => { loadAssessments(); }, []);
+  useEffect(() => { loadAssessments(); }, [loadAssessments]);
   useEffect(() => {
     if (!isMock) return undefined;
     let active = true;
@@ -1311,13 +1371,43 @@ export default function AssessmentDashboard() {
       return selectedRole === NO_ROLE ? !role : role === selectedRole;
     })
     : folderAssessments;
+  // A draft opens the one builder (create and publish happen there); a shared draft has no builder,
+  // and a university admin only views mocks.
   const mockOpenPath = (assessment) => readOnlyMock ? `${assessmentRoot}/${assessment._id}` : (assessment.lifecycleStatus === 'draft'
-    ? `${assessmentRoot}/${assessment._id}/edit?publish=1`
+    ? (assessment.shared ? `${assessmentRoot}/preview/${assessment._id}` : `${assessmentRoot}/${assessment._id}/edit`)
     : assessment.status === 'Completed' || assessment.manuallyCompletedAt
       ? `${assessmentRoot}/reports?assessmentId=${encodeURIComponent(assessment._id)}`
       : `${assessmentRoot}/${assessment._id}`);
   const clearFilters = () => { setActiveTab('all'); setFilters({ search: '', creationWindow: 'any', startDate: '', endDate: '', testType: 'all', sort: 'updated' }); };
   const assessmentTable = useClientTable(visibleAssessments, { getValue: assessmentValue, resetKey: `${activeTab}|${selectedCompanyFolder}|${selectedRole}|${JSON.stringify(filters)}` });
+
+  const bulkMocks = useMemo(() => canAssignOwnStudents ? mocksForScope(assessments, { all: true }) : [], [assessments, canAssignOwnStudents]);
+  const pickedMocks = useMemo(() => selectedMockIds.size ? bulkMocks.filter((mock) => selectedMockIds.has(String(mock._id))) : [], [bulkMocks, selectedMockIds]);
+  const onToggleMockSelection = (ids, on) => setSelectedMockIds((current) => toggleSelection(current, ids, on));
+  const clearMockSelection = () => setSelectedMockIds(new Set());
+  const openBulkAction = (kind, title, mocks) => {
+    if (!mocks.length) { toast.error('There are no editable mocks in this group.'); return; }
+    setBulkAction({ kind, target: { title, mocks } });
+  };
+
+  // Company and role actions cover the entire group, even if the current view is filtered or paginated.
+  const bulkActionsReady = canAssignOwnStudents && !loading && !error;
+  const scopeActions = bulkActionsReady ? ({ company, role, roleKey }) => [{
+    label: 'Assign students',
+    icon: <UserPlus className="h-3.5 w-3.5" />,
+    onClick: () => openBulkAction('assign', roleKey ? `${company} · ${role}` : `${company} · All mocks`, mocksForScope(bulkMocks, { company, role: roleKey })),
+  }] : undefined;
+
+  const globalActions = bulkActionsReady && bulkMocks.length ? [
+    { heading: 'Across all companies', key: 'scope' },
+    { label: 'Select all mocks', icon: <ListChecks className="h-3.5 w-3.5" />, onClick: () => setSelectedMockIds(new Set(bulkMocks.map((mock) => String(mock._id)))) },
+    { divider: true, key: 'students' },
+    { label: 'Assign students', icon: <UserPlus className="h-3.5 w-3.5" />, onClick: () => openBulkAction('assign', 'All mocks across companies', bulkMocks) },
+    { label: 'Remove students', icon: <UserMinus className="h-3.5 w-3.5" />, onClick: () => openBulkAction('remove', 'All mocks across companies', bulkMocks) },
+    { divider: true, key: 'publishing' },
+    bulkMocks.some((mock) => !isLiveMock(mock)) && { label: 'Publish mocks', icon: <Globe className="h-3.5 w-3.5" />, onClick: () => openBulkAction('publish', 'All mocks across companies', bulkMocks) },
+    bulkMocks.some((mock) => mock.lifecycleStatus === 'published') && { label: 'Unpublish mocks', icon: <ShieldOff className="h-3.5 w-3.5" />, danger: true, onClick: () => openBulkAction('unpublish', 'All mocks across companies', bulkMocks) },
+  ] : undefined;
 
   const handleDelete = async (id) => {
     if (!confirm(`Delete this ${isMock ? 'mock' : 'assessment'} and all submissions?`)) return;
@@ -1364,20 +1454,6 @@ export default function AssessmentDashboard() {
     });
   };
 
-  const openResetMock = (assessment) => setConfirmAction({
-    type: 'resetMock', tone: 'warning', assessment,
-    title: 'Reset mock?',
-    message: 'All assigned students and the schedule will be removed. Students will no longer see or attempt this mock. Prior attempts and scores remain in admin reports.',
-    confirmLabel: 'Reset Mock',
-  });
-
-  const openUnpublishMock = (assessment) => setConfirmAction({
-    type: 'unpublishMock', tone: 'warning', assessment,
-    title: 'Unpublish mock?',
-    message: 'Students will no longer see or attempt this mock. Its schedule, student selection, and prior reports will be kept for publishing again.',
-    confirmLabel: 'Unpublish Mock',
-  });
-
   const openMarkComplete = (assessment) => {
     setConfirmAction({
       type: 'complete',
@@ -1402,13 +1478,7 @@ export default function AssessmentDashboard() {
 
   const handleConfirmAction = async (action) => {
     try {
-      if (action.type === 'resetMock') {
-        await api.resetMock(action.assessment._id);
-        toast.success('Mock reset. Student access and schedule removed.');
-      } else if (action.type === 'unpublishMock') {
-        await api.unpublishMock(action.assessment._id);
-        toast.success('Mock unpublished');
-      } else if (action.type === 'reset') {
+      if (action.type === 'reset') {
         const result = await api.resetAssessmentSubmissions(action.assessment._id);
         toast.success(`Test reset. ${result.deletedSubmissions || 0} submission${Number(result.deletedSubmissions || 0) === 1 ? '' : 's'} deleted.`);
       } else if (action.type === 'complete') {
@@ -1473,7 +1543,24 @@ export default function AssessmentDashboard() {
                 loading={loading}
                 onRefresh={loadAssessments}
                 onSortChange={(value) => { assessmentTable.setSort(null); setFilters((current) => ({ ...current, sort: value })); }}
+                actions={globalActions}
               />
+              {bulkActionsReady && pickedMocks.length > 0 && (
+                <section aria-label="Selected mock actions" className="mt-3 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 dark:border-sky-500/30 dark:bg-sky-500/10">
+                  <p role="status" className="mr-auto flex items-center gap-2 text-xs font-semibold text-sky-900 dark:text-sky-100">
+                    <ListChecks className="h-4 w-4" aria-hidden="true" />{pickedMocks.length.toLocaleString()} {pickedMocks.length === 1 ? 'mock' : 'mocks'} selected
+                  </p>
+                  <button type="button" onClick={() => openBulkAction('assign', 'Selected mocks', pickedMocks)}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-sky-600 px-2.5 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
+                    <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />Assign students
+                  </button>
+                  <button type="button" onClick={() => openBulkAction('remove', 'Selected mocks', pickedMocks)}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-sky-800 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-100 dark:hover:bg-sky-500/20">
+                    <UserMinus className="h-3.5 w-3.5" aria-hidden="true" />Remove students
+                  </button>
+                  <button type="button" onClick={clearMockSelection} className="h-8 rounded-lg px-2 text-xs font-semibold text-sky-800 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-100 dark:hover:bg-sky-500/20">Clear selection</button>
+                </section>
+              )}
               <MockWorkspace
                 loading={loading}
                 error={error}
@@ -1492,6 +1579,10 @@ export default function AssessmentDashboard() {
                 onCreateMock={({ company = '', role = '' } = {}) => navigate(`${assessmentRoot}/create`, company ? { state: { mockPrefill: { company, role } } } : undefined)}
                 onManageCompany={(company) => navigate(`/admin/prepmock/companies?${new URLSearchParams({ company })}`)}
                 onClearFilters={clearFilters}
+                scopeActions={scopeActions}
+                selection={canAssignOwnStudents ? selectedMockIds : undefined}
+                onToggleSelection={canAssignOwnStudents ? onToggleMockSelection : undefined}
+                onTogglePublish={readOnlyMock ? undefined : (assessment) => setPublishTarget({ mock: assessment, publish: !isLiveMock(assessment) })}
                 renderActions={(assessment, openPath) => (
                   <ThreeDotsMenu
                     assessment={assessment}
@@ -1501,19 +1592,13 @@ export default function AssessmentDashboard() {
                     onPreview={() => navigate(`${assessmentRoot}/preview/${assessment._id}`)}
                     onViewReport={() => navigate(`${assessmentRoot}/reports?assessmentId=${encodeURIComponent(assessment._id)}`)}
                     onEdit={() => navigate(`${assessmentRoot}/${assessment._id}/edit`)}
+                    onEditPattern={() => navigate(`${assessmentRoot}/${assessment._id}/edit?step=pattern`)}
                     onDuplicate={() => handleDuplicate(assessment._id)}
                     onDelete={() => handleDelete(assessment._id)}
-                    onToggleVisibility={() => handleToggleVisibility(assessment)}
-                    onEditPassword={() => setPasswordTarget(assessment)}
-                    onSendInvitations={() => setInvitationTarget(assessment)}
-                    onEligibleStudents={() => setEligibleTarget(assessment)}
-                    onAddStudents={() => setEligibleTarget({ ...assessment, startInAddMode: true })}
-                    onResetSubmissions={() => openResetSubmissions(assessment)}
-                    onMarkComplete={() => openMarkComplete(assessment)}
                     onReleaseAnswers={() => openReleaseAnswers(assessment)}
-                    onPublishMock={() => navigate(`${assessmentRoot}/${assessment._id}/edit?publish=1`)}
-                    onUnpublishMock={() => openUnpublishMock(assessment)}
-                    onResetMock={() => openResetMock(assessment)}
+                    onTogglePublish={(publish) => setPublishTarget({ mock: assessment, publish })}
+                    onAssignOwnStudents={canAssignOwnStudents ? () => setOwnStudentsTarget(assessment) : undefined}
+                    onAssignUniversityStudents={canAssignUniversityStudents && isLiveMock(assessment) ? () => setOwnStudentsTarget({ ...assessment, assignMode: 'university' }) : undefined}
                   />
                 )}
               />
@@ -1569,9 +1654,7 @@ export default function AssessmentDashboard() {
                     ? Math.min(100, Math.round((completedCount / assignedCount) * 100))
                     : 0;
                   const lifecycleStatus = assessmentLifecycleLabel(assessment);
-                  const openPath = isMock && assessment.lifecycleStatus === 'draft'
-                    ? `${assessmentRoot}/${assessment._id}/edit?publish=1`
-                    : assessment.lifecycleStatus !== 'draft' && (assessment.status === 'Completed' || assessment.manuallyCompletedAt)
+                  const openPath = assessment.lifecycleStatus !== 'draft' && (assessment.status === 'Completed' || assessment.manuallyCompletedAt)
                     ? `${assessmentRoot}/reports?assessmentId=${encodeURIComponent(assessment._id)}`
                     : `${assessmentRoot}/${assessment._id}`;
 
@@ -1673,9 +1756,6 @@ export default function AssessmentDashboard() {
                             onResetSubmissions={() => openResetSubmissions(assessment)}
                             onMarkComplete={() => openMarkComplete(assessment)}
                             onReleaseAnswers={() => openReleaseAnswers(assessment)}
-                            onPublishMock={() => navigate(`${assessmentRoot}/${assessment._id}/edit?publish=1`)}
-                            onUnpublishMock={() => openUnpublishMock(assessment)}
-                            onResetMock={() => openResetMock(assessment)}
                         />
                       </div>
                     </article>
@@ -1788,6 +1868,29 @@ export default function AssessmentDashboard() {
         onClose={() => setConfirmAction(null)}
         onConfirm={handleConfirmAction}
       />
+      {ownStudentsTarget && <MockStudentsDialog mock={ownStudentsTarget} mode={ownStudentsTarget.assignMode === 'university' ? 'university' : 'own'} toast={toast} onClose={() => setOwnStudentsTarget(null)} />}
+      {canAssignOwnStudents && bulkAction && (
+        bulkAction.kind === 'assign' || bulkAction.kind === 'remove'
+          ? <BulkAssignDialog target={bulkAction.target} mode={bulkAction.kind} toast={toast} onClose={() => setBulkAction(null)} onDone={() => loadAssessments({ silent: true })} />
+          : <BulkPublishDialog target={bulkAction.target} publish={bulkAction.kind === 'publish'} toast={toast} onClose={() => setBulkAction(null)}
+              onDone={() => loadAssessments({ silent: true })} onOpenBuilder={(path) => navigate(path)} />
+      )}
+      {isMock && <PublishConfirmDialog
+        target={publishTarget}
+        toast={toast}
+        onClose={() => setPublishTarget(null)}
+        onDone={() => {
+          // Show the new Live/Draft state straight away, then refresh from the server.
+          const { mock, publish } = publishTarget || {};
+          if (mock?._id) {
+            setAssessments((rows) => rows.map((row) => (row._id === mock._id
+              ? { ...row, lifecycleStatus: publish ? 'published' : 'draft', isVisible: publish ? true : row.isVisible }
+              : row)));
+          }
+          loadAssessments({ silent: true });
+        }}
+        onOpenBuilder={(path) => navigate(path)}
+      />}
     </div>
   );
 }

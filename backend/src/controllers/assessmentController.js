@@ -31,8 +31,9 @@ import Notification from '../models/Notification.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
 import { syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
 import { resetMockDefinition, unpublishMockDefinition } from '../services/prepMockLifecycle.js';
-import { patternForMock } from '../services/prepMockPattern.js';
-import { HttpError } from '../utils/errors.js';
+import { patternCompanyKey, patternForMock, patternRoleKey } from '../services/prepMockPattern.js';
+import { universityAssignmentsFor } from '../services/prepMockUniversityAssign.js';
+import { ownGrantsForStudent, withOwnGrantOf } from '../services/prepMockOwnStudents.js';
 import { deleteAssessmentQuestionArtifacts } from '../services/assessmentQuestionCleanupService.js';
 import { logActivity } from './adminActivityController.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
@@ -44,7 +45,7 @@ import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js'
 import { studentFeatureQuery, studentHasFeature } from '../services/studentFeatureAccess.js';
 import { companyLogoSnapshot, logosForCompanies } from '../services/prepMockCatalog.js';
 import { publishedMockAlwaysOn } from '../services/prepMockAvailability.js';
-import { isStudentAssignedToAssessment } from '../utils/assessmentAssignment.js';
+import { isStudentAssignedToAssessment, withOwnStudentWindow } from '../utils/assessmentAssignment.js';
 import { claimAssessmentDraftProblems } from '../services/assessmentProblemCloneService.js';
 import {
   getCodingQuestionScore,
@@ -593,6 +594,11 @@ export function sanitizeStudentAssessmentForResponse(assessment) {
   // Other candidates' IDs, the author and admin templates are not exam content.
   ['assignedStudents', 'draftAssignedStudents', 'createdBy', 'invitationTemplate', 'questionSets', 'draftTargetMode', 'audienceType']
     .forEach((field) => { delete source[field]; });
+  // Mock pattern copies saved before notes were left out still carry the admin-only notes.
+  if (source.mockPattern && typeof source.mockPattern === 'object') {
+    const { notes: _adminNotes, ...mockPattern } = source.mockPattern;
+    source.mockPattern = mockPattern;
+  }
   return {
     ...source,
     sections: (source.sections || []).map((section) => ({
@@ -2755,6 +2761,15 @@ export async function createAssessment(req, res) {
   }
 }
 
+/** Prep Mock list fields (admin All Mocks workspace): the written pattern copy and availability. */
+export function mockListFields(assessment = {}) {
+  return {
+    patternId: assessment.patternId || null,
+    mockPattern: assessment.mockPattern || null,
+    availabilityMode: assessment.availabilityMode || 'always',
+  };
+}
+
 export async function listAssessments(req, res) {
   try {
     const mock = req.query.kind === 'mock';
@@ -2771,7 +2786,8 @@ export async function listAssessments(req, res) {
     const assessmentsQuery = Assessment.find(query)
       .sort({ createdAt: -1 });
     if (dashboardView) {
-      assessmentsQuery.select('_id title assessmentType lifecycleStatus isVisible startTime endTime manuallyCompletedAt createdAt updatedAt');
+      // Mocks also need their company, role and written pattern copy.
+      assessmentsQuery.select(`_id title assessmentType lifecycleStatus isVisible startTime endTime manuallyCompletedAt createdAt updatedAt${mock ? ' kind company role patternId mockPattern availabilityMode' : ''}`);
     } else {
       assessmentsQuery.populate('createdBy', 'name email role coordinatorId');
     }
@@ -2792,6 +2808,7 @@ export async function listAssessments(req, res) {
       const now = new Date();
       const data = assessments.map((assessment) => ({
         ...assessment,
+        ...(mock ? mockListFields(assessment) : {}),
         status: computeStatus(now, assessment),
         lifecycleBucket: lifecycleBucketForAssessment(assessment, now),
       }));
@@ -2869,6 +2886,7 @@ export async function listAssessments(req, res) {
         maxScore: counts.maxScore || 0,
         minScore: counts.minScore || 0,
         violationCount: (tally.tabSwitches || 0) + (tally.fullscreenExits || 0) + (tally.cameraFlags || 0) + (tally.copyPasteCount || 0),
+        ...(mock ? mockListFields(a) : {}),
       };
     });
     res.json({
@@ -2939,15 +2957,99 @@ export async function resetMock(req, res) {
   }
 }
 
+/**
+ * Publish toggle for a saved Prep Mock (card toggle and ⋮ menu): the same checks as publishing
+ * from the builder, without opening it. A published mock reaches every university whose PrepMock
+ * grant and dates are active (syncMockPublication); Master Admin only, on the platform.
+ */
+export const isMockLive = (mock) => mock?.lifecycleStatus === 'published' && mock?.isVisible !== false;
+
+/** Only the Master Admin, on the platform, publishes or unpublishes Prep Mocks (throws 403). */
+export async function assertMockPublisher(user) {
+  await validateMockAudience({ kind: 'mock', user });
+}
+
+/**
+ * Why a saved Prep Mock (mongoose document) cannot be published yet, or null. The single toggle
+ * (publishMock) returns this text as its 400 and bulk publish (services/prepMockBulk) lists it as
+ * the skip reason, so the two paths never disagree. Same checks as publishing from the builder.
+ */
+export async function mockPublishProblem(assessment) {
+  const missing = [
+    !String(assessment.title || '').trim() && 'a mock name',
+    !String(assessment.company || '').trim() && 'a company',
+    !String(assessment.role || '').trim() && 'a role',
+    !(Number(assessment.duration) > 0) && 'the test length (Schedule step)',
+  ].filter(Boolean);
+  if (missing.length) return `Add ${missing.join(', ')} before publishing. Open Edit mock to complete it.`;
+  const patternProblem = mockPatternProblem({ mockPattern: assessment.mockPattern, patternFrom: assessment.patternFrom, sections: assessment.sections || [], duration: assessment.duration });
+  if (patternProblem) return `${patternProblem} Open Edit mock to fix it.`;
+  try {
+    await validatePublishedAssessmentSections(assessment.sections || []);
+  } catch (error) {
+    return `${error.message} Open Edit mock to fix the questions.`;
+  }
+  if (assessment.passwordEnabled && !assessment.passwordHash) return 'This mock has a password switched on without a password. Open Edit mock to fix it.';
+  // Same delivery check as publishing from the builder (question pools that ask for more than exist).
+  const deliveryError = validateQuestionDeliverySettings(assessment);
+  if (deliveryError) return `${deliveryError} Open Edit mock to fix it.`;
+  return null;
+}
+
+/**
+ * Publishes a checked mock document (run mockPublishProblem first): always open, keeps its opening
+ * time when already open, a new version when it goes live, publications synced.
+ */
+export async function applyMockPublish(assessment, actorId) {
+  const wasPublished = isMockLive(assessment);
+  assessment.lifecycleStatus = 'published';
+  assessment.isVisible = true;
+  assessment.availabilityMode = 'always';
+  const alreadyOpen = assessment.startTime && assessment.endTime && assessment.endTime.getUTCFullYear() === 9999;
+  if (!alreadyOpen) assessment.startTime = new Date();
+  assessment.endTime = new Date('9999-12-31T23:59:59.000Z');
+  assessment.mockHasHistory = true;
+  if (!wasPublished) {
+    assessment.version = (assessment.version || 1) + 1;
+    assessment.versionUpdatedAt = new Date();
+  }
+  await assessment.save();
+  await syncMockPublication(assessment, actorId);
+  await syncAssessmentCandidateBatch(assessment);
+  return { wasPublished };
+}
+
+/** Unpublishes a mock document: draft + hidden, publications synced, its notifications removed. */
+export async function applyMockUnpublish(assessment, actorId) {
+  const wasPublished = isMockLive(assessment);
+  unpublishMockDefinition(assessment);
+  await assessment.save();
+  await syncMockPublication(assessment, actorId);
+  await syncAssessmentCandidateBatch(assessment);
+  await Notification.deleteMany({ referenceId: assessment._id, type: 'ASSESSMENT' });
+  return { wasPublished };
+}
+
+export async function publishMock(req, res) {
+  try {
+    const assessment = await Assessment.findById(req.params.id);
+    if (!assessment || assessment.kind !== 'mock') return res.status(404).json({ error: 'Mock not found' });
+    await assertMockPublisher(req.user);
+    const problem = await mockPublishProblem(assessment);
+    if (problem) return res.status(400).json({ error: problem });
+    await applyMockPublish(assessment, req.user._id);
+    return res.json({ message: 'Mock published.', lifecycleStatus: 'published' });
+  } catch (error) {
+    console.error('Error publishing mock:', error);
+    return res.status(error?.status || 500).json({ error: error?.status ? error.message : 'Failed to publish mock' });
+  }
+}
+
 export async function unpublishMock(req, res) {
   try {
     const assessment = await Assessment.findById(req.params.id);
     if (!assessment || assessment.kind !== 'mock') return res.status(404).json({ error: 'Mock not found' });
-    unpublishMockDefinition(assessment);
-    await assessment.save();
-    await syncMockPublication(assessment, req.user._id);
-    await syncAssessmentCandidateBatch(assessment);
-    await Notification.deleteMany({ referenceId: assessment._id, type: 'ASSESSMENT' });
+    await applyMockUnpublish(assessment, req.user._id);
     return res.json({ message: 'Mock unpublished. Students can no longer access it.' });
   } catch (error) {
     console.error('Error unpublishing mock:', error);
@@ -3023,6 +3125,10 @@ export async function updateAssessment(req, res) {
       user: req.user,
       requireSelection: lifecycleStatus === 'published' || (lifecycleStatus === undefined && assessment.lifecycleStatus === 'published'),
     });
+    // The written exam pattern of this company + role (patternId: id, null/'' clears, absent keeps).
+    const nextMockPattern = assessment.kind === 'mock' && req.body?.patternId !== undefined
+      ? await patternForMock(req.body.patternId, { company: nextCompany, role: nextRole })
+      : undefined;
     const wasDraft = assessment.lifecycleStatus === 'draft';
     if (
       (audienceType === 'assessment_candidates' || assessment.audienceType === 'assessment_candidates')
@@ -3094,7 +3200,9 @@ export async function updateAssessment(req, res) {
     await applyAssessmentPassword(assessment, { passwordEnabled, password });
 
     if (assessment.kind === 'mock' && assessment.lifecycleStatus === 'published' && assessment.availabilityMode === 'always') {
-      assessment.startTime = new Date();
+      // Opened once when first published; later edits keep the original opening time.
+      const alreadyOpen = assessment.startTime && assessment.endTime && assessment.endTime.getUTCFullYear() === 9999;
+      if (!alreadyOpen) assessment.startTime = new Date();
       assessment.endTime = new Date('9999-12-31T23:59:59.000Z');
     } else if (startTime) {
       const start = parseDate(startTime);
@@ -3180,9 +3288,28 @@ export async function updateAssessment(req, res) {
       }
     }
     if (assessment.kind === 'mock') {
-      if (req.body?.patternFrom !== undefined) assessment.patternFrom = normalizePatternFrom(req.body.patternFrom);
+      if (nextMockPattern !== undefined) {
+        // An older mock keeps its own OA month (patternFrom) when no pattern is linked; the month is
+        // cleared only when it came from a pattern that is now unlinked.
+        const hadPattern = Boolean(assessment.patternId);
+        assessment.mockPattern = nextMockPattern;
+        assessment.patternId = nextMockPattern?.patternId || null;
+        assessment.patternFrom = nextMockPattern ? nextMockPattern.patternFrom || null : (hadPattern ? null : assessment.patternFrom);
+        assessment.markModified('mockPattern');
+      } else if (assessment.patternId && (company !== undefined || req.body?.role !== undefined)) {
+        // Company or role changed: the old pattern belongs to the old pair, so it is cleared
+        // (compared the same way patternForMock matches a pattern to a mock).
+        const current = assessment.mockPattern;
+        if (current && (patternCompanyKey(current.company) !== patternCompanyKey(nextCompany)
+          || patternRoleKey(current.role) !== patternRoleKey(nextRole))) {
+          assessment.mockPattern = null;
+          assessment.patternId = null;
+          assessment.patternFrom = null;
+        }
+      }
+      if (req.body?.patternFrom !== undefined && !assessment.mockPattern) assessment.patternFrom = normalizePatternFrom(req.body.patternFrom);
       if (!isDraft) {
-        const problem = mockPatternProblem({ patternFrom: assessment.patternFrom, sections: assessmentQuestionSets[0]?.sections || assessment.sections, duration: assessment.duration });
+        const problem = mockPatternProblem({ mockPattern: assessment.mockPattern, patternFrom: assessment.patternFrom, sections: assessmentQuestionSets[0]?.sections || assessment.sections, duration: assessment.duration });
         if (problem) return res.status(400).json({ error: problem });
       }
     }
@@ -4150,8 +4277,16 @@ export async function getStudentAssessmentDashboard(req, res) {
         $or: [
           { targetType: 'all' },
           { assignedStudents: req.user._id },
+          // Prep Mock own students (platform): shown inside their own date window below.
+          { kind: 'mock', ownStudents: req.user._id },
         ],
-      }).sort({ startTime: -1, createdAt: -1 }).lean().then(async (local) => [...local, ...(mockOnly ? await sharedAssessments('mock') : await sharedAssessments())]
+      // Other students' grants are not loaded; this student's own grant (their window) is added below.
+      }).select('-ownGrants').sort({ startTime: -1, createdAt: -1 }).lean().then(async (local) => {
+        const grants = local.some((a) => a.kind === 'mock') ? await ownGrantsForStudent(req.user._id) : new Map();
+        return [...local.map((a) => (a.kind === 'mock' ? { ...a, ownGrants: grants.has(String(a._id)) ? [grants.get(String(a._id))] : [] } : a)),
+          ...(mockOnly ? await sharedAssessments('mock') : await sharedAssessments())];
+      }).then((all) => all
+        .map((a) => withOwnStudentWindow(a, req.user))
         .filter((a) => a.lifecycleStatus !== 'draft' && a.isVisible !== false && a.startTime && a.endTime)),
       AssessmentSubmission.find({ studentId: req.user._id }).sort({ updatedAt: -1 }).lean(),
     ]);
@@ -4159,6 +4294,8 @@ export async function getStudentAssessmentDashboard(req, res) {
       ? a.kind === 'mock' && (!isUniversity() || (a.platformShared && a.platformPublished !== false))
       : a.kind !== 'mock'));
     const logoFor = mockOnly ? await logosForCompanies(assessments.map((a) => a.company || '')) : null;
+    // University schedule set by the SPOC for this student (mockId → { startTime, endTime }).
+    const collegeAssignments = mockOnly ? await universityAssignmentsFor(req.user._id) : new Map();
 
     const submissionsByAssessment = new Map(
       studentSubmissions.map((submission) => [String(submission.assessmentId), submission]),
@@ -4222,6 +4359,15 @@ export async function getStudentAssessmentDashboard(req, res) {
             availabilityMode: assessment.availabilityMode || 'scheduled',
             // When the company used this OA pattern ({ month, year }), or null when not set yet.
             patternFrom: assessment.patternFrom?.month && assessment.patternFrom?.year ? { month: assessment.patternFrom.month, year: assessment.patternFrom.year } : null,
+            // The exam pattern the admin wrote for this company + role (rows: name, type,
+            // questions, minutes, marks), or null for older mocks (built from the sections).
+            mockPattern: assessment.mockPattern?.rows?.length ? {
+              rows: assessment.mockPattern.rows.map((row) => ({ name: row.name, type: row.type, questions: row.questions, minutes: row.minutes, marks: row.marks })),
+              totals: assessment.mockPattern.totals || null,
+              patternFrom: assessment.mockPattern.patternFrom || null,
+            } : null,
+            // Assigned by this student's university, with the window to do it in (or null).
+            collegeAssignment: collegeAssignments.get(assessmentId) || null,
           } : {}),
         };
 
@@ -4294,7 +4440,7 @@ export function assertStudentFeatureForAssessment(assessment, student) {
 
 async function requireStudentAssessment(id, student, { metadataOnly = false } = {}) {
   const assessment = await findAssessmentForStudentRoute(id, { lean: true,
-    ...(metadataOnly ? { select: 'kind isVisible settings duration startTime endTime lifecycleStatus targetType assignedStudents passwordEnabled passwordHash manuallyCompletedAt' } : {}),
+    ...(metadataOnly ? { select: 'kind isVisible settings duration startTime endTime lifecycleStatus targetType assignedStudents ownStudents ownAccess passwordEnabled passwordHash manuallyCompletedAt' } : {}),
   });
   if (!assessment) throw new AssessmentWriteError(404, 'ASSESSMENT_NOT_FOUND', 'Assessment not found.');
   if (assessment.kind === 'mock' && (assessment.lifecycleStatus === 'draft' || assessment.isVisible === false)) {
@@ -4307,7 +4453,9 @@ async function requireStudentAssessment(id, student, { metadataOnly = false } = 
   }
   if (!assessment.startTime || !assessment.endTime || !assessment.duration) throw new AssessmentWriteError(400, 'INVALID_SCHEDULE', 'Assessment schedule is incomplete.');
   if (!isStudentAssignedToAssessment(assessment, student)) throw new AssessmentWriteError(403, 'NOT_ASSIGNED', 'Not assigned to this assessment.');
-  return assessment;
+  // Prep Mock own students: the mock is open to them only inside their own date window (their
+  // grant; the metadata read leaves the grant list out and reads only this student's grant).
+  return withOwnStudentWindow(await withOwnGrantOf(assessment, student), student);
 }
 
 async function ensureStudentAttempt(assessment, studentId, { passwordVerified = false } = {}) {
@@ -6352,7 +6500,7 @@ export async function logStudentHeartbeat(req, res) {
     if (req.body?.submissionId !== undefined && !mongoose.isValidObjectId(req.body.submissionId)) {
       return res.status(409).json({ error: 'This request belongs to a different assessment attempt.', code: 'ATTEMPT_IDENTITY_CONFLICT' });
     }
-    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'kind isVisible settings duration startTime endTime targetType assignedStudents lifecycleStatus manuallyCompletedAt' });
+    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'kind isVisible settings duration startTime endTime targetType assignedStudents ownStudents ownAccess lifecycleStatus manuallyCompletedAt' });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
     try { assertStudentFeatureForAssessment(assessment, req.user); }
     catch (error) { return res.status(403).json({ error: error.message, code: error.code }); }

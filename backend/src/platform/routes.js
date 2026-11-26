@@ -933,14 +933,14 @@ router.get('/tenant/assessments', requireAssessmentOrMock, asyncRoute(async (req
       : [],
   ]);
   res.json({ assessments: [...regular, ...mocks].map((item) => ({ ...publishedMockAlwaysOn(item), targetType: 'all',
-    assignedStudents: [], draftAssignedStudents: [], ...(item.kind === 'mock' ? { platformPublished: true } : {}) })) });
+    assignedStudents: [], draftAssignedStudents: [], ownStudents: [], ownGrants: [], ownAccess: null, ...(item.kind === 'mock' ? { platformPublished: true } : {}) })) });
 }));
 router.get('/tenant/assessments/history', requireAssessmentOrMock, asyncRoute(async (req, res) => {
   if (prepMockAccessStatus(req.platformUniversity) !== 'active') throw new HttpError(403, 'PrepMock is unavailable for this university');
   const publications = await Publication.find({ kind: 'assessment', everUniversityIds: req.platformUniversity.universityId }).lean();
   const published = new Set(publications.filter((item) => item.published && item.universityIds.includes(req.platformUniversity.universityId)).map((item) => String(item.contentId)));
   const assessments = await Assessment.find({ _id: { $in: publications.map((item) => item.contentId) }, kind: 'mock', $or: [{ mockHasHistory: true }, { _id: { $in: [...published] } }] }).lean();
-  res.json({ assessments: assessments.map((item) => ({ ...publishedMockAlwaysOn(item), targetType: 'all', assignedStudents: [], draftAssignedStudents: [], platformPublished: published.has(String(item._id)) })) });
+  res.json({ assessments: assessments.map((item) => ({ ...publishedMockAlwaysOn(item), targetType: 'all', assignedStudents: [], draftAssignedStudents: [], ownStudents: [], ownGrants: [], ownAccess: null, platformPublished: published.has(String(item._id)) })) });
 }));
 router.get('/tenant/assessments/:id', requireAssessmentOrMock, asyncRoute(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) throw new HttpError(400, 'Invalid assessment ID');
@@ -956,7 +956,7 @@ router.get('/tenant/assessments/:id', requireAssessmentOrMock, asyncRoute(async 
     $or: [{ universityIds: req.platformUniversity.universityId }, { everUniversityIds: req.platformUniversity.universityId }] }).lean();
   const globalMockPublished = assessment.kind === 'mock' && assessment.lifecycleStatus === 'published' && assessment.isVisible !== false;
   if (!publication && !globalMockPublished) throw new HttpError(404, 'Assessment not available');
-  res.json({ assessment: { ...publishedMockAlwaysOn(assessment), targetType: 'all', assignedStudents: [], draftAssignedStudents: [],
+  res.json({ assessment: { ...publishedMockAlwaysOn(assessment), targetType: 'all', assignedStudents: [], draftAssignedStudents: [], ownStudents: [], ownGrants: [], ownAccess: null,
     platformPublished: globalMockPublished || (publication?.published && publication.universityIds.includes(req.platformUniversity.universityId)
       && assessment.lifecycleStatus !== 'draft' && assessment.isVisible !== false) } });
 }));

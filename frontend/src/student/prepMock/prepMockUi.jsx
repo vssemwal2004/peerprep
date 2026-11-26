@@ -1,4 +1,5 @@
-import { CalendarClock, CheckCircle2, Infinity as InfinityIcon, Lock, PlayCircle } from 'lucide-react';
+import { CalendarClock, CheckCircle2, GraduationCap, Lock, PlayCircle } from 'lucide-react';
+import { collegeText } from './mockText';
 
 /** A small pulsing dot for "open now" (the ping is skipped under reduced motion). */
 export function LiveDot({ className = '' }) {
@@ -11,15 +12,6 @@ export function LiveDot({ className = '' }) {
 }
 
 const pill = 'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none';
-
-export function OpenNowBadge({ count, className = '' }) {
-  if (!count) return null;
-  return (
-    <span className={`${pill} bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200/70 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/20 ${className}`}>
-      <LiveDot />{count} open now
-    </span>
-  );
-}
 
 const STATUS = {
   live: { label: 'Live', tone: 'bg-emerald-50 text-emerald-700 ring-emerald-200/70 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/20', live: true },
@@ -36,6 +28,22 @@ export function StatusBadge({ state }) {
     <span className={`${pill} ring-1 ring-inset ${spec.tone}`}>
       {spec.live ? <LiveDot /> : <Icon className="h-3.5 w-3.5" aria-hidden="true" />}
       {spec.label}
+    </span>
+  );
+}
+
+/**
+ * "Assigned by your college · until <date>" on a mock the student's university assigned (nothing when
+ * `assignment` is null). `short` keeps it to "College · till Nov 30" for the mock list; screen readers
+ * still hear the full text.
+ */
+export function CollegeChip({ assignment, short = false, className = '' }) {
+  if (!assignment) return null;
+  const full = collegeText(assignment);
+  return (
+    <span title={full} className={`inline-flex max-w-full items-center gap-1 bg-teal-50 font-semibold leading-none text-teal-700 ring-1 ring-inset ring-teal-200/70 dark:bg-teal-500/10 dark:text-teal-300 dark:ring-teal-400/20 ${short ? 'rounded-md px-1.5 py-[3px] text-[10.5px]' : 'rounded-full px-2.5 py-1 text-[11px]'} ${className}`}>
+      <GraduationCap className="h-3 w-3 shrink-0" aria-hidden="true" />
+      {short ? <><span className="truncate" aria-hidden="true">{collegeText(assignment, { short: true })}</span><span className="sr-only">{full}</span></> : <span className="truncate">{full}</span>}
     </span>
   );
 }
@@ -61,12 +69,4 @@ export function Highlight({ parts }) {
   return parts.map((part, index) => (part.match
     ? <mark key={index} className="rounded-[3px] bg-amber-200/70 px-px text-inherit dark:bg-amber-400/25">{part.text}</mark>
     : <span key={index}>{part.text}</span>));
-}
-
-export function AlwaysOpenBadge() {
-  return (
-    <span className={`${pill} bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-white/[0.06] dark:text-zinc-300 dark:ring-white/10`} title="No closing date: start any time">
-      <InfinityIcon className="h-3.5 w-3.5" aria-hidden="true" />Always open
-    </span>
-  );
 }

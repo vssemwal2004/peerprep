@@ -11,6 +11,7 @@ import {
   parseStudentFeatureAccess,
 } from '../services/studentFeatureAccess.js';
 import { getIo } from '../utils/io.js';
+import { enrolPrepMockStudents, needsPrepMockEnrolment } from '../services/prepMockEnrollment.js';
 import { personalRoom } from '../utils/realtime.js';
 
 const serializePolicy = (policy) => ({
@@ -94,6 +95,14 @@ export async function updateStudentAccess(req, res) {
   const normalized = parseStudentFeatureAccess(req.body?.access || req.body);
   if (normalized.mode === 'custom' && normalized.features.length === 0) {
     return res.status(400).json({ error: 'Enable at least one feature for this student.' });
+  }
+  // Turning Prep Mock on also enrols the student (limit and PrepMock access checked first).
+  const before = await User.findOne({ _id: req.params.studentId, role: 'student' }).select('_id prepMockEnrolledAt').lean();
+  if (!before) return res.status(404).json({ error: 'Student not found.' });
+  try {
+    await enrolPrepMockStudents(needsPrepMockEnrolment([before], new Map([[String(before._id), normalized]])));
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Could not turn on Prep Mock.' });
   }
   const student = await User.findOneAndUpdate(
     { _id: req.params.studentId, role: 'student' },

@@ -226,6 +226,41 @@ export function pickMock(company, roleParam = '', mockParam = '') {
  */
 export function patternOf(mock) {
   const sections = Array.isArray(mock?.sections) ? mock.sections : [];
+  const negativeOf = (section) => Math.max(0, Number(section?.negativeMarksPerQuestion) || 0);
+  // The pattern the admin wrote for this company + role (shown as written), when the mock has one.
+  const written = Array.isArray(mock?.mockPattern?.rows) ? mock.mockPattern.rows : [];
+  if (written.length) {
+    // Negative marking comes from the mock's real sections (the written pattern has no such
+    // column): a row gets it when a real section has the same name, and `negativeMarking` says
+    // the mock takes marks off somewhere, so students are always told before they start.
+    const realNegative = new Map(sections.map((section) => [clean(section?.sectionName || section?.title).toLowerCase(), negativeOf(section)]));
+    const rows = written.map((row, index) => {
+      const questions = Math.max(0, Math.round(Number(row?.questions) || 0));
+      const marks = Math.max(0, Number(row?.marks) || 0);
+      const minutes = Math.round(Number(row?.minutes) || 0);
+      const name = clean(row?.name) || `Section ${index + 1}`;
+      return {
+        key: `${index}-${clean(row?.name)}`,
+        name,
+        type: sectionTypeLabel(row?.type),
+        questions,
+        perQuestion: questions ? Math.round((marks / questions) * 100) / 100 : 0,
+        marks,
+        negative: realNegative.get(name.toLowerCase()) || 0,
+        minutes: minutes > 0 ? minutes : null,
+      };
+    });
+    return {
+      rows,
+      questions: rows.reduce((sum, row) => sum + row.questions, 0),
+      marks: Math.round(rows.reduce((sum, row) => sum + row.marks, 0) * 100) / 100,
+      hasNegative: rows.some((row) => row.negative > 0),
+      negativeMarking: sections.some((section) => negativeOf(section) > 0),
+      hasTimes: rows.some((row) => row.minutes),
+      duration: Number(mock?.duration) || 0,
+      written: true,
+    };
+  }
   const rows = sections.map((section, index) => {
     const questions = Number(section?.questionCount ?? section?.totalQuestions ?? section?.questions?.length) || 0;
     const perQuestion = Number(section?.marksPerQuestion) || 0;
@@ -236,7 +271,7 @@ export function patternOf(mock) {
       questions,
       perQuestion,
       marks: Number(section?.totalMarks) || questions * perQuestion,
-      negative: Math.max(0, Number(section?.negativeMarksPerQuestion) || 0),
+      negative: negativeOf(section),
       // Suggested by the admin; only the mock's total duration is timed.
       minutes: Number(section?.suggestedMinutes) > 0 ? Math.round(Number(section.suggestedMinutes)) : null,
     };
@@ -255,11 +290,57 @@ export function patternOf(mock) {
 
 /** "Amazon OA pattern · Mar 2025", or '' when the admin has not set the month and year. */
 export function patternFromLabel(mock, { long = false } = {}) {
-  const month = Number(mock?.patternFrom?.month);
-  const year = Number(mock?.patternFrom?.year);
+  const from = mock?.mockPattern?.patternFrom?.month ? mock.mockPattern.patternFrom : mock?.patternFrom;
+  const month = Number(from?.month);
+  const year = Number(from?.year);
   if (!month || !year || month < 1 || month > 12) return '';
   const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   return `${long ? names[month - 1] : names[month - 1].slice(0, 3)} ${year}`;
+}
+
+/** A comparable key of a mock's exam pattern: its rows (written or from the sections) and OA month. */
+export function patternKey(mock) {
+  const pattern = patternOf(mock);
+  return JSON.stringify([
+    pattern.written ? 'written' : 'sections',
+    patternFromLabel(mock),
+    pattern.rows.map((row) => [nameKey(row.name), row.type, row.questions, row.minutes, row.marks]),
+  ]);
+}
+
+/**
+ * The exam pattern shown for a role: the chosen mock's (the admin-written pattern, else built from its
+ * sections), its OA month, and the numbers (1-based, in list order) of the role's other mocks whose
+ * pattern differs. Null when the role has no mock.
+ */
+export function rolePatternOf(role, mock) {
+  const mocks = Array.isArray(role?.mocks) ? role.mocks : [];
+  const source = (mock && mocks.find((entry) => String(entry?._id) === String(mock._id))) || mock || mocks[0] || null;
+  if (!source) return null;
+  const key = patternKey(source);
+  const number = mocks.findIndex((entry) => String(entry?._id) === String(source._id)) + 1;
+  const differ = [];
+  mocks.forEach((entry, index) => {
+    if (String(entry?._id) !== String(source._id) && patternKey(entry) !== key) differ.push(index + 1);
+  });
+  return {
+    mock: source,
+    number: number || 1,
+    pattern: patternOf(source),
+    from: patternFromLabel(source),
+    fromLong: patternFromLabel(source, { long: true }),
+    differ,
+  };
+}
+
+/** The window the student's university assigned this mock in ({ startTime, endTime }, either may be null), or null. */
+export function collegeAssignmentOf(mock) {
+  const value = mock?.collegeAssignment;
+  if (!value || typeof value !== 'object') return null;
+  return {
+    startTime: time(value.startTime) !== null ? value.startTime : null,
+    endTime: time(value.endTime) !== null ? value.endTime : null,
+  };
 }
 
 /** Admin-written guidance for a mock: plain-text paragraphs and the custom rule list. */

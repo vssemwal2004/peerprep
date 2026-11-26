@@ -71,14 +71,19 @@ export const assessmentEditorSteps = [
     body: "Prep Mocks only: the job role this mock is for, such as SDE 1 or Data Analyst. Roles students reported for the chosen company come first. Type a new role and choose Add to save it for next time. A mock needs a role before it can be published.",
   },
   {
-    id: "ae-pattern-from", target: "ae-pattern-from", chapter: "parts",
-    title: "OA pattern from",
-    body: "Prep Mocks only: the month and year the company used this OA pattern, for example March 2025. Students see it as \"OA pattern · Mar 2025\", so they know how recent it is. Drafts can be saved without it; publishing needs it.",
+    id: "ae-mock-pattern", target: "ae-mock-pattern", chapter: "parts",
+    title: "Exam pattern",
+    body: "Prep Mocks only: the exam paper students see before they start (S.No, Section, Type, Questions, Duration, Marks and a Total), written once for each company and role, with the month and year the company used it. Pick an existing version or create one; editing a pattern updates every mock that uses it, or save it as a new version. Publishing needs a pattern.",
   },
   {
-    id: "ae-pattern", target: "ae-pattern", chapter: "parts",
-    title: "Exam pattern",
-    body: "Prep Mocks only: the table students see before they start. Questions and marks come from your sections, so it always matches the real test. Give each section a suggested time to match the company's OA; the times are guidance only, the timer runs for the whole mock, and together they cannot be more than the duration.",
+    id: "ae-mock-pattern-check", target: "ae-mock-pattern-check", chapter: "parts",
+    title: "Pattern check",
+    body: "Prep Mocks only: compares the written pattern with your real sections and the test length. Differences are shown as warnings; the pattern is shown to students as written and publishing is not blocked.",
+  },
+  {
+    id: "ae-mock-schedule", target: "ae-mock-schedule", chapter: "parts",
+    title: "Test length",
+    body: "Prep Mocks only: how long one attempt lasts. Prep Mocks have no dates: a published mock is open to every university with an active Prep Mock package until you unpublish it.",
   },
   {
     id: "ae-instructions", target: "ae-instructions", chapter: "parts",

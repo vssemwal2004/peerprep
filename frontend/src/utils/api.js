@@ -1317,6 +1317,34 @@ export const api = {
     request(`/admin/assessment/${id}/reset-submissions`, { method: "POST" }),
   resetMock: (id) => request(`/admin/assessment/${id}/reset-mock`, { method: "POST" }),
   unpublishMock: (id) => request(`/admin/assessment/${id}/unpublish-mock`, { method: "POST" }),
+  /** Publish a saved mock without opening the builder (same checks): { message, lifecycleStatus }. */
+  publishMock: (id) => request(`/admin/assessment/${id}/publish-mock`, { method: "POST" }),
+  /** Prep Mock own students (Master Admin, platform): { mock: { _id, title, company, role, live }, window: { startTime, endTime }, students: [{ _id, name, email, studentId, semester, branch, college, prepMockOn }] } */
+  getMockOwnStudents: (id) => request(`/admin/assessment/${id}/own-students`, { skipCache: true }),
+  /** body { add, remove, startTime, endTime } (ISO or null) → { added, notFound, removed, prepMockTurnedOn, students, window, live } */
+  changeMockOwnStudents: (id, body) => request(`/admin/assessment/${id}/own-students`, { method: 'POST', body }),
+  /**
+   * Bulk own-student grants (Master Admin, platform). body { scope: { mockIds } | { company, role? } | { all: true } (+ statuses),
+   * add, remove, startTime, endTime, updateExisting } → { mocks, granted, updated, removed, notFound,
+   * prepMockTurnedOn, prepMockActivationFailed, mocksNotFound, skipped, perMock }
+   */
+  bulkMockOwnStudents: (body) => request('/admin/assessment/mock-bulk/own-students', { method: 'POST', body, timeoutMs: 180000 }),
+  /** Bulk publish (same checks as publishMock per mock) → { published, alreadyLive, skipped, notFound } */
+  bulkPublishMocks: (scope) => request('/admin/assessment/mock-bulk/publish', { method: 'POST', body: { scope }, timeoutMs: 180000 }),
+  /** Bulk unpublish (mirrors unpublishMock per mock) → { unpublished, alreadyOff, failed, notFound } */
+  bulkUnpublishMocks: (scope) => request('/admin/assessment/mock-bulk/unpublish', { method: 'POST', body: { scope }, timeoutMs: 180000 }),
+  /** University SPOC: this university's assignment of one live mock, same shape as getMockOwnStudents. */
+  getMockUniversityAssignment: (id) => request(`/admin/assessment/mock-assignments/${id}`, { skipCache: true }),
+  /** body { add, remove, startTime, endTime } → { added, notFound, notEnrolled, removed, students, window, live } */
+  changeMockUniversityAssignment: (id, body) => request(`/admin/assessment/mock-assignments/${id}`, { method: 'POST', body }),
+  // Prep Mock exam patterns (per company + role, one per OA month/year).
+  /** { patterns: [{ _id, company, role, patternFrom: { month, year }, rows: [{ name, type, questions, minutes, marks }], totals: { questions, minutes, marks }, notes, mocks, published, updatedAt }], limits, types } */
+  listMockPatterns: ({ company = '', role = '' } = {}) => request(`/admin/assessment/mock-patterns?${new URLSearchParams({ company, role })}`, { skipCache: true }),
+  /** body: { company, role, patternFrom: { month, year }, rows, notes } → { pattern } (409 when that month already has one). */
+  createMockPattern: (body) => request('/admin/assessment/mock-patterns', { method: 'POST', body }),
+  /** body: { patternFrom, rows, notes } (company/role fixed) → { pattern, mocksUpdated }. */
+  updateMockPattern: (id, body) => request(`/admin/assessment/mock-patterns/${encodeURIComponent(id)}`, { method: 'PUT', body }),
+  deleteMockPattern: (id) => request(`/admin/assessment/mock-patterns/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   listAssessmentEligibleStudents: (id) =>
     request(`/admin/assessment/${id}/eligible-students`, { skipCache: true }),
   addAssessmentEligibleStudents: (id, studentIds = [], students = []) =>

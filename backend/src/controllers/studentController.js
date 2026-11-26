@@ -20,6 +20,7 @@ import { resolveNewStudentFeatureAccess } from './studentAccessController.js';
 import { applyStudentFeatureChange, normalizeStudentFeatureAccess, normalizeStudentFeatures, parseStudentFeatureAccess, studentFeatureQuery } from '../services/studentFeatureAccess.js';
 import { invalidateUserCache } from '../middleware/auth.js';
 import { getIo } from '../utils/io.js';
+import { enrolPrepMockStudents, needsPrepMockEnrolment } from '../services/prepMockEnrollment.js';
 import { personalRoom } from '../utils/realtime.js';
 import { exactEmailPattern, normalizeEmailAddress } from '../utils/emailIdentity.js';
 import { currentTenant } from '../platform/tenantContext.js';
@@ -1656,7 +1657,7 @@ export async function bulkUpdateStudentAccess(req, res) {
       if (ids.length > BULK_ACCESS_MAX_IDS) return res.status(400).json({ error: `At most ${BULK_ACCESS_MAX_IDS} students at a time; use "Select all matching" for more.` });
       query = { _id: { $in: ids }, role: 'student' };
     }
-    const students = await User.find({ ...query, role: 'student' }).select('_id featureAccess accessScope').limit(BULK_ACCESS_MAX_STUDENTS + 1).lean();
+    const students = await User.find({ ...query, role: 'student' }).select('_id featureAccess accessScope prepMockEnrolledAt').limit(BULK_ACCESS_MAX_STUDENTS + 1).lean();
     if (!students.length) return res.status(404).json({ error: 'No matching students were found.' });
     if (students.length > BULK_ACCESS_MAX_STUDENTS) return res.status(400).json({ error: 'Too many students at once; narrow the filters.' });
 
@@ -1673,6 +1674,15 @@ export async function bulkUpdateStudentAccess(req, res) {
       if (same) { unchanged += 1; continue; }
       writes.push({ updateOne: { filter: { _id: student._id, role: 'student' }, update: { $set: { featureAccess: { ...next, source: 'manual', updatedBy: req.user._id, updatedAt: now }, accessScope: 'full' } } } });
       changed.push({ id: student._id, access: next });
+    }
+    // Turning Prep Mock on also enrols those students (all or none: the limit is checked first).
+    const nextById = new Map(changed.map(({ id, access }) => [String(id), access]));
+    let prepMockEnrolled = 0;
+    try {
+      prepMockEnrolled = await enrolPrepMockStudents(needsPrepMockEnrolment(students, nextById), now);
+    } catch (error) {
+      if (error.status) return res.status(error.status).json({ error: error.message });
+      throw error;
     }
     for (let index = 0; index < writes.length; index += 1000) await User.bulkWrite(writes.slice(index, index + 1000), { ordered: false });
 
@@ -1691,7 +1701,7 @@ export async function bulkUpdateStudentAccess(req, res) {
       metadata: { change: normalizedChange, matched: students.length, updated: changed.length, unchanged, skipped, ...(req.body?.allMatching === true ? { filters: req.body.filters } : {}) },
       req,
     });
-    return res.json({ matched: students.length, updated: changed.length, unchanged, skipped });
+    return res.json({ matched: students.length, updated: changed.length, unchanged, skipped, prepMockEnrolled });
   } catch (error) {
     console.error('Bulk access update failed:', error);
     return res.status(500).json({ error: 'Could not update student access.' });

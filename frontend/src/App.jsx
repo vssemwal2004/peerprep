@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Routes, Route, useLocation, useParams } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route, matchPath, useLocation, useParams } from "react-router-dom";
 import { quickPrepLibraryUrl } from "./admin/quickprep/libraryLink";
 import { lazy as reactLazy, Suspense, useEffect, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { ThemeProvider } from './context/ThemeContext';
@@ -362,6 +362,7 @@ function AppContent() {
   }, [isStudentSidebarPinned]);
   const isAssessmentModuleAlias = /^\/(assessments|assessment-reports|assessment-history)(\/)?$/.test(location.pathname);
   const isProblemSolver = /^\/problems\/[^/]+$/.test(location.pathname);
+  const isPrepMock = matchPath('/student/prep-mock/:company?', location.pathname);
   const isMain = location.pathname === "/";
   const isStudentLogin = location.pathname === "/student";
   const isResetPassword = location.pathname === "/reset-password";
@@ -382,9 +383,9 @@ function AppContent() {
     && !isProblemSolver;
   const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges|analysis(\/[^/]+)?|peers(\/[^/]+(\/compare)?)?|prep-mock(\/[^/]+)?)\/?$/.test(location.pathname);
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
-  // Admin and coordinator shells key their own page area (see ShellPage); keying this
-  // boundary per navigation remounted the whole shell and hid the sidebar on every click.
-  const routeBoundaryKey = isAdmin ? 'admin' : isCoordinator ? 'coordinator' : navigationKey;
+  // Admin and coordinator shells key their own page areas. Prep Mock keeps its catalog and
+  // company rail mounted as the company path and the role or mock query parameters change.
+  const routeBoundaryKey = isAdmin ? 'admin' : isCoordinator ? 'coordinator' : isPrepMock ? 'prep-mock' : navigationKey;
   return (
     <PlatformGuideProvider>
     <div

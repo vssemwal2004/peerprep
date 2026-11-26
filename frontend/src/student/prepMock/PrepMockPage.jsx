@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Lock } from 'lucide-react';
 import MockHero, { PrepMockHeader } from './MockHero';
 import Spotlight from './Spotlight';
 import JourneyRail from './JourneyRail';
 import CompanyRail from './CompanyRail';
 import CompanyView, { BackLink } from './CompanyView';
+import MockNavigator from './MockNavigator';
 import { TowerGlyph, GlyphTile } from './prepMockGlyphs';
 import { usePrepMocks } from './usePrepMocks';
 import { countsOf, findCompany, journeyOf, pickMock, spotlightOf, summarize } from './prepMockModel';
@@ -38,12 +39,16 @@ const PANEL_SLOT = 'min-w-0 lg:col-start-2 lg:row-start-1';
  * journey (`contents` lets the panel's parts take their own place in the single column). A company on
  * phones: its view only, with a back link (the bar is hidden).
  */
-function Workspace({ landing, totals, rail, children }) {
+function Workspace({ landing, totals, rail, railOverlay = null, children }) {
   return (
     <div>
       <PrepMockHeader totals={totals} />
       <div className={WORKSPACE}>
-        <div className={`${landing ? 'order-3 lg:order-none' : 'hidden'} ${RAIL_SLOT}`}>{rail}</div>
+        <div className={`${landing ? 'order-3 lg:order-none' : 'hidden'} ${RAIL_SLOT}`}>
+          {rail}
+          {/* The role picker opens beside the company bar on large screens. */}
+          {railOverlay && <div className="absolute left-full top-0 z-40 ml-3 hidden lg:block">{railOverlay}</div>}
+        </div>
         <div className={`${landing ? 'contents lg:block lg:space-y-7' : ''} ${PANEL_SLOT}`}>{children}</div>
       </div>
     </div>
@@ -116,11 +121,12 @@ function CompanySkeleton() {
   return (
     <div aria-busy="true" aria-label="Loading company mocks" className={WORKSPACE}>
       <div className={`hidden ${RAIL_SLOT}`}><RailSkeleton /></div>
-      <div className={`${PANEL_SLOT} space-y-4`}>
+      <div className={`${PANEL_SLOT} space-y-3`}>
         <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-[140px] rounded-2xl" />
-        <Skeleton className="h-[150px] rounded-2xl" />
-        <Skeleton className="h-[380px] rounded-2xl" />
+        <Skeleton className="h-[62px] rounded-2xl" />
+        <Skeleton className="h-[220px] rounded-2xl" />
+        <Skeleton className="h-[120px] rounded-2xl" />
+        <Skeleton className="h-[200px] rounded-2xl" />
       </div>
     </div>
   );
@@ -150,15 +156,45 @@ function Overview({ companies, mocks, reports, onContinue, onViewResult }) {
 /** /student/prep-mock (your progress + company directory) and /student/prep-mock/:company (roles, then mocks). */
 export default function PrepMockPage() {
   const { company: companyParam } = useParams();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
+  const { key: locationKey } = useLocation();
   const navigate = useNavigate();
   const { loading, error, disabled, data, mocks, companies, reports, refresh } = usePrepMocks();
   const launcher = useAssessmentLauncher();
   const [report, setReport] = useState(null);
   const company = companyParam ? findCompany(companies, companyParam) : null;
-  const selectedRoleKey = company ? pickMock(company, params.get('role') || '', params.get('mock') || '').role?.key || '' : '';
+  const roleParam = params.get('role');
+  const mockParam = params.get('mock');
+  const { role, mock } = pickMock(company, roleParam, mockParam);
   const totals = useMemo(() => summarize(companies), [companies]);
-  const rail = <CompanyRail companies={companies} selectedKey={company?.key || ''} selectedRoleKey={selectedRoleKey} />;
+  const patternHeadingRef = useRef(null);
+  const [navigatorOverride, setNavigatorOverride] = useState(null);
+  const companyKey = company?.key || '';
+  // A company link opens the picker. Links to a role or mock show that selection immediately.
+  const navigatorOpen = Boolean(company && (navigatorOverride?.key === locationKey ? navigatorOverride.open : !roleParam && !mockParam));
+  const openNavigator = () => setNavigatorOverride({ key: locationKey, open: true });
+  const closeNavigator = useCallback(() => setNavigatorOverride({ key: locationKey, open: false }), [locationKey]);
+  const choose = (nextRole, nextMock) => setParams((current) => {
+    const updated = new URLSearchParams(current);
+    updated.set('role', nextRole.name);
+    if (nextMock) updated.set('mock', String(nextMock._id)); else updated.delete('mock');
+    return updated;
+  }, { replace: true });
+  const selectRole = (nextRole) => choose(nextRole, nextRole.key === role?.key ? mock : null);
+  const navigator = navigatorOpen ? (
+    <MockNavigator key={locationKey} onClose={closeNavigator} company={company} selectedRole={role}
+      onSelectRole={(nextRole) => {
+        closeNavigator();
+        selectRole(nextRole);
+        requestAnimationFrame(() => patternHeadingRef.current?.focus());
+      }} />
+  ) : null;
+  const rail = <CompanyRail companies={companies} selectedKey={companyKey} selectedRoleKey={role?.key}
+    onCompanyClick={(event, key) => {
+      if (key !== companyKey || event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      openNavigator();
+    }} />;
 
   let body;
   if (disabled) body = <NotEnabled />;
@@ -168,9 +204,11 @@ export default function PrepMockPage() {
     let decoded = companyParam;
     try { decoded = decodeURIComponent(companyParam); } catch { /* keep the raw param */ }
     body = (
-      <Workspace totals={totals} rail={rail}>
+      <Workspace totals={totals} rail={rail} railOverlay={navigator}>
         {company
-          ? <CompanyView company={company} reports={reports} onStart={launcher.launch} onViewResult={setReport} onFeedback={(mock) => navigate(`/student/assessment/${mock._id}/feedback?from=prep-mock`)} />
+          ? <CompanyView company={company} role={role} mock={mock} reports={reports} patternHeadingRef={patternHeadingRef}
+              navigatorOpen={navigatorOpen} onOpenNavigator={openNavigator} onSelectRole={selectRole} onSelectMock={choose}
+              onStart={launcher.launch} onViewResult={setReport} onFeedback={(entry) => navigate(`/student/assessment/${entry._id}/feedback?from=prep-mock`)} />
           : (
             <>
               <BackLink />

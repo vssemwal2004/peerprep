@@ -5,6 +5,7 @@ import {
   groupByLetter, groupMocks, highlightParts, initialTone, initialsOf, isAlwaysOpen, journeyOf, letterOf,
   lettersPresent, matchedRole, mockState, nextChangeAt, pickRole, resultOf, sectionTypes, sortCompanies,
   spotlightOf, summarize, totalMarksOf, pickMock, patternOf, patternFromLabel, instructionsOf, railEntries,
+  patternKey, rolePatternOf, collegeAssignmentOf,
 } from '../src/student/prepMock/prepMockModel.js';
 
 const HOUR = 60 * 60 * 1000;
@@ -235,6 +236,42 @@ test('patternOf: suggested section times, and the OA pattern month label', () =>
   assert.equal(patternFromLabel({ patternFrom: { month: 13, year: 2025 } }), '');
 });
 
+test('patternOf: the written company + role pattern wins over the sections, and its OA month labels the mock', () => {
+  const mock = {
+    duration: 120,
+    patternFrom: { month: 1, year: 2024 },
+    sections: [{ sectionName: 'Old', type: 'mcq', questionCount: 5 }],
+    mockPattern: {
+      patternFrom: { month: 3, year: 2025 },
+      rows: [{ name: 'Numerical Ability', type: 'mcq', questions: 20, minutes: 25, marks: 20 }, { name: 'Advance Coding', type: 'coding', questions: 3, minutes: 90, marks: 30 }],
+    },
+  };
+  const pattern = patternOf(mock);
+  assert.equal(pattern.written, true);
+  assert.deepEqual(pattern.rows.map((row) => [row.name, row.type, row.questions, row.minutes, row.marks, row.perQuestion]), [
+    ['Numerical Ability', 'MCQ', 20, 25, 20, 1],
+    ['Advance Coding', 'Coding', 3, 90, 30, 10],
+  ]);
+  assert.deepEqual([pattern.questions, pattern.marks, pattern.hasTimes], [23, 50, true]);
+  assert.equal(patternFromLabel(mock), 'Mar 2025', 'the pattern month beats the older mock field');
+  assert.equal(patternOf({ ...mock, mockPattern: { rows: [] } }).rows[0].name, 'Old', 'no written rows: built from the sections');
+  assert.equal(pattern.negativeMarking, false, 'no real section takes marks off');
+});
+
+test('patternOf: a written pattern still tells students about the real negative marking', () => {
+  const mock = {
+    sections: [{ sectionName: 'Numerical ability', type: 'mcq', questionCount: 5, negativeMarksPerQuestion: 0.25 }, { sectionName: 'Coding', type: 'coding', questionCount: 2 }],
+    mockPattern: { rows: [{ name: 'Numerical Ability', type: 'mcq', questions: 20, marks: 20 }, { name: 'Advance Coding', type: 'coding', questions: 3, marks: 30 }] },
+  };
+  const pattern = patternOf(mock);
+  assert.deepEqual(pattern.rows.map((row) => row.negative), [0.25, 0], 'matched by section name');
+  assert.equal(pattern.hasNegative, true);
+  assert.equal(pattern.negativeMarking, true);
+  const unmatched = patternOf({ ...mock, mockPattern: { rows: [{ name: 'Aptitude', type: 'mcq', questions: 20, marks: 20 }] } });
+  assert.equal(unmatched.hasNegative, false, 'no column when no written row matches a real section');
+  assert.equal(unmatched.negativeMarking, true, 'the note still shows');
+});
+
 test('instructionsOf: plain-text paragraphs from text or HTML, and the custom rules', () => {
   assert.deepEqual(instructionsOf({ instructions: '<p>Read <b>all</b> questions.</p><p>No tabs.</p>', customInstructions: [' Camera on ', ''] }),
     { paragraphs: ['Read all questions.', 'No tabs.'], rules: ['Camera on'] });
@@ -266,4 +303,38 @@ test('railEntries: filter, sort, and search by company, role or mock title', () 
   assert.deepEqual(names(byMock), ['Google']);
   assert.deepEqual(byMock[0].roles.map((role) => role.name), ['SDE 2'], 'mock-title hit lists its role');
   assert.deepEqual(railEntries(companies, { query: 'zzz' }), []);
+});
+test('rolePatternOf: the chosen mock pattern, its OA month, and which other mocks of the role differ', () => {
+  const written = { patternFrom: { month: 3, year: 2025 }, rows: [{ name: 'Aptitude', type: 'mcq', questions: 20, minutes: 25, marks: 20 }, { name: 'Coding', type: 'coding', questions: 2, minutes: 60, marks: 40 }] };
+  const a = live('a', { company: 'Acme', role: 'SDE 1', mockPattern: written });
+  const b = live('b', { company: 'Acme', role: 'SDE 1', mockPattern: JSON.parse(JSON.stringify(written)) });
+  const c = live('c', { company: 'Acme', role: 'SDE 1', sections: [{ sectionName: 'Old', type: 'mcq', questionCount: 5 }] });
+  const [company] = groupMocks([a, b]);
+  const same = rolePatternOf(company.roles[0], b);
+  assert.equal(same.mock, b);
+  assert.equal(same.number, 2);
+  assert.equal(same.from, 'Mar 2025');
+  assert.equal(same.fromLong, 'March 2025');
+  assert.equal(same.pattern.written, true);
+  assert.deepEqual(same.differ, [], 'equal written patterns: no note');
+  assert.equal(patternKey(a), patternKey(b));
+
+  const [mixed] = groupMocks([a, b, c]);
+  const role = mixed.roles[0];
+  const fromA = rolePatternOf(role, a);
+  assert.deepEqual(fromA.differ, [role.mocks.indexOf(c) + 1], 'the old section-built mock follows another pattern');
+  const fromC = rolePatternOf(role, c);
+  assert.equal(fromC.pattern.written, undefined, 'an old mock falls back to its sections');
+  assert.equal(fromC.pattern.rows[0].name, 'Old');
+  assert.deepEqual(fromC.differ, [role.mocks.indexOf(a) + 1, role.mocks.indexOf(b) + 1].sort((x, y) => x - y));
+  assert.equal(rolePatternOf(role, null).mock, role.mocks[0], 'no mock chosen: the first mock');
+  assert.equal(rolePatternOf({ mocks: [] }, null), null);
+  assert.notEqual(patternKey(a), patternKey(live('d', { mockPattern: { ...written, patternFrom: { month: 4, year: 2025 } } })), 'another OA month is another pattern');
+});
+
+test('collegeAssignmentOf: the university window, or null', () => {
+  assert.equal(collegeAssignmentOf(live('a')), null);
+  assert.equal(collegeAssignmentOf(live('a', { collegeAssignment: null })), null);
+  assert.deepEqual(collegeAssignmentOf(live('a', { collegeAssignment: { startTime: iso(-HOUR), endTime: iso(48 * HOUR) } })), { startTime: iso(-HOUR), endTime: iso(48 * HOUR) });
+  assert.deepEqual(collegeAssignmentOf(live('a', { collegeAssignment: { startTime: null, endTime: 'not a date' } })), { startTime: null, endTime: null });
 });

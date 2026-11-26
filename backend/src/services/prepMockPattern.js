@@ -71,7 +71,10 @@ export function patternFields(body = {}, now = new Date()) {
   return { company, role, companyKey: patternCompanyKey(company), roleKey: patternRoleKey(role), patternFrom, rows, notes: clean(body.notes, 600) };
 }
 
-/** The copy a mock keeps. */
+/**
+ * The copy a mock keeps. It reaches students and universities, so the admin-only `notes`
+ * (where the pattern came from) stay on the pattern itself and in forAdmin.
+ */
 export function patternSnapshot(pattern) {
   if (!pattern) return null;
   const rows = (pattern.rows || []).map((row) => ({ name: row.name, type: row.type, questions: row.questions, minutes: row.minutes, marks: row.marks }));
@@ -82,12 +85,11 @@ export function patternSnapshot(pattern) {
     patternFrom: pattern.patternFrom ? { month: pattern.patternFrom.month, year: pattern.patternFrom.year } : null,
     rows,
     totals: patternTotals(rows),
-    notes: pattern.notes || '',
     updatedAt: pattern.updatedAt || new Date(),
   };
 }
 
-const forAdmin = (pattern, usage = {}) => ({ ...patternSnapshot(pattern), _id: String(pattern._id), createdAt: pattern.createdAt, mocks: usage.mocks || 0, published: usage.published || 0 });
+const forAdmin = (pattern, usage = {}) => ({ ...patternSnapshot(pattern), notes: pattern.notes || '', _id: String(pattern._id), createdAt: pattern.createdAt, mocks: usage.mocks || 0, published: usage.published || 0 });
 
 async function usageByPattern(ids) {
   if (!ids.length) return new Map();
