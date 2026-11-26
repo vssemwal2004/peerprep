@@ -33,19 +33,19 @@ function prepareLandingDocument(source, appRoot, appOrigin) {
       `$1="$2?release=${LANDING_RELEASE}"`,
     )
     .replaceAll(
-      'href="https://peerprep.co.in/contact"',
+      'href="https://peerprep.in/contact"',
       `href="${route("/contact")}" target="_top"`,
     )
     .replaceAll(
-      'href="https://peerprep.co.in/privacy"',
+      'href="https://peerprep.in/privacy"',
       `href="${route("/privacy")}" target="_top"`,
     )
     .replaceAll(
-      'href="https://peerprep.co.in/terms"',
+      'href="https://peerprep.in/terms"',
       `href="${route("/terms")}" target="_top"`,
     )
     .replaceAll(
-      'href="https://peerprep.co.in/"',
+      'href="https://peerprep.in/"',
       `href="${route("/student")}" target="_top"`,
     );
 }

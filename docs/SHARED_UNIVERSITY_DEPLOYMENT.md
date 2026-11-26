@@ -1,6 +1,6 @@
 # PeerPrep production deployment
 
-One frontend build and one backend release serve `peerprep.co.in`. Separate
+One frontend build and one backend release serve `peerprep.in`. Separate
 control and university frontend/backend installations are no longer supported.
 University
 pages live at `/u/<universityId>/...`; API calls use `/api/u/<universityId>/...`.
@@ -27,7 +27,7 @@ There is no frontend deployment-role variable. The URL decides whether the
 visitor is on the platform or a university page. Configure your web server to return the
 frontend SPA for `/u/*` as well as the existing frontend routes, and to send
 `/api/*` and Socket.IO traffic to the backend. Use HTTPS and
-`FRONTEND_ORIGIN=https://peerprep.co.in`. In this mode `/admin/platform` is the
+`FRONTEND_ORIGIN=https://peerprep.in`. In this mode `/admin/platform` is the
 main super-admin area; `/u/<id>/admin` and `/u/<id>/student` are university
 areas. A session is tied to one university, so opening another university in
 the same browser requires a new login.
@@ -55,13 +55,13 @@ session affinity at a future load balancer.
    Never rotate it without re-encrypting saved university connection settings.
 2. Deploy one backend release. On the API and every queue/maintenance worker,
    set `PEERPREP_DEPLOYMENT_ROLE=shared` and point `MONGODB_URI` to the main
-   database. Set `FRONTEND_ORIGIN=https://peerprep.co.in` and
-   `FRONTEND_URL=https://peerprep.co.in`. Workers on another machine also need
+   database. Set `FRONTEND_ORIGIN=https://peerprep.in` and
+   `FRONTEND_URL=https://peerprep.in`. Workers on another machine also need
    `PEERPREP_SHARED_API_ORIGIN` pointing to the reachable main API. Remove the
    old `PEERPREP_UNIVERSITY_ID`, `PEERPREP_CONTROL_URL`,
    `PEERPREP_SHARED_API_KEY` and inspection-key settings from deployment
    secrets; they are not part of this flow.
-3. Build and deploy one frontend for `peerprep.co.in`. Remove
+3. Build and deploy one frontend for `peerprep.in`. Remove
    `VITE_PEERPREP_DEPLOYMENT_ROLE` from its build environment. Set `VITE_API_URL`
    only if the API has a different public origin. Proxy `/api/*` and
    `/socket.io/*` to the backend, and serve the same frontend SPA for `/u/*`
@@ -78,9 +78,9 @@ session affinity at a future load balancer.
    repeating this for the others.
 6. Run `npm run migrate:login-directory` in the backend after all existing
    universities are registered. Verify a unique student email can log in at
-   `https://peerprep.co.in/student` and a duplicate email is rejected there.
-7. Move university users to `https://peerprep.co.in/student`, or give them
-   their direct `https://peerprep.co.in/u/<id>/student` link. Drain old
+   `https://peerprep.in/student` and a duplicate email is rejected there.
+7. Move university users to `https://peerprep.in/student`, or give them
+   their direct `https://peerprep.in/u/<id>/student` link. Drain old
    workers and active exams, migrate old object keys as described below, and
    stop the old university frontend/backend installations after verifying the
    new portal. Keep the university DB and Judge0 machines running.

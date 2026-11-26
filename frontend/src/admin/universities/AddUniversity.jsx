@@ -153,7 +153,7 @@ export default function AddUniversity() {
       <Card data-guide="au-form">
         {current.key === 'identity' && (
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="University ID" required hint={<>Used in the web address: <b className="font-mono">peerprep.co.in/u/{form.universityId || 'your-id'}</b>. It cannot be changed later.</>}>
+            <Field label="University ID" required hint={<>Used in the web address: <b className="font-mono">peerprep.in/u/{form.universityId || 'your-id'}</b>. It cannot be changed later.</>}>
               <input className={`${inputClass} font-mono`} value={form.universityId} onChange={set('universityId')} placeholder="graphic-era" autoComplete="off" autoFocus />
             </Field>
             <Field label="University name" required><input className={inputClass} value={form.name} onChange={set('name')} placeholder="Graphic Era University" /></Field>
@@ -234,7 +234,7 @@ export default function AddUniversity() {
 
         {current.key === 'review' && (
           <div className="grid gap-5 lg:grid-cols-2">
-            <div><p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">University</p><Summary rows={[['Name', form.name], ['ID', form.universityId], ['Student link', `peerprep.co.in/u/${form.universityId}/student`], ['Contact', form.contactEmail], ['SPOC', form.adminEmail], ['University admin', form.limitedAdminEmail]]} /></div>
+            <div><p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">University</p><Summary rows={[['Name', form.name], ['ID', form.universityId], ['Student link', `peerprep.in/u/${form.universityId}/student`], ['Contact', form.contactEmail], ['SPOC', form.adminEmail], ['University admin', form.limitedAdminEmail]]} /></div>
             <div><p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">Plan and connections</p><Summary rows={[['Service', `${form.serviceStartDate} to ${form.serviceEndDate}`], ['Limits', `${form.coordinatorLimit} coordinators · ${form.studentLimit} students · ${form.assessmentStudentLimit} assessment places · ${form.prepMockStudentLimit} PrepMock students`], ['Starting Prep Coins', Number(form.initialCoins || 0).toLocaleString()], ['Database', 'Verified'], ['Judge0', form.judge0Url], ['AI interviews', form.interviewServiceUrl ? 'Connected' : 'Not connected']]} /></div>
             <div className="lg:col-span-2 rounded-xl bg-slate-50 p-4 text-sm dark:bg-slate-800/50">
               <p className="font-semibold text-slate-900 dark:text-white">Modules it starts with</p>

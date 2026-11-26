@@ -67,7 +67,7 @@ Read by `modules/anviInterview/anviInterview.config.js`. Invalid values fall bac
 | `ANVI_PRICE_<KIND>_INPUT`, `ANVI_PRICE_<KIND>_OUTPUT` | `0` (unknown) | Price per million tokens, `<KIND>` = `LIVE`, `TRANSCRIBE`, `GENERATE` or `EVALUATE`, for the estimate in `GET /api/ai-interviews/reports/usage`. `0` means unknown, so that kind is listed in `pricing.unpricedKinds` and left out of the estimate. Copy current prices from Google's Gemini pricing page; none are built in. |
 | `ANVI_PRICE_CURRENCY` | `USD` | Three-letter currency code shown with the estimate. |
 | `EMAIL_ENABLED` | (unset) | `false` stops schedule emails; in-app notices still go out. |
-| `FRONTEND_ORIGIN` | `https://peerprep.co.in` | First entry is used for links in schedule emails. |
+| `FRONTEND_ORIGIN` | `https://peerprep.in` | First entry is used for links in schedule emails. |
 
 The wizard's "default follow-ups" preference is stored only in the admin's browser (`localStorage` key
 `peerprep.aiInterviews.defaultFollowUps`). It is a per-browser convenience, not a server setting, and is

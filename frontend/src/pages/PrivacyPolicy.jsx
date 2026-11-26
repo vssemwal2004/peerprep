@@ -153,7 +153,7 @@ export default function PrivacyPolicy() {
                 <li>Profile information and authentication data are retained until account deletion</li>
               </ul>
               <p className="text-gray-700 leading-relaxed mt-3">
-                You may request deletion of your data by contacting us at peerprep26@gmail.com. Some data may be retained for legal compliance or legitimate business purposes.
+                You may request deletion of your data by contacting us at contact@peerprep.in. Some data may be retained for legal compliance or legitimate business purposes.
               </p>
             </section>
 
@@ -200,7 +200,7 @@ export default function PrivacyPolicy() {
                 If you have any questions about this Privacy Policy or our data practices, please contact us at:
               </p>
               <div className="mt-3 p-4 bg-sky-50 rounded-lg border border-sky-200">
-                <p className="text-gray-800 font-medium">Email: <a href="mailto:peerprep26@gmail.com" className="text-sky-600 hover:text-sky-700">peerprep26@gmail.com</a></p>              </div>
+                <p className="text-gray-800 font-medium">Email: <a href="mailto:contact@peerprep.in" className="text-sky-600 hover:text-sky-700">contact@peerprep.in</a></p>              </div>
             </section>
           </div>
         </div>

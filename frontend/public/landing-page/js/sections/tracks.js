@@ -16,12 +16,12 @@
   'use strict';
 
   var SCREENS = {
-    learning: { url: 'peerprep.co.in/learning', alt: 'Guided Learning: a Data Structures subject with chapter progress, a topic table and a video lesson' },
-    coding: { url: 'peerprep.co.in/problems', alt: 'PrepCoding workspace: an accepted submission with runtime, memory and every test case passed' },
-    assessment: { url: 'peerprep.co.in/assessments', alt: 'A company-based mock assessment in progress with a question palette, timer and monitoring panel' },
-    interview: { url: 'peerprep.co.in/interviews', alt: 'AI voice mock interview with a follow-up question and the conversation transcript' },
-    analytics: { url: 'peerprep.co.in/analytics', alt: 'Performance and readiness analytics with topic accuracy and a company benchmark that marks verified gaps' },
-    resume: { url: 'peerprep.co.in/resume', alt: 'Prep Resume with a document outline, quality checks and a live A4 preview' },
+    learning: { url: 'peerprep.in/learning', alt: 'Guided Learning: a Data Structures subject with chapter progress, a topic table and a video lesson' },
+    coding: { url: 'peerprep.in/problems', alt: 'PrepCoding workspace: an accepted submission with runtime, memory and every test case passed' },
+    assessment: { url: 'peerprep.in/assessments', alt: 'A company-based mock assessment in progress with a question palette, timer and monitoring panel' },
+    interview: { url: 'peerprep.in/interviews', alt: 'AI voice mock interview with a follow-up question and the conversation transcript' },
+    analytics: { url: 'peerprep.in/analytics', alt: 'Performance and readiness analytics with topic accuracy and a company benchmark that marks verified gaps' },
+    resume: { url: 'peerprep.in/resume', alt: 'Prep Resume with a document outline, quality checks and a live A4 preview' },
   };
 
   // Learn · Practice · Prove · Improve — [screen, tool] per stage.

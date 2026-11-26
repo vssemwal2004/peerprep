@@ -29,7 +29,7 @@ function passwordResetFrontendUrl() {
   // let a stale or misspelled environment value generate unusable (or unsafe)
   // password-reset links.
   if (deploymentRole() === 'shared' && process.env.NODE_ENV === 'production') {
-    return 'https://peerprep.co.in';
+    return 'https://peerprep.in';
   }
   const configured = deploymentRole() === 'shared'
     ? (process.env.FRONTEND_ORIGIN || process.env.FRONTEND_URL)

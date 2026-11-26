@@ -65,7 +65,7 @@
             '<div class="app-browser">' +
               '<div class="app-browser__lights"><i></i><i></i><i></i></div>' +
               '<div class="app-browser__url">' + svg('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>') +
-                '<b>peerprep.co.in</b><span data-dev-route></span></div>' +
+                '<b>peerprep.in</b><span data-dev-route></span></div>' +
               '<div></div>' +
             '</div>' +
             '<div class="app">' +

@@ -30,7 +30,7 @@ export function getDefaultApiOrigin() {
       const apiPort = import.meta.env.VITE_API_PORT || '4000';
       return `${protocol}//${formatHostname(hostname)}:${apiPort}`;
     }
-    if (hostname === 'peerprep.co.in') return 'https://peerprep.co.in';
+    if (hostname === 'peerprep.in') return 'https://peerprep.in';
     return trimTrailingSlash(origin);
   }
 

@@ -12,7 +12,7 @@ const announcement = announcementForMail({
 });
 
 test('the announcement email comes from the template: title, name, colour, content, button and student values', () => {
-  const mail = renderAnnouncementMail(ANNOUNCEMENT_TEMPLATE, announcement, row, 'https://peerprep.co.in/u/geu-122/');
+  const mail = renderAnnouncementMail(ANNOUNCEMENT_TEMPLATE, announcement, row, 'https://peerprep.in/u/geu-122/');
   assert.equal(mail.subject, 'Placement: Campus drive');
   assert.match(mail.html, /background-color:#0d9488/, 'announcement colour');
   assert.match(mail.html, />Placement</);
@@ -20,7 +20,7 @@ test('the announcement email comes from the template: title, name, colour, conte
   assert.match(mail.html, /<h3 style="[^"]*font-size:16px[^"]*">Eligibility<\/h3>/, 'content with email inline styles');
   assert.match(mail.html, /<strong>7\+<\/strong>/);
   assert.doesNotMatch(mail.html, /<script/i, 'content is sanitised');
-  assert.match(mail.html, /href="https:\/\/peerprep.co.in\/u\/geu-122\/student\/prep-mock"/, 'a PeerPrep page becomes this university\'s full link');
+  assert.match(mail.html, /href="https:\/\/peerprep.in\/u\/geu-122\/student\/prep-mock"/, 'a PeerPrep page becomes this university\'s full link');
   assert.match(mail.html, />Apply<\/a>/);
   assert.match(mail.html, /Sent by GEU/);
 });
