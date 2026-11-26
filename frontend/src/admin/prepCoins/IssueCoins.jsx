@@ -11,8 +11,8 @@ import { buttonClass, formatCoins, inputClass } from './coinModel';
 
 const TARGETS = [
   { value: 'university', label: 'University wallet' },
-  { value: 'coordinator', label: 'PeerPrep coordinator' },
-  { value: 'student', label: 'PeerPrep student' },
+  { value: 'coordinator', label: 'Coordinator' },
+  { value: 'student', label: 'Student' },
 ];
 const QUICK = [100, 500, 1000, 5000];
 const MAX = 1_000_000_000;
@@ -24,6 +24,9 @@ export default function IssueCoins() {
   const [universityId, setUniversityId] = useState(params.get('university') || '');
   const [filter, setFilter] = useState('');
   const [search, setSearch] = useState(params.get('search') || '');
+  // Where to look for the coordinator or student: PeerPrep's own accounts, every university, or one.
+  const [where, setWhere] = useState(params.get('where') || 'all');
+  const [unavailable, setUnavailable] = useState([]);
   const [people, setPeople] = useState(null);
   const [personId, setPersonId] = useState('');
   const [amount, setAmount] = useState('');
@@ -45,13 +48,15 @@ export default function IssueCoins() {
     if (term.trim().length < 2) { setError('Type at least two characters to search.'); return; }
     setSearching(true);
     try {
-      const result = await api.platformWalletRecipients(target, term.trim());
-      setPeople(result.recipients || []);
-      setPersonId((result.recipients || []).length === 1 ? result.recipients[0].id : '');
+      const result = await api.platformWalletRecipients(target, term.trim(), where);
+      const rows = (result.recipients || []).map((row) => ({ ...row, key: `${row.universityId}:${row.id}` }));
+      setPeople(rows);
+      setUnavailable(result.unavailable || []);
+      setPersonId(rows.length === 1 ? rows[0].key : '');
     } catch (failure) {
-      setError(failure.message || 'Could not search PeerPrep accounts.');
+      setError(failure.message || 'Could not search accounts.');
     } finally { setSearching(false); }
-  }, [search, target]);
+  }, [search, target, where]);
 
   // Arriving from the Wallets page with ?role=…&search=… runs that search once.
   const autoSearched = useRef(false);
@@ -70,8 +75,8 @@ export default function IssueCoins() {
       const item = universities?.find((row) => row.universityId === universityId);
       return item ? { name: item.name, balance: item.coinBalance || 0 } : null;
     }
-    const person = people?.find((row) => row.id === personId);
-    return person ? { name: person.name, balance: person.balance || 0 } : null;
+    const person = people?.find((row) => row.key === personId);
+    return person ? { name: person.name, balance: person.balance || 0, id: person.id, universityId: person.universityId, universityName: person.universityName } : null;
   }, [target, universities, universityId, people, personId]);
   const count = Number(amount);
   const validAmount = Number.isSafeInteger(count) && count >= 1 && count <= MAX;
@@ -86,12 +91,12 @@ export default function IssueCoins() {
       requestId.current ||= crypto.randomUUID();
       const result = target === 'university'
         ? await api.topUpUniversityCoins(universityId, { amount: count, requestId: requestId.current })
-        : await api.creditPlatformWalletUser({ targetRole: target, targetUserId: personId, amount: count, requestId: requestId.current });
+        : await api.creditPlatformWalletUser({ targetRole: target, targetUserId: selected.id, universityId: selected.universityId, amount: count, requestId: requestId.current });
       requestId.current = null;
       setDone({ name: selected.name, amount: count, balance: result.balance });
       setAmount('');
       if (target === 'university') setUniversities((current) => current.map((item) => (item.universityId === universityId ? { ...item, coinBalance: result.balance } : item)));
-      else setPeople((current) => current.map((person) => (person.id === personId ? { ...person, balance: result.balance } : person)));
+      else setPeople((current) => current.map((person) => (person.key === personId ? { ...person, balance: result.balance } : person)));
       loadRecent();
     } catch (failure) {
       setError(failure.message || 'Could not issue coins. Please try again.');
@@ -130,6 +135,14 @@ export default function IssueCoins() {
             </div>
           ) : (
             <div data-guide="ic-who">
+              <label className="mb-2 block text-xs font-medium text-slate-600 dark:text-slate-300">Look in
+                <select className={`${inputClass} mt-1`} value={where} aria-label="Where to look"
+                  onChange={(event) => { setWhere(event.target.value); setPeople(null); setPersonId(''); setDone(null); requestId.current = null; }}>
+                  <option value="all">All universities + PeerPrep accounts</option>
+                  <option value="platform">PeerPrep accounts only (main database)</option>
+                  {(universities || []).map((item) => <option key={item.universityId} value={item.universityId}>{item.name} ({item.universityId})</option>)}
+                </select>
+              </label>
               <div className="flex gap-2">
                 <label className="relative block flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
@@ -141,18 +154,19 @@ export default function IssueCoins() {
               {people ? people.length ? (
                 <div role="radiogroup" aria-label="Account" className="mt-3 grid max-h-[300px] gap-2 overflow-y-auto pr-1 [scrollbar-width:thin] sm:grid-cols-2">
                   {people.map((person) => {
-                    const active = person.id === personId;
+                    const active = person.key === personId;
                     return (
-                      <button key={person.id} type="button" role="radio" aria-checked={active} onClick={() => { setPersonId(person.id); setDone(null); requestId.current = null; }}
+                      <button key={person.key} type="button" role="radio" aria-checked={active} onClick={() => { setPersonId(person.key); setDone(null); requestId.current = null; }}
                         className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${active ? 'border-sky-400 bg-sky-50 ring-2 ring-sky-500/20 dark:border-sky-400/50 dark:bg-sky-400/10' : 'border-slate-200 bg-white/70 hover:border-sky-200 dark:border-white/10 dark:bg-white/[0.03]'}`}>
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900/[0.05] text-slate-500 dark:bg-white/[0.06]">{target === 'student' ? <GraduationCap className="h-4 w-4" /> : <UserRound className="h-4 w-4" />}</span>
-                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-slate-900 dark:text-white">{person.name}</span><span className="block truncate text-[11px] text-slate-500">{person.email}{person.accountId ? ` · ${person.accountId}` : ''}</span></span>
+                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-slate-900 dark:text-white">{person.name}</span><span className="block truncate text-[11px] text-slate-500">{person.email}{person.accountId ? ` · ${person.accountId}` : ''}</span><span className="block truncate text-[10.5px] font-semibold text-sky-700 dark:text-sky-300">{person.universityName || 'PeerPrep'}</span></span>
                         <CoinAmount value={person.balance} className="text-xs text-slate-700 dark:text-slate-200" />
                       </button>
                     );
                   })}
                 </div>
-              ) : <div className="mt-3"><EmptyHint>No active PeerPrep {target}s match.</EmptyHint></div> : <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">Accounts in PeerPrep's main database. University students receive coins from their own university.</p>}
+              ) : <div className="mt-3"><EmptyHint>No active {target}s match.</EmptyHint></div> : <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">Search any university's {target}s or PeerPrep's own accounts. Coins go straight to that person's wallet; no university balance is used.</p>}
+              {unavailable.length ? <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">Could not search: {unavailable.join(', ')}. Try again or pick that university.</p> : null}
             </div>
           )}
 
@@ -166,7 +180,7 @@ export default function IssueCoins() {
               </label>
               {QUICK.map((value) => (
                 <button key={value} type="button" onClick={() => { setAmount(String(value)); requestId.current = null; setDone(null); }}
-                  className={`rounded-xl border px-3 py-2 text-xs font-semibold tabular-nums transition ${Number(amount) === value ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-200' : 'border-slate-200 bg-white/70 text-slate-600 hover:border-amber-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300'}`}>+{formatCoins(value)}</button>
+                  className={`rounded-xl border px-3 py-2 text-xs font-semibold tabular-nums transition ${Number(amount) === value ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-200' : 'border-slate-200 bg-white/70 text-slate-600 hover:border-amber-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300'}`}>{formatCoins(value)}</button>
               ))}
             </div>
           </div>
@@ -181,6 +195,7 @@ export default function IssueCoins() {
             {selected ? (
               <div className="space-y-3">
                 <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{selected.name}</p>
+                {target !== 'university' ? <p className="-mt-2 truncate text-[11px] text-slate-500">{selected.universityName || 'PeerPrep'}</p> : null}
                 <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-xl bg-slate-900/[0.03] p-3 text-center dark:bg-white/[0.04]">
                   <span><span className="block text-[11px] text-slate-500">Now</span><CoinAmount value={selected.balance} className="justify-center text-sm text-slate-900 dark:text-white" /></span>
                   <ArrowRight className="h-4 w-4 text-slate-400" aria-hidden="true" />

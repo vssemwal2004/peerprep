@@ -15,6 +15,8 @@ import GuideInfo from '../guide/platform/GuideInfo';
 import CompanyPicker from './assessment/components/CompanyPicker';
 import RolePicker from './assessment/components/RolePicker';
 import CompanyLogo from './prepMock/CompanyLogo';
+import PatternTable from '../features/prepMock/PatternTable';
+import { PATTERN_MONTHS, patternRows, patternYears } from '../features/prepMock/patternModel';
 import CompanyLogoEditor from './prepMock/CompanyLogoEditor';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem, toAssessmentProblemSnapshot } from './compiler/compilerUtils';
@@ -413,6 +415,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     testType: '',
     company: '',
     role: '',
+    patternFrom: null,
     mockAudienceMode: 'students',
     mockUniversityIds: [],
     assessmentId: generateUniqueAssessmentId(),
@@ -912,6 +915,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           testType: assessment.testType || '',
           company: assessment.company || '',
           role: assessment.role || '',
+          patternFrom: assessment.patternFrom?.month ? { month: assessment.patternFrom.month, year: assessment.patternFrom.year } : null,
           mockAudienceMode: assessment.mockAudienceMode || 'students',
           mockUniversityIds: Array.isArray(assessment.mockUniversityIds) ? assessment.mockUniversityIds : [],
           assessmentId: assessment.assessmentId || '',
@@ -1282,6 +1286,7 @@ export default function CreateAssessment({ viewOnly = false }) {
       testType: form.testType || '',
       company: isMock ? form.company : undefined,
       role: isMock ? String(form.role || '').trim() : undefined,
+      patternFrom: isMock ? (form.patternFrom?.month && form.patternFrom?.year ? { month: Number(form.patternFrom.month), year: Number(form.patternFrom.year) } : null) : undefined,
       mockAudienceMode: isMock ? form.mockAudienceMode : undefined,
       mockUniversityIds: isMock ? form.mockUniversityIds : undefined,
       assessmentId: form.assessmentId || '',
@@ -1350,6 +1355,17 @@ export default function CreateAssessment({ viewOnly = false }) {
     if (isMock && (!String(form.company || '').trim() || !String(form.role || '').trim())) {
       toast.error(form.company ? 'Choose a role for this mock.' : 'Choose a company and a role for this mock.');
       return false;
+    }
+    if (isMock && !(form.patternFrom?.month && form.patternFrom?.year)) {
+      toast.error('Choose the month and year of this OA pattern (Details step) before publishing.');
+      return false;
+    }
+    if (isMock) {
+      const pattern = patternRows(sections, Number(form.duration) || 0);
+      if (pattern.overAllocated) {
+        toast.error(`The section times add up to ${pattern.totals.allocated} minutes, more than the ${form.duration}-minute duration. Fix them in Questions before publishing.`);
+        return false;
+      }
     }
     if (form.passwordEnabled && !currentId && !String(form.passwordValue || '').trim()) {
       toast.error('Enter an assessment password before publishing.');
@@ -1792,6 +1808,22 @@ export default function CreateAssessment({ viewOnly = false }) {
               <RolePicker id="mock-role" company={form.company} value={form.role || ''} onChange={(role) => updateForm({ role })} />
               <p className="mt-1 text-[11.5px] text-slate-500 dark:text-gray-400">Students pick a company, then a role, then its mocks.</p>
             </div>}
+            {isMock && <div data-guide="ae-pattern-from">
+              <span id="mock-pattern-from-label" className="text-xs font-semibold text-slate-700 dark:text-gray-300">OA pattern from <span className="text-rose-500">*</span></span>
+              <div className="mt-1.5 grid grid-cols-[1.3fr_1fr] gap-2" role="group" aria-labelledby="mock-pattern-from-label">
+                <select aria-label="Month of the OA pattern" value={form.patternFrom?.month || ''} onChange={(e) => updateForm({ patternFrom: { ...(form.patternFrom || {}), month: e.target.value ? Number(e.target.value) : '' } })}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-950">
+                  <option value="">Month</option>
+                  {PATTERN_MONTHS.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}
+                </select>
+                <select aria-label="Year of the OA pattern" value={form.patternFrom?.year || ''} onChange={(e) => updateForm({ patternFrom: { ...(form.patternFrom || {}), year: e.target.value ? Number(e.target.value) : '' } })}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-950">
+                  <option value="">Year</option>
+                  {patternYears().map((year) => <option key={year} value={year}>{year}</option>)}
+                </select>
+              </div>
+              <p className="mt-1 text-[11.5px] text-slate-500 dark:text-gray-400">When {form.company || 'the company'} used this OA pattern. Students see “{form.company || 'Company'} OA pattern · {form.patternFrom?.month ? PATTERN_MONTHS[form.patternFrom.month - 1].slice(0, 3) : 'Mar'} {form.patternFrom?.year || new Date().getFullYear()}”. Needed to publish.</p>
+            </div>}
             <div>
               <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">{isMock ? 'Mock name' : 'Assessment name'} <span className="text-rose-500">*</span></label>
               <input
@@ -1969,6 +2001,9 @@ export default function CreateAssessment({ viewOnly = false }) {
             <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-slate-400">Mock for</p>
             <p className="truncate text-base font-semibold text-slate-900 dark:text-white">{form.company || 'No company'}</p>
             <p className={`truncate text-[13px] font-medium ${form.role ? 'text-sky-700 dark:text-sky-300' : 'text-amber-600 dark:text-amber-400'}`}>{form.role || 'No role yet: choose one before publishing'}</p>
+            <p className={`truncate text-[12px] ${form.patternFrom?.month && form.patternFrom?.year ? 'text-slate-500 dark:text-gray-400' : 'font-medium text-amber-600 dark:text-amber-400'}`}>
+              {form.patternFrom?.month && form.patternFrom?.year ? `OA pattern from ${PATTERN_MONTHS[form.patternFrom.month - 1]} ${form.patternFrom.year}` : 'OA pattern month and year missing: set them in Details before publishing'}
+            </p>
           </div>
         </div>
         {!String(form.role || '').trim() && <div className="w-full sm:w-72">
@@ -2094,11 +2129,31 @@ export default function CreateAssessment({ viewOnly = false }) {
           onChange={updateSections}
           onOpenCodingEditor={handleOpenCodingEditor}
           focusQuestion={location.state?.editQuestion}
+          showSuggestedTime={isMock}
           onNotify={{
             success: (message) => toast.success(message),
             error: (message) => toast.error(message),
           }}
         /></div>
+
+        {isMock && sections.length > 0 && (() => {
+          const pattern = patternRows(sections, Number(form.duration) || 0);
+          return (
+            <section data-guide="ae-pattern" aria-label="Exam pattern preview" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Exam pattern students will see</h3>
+                  <p className="text-xs text-slate-500 dark:text-gray-400">Questions and marks come from your sections. Add a suggested time to each section to match the company's OA.</p>
+                </div>
+                {form.patternFrom?.month && form.patternFrom?.year ? <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">{form.company || 'Company'} OA pattern · {PATTERN_MONTHS[form.patternFrom.month - 1].slice(0, 3)} {form.patternFrom.year}</span> : null}
+              </div>
+              <PatternTable sections={sections} duration={Number(form.duration) || 0} />
+              {pattern.overAllocated ? <p role="alert" className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">Section times add up to {pattern.totals.allocated} min, {pattern.overAllocated} min more than the mock's {form.duration} min. Shorten them or increase the duration (Schedule step); publishing is blocked until then.</p> : null}
+              {pattern.partlyTimed ? <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">Only some sections have a time. Add one to every section, or leave all empty.</p> : null}
+              {!pattern.hasTimes ? <p className="mt-2 text-xs text-slate-500 dark:text-gray-400">No section times yet: students will see only the total duration.</p> : null}
+            </section>
+          );
+        })()}
 
         {configuredSetCount > 1 && <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"><button type="button" disabled={activeQuestionSet === 0} onClick={() => setActiveQuestionSet((current) => Math.max(0, current - 1))} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300">Previous set</button><div className="text-center"><p className="text-xs font-bold text-slate-800 dark:text-white">Set {activeQuestionSet + 1}</p><p className="text-[10px] text-slate-500">{questionSetStats.filter((entry) => entry.questions > 0).length} of {configuredSetCount} sets have questions</p></div>{activeQuestionSet < configuredSetCount - 1 ? <button type="button" disabled={!questionSetStats[activeQuestionSet]?.questions} onClick={() => setActiveQuestionSet((current) => Math.min(configuredSetCount - 1, current + 1))} className="rounded-lg bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">Continue to Set {activeQuestionSet + 2}</button> : <span className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">All sets reviewed</span>}</div>}
 

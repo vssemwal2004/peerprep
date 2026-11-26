@@ -102,6 +102,75 @@ export function resolveTheme(template) {
   return theme;
 }
 
+// ───────────── fit to one page ─────────────
+// Most student résumés belong on one page. When content runs over, the whole design is tightened
+// in small steps — margins and gaps first and most, type a little — down to a size that still
+// reads well in print (body ≈ 8.6pt at the last step for a 10pt template). The same fitted theme
+// draws the preview and the PDF, so what you see is what downloads.
+export const FIT_STEPS = Object.freeze([1, 0.97, 0.94, 0.91, 0.885, 0.86]);
+export const FIT_MIN = FIT_STEPS[FIT_STEPS.length - 1];
+
+const fitCache = new WeakMap();
+const round = (value) => Math.round(value * 100) / 100;
+
+/**
+ * `theme` tightened by `scale` (1 = as designed). Type scales by `scale`, spacing and page
+ * margins by a stronger factor, line height slightly; colours, layout and widths never change.
+ */
+export function fitTheme(theme, scale = 1) {
+  if (!theme || !(scale < 1)) return theme;
+  if (!fitCache.has(theme)) fitCache.set(theme, new Map());
+  const cache = fitCache.get(theme);
+  if (cache.has(scale)) return cache.get(scale);
+  const type = (value) => (typeof value === 'number' ? round(value * scale) : value);
+  // Spacing gives more than type: a 0.86 step keeps ~0.72 of the gaps, so text stays readable.
+  const spaceScale = 1 - (1 - scale) * 2;
+  const space = (value, min = 0) => (typeof value === 'number' ? round(Math.max(min, value * spaceScale)) : value);
+  const out = {
+    ...theme,
+    fit: scale,
+    size: { ...theme.size, base: type(theme.size.base), small: type(theme.size.small), lineHeight: round(Math.max(1.12, theme.size.lineHeight - (1 - scale) * 0.6)) },
+    page: { ...theme.page, padH: space(theme.page.padH, 24), padTop: space(theme.page.padTop, 20), padBottom: space(theme.page.padBottom, 20) },
+    header: {
+      ...theme.header,
+      nameSize: type(theme.header.nameSize), headlineSize: type(theme.header.headlineSize), contactSize: type(theme.header.contactSize),
+      gapAfter: space(theme.header.gapAfter), bannerPadV: space(theme.header.bannerPadV, 10),
+    },
+    title: { ...theme.title, size: type(theme.title.size), gapBefore: space(theme.title.gapBefore, 4), gapAfter: space(theme.title.gapAfter, 1.5) },
+    entry: { ...theme.entry, gap: space(theme.entry.gap, 2), titleSize: theme.entry.titleSize ? type(theme.entry.titleSize) : theme.entry.titleSize },
+    bullet: { ...theme.bullet, gap: space(theme.bullet.gap, 0.4), indent: space(theme.bullet.indent, 8) },
+    side: theme.side ? {
+      ...theme.side,
+      padH: space(theme.side.padH, 10), padTop: space(theme.side.padTop, 18), padBottom: space(theme.side.padBottom, 18),
+      title: { ...theme.side.title, size: type(theme.side.title.size), gapBefore: space(theme.side.title.gapBefore, 4), gapAfter: space(theme.side.title.gapAfter, 1.5) },
+    } : theme.side,
+  };
+  cache.set(scale, out);
+  return out;
+}
+
+/**
+ * The fit step to measure next. `probe` = { step, dir, best }: `best` is the largest step known
+ * to fit on one page. Returns { next: probe } to measure again, or { settle: step }.
+ *   fresh content (dir null): too long → step down; fits below full size → try one step up;
+ *   going down: stop at the first step that fits, or at the smallest step (then it is 2 pages);
+ *   going up: keep growing while it fits; on the first overflow settle back on `best`;
+ *   done: the step was chosen, measure it once more so line breaks match what is shown.
+ */
+export function nextFitStep({ step, dir, best }, fits, last = FIT_STEPS.length - 1) {
+  if (dir === 'done') return { settle: step };
+  if (dir === null) {
+    if (!fits) return step < last ? { next: { step: step + 1, dir: 'down', best: null } } : { settle: step };
+    return step > 0 ? { next: { step: step - 1, dir: 'up', best: step } } : { settle: step };
+  }
+  if (dir === 'down') {
+    if (fits || step >= last) return { settle: step };
+    return { next: { step: step + 1, dir: 'down', best: null } };
+  }
+  if (!fits) return { settle: best };
+  return step > 0 ? { next: { step: step - 1, dir: 'up', best: step } } : { settle: step };
+}
+
 /** Palette for a column. `ref` may be a palette key or a literal colour. */
 export function paletteFor(theme, column = 'main') {
   if (column === 'side' && theme.side) {

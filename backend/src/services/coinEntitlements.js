@@ -8,6 +8,7 @@ import { InterviewEngagementReceipt } from '../models/AdaptiveEngagement.js';
 import { engagementTenant } from './engagementPolicyService.js';
 import { currentTenant } from '../platform/tenantContext.js';
 import { AnviAttempt } from '../modules/anviInterview/anviInterview.models.js';
+import { jdMatchDelivered } from '../modules/resumeReview/jdMatch.service.js';
 
 // The retired interview service stored sessions in the university's database; those sessions
 // predate local start receipts, so their owner field is probed the same way platform inspection does.
@@ -57,6 +58,8 @@ export const chargeVerifiers = Object.freeze({
     const student = await chargedStudent(charge);
     return Boolean(student) && eventJoined(student, charge.resourceKey);
   },
+  // Kept only when the ANVI check produced a report; an interrupted check is refunded.
+  'resume.jd_match': (charge) => jdMatchDelivered(charge),
 });
 
 export async function eventJoined(student, eventId) {

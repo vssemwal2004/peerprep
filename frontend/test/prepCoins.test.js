@@ -91,7 +91,8 @@ test('issuing coins previews the new balance and sends one idempotent request', 
   api.topUpUniversityCoins = async (id, body) => { calls.push({ id, ...body }); return { balance: 900 + body.amount }; };
   await render('/admin/prep-coins/issue?university=north', pages.issue);
   assert.equal(document.querySelector('[aria-label="University"] [role="radio"][aria-checked="true"]').textContent.includes('North University'), true, 'the linked university is preselected');
-  await act(async () => button('+500').click());
+  // Quick amounts set the amount (labelled "500", not "+500", since they do not add).
+  await act(async () => button('500').click());
   const review = document.body.textContent;
   assert.match(review, /Now900/);
   assert.match(review, /After1,400/);

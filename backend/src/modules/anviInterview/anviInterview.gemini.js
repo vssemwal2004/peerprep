@@ -302,8 +302,10 @@ export function createGeminiClient({ config = anviConfig(), fetcher = null, WebS
   // Thinking per call. An explicit `thinkingKind` uses config.thinkingByKind (where "none" sends nothing);
   // without one, existing callers keep the legacy "low" for gemini-3 models. TTS models reject any
   // thinkingConfig (WP0), so they never get one.
-  const thinkingFor = (model, thinkingKind) => {
+  // `thinkingLevel` (minimal|low|medium|high, or "none") pins one call's level, e.g. a cost-capped call.
+  const thinkingFor = (model, thinkingKind, thinkingLevel = null) => {
     if (TTS_MODEL.test(model) || thinkingKind === "tts" || !/^gemini-3/.test(model)) return {};
+    if (thinkingLevel) return thinkingLevel === "none" ? {} : { thinkingConfig: { thinkingLevel } };
     if (!thinkingKind) return { thinkingConfig: { thinkingLevel: "low" } };
     const level = config.thinkingByKind?.[thinkingKind];
     return level && level !== "none" ? { thinkingConfig: { thinkingLevel: level } } : {};
@@ -498,7 +500,7 @@ export function createGeminiClient({ config = anviConfig(), fetcher = null, WebS
   // `usageExtras(result, tokens, extracted)` may override the metered tokens/audioSeconds. With
   // `oversizeFatal` an oversized response fails the call instead of trying the next model.
   // Resolves to { value, model, tokens, attempts }; `request` below resolves to the value only.
-  async function requestMeta({ models, systemText, parts, generationConfig, timeoutMs, parse = (text) => text, extract = responseText, kind = "generate", thinkingKind = null, onUsage: callUsage = null, audioSeconds = 0, usageExtras = null, maxResponseBytes = MAX_RESPONSE_BYTES, oversizeFatal = false }) {
+  async function requestMeta({ models, systemText, parts, generationConfig, timeoutMs, parse = (text) => text, extract = responseText, kind = "generate", thinkingKind = null, thinkingLevel = null, onUsage: callUsage = null, audioSeconds = 0, usageExtras = null, maxResponseBytes = MAX_RESPONSE_BYTES, oversizeFatal = false }) {
     if (!config.apiKey) throw new GeminiError("GEMINI_UNAVAILABLE", "GEMINI_API_KEY is not configured.");
     const chain = unique(models);
     const deadline = Date.now() + timeoutMs;
@@ -509,7 +511,7 @@ export function createGeminiClient({ config = anviConfig(), fetcher = null, WebS
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const remaining = deadline - Date.now();
         if (remaining <= 0) throw timeout();
-        const thinking = thinkingFor(model, thinkingKind);
+        const thinking = thinkingFor(model, thinkingKind, thinkingLevel);
         attempts += 1;
         let response;
         try {
@@ -586,7 +588,7 @@ export function createGeminiClient({ config = anviConfig(), fetcher = null, WebS
   // its own thinking level, and is never cached (the cache key has no tenant).
   // `thinkingKind` opts a call into config.thinkingByKind; `withMeta` resolves to { value, model, tokens }
   // with the model that actually answered.
-  function generateJson({ model, models = null, fallbackModels = null, includeDefaultFallback, systemText = "", parts = [], schema, temperature = 0.2, timeoutMs = 30000, maxOutputTokens = DEFAULT_MAX_OUTPUT_TOKENS, usageKind = "generate", thinkingKind = null, onUsage: callUsage = null, cache = true, withMeta = false } = {}) {
+  function generateJson({ model, models = null, fallbackModels = null, includeDefaultFallback, systemText = "", parts = [], schema, temperature = 0.2, timeoutMs = 30000, maxOutputTokens = DEFAULT_MAX_OUTPUT_TOKENS, usageKind = "generate", thinkingKind = null, thinkingLevel = null, onUsage: callUsage = null, cache = true, withMeta = false } = {}) {
     const kind = JSON_KINDS.has(usageKind) ? usageKind : "generate";
     const decision = kind === "decision";
     const withDefaults = includeDefaultFallback ?? !decision;
@@ -599,6 +601,7 @@ export function createGeminiClient({ config = anviConfig(), fetcher = null, WebS
     const options = {
       models: chain,
       thinkingKind: decision ? "decision" : thinkingKind,
+      thinkingLevel: decision ? null : thinkingLevel,
       systemText,
       parts: typeof parts === "string" ? [{ text: parts }] : parts,
       generationConfig: {
@@ -619,7 +622,7 @@ export function createGeminiClient({ config = anviConfig(), fetcher = null, WebS
     const ttlMs = Number(config.jsonCacheSeconds ?? 60) * 1000;
     if (decision || temperature !== 0 || cache === false || !(ttlMs > 0) || !config.apiKey) return finish(requestMeta(options));
     const key = createHash("sha256")
-      .update(JSON.stringify([kind, unique(options.models), systemText, options.parts, options.generationConfig, ...(options.thinkingKind ? [options.thinkingKind] : [])]))
+      .update(JSON.stringify([kind, unique(options.models), systemText, options.parts, options.generationConfig, ...(options.thinkingKind ? [options.thinkingKind] : []), ...(options.thinkingLevel ? [`level:${options.thinkingLevel}`] : [])]))
       .digest("hex");
     return finish(cachedJson(key, ttlMs, () => requestMeta(options)));
   }

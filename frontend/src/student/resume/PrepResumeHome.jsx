@@ -14,6 +14,9 @@ import { sampleResumeFor } from '../../features/resume/templates/sampleResume';
 import { card, focusRing, SectionHeader, Skeleton } from '../dashboard/ui';
 import { api } from '../../utils/api';
 import RequirePasswordChange from '../RequirePasswordChange';
+import { hasStudentFeature } from '../studentFeatureAccess';
+import PrepCoinIcon from '../../components/prepCoin/PrepCoinIcon';
+import { resumeStrength } from '../../features/resume/review/resumeStrength';
 
 const TEMPLATE_PICKS = ['harvard', 'aurora', 'timeline', 'emerald', 'peerprep-circuit'];
 const CATEGORY_LABEL = Object.fromEntries(TEMPLATE_CATEGORIES.map((item) => [item.id, item.label]));
@@ -90,7 +93,7 @@ function EssentialsCard({ requirements, hasDraft, onEdit }) {
   </section>;
 }
 
-function ReviewCard({ ready, report, stale, hasDraft, open, onFirstMissing }) {
+function ReviewCard({ ready, report, stale, hasDraft, open, onFirstMissing, jdMatch = false, strength = null }) {
   const options = [
     { label: !ready ? 'Finish missing details' : report ? 'What should I fix first?' : stale ? 'Recheck my résumé' : 'Check my résumé', Icon: ScanText, onClick: () => ready ? open(report ? '?action=fixes' : '?run=1') : onFirstMissing() },
     { label: 'Improve a bullet', Icon: PencilLine, onClick: () => open('?action=rewrite') },
@@ -104,13 +107,22 @@ function ReviewCard({ ready, report, stale, hasDraft, open, onFirstMissing }) {
         <h2 className="text-xl font-semibold tracking-tight">Ask <AnviWord /></h2>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-zinc-400">Your résumé review</p>
       </div></div>
-      <p className="relative mt-4 text-sm leading-6 text-slate-600 dark:text-zinc-300">{report ? 'Your latest PDF scored ' + report.readinessScore + '/100 on the ATS check. Open your feedback to see what to improve.' : stale ? 'Your draft has changed. Run a fresh check on the latest version.' : hasDraft ? 'Review your writing, improve a bullet or compare your skills with a job description.' : 'Add your résumé to get feedback on its content, writing and PDF layout.'}</p>
+      <p className="relative mt-4 text-sm leading-6 text-slate-600 dark:text-zinc-300">{report ? `ATS readability ${report.readinessScore}/100 (can a machine read your PDF)${strength ? ` · Résumé strength ${strength.score}/100 (${strength.label.toLowerCase()}, before the grammar check)` : ''}. Open your feedback to see what to improve.` : stale ? 'Your draft has changed. Run a fresh check on the latest version.' : hasDraft ? 'Review your writing, improve a bullet or compare your skills with a job description.' : 'Add your résumé to get feedback on its content, writing and PDF layout.'}</p>
       {!hasDraft ? <ul className="relative mt-4 grid gap-x-4 gap-y-2.5 text-[13px] text-slate-600 sm:grid-cols-2 dark:text-zinc-300">
         {[[ScanText, 'PDF readability'], [PencilLine, 'Bullet rewrites'], [ListChecks, 'Grammar and spelling'], [Target, 'Job matching']].map(([Icon, label]) => <li key={label} className="flex items-center gap-2"><Icon size={16} className="text-violet-600 dark:text-violet-300" />{label}</li>)}
       </ul> : <div className="relative mt-4 grid gap-2 sm:grid-cols-2">
         {options.map(({ label, Icon, onClick }) => <button type="button" key={label} onClick={onClick} className={'group flex min-h-12 items-center gap-2.5 rounded-xl border border-violet-100 bg-white/80 px-3 py-2.5 text-left text-[13px] font-semibold text-slate-700 transition hover:border-violet-300 hover:bg-violet-50 dark:border-violet-400/20 dark:bg-zinc-900/60 dark:text-zinc-200 dark:hover:bg-violet-500/10 ' + focusRing}>
           <Icon size={16} className="shrink-0 text-violet-600 dark:text-violet-300" /><span className="flex-1">{label}</span><ArrowRight size={13} className="text-slate-400 transition-transform group-hover:translate-x-0.5" />
         </button>)}
+        {/* ANVI JD Match: only for students an admin turned it on for (paid, opt-in). */}
+        {jdMatch ? <button type="button" data-guide="pr-jd-match" onClick={() => open('?tab=job')} className={'group relative flex items-center gap-3 overflow-hidden rounded-xl bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 px-3.5 py-3 text-left text-white shadow-[0_12px_26px_-14px_rgba(124,58,237,0.9)] transition hover:brightness-110 sm:col-span-2 ' + focusRing}>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/15"><Sparkles size={17} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-1.5 text-[13.5px] font-semibold">JD Match with ANVI <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold"><PrepCoinIcon size={12} />Prep Coins</span></span>
+            <span className="block text-[12px] text-white/85">Paste a job description: ANVI shows every missing keyword, section by section and line by line.</span>
+          </span>
+          <ArrowRight size={15} className="shrink-0 transition-transform group-hover:translate-x-0.5" />
+        </button> : null}
       </div>}
     </AnviAura>
   </section>;
@@ -242,7 +254,7 @@ export default function PrepResumeHome() {
           </div>
         </section>
         {!loading && !loadError && <div className="mt-5 grid gap-4 lg:grid-cols-[1.12fr_1fr]">
-          <ReviewCard ready={requirements.ready} report={report} stale={stale} hasDraft={hasDraft} open={review} onFirstMissing={() => hasDraft ? editField(requirements.missing[0]) : editor('?import=1')} />
+          <ReviewCard jdMatch={hasStudentFeature(user, 'resume_jd_match')} strength={hasDraft ? resumeStrength(resume) : null} ready={requirements.ready} report={report} stale={stale} hasDraft={hasDraft} open={review} onFirstMissing={() => hasDraft ? editField(requirements.missing[0]) : editor('?import=1')} />
           <EssentialsCard requirements={requirements} hasDraft={hasDraft} onEdit={editField} />
         </div>}
         <TemplatePicks onPick={openTemplates} onAll={() => openTemplates()} />

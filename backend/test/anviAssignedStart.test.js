@@ -356,8 +356,11 @@ test("practice is blocked while an assignment holds the interview, and the card 
   assert.equal(refused.status, 403, "refused before requireCoins tries to charge");
   assert.equal(refused.body.code, "PRACTICE_BLOCKED");
   assert.equal(await AnviAttempt.countDocuments(), 0);
-  // The open interview is priced: requireCoins really tries to charge it (no replica set here).
-  assert.equal((await call(`/student/ai-interviews/${open._id}/start`, "POST", {})).status, 500);
+  // The open interview is priced: requireCoins really tries to charge it. This database has no
+  // replica set, so the no-transaction charge path runs and refuses the empty wallet.
+  const charged = await call(`/student/ai-interviews/${open._id}/start`, "POST", {});
+  assert.equal(charged.status, 402);
+  assert.equal(charged.body.code, "INSUFFICIENT_PREP_COINS");
   const service = createAnviService({ gemini, buildPlan, config, evaluateSoon, scheduling: sched });
   await assert.rejects(service.startAttempt(me, String(blocked._id)), (error) => error.details?.code === "PRACTICE_BLOCKED");
 });

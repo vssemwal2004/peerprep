@@ -20,7 +20,7 @@ import PageGuideButton from '../../guide/platform/PageGuideButton';
 function Shell({ children }) {
   return (
     <div className="min-h-full bg-[#f6f7f9] font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:text-zinc-100">
-      <div className="mx-auto max-w-[1480px] px-4 py-6 sm:px-6 lg:px-8 lg:py-7">{children}</div>
+      <div className="mx-auto max-w-[1480px] px-4 py-4 sm:px-6 lg:px-8 lg:py-5">{children}</div>
     </div>
   );
 }

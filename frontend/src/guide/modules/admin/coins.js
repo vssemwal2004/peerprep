@@ -303,6 +303,11 @@ export default [
         body: "One card per paid feature: the price in coins and the free uses per month. A price of 0 makes it free. The line at the bottom shows exactly what students will see; changed cards are marked Unsaved.",
       },
       {
+        id: "pcp-jd-match", target: "pcp-jd-match", chapter: "parts",
+        title: "ANVI JD Match budget",
+        body: "Caps what PeerPrep pays Google for one résumé-vs-job check (ANVI trims long inputs to stay under it) and sets a monthly budget: when this month's real Gemini spend reaches it, checks pause and no coins are taken. Also limits checks per student per day and shows this month's calls, average and costliest check.",
+      },
+      {
         id: "pcp-save", target: "pcp-save", chapter: "actions", quick: true,
         title: "Save prices",
         body: "Add an optional reason, then Save prices. Prices apply to the next paid action; nothing already paid changes. Discard drops your unsaved edits. The version and last change are shown here.",

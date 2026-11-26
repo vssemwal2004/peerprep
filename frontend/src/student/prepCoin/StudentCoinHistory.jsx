@@ -17,7 +17,7 @@ const FILTERS = [
 ];
 
 function describe(row) {
-  if (row.kind === 'student_spend') return { title: `Spent on ${row.feature || 'a PeerPrep feature'}`, Icon: ArrowUpRight, sign: '−', group: 'out', tone: 'text-slate-900 dark:text-zinc-100', chip: 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-zinc-300' };
+  if (row.kind === 'student_spend') return { title: `Spent on ${row.feature || 'a PeerPrep feature'}${row.note ? ` · ${row.note}` : ''}`, Icon: ArrowUpRight, sign: '−', group: 'out', tone: 'text-slate-900 dark:text-zinc-100', chip: 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-zinc-300' };
   if (row.kind === 'student_refund') return { title: `Refunded: ${row.feature || 'a PeerPrep feature'}`, Icon: RotateCcw, sign: '+', group: 'refund', tone: 'text-emerald-700 dark:text-emerald-300', chip: 'bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300' };
   if (String(row.kind).startsWith('earn_')) {
     const fallback = { earn_login: 'Daily login', earn_solve: 'Problem solved', earn_badge: 'Badge level', earn_challenge: 'Daily challenge', earn_sheet: 'Sheet completed', earn_milestone: 'Lifetime badge', earn_level: 'Elite level reached' }[row.kind] || 'Earned';

@@ -459,7 +459,8 @@ export const api = {
   allocateWalletCoins: (body) => request('/wallet/allocate', { method: 'POST', body, skipCache: true }),
   topUpUniversityCoins: (id, body) => request(`/platform/admin/universities/${encodeURIComponent(id)}/coins/top-up`, { method: 'POST', body, skipCache: true }),
   platformWallets: () => request('/platform/admin/wallets', { skipCache: true }),
-  platformWalletRecipients: (role, search) => request(`/platform/admin/wallet-recipients?role=${encodeURIComponent(role)}&search=${encodeURIComponent(search)}`, { skipCache: true }),
+  // `university`: 'platform' (PeerPrep's own accounts), 'all', or one university ID.
+  platformWalletRecipients: (role, search, university = 'platform') => request(`/platform/admin/wallet-recipients?role=${encodeURIComponent(role)}&search=${encodeURIComponent(search)}&university=${encodeURIComponent(university)}`, { skipCache: true, timeoutMs: 60000 }),
   creditPlatformWalletUser: (body) => request('/platform/admin/wallet-recipients/credit', { method: 'POST', body, skipCache: true }),
   universityAccountCounts: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/account-counts`, { skipCache: true }),
   universityAccountLimits: () => request('/platform/university/account-limits', { skipCache: true }),
@@ -490,6 +491,9 @@ export const api = {
   walletPricing: () => request('/wallet/pricing', { skipCache: true }),
   adminCoinPricing: () => request('/platform/admin/coin-pricing', { skipCache: true }),
   saveAdminCoinPricing: (body) => request('/platform/admin/coin-pricing', { method: 'PUT', body, skipCache: true }),
+  // ANVI Resume JD Match: Gemini cost cap per check, monthly budget (kill switch) and this month's spend.
+  adminJdMatchSettings: () => request('/platform/admin/coin-pricing/resume-jd-match', { skipCache: true }),
+  saveAdminJdMatchSettings: (body) => request('/platform/admin/coin-pricing/resume-jd-match', { method: 'PUT', body, skipCache: true }),
   // Coins students earn (daily login, solve, badge levels 1-10): Master Admin only.
   adminCoinEarning: () => request('/platform/admin/coin-pricing/earning', { skipCache: true }),
   saveAdminCoinEarning: (body) => request('/platform/admin/coin-pricing/earning', { method: 'PUT', body, skipCache: true }),
@@ -659,6 +663,11 @@ export const api = {
   }),
   explainResumeCheck: (body) =>
     request("/resume/review/explain", { method: "POST", body, timeoutMs: 60 * 1000, skipQueue: true }),
+  // ANVI JD Match (opt-in, paid in Prep Coins): start a check, then poll it until it is done.
+  jdMatchOverview: () => request("/resume/review/jd-match", { skipCache: true, skipDedupe: true }),
+  startJdMatch: (body, expectedCost = null) =>
+    request("/resume/review/jd-match", { method: "POST", body, headers: coinCostHeader(expectedCost), timeoutMs: 45 * 1000, skipQueue: true }),
+  getJdMatch: (id, signal) => request(`/resume/review/jd-match/${encodeURIComponent(id)}`, { signal, skipCache: true, skipDedupe: true, skipQueue: true }),
   getStudentResume: (studentId) =>
     request(`/resume/student/${studentId}`, { skipCache: true }),
   updateMyAvatar: (file) => {
@@ -824,6 +833,14 @@ export const api = {
     fd.append("image", file);
     return request("/admin/announcements/image", { method: "POST", formData: fd });
   },
+  /** CSV/Excel list (name + email; semester, college, branch optional) → rows matched to registered students. */
+  uploadAnnouncementAudience: (file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request("/admin/announcements/audience/upload", { method: "POST", formData: fd, skipCache: true });
+  },
+  /** The chosen students of a "selected students" announcement: { audience, students, hiddenCount }. */
+  getAnnouncementAudience: (id) => request(`/admin/announcements/${id}/audience`, { skipCache: true }),
   listStudentAnnouncements: () =>
     request(`/student/announcements?ts=${Date.now()}`, { skipCache: true }),
 

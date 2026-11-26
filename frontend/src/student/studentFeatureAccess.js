@@ -1,6 +1,6 @@
 import {
   BarChart3, BookOpen, Bot, Briefcase, CalendarDays, ClipboardList, Coins,
-  LayoutDashboard, ListChecks, Trophy, UserCog, Users, Zap,
+  FileSearch, LayoutDashboard, ListChecks, Trophy, UserCog, Users, Zap,
 } from 'lucide-react';
 
 export const STUDENT_FEATURE_CATALOG = Object.freeze([
@@ -19,7 +19,11 @@ export const STUDENT_FEATURE_CATALOG = Object.freeze([
   // Opt-in: never part of "All access"; only students an admin turns it on for (same rule on the server).
   { key: 'peers', label: 'Prep Mates', description: 'Find classmates, view their profiles and become Prep Mates (same university only).', icon: Users, path: '/student/peers', optIn: true },
   { key: 'prep_mock', label: 'Prep Mock', description: 'Company mock tests by role: pick a company, choose a role and take its mocks.', icon: Briefcase, path: '/student/prep-mock', optIn: true },
+  { key: 'resume_jd_match', label: 'JD Match with ANVI', description: 'Compare the résumé with a job description: missing keywords, section by section and line by line. Uses Prep Coins per check (10 by default).', icon: FileSearch, path: '/student/resume/review?tab=job', optIn: true, requires: 'resume' },
 ]);
+
+/** Features that only work together with another one (same rule on the server). */
+export const STUDENT_FEATURE_REQUIRES = Object.freeze(Object.fromEntries(STUDENT_FEATURE_CATALOG.filter((feature) => feature.requires).map((feature) => [feature.key, feature.requires])));
 
 export const ALL_STUDENT_FEATURES = STUDENT_FEATURE_CATALOG.map((feature) => feature.key);
 /** Features only on when an admin turns them on ("All access" leaves them off). */
@@ -35,7 +39,9 @@ export function normalizeStudentAccess(access, accessScope = 'full') {
 }
 
 export function hasStudentFeature(user, feature) {
-  return normalizeStudentAccess(user?.featureAccess, user?.accessScope).features.includes(feature);
+  const features = normalizeStudentAccess(user?.featureAccess, user?.accessScope).features;
+  const needs = STUDENT_FEATURE_REQUIRES[feature];
+  return features.includes(feature) && (!needs || features.includes(needs));
 }
 
 export function firstStudentFeaturePath(user) {

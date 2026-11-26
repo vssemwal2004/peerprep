@@ -4,7 +4,7 @@ import { BarChart3, CalendarDays, Camera, ClipboardList, Clock3, KeyRound, Layer
 import MockActions from './MockActions';
 import { availabilityText } from './mockText';
 import { AlwaysOpenBadge, StatusBadge } from './prepMockUi';
-import { instructionsOf, isAlwaysOpen, mockState, patternOf, plainText, resultOf, sectionTypes } from './prepMockModel';
+import { instructionsOf, isAlwaysOpen, mockState, patternFromLabel, patternOf, plainText, resultOf, sectionTypes } from './prepMockModel';
 import { formatDateTime, formatDurationMinutes } from '../assessment-dashboard/assessmentDashboardUtils';
 import { focusRing } from '../dashboard/ui';
 
@@ -47,6 +47,7 @@ function PatternTable({ pattern }) {
             <th scope="col" className={`${cell} font-semibold`}>Section</th>
             <th scope="col" className={`${cell} ${wide} font-semibold`}>Type</th>
             <th scope="col" className={`${cell} text-right font-semibold`}><span className="sm:hidden">Qs</span><span className="hidden sm:inline">Questions</span></th>
+            {pattern.hasTimes && <th scope="col" className={`${cell} text-right font-semibold`}><span className="sm:hidden">Min</span><span className="hidden sm:inline">Time (min)</span></th>}
             <th scope="col" className={`${cell} ${wide} text-right font-semibold`}>Marks / Q</th>
             <th scope="col" className={`${cell} text-right font-semibold`}>Marks</th>
             {pattern.hasNegative && <th scope="col" className={`${cell} text-right font-semibold`}><span className="sm:hidden" aria-hidden="true">−ve</span><span className="sr-only sm:not-sr-only">Negative</span></th>}
@@ -61,6 +62,7 @@ function PatternTable({ pattern }) {
               </th>
               <td className={`${cell} ${wide}`}><span className="rounded-md bg-violet-50 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-500/10 dark:text-violet-200">{row.type}</span></td>
               <td className={`${cell} text-right tabular-nums`}>{row.questions}</td>
+              {pattern.hasTimes && <td className={`${cell} text-right tabular-nums`}>{row.minutes ?? '—'}</td>}
               <td className={`${cell} ${wide} text-right tabular-nums text-slate-500 dark:text-zinc-400`}>{row.perQuestion ? marksText(row.perQuestion) : '—'}</td>
               <td className={`${cell} text-right font-semibold tabular-nums`}>{row.marks ? marksText(row.marks) : '—'}</td>
               {pattern.hasNegative && <td className={`${cell} text-right tabular-nums ${row.negative ? 'font-semibold text-rose-600 dark:text-rose-400' : 'text-slate-400'}`}>{row.negative ? `−${marksText(row.negative)}` : '—'}</td>}
@@ -73,6 +75,7 @@ function PatternTable({ pattern }) {
             <th scope="row" className={`${cell} text-violet-700 dark:text-violet-300`}>Total</th>
             <td className={`${cell} ${wide}`} />
             <td className={`${cell} text-right tabular-nums`}>{pattern.questions}</td>
+            {pattern.hasTimes && <td className={`${cell} text-right tabular-nums`}>{pattern.duration || pattern.rows.reduce((sum, row) => sum + (row.minutes || 0), 0)}</td>}
             <td className={`${cell} ${wide}`} />
             <td className={`${cell} text-right tabular-nums`}>{pattern.marks ? marksText(pattern.marks) : '—'}</td>
             {pattern.hasNegative && <td className={cell} />}
@@ -99,6 +102,8 @@ const MockOverview = forwardRef(function MockOverview({ mock, role, index, repor
   const proctored = Boolean(mock.settings?.aiProctoring?.enabled);
   const fullscreen = Boolean(mock.settings?.enableFullscreen);
   const result = resultOf(report);
+  const oaDate = patternFromLabel(mock);
+  const oaDateLong = patternFromLabel(mock, { long: true });
 
   const facts = [
     { icon: Clock3, label: 'Duration', value: formatDurationMinutes(mock.duration) },
@@ -120,7 +125,7 @@ const MockOverview = forwardRef(function MockOverview({ mock, role, index, repor
     <motion.section ref={ref} key={mock._id} aria-labelledby="pmock-overview-title" tabIndex={-1}
       initial={reduceMotion ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }}
       className={`min-w-0 scroll-mt-24 overflow-hidden rounded-2xl border border-[#e9eaee] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] outline-none dark:border-white/[0.07] dark:bg-[#242424] ${className}`}>
-      <header data-guide="pmock-mock" className={`relative border-b border-[#eef0f3] p-5 sm:p-6 dark:border-white/[0.06] ${open ? 'bg-[linear-gradient(180deg,rgba(16,185,129,0.06),transparent)]' : ''}`}>
+      <header data-guide="pmock-mock" className={`relative border-b border-[#eef0f3] p-4 sm:p-5 dark:border-white/[0.06] ${open ? 'bg-[linear-gradient(180deg,rgba(16,185,129,0.06),transparent)]' : ''}`}>
         {open && <span className="absolute inset-x-0 top-0 h-[3px] bg-emerald-500" aria-hidden="true" />}
         <p className="text-[11.5px] font-semibold uppercase tracking-[0.12em] text-violet-700 dark:text-violet-300">{role.name} · Mock {index + 1} of {role.mocks.length}</p>
         <div className="mt-1.5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -128,6 +133,7 @@ const MockOverview = forwardRef(function MockOverview({ mock, role, index, repor
             <h2 id="pmock-overview-title" className="text-[20px] font-semibold leading-tight tracking-[-0.02em] text-slate-900 sm:text-[22px] dark:text-zinc-50">{mock.title || 'Untitled mock'}</h2>
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
               <StatusBadge state={state} />
+              {oaDate && <span title={`Based on the ${mock.company || 'company'} OA pattern from ${oaDateLong}`} className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold leading-none text-violet-700 ring-1 ring-inset ring-violet-200/70 dark:bg-violet-500/10 dark:text-violet-200 dark:ring-violet-400/20"><CalendarDays className="h-3 w-3" aria-hidden="true" />OA pattern · {oaDate}</span>}
               {alwaysOpen && open && <AlwaysOpenBadge />}
               {needsPassword && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold leading-none text-amber-700 ring-1 ring-inset ring-amber-200/70 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-400/20"><KeyRound className="h-3 w-3" aria-hidden="true" />Password needed</span>}
               {fullscreen && <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold leading-none text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-white/[0.06] dark:text-zinc-300 dark:ring-white/10"><Maximize2 className="h-3 w-3" aria-hidden="true" />Full screen</span>}
@@ -149,16 +155,18 @@ const MockOverview = forwardRef(function MockOverview({ mock, role, index, repor
         )}
       </header>
 
-      <div className="space-y-6 p-5 sm:p-6">
-        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[#e9eaee] bg-[#e9eaee] sm:grid-cols-3 2xl:grid-cols-6 dark:border-white/[0.07] dark:bg-white/[0.07]">
+      <div className="space-y-5 p-4 sm:p-5">
+        {/* One row of facts on wide screens instead of 2–3 rows. */}
+        <dl className="grid grid-cols-[repeat(auto-fit,minmax(128px,1fr))] gap-px overflow-hidden rounded-xl border border-[#e9eaee] bg-[#e9eaee] dark:border-white/[0.07] dark:bg-white/[0.07]">
           {facts.map((fact) => <Fact key={fact.label} {...fact} />)}
         </dl>
 
         <section aria-labelledby="pmock-pattern-title">
-          <Heading icon={ListChecks} aside={<span className="text-[11.5px] text-slate-400 dark:text-zinc-500">{plural(pattern.rows.length, 'section')} · {formatDurationMinutes(mock.duration)} in total</span>}>
+          <Heading icon={ListChecks} aside={<span className="text-[11.5px] text-slate-500 dark:text-zinc-400">{oaDateLong ? `${mock.company || 'Company'} OA pattern from ${oaDateLong}` : `${plural(pattern.rows.length, 'section')} · ${formatDurationMinutes(mock.duration)} in total`}</span>}>
             <span id="pmock-pattern-title">Exam pattern</span>
           </Heading>
           <PatternTable pattern={pattern} />
+          {pattern.hasTimes && <p className="mt-2 text-[12px] text-slate-500 dark:text-zinc-400">Section times are a guide to pace yourself. The timer runs for the whole test ({formatDurationMinutes(mock.duration)}).</p>}
           {pattern.hasNegative && <p className="mt-2 text-[12px] text-slate-500 dark:text-zinc-400">Negative marks are taken off for each wrong answer in that section. Skipping a question costs nothing.</p>}
         </section>
 

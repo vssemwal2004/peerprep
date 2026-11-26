@@ -695,11 +695,11 @@ export default function StudentResume() {
       const lineBreaks = measured?.getLineBreaks?.() || null;
       let blob;
       try {
-        blob = await pdf(<ResumePdfDocument resume={documentResume} pages={measured?.pages} lineBreaks={lineBreaks} />).toBlob();
+        blob = await pdf(<ResumePdfDocument resume={documentResume} pages={measured?.pages} lineBreaks={lineBreaks} fitScale={measured?.fitScale || 1} />).toBlob();
       } catch (renderError) {
         // Last resort: the same template with standard PDF fonts, so a download never fails.
         console.error('Prep Resume PDF render failed; retrying with standard fonts', renderError);
-        blob = await pdf(<ResumePdfDocument resume={documentResume} safeFonts />).toBlob();
+        blob = await pdf(<ResumePdfDocument resume={documentResume} safeFonts fitScale={measured?.fitScale || 1} />).toBlob();
       }
       if (!blob?.size) throw new Error('The generated PDF was empty. Please try again.');
       const url = URL.createObjectURL(blob);

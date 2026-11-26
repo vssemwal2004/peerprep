@@ -74,12 +74,12 @@ export default function BulkStudentAccessDialog({ count, allMatching, onApply, o
                     <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${picked ? (type === 'revoke' ? 'bg-rose-600 text-white' : 'bg-sky-600 text-white') : 'bg-slate-100 text-slate-400 dark:bg-gray-800'}`}><Icon className="h-4 w-4" /></span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
-                        <span className="flex items-center gap-1.5 text-sm font-bold text-slate-800 dark:text-white">{feature.label}
+                        <span className="flex items-center gap-1.5 text-sm font-bold text-slate-800 dark:text-white">{feature.requires ? `${STUDENT_FEATURE_CATALOG.find((item) => item.key === feature.requires)?.label} · ` : ''}{feature.label}
                           {feature.optIn && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">Opt-in</span>}
                         </span>
                         <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${picked ? (type === 'revoke' ? 'border-rose-600 bg-rose-600 text-white' : 'border-sky-600 bg-sky-600 text-white') : 'border-slate-300 dark:border-gray-600'}`}>{picked && <Check className="h-3 w-3" />}</span>
                       </span>
-                      <span className="mt-0.5 block text-[11px] leading-4 text-slate-500 dark:text-gray-400">{feature.description}</span>
+                      <span className="mt-0.5 block text-[11px] leading-4 text-slate-500 dark:text-gray-400">{feature.description}{feature.requires ? ' Students also need Prep Resume.' : ''}</span>
                     </span>
                   </button>
                 );

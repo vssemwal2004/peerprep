@@ -237,6 +237,8 @@ export function patternOf(mock) {
       perQuestion,
       marks: Number(section?.totalMarks) || questions * perQuestion,
       negative: Math.max(0, Number(section?.negativeMarksPerQuestion) || 0),
+      // Suggested by the admin; only the mock's total duration is timed.
+      minutes: Number(section?.suggestedMinutes) > 0 ? Math.round(Number(section.suggestedMinutes)) : null,
     };
   });
   const questions = rows.reduce((sum, row) => sum + row.questions, 0);
@@ -246,7 +248,18 @@ export function patternOf(mock) {
     questions: questions || Number(mock?.totalQuestions) || 0,
     marks: marks || Number(mock?.totalMarks) || 0,
     hasNegative: rows.some((row) => row.negative > 0),
+    hasTimes: rows.some((row) => row.minutes),
+    duration: Number(mock?.duration) || 0,
   };
+}
+
+/** "Amazon OA pattern · Mar 2025", or '' when the admin has not set the month and year. */
+export function patternFromLabel(mock, { long = false } = {}) {
+  const month = Number(mock?.patternFrom?.month);
+  const year = Number(mock?.patternFrom?.year);
+  if (!month || !year || month < 1 || month > 12) return '';
+  const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  return `${long ? names[month - 1] : names[month - 1].slice(0, 3)} ${year}`;
 }
 
 /** Admin-written guidance for a mock: plain-text paragraphs and the custom rule list. */

@@ -203,7 +203,9 @@ export default function CompanyRail({ companies, selectedKey = '', selectedRoleK
         )}
       </div>
 
-      <div className="min-h-0 flex-1 px-2 py-2 lg:overflow-y-auto lg:overscroll-contain [scrollbar-width:thin]">
+      {/* Scrolls with wheel, touch and keys, without a visible scrollbar (cleaner rail). */}
+      <div className="min-h-0 flex-1 px-2 py-2 lg:overflow-y-auto lg:overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+
         <Link to="/student/prep-mock" aria-current={!selectedKey ? 'page' : undefined}
           className={`mb-1.5 flex items-center gap-3 rounded-xl px-2.5 py-2 transition-colors ${rowFocus} ${!selectedKey ? 'bg-violet-50 ring-1 ring-inset ring-violet-200 dark:bg-violet-500/10 dark:ring-violet-400/25' : 'hover:bg-[#f6f7f9] dark:hover:bg-white/[0.03]'}`}>
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-[0_8px_18px_-10px_rgba(109,40,217,0.9)]"><LayoutDashboard className="h-[18px] w-[18px]" aria-hidden="true" /></span>

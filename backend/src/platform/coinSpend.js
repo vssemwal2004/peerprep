@@ -31,7 +31,8 @@ export function normalizePricing(features = {}) {
   const input = features && typeof features === 'object' ? features : {};
   const unknown = Object.keys(input).filter((key) => !COIN_FEATURE_KEYS.includes(key));
   if (unknown.length) throw new HttpError(400, `Unknown feature: ${unknown[0]}`);
-  return Object.fromEntries(COIN_FEATURE_KEYS.map((key) => [key, normalizeFeature(input[key])]));
+  // A feature never saved by the Master Admin keeps its catalog default (most are free).
+  return Object.fromEntries(COIN_FEATURES.map(({ key, defaultPrice = 0 }) => [key, normalizeFeature(input[key] ?? { price: defaultPrice })]));
 }
 
 export async function getCoinPricing({ fresh = false } = {}) {
@@ -63,6 +64,70 @@ export async function saveCoinPricing({ features, expectedVersion, reason, actor
 
 const chargeKeyFor = (scope, userId, featureKey, resourceKey) => `${scope}:${userId}:${featureKey}:${resourceKey}`;
 
+// Transactions need a replica set. Production has one; a local standalone mongod does not, and there
+// every paid action failed with "Transaction numbers are only allowed on a replica set member".
+let transactionSupport = null;
+async function transactionsUnavailable() {
+  if (transactionSupport === null) {
+    try {
+      const hello = await mongoose.connection.db.admin().command({ hello: 1 });
+      transactionSupport = Boolean(hello.setName || hello.msg === 'isdbgrid');
+    } catch { return false; }
+  }
+  // The compensating path is for local copies only; production must use a replica set.
+  if (!transactionSupport && process.env.NODE_ENV === 'production') {
+    throw new HttpError(503, 'Prep Coin payments need a replica-set database. No coins were taken.', { code: 'PREP_COIN_NO_TRANSACTIONS' });
+  }
+  return !transactionSupport;
+}
+export function resetTransactionSupportCache() { transactionSupport = null; }
+
+/**
+ * The same charge without a transaction. Every step is a single atomic write, ordered so a failure
+ * leaves the student whole: the coins are taken only if the balance covers them, and given back if
+ * the charge row cannot be written (for example a parallel request that already paid).
+ */
+async function chargeWithoutTransaction({ scope, user, featureKey, resourceKey, chargeKey, month, price, freePerMonth, pricing, expectedCost, note, now }) {
+  const existing = await PlatformCoinCharge.findOne({ chargeKey });
+  if (existing && existing.status !== 'refunded') return { alreadyEntitled: true, charge: existing.toObject() };
+  const touched = await PlatformCoinWallet.findOneAndUpdate(
+    { universityId: scope, userId: user },
+    { $setOnInsert: { role: 'student', balance: 0 }, $set: { updatedAt: now } },
+    { upsert: true, new: true, setDefaultsOnInsert: false },
+  );
+  const free = freePerMonth > 0 && (await freeUsesThisMonth(scope, user, featureKey, month, null)) < freePerMonth;
+  const cost = free ? 0 : price;
+  if (expectedCost !== undefined && expectedCost !== null && Number(expectedCost) !== cost) {
+    throw new HttpError(409, 'The price of this action has changed. Check it and try again.', { code: 'PREP_COIN_PRICE_CHANGED', cost, balance: touched.balance });
+  }
+  if (cost) {
+    const wallet = await PlatformCoinWallet.findOneAndUpdate({ universityId: scope, userId: user, balance: { $gte: cost } }, { $inc: { balance: -cost } }, { new: true });
+    if (!wallet) throw new HttpError(402, `This needs ${cost} Prep Coins.`, { code: 'INSUFFICIENT_PREP_COINS', required: cost, balance: touched.balance });
+  }
+  const giveBack = () => (cost ? PlatformCoinWallet.updateOne({ universityId: scope, userId: user }, { $inc: { balance: cost } }) : null);
+  const attempt = existing ? existing.attempt + 1 : 1;
+  const fields = { price: cost, freeQuota: free, pricingVersion: pricing.version, attempt, status: 'pending', quotaMonth: month, capturedAt: null, refundedAt: null, refundReason: null };
+  let charge;
+  try {
+    charge = existing
+      ? await PlatformCoinCharge.findOneAndUpdate({ _id: existing._id, status: 'refunded' }, { $set: fields }, { new: true })
+      : await PlatformCoinCharge.create({ universityId: scope, userId: user, featureKey, resourceKey, chargeKey, ...fields });
+  } catch (error) {
+    await giveBack();
+    if (error?.code === 11000) return { alreadyEntitled: true };
+    throw error;
+  }
+  if (!charge) { await giveBack(); return { alreadyEntitled: true }; }
+  if (cost) {
+    await PlatformCoinMovement.create({
+      universityId: scope, requestId: `charge:${charge._id}:${attempt}:spend`, kind: 'student_spend', amount: cost,
+      actorId: user, fromRole: 'student', fromUserId: user, toRole: 'platform', featureKey, chargeId: charge._id,
+      ...(note ? { note: String(note).slice(0, 120) } : {}),
+    }).catch((error) => console.warn(`[PrepCoin] Spend row for charge ${charge._id} not written: ${error.message}`));
+  }
+  return { charge: charge.toObject() };
+}
+
 async function freeUsesThisMonth(scope, userId, featureKey, month, session) {
   return PlatformCoinCharge.countDocuments({ universityId: scope, userId, featureKey, quotaMonth: month, freeQuota: true, status: { $in: ['pending', 'captured'] } }).session(session);
 }
@@ -84,7 +149,7 @@ export async function featureQuote({ scope, userId, featureKey, now = new Date()
  * when this student already holds a live charge for the resource, or the pending charge.
  * Throws 402 when the balance is short and 409 when the price the student saw has changed.
  */
-export async function chargeFeature({ scope, userId, featureKey, resourceKey, expectedCost, now = new Date() }) {
+export async function chargeFeature({ scope, userId, featureKey, resourceKey, expectedCost, note = '', now = new Date() }) {
   if (!COIN_FEATURE_KEYS.includes(featureKey)) throw new Error(`Unknown coin feature ${featureKey}`);
   const pricing = await getCoinPricing();
   const { price, freePerMonth } = pricing.features[featureKey];
@@ -94,6 +159,8 @@ export async function chargeFeature({ scope, userId, featureKey, resourceKey, ex
   const month = quotaMonth(now);
   let result = null;
   try {
+    // A standalone database (e.g. a local copy) has no transactions: use the compensating path.
+    if (await transactionsUnavailable()) return await chargeWithoutTransaction({ scope, user, featureKey, resourceKey, chargeKey, month, price, freePerMonth, pricing, expectedCost, note, now });
     await mongoose.connection.transaction(async (session) => {
       result = null;
       const existing = await PlatformCoinCharge.findOne({ chargeKey }).session(session);
@@ -125,6 +192,8 @@ export async function chargeFeature({ scope, userId, featureKey, resourceKey, ex
         await PlatformCoinMovement.create([{
           universityId: scope, requestId: `charge:${charge._id}:${attempt}:spend`, kind: 'student_spend', amount: cost,
           actorId: user, fromRole: 'student', fromUserId: user, toRole: 'platform', featureKey, chargeId: charge._id,
+          // What this use was for in the student's history (e.g. "SDE Intern · Acme"); never personal data.
+          ...(note ? { note: String(note).slice(0, 120) } : {}),
         }], { session });
       }
       result = { charge: charge.toObject() };
@@ -144,6 +213,23 @@ export async function captureCharge(chargeId) {
 /** Returns a charge's coins (and free use). Idempotent: a settled or refunded charge is left alone. */
 export async function refundCharge(chargeId, reason = 'Action did not complete') {
   let refunded = false;
+  if (await transactionsUnavailable()) {
+    // No transactions: claiming the refund on the charge row first makes it happen once.
+    const charge = await PlatformCoinCharge.findOneAndUpdate(
+      { _id: chargeId, status: { $in: ['pending', 'captured'] } },
+      { $set: { status: 'refunded', refundedAt: new Date(), refundReason: String(reason).slice(0, 200) } },
+      { new: true },
+    );
+    if (!charge) return false;
+    if (charge.price) {
+      await PlatformCoinWallet.updateOne({ universityId: charge.universityId, userId: charge.userId }, { $inc: { balance: charge.price } });
+      await PlatformCoinMovement.create({
+        universityId: charge.universityId, requestId: `charge:${charge._id}:${charge.attempt}:refund`, kind: 'student_refund', amount: charge.price,
+        actorId: charge.userId, fromRole: 'platform', toRole: 'student', toUserId: charge.userId, featureKey: charge.featureKey, chargeId: charge._id,
+      }).catch((error) => console.warn(`[PrepCoin] Refund row for charge ${charge._id} not written: ${error.message}`));
+    }
+    return true;
+  }
   await mongoose.connection.transaction(async (session) => {
     refunded = false;
     const charge = await PlatformCoinCharge.findOneAndUpdate(
@@ -182,6 +268,8 @@ export async function sweepPendingCharges({ scope, verifiers = {}, now = new Dat
   for (const charge of stale) {
     const verify = verifiers[charge.featureKey];
     const happened = verify ? await verify(charge).catch(() => true) : true;
+    // A verifier answering null cannot tell yet (e.g. the action is still running): try next sweep.
+    if (happened === null) continue;
     if (happened) await captureCharge(charge._id);
     else await refundCharge(charge._id, 'Not completed');
   }

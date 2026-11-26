@@ -15,7 +15,8 @@ import {
 test('legacy students retain every standard module; opt-in Prep Mates and Prep Mock are not part of "All access"', () => {
   const access = normalizeStudentFeatureAccess(undefined);
   assert.equal(access.mode, 'all');
-  assert.deepEqual(OPT_IN_STUDENT_FEATURES, ['peers', 'prep_mock']);
+  assert.deepEqual(OPT_IN_STUDENT_FEATURES, ['peers', 'prep_mock', 'resume_jd_match']);
+  assert.equal(studentHasFeature({ role: 'student' }, 'resume_jd_match'), false, 'ANVI JD Match is given to chosen students only');
   assert.deepEqual(access.features, STUDENT_FEATURES.filter((feature) => !OPT_IN_STUDENT_FEATURES.includes(feature)));
   assert.equal(studentHasFeature({ role: 'student' }, 'prep_mock'), false, 'Prep Mock is given to chosen students only');
   assert.equal(studentHasFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['prep_mock'] } }, 'prep_mock'), true);
@@ -30,8 +31,8 @@ test('legacy students retain every standard module; opt-in Prep Mates and Prep M
 test('bulk access changes: turn on / off keeps the rest, never leaves a student with nothing to check', () => {
   const all = normalizeStudentFeatureAccess(undefined);
   const withMates = applyStudentFeatureChange(all, { type: 'grant', features: ['peers'] });
-  assert.deepEqual(withMates, { mode: 'custom', features: STUDENT_FEATURES.filter((feature) => feature !== 'prep_mock') }, 'All access + Prep Mates');
-  assert.deepEqual(applyStudentFeatureChange(withMates, { type: 'grant', features: ['prep_mock'] }), { mode: 'custom', features: [...STUDENT_FEATURES] }, '+ Prep Mock = every feature');
+  assert.deepEqual(withMates, { mode: 'custom', features: STUDENT_FEATURES.filter((feature) => !['prep_mock', 'resume_jd_match'].includes(feature)) }, 'All access + Prep Mates');
+  assert.deepEqual(applyStudentFeatureChange(withMates, { type: 'grant', features: ['prep_mock', 'resume_jd_match'] }), { mode: 'custom', features: [...STUDENT_FEATURES] }, '+ Prep Mock + JD Match = every feature');
   assert.deepEqual(applyStudentFeatureChange(withMates, { type: 'revoke', features: ['peers'] }), { mode: 'all', features: [...STANDARD_STUDENT_FEATURES] }, 'back to All access');
   assert.deepEqual(applyStudentFeatureChange(all, { type: 'grant', features: ['learning'] }), all, 'turning on what they have changes nothing');
   const custom = { mode: 'custom', features: ['learning', 'resume'] };

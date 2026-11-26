@@ -4,7 +4,7 @@ import {
   GENERAL_ROLE, OTHER_COMPANY, collectMocks, companyPath, filterCompanies, filterCounts, findCompany,
   groupByLetter, groupMocks, highlightParts, initialTone, initialsOf, isAlwaysOpen, journeyOf, letterOf,
   lettersPresent, matchedRole, mockState, nextChangeAt, pickRole, resultOf, sectionTypes, sortCompanies,
-  spotlightOf, summarize, totalMarksOf, pickMock, patternOf, instructionsOf, railEntries,
+  spotlightOf, summarize, totalMarksOf, pickMock, patternOf, patternFromLabel, instructionsOf, railEntries,
 } from '../src/student/prepMock/prepMockModel.js';
 
 const HOUR = 60 * 60 * 1000;
@@ -220,7 +220,19 @@ test('patternOf: one row per section with marks, totals and the negative column 
   assert.equal(pattern.marks, 50);
   assert.equal(pattern.hasNegative, true);
   assert.equal(patternOf({ sections: [{ type: 'mcq', questionCount: 5, marksPerQuestion: 2 }] }).hasNegative, false);
-  assert.deepEqual(patternOf({ totalQuestions: 7, totalMarks: 14 }), { rows: [], questions: 7, marks: 14, hasNegative: false });
+  assert.deepEqual(patternOf({ totalQuestions: 7, totalMarks: 14 }), { rows: [], questions: 7, marks: 14, hasNegative: false, hasTimes: false, duration: 0 });
+});
+
+test('patternOf: suggested section times, and the OA pattern month label', () => {
+  const timed = patternOf({ duration: 115, sections: [{ sectionName: 'Aptitude', type: 'mcq', questionCount: 20, suggestedMinutes: 25 }, { sectionName: 'Coding', type: 'coding', questionCount: 2, suggestedMinutes: 90 }] });
+  assert.equal(timed.hasTimes, true);
+  assert.deepEqual(timed.rows.map((row) => row.minutes), [25, 90]);
+  assert.equal(timed.duration, 115);
+  assert.equal(patternOf({ sections: [{ type: 'mcq', questionCount: 5 }] }).hasTimes, false);
+  assert.equal(patternFromLabel({ patternFrom: { month: 3, year: 2025 } }), 'Mar 2025');
+  assert.equal(patternFromLabel({ patternFrom: { month: 3, year: 2025 } }, { long: true }), 'March 2025');
+  assert.equal(patternFromLabel({ patternFrom: null }), '');
+  assert.equal(patternFromLabel({ patternFrom: { month: 13, year: 2025 } }), '');
 });
 
 test('instructionsOf: plain-text paragraphs from text or HTML, and the custom rules', () => {

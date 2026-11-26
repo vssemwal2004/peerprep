@@ -9,6 +9,7 @@ import { resultsPollLimiter } from '../../middleware/rateLimiter.js';
 import { createResumeScanJobs, resumeScanJobs } from './resumeReview.jobs.js';
 import { MAX_JOB_CHARS, MAX_PDF_BYTES } from './resumeReview.service.js';
 import { explainWithAnvi, rewriteBullet } from './resumeReview.advice.js';
+import { createJdMatchRouter } from './jdMatch.routes.js';
 
 // Multer buffers only this upload. The async queue encrypts pending inputs and drops them on completion.
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_PDF_BYTES, files: 1, fields: 1, fieldSize: MAX_JOB_CHARS * 4, parts: 3 } }).single('file');
@@ -136,6 +137,9 @@ export function createResumeReviewRouter(deps = {}) {
   router.post('/rewrite',
     pendingResumeAction(),
     asyncRoute(async (req, res) => res.json(await rewrite(req.body || {}))));
+
+  // ANVI JD Match: opt-in per student, paid in Prep Coins (its own feature check comes first).
+  router.use('/jd-match', createJdMatchRouter({ service: deps.jdMatch || null }));
   return router;
 }
 

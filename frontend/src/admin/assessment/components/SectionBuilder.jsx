@@ -99,7 +99,8 @@ const getQuestionPreview = (sectionType, question = {}) => {
   return 'Answer details pending';
 };
 
-export default function SectionBuilder({ sections, onChange, onOpenCodingEditor, onNotify, focusQuestion }) {
+// `showSuggestedTime` (Prep Mock): a suggested time per section for the student's exam pattern.
+export default function SectionBuilder({ sections, onChange, onOpenCodingEditor, onNotify, focusQuestion, showSuggestedTime = false }) {
   const [collapsedSections, setCollapsedSections] = useState({});
   const [collapsedQuestions, setCollapsedQuestions] = useState({});
   const fileInputRefs = useRef({});
@@ -751,7 +752,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
 
             {!isCollapsed && (
               <div className="space-y-3 p-3">
-                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 md:grid-cols-4 dark:border-gray-700 dark:bg-gray-800/60">
+                <div className={`grid gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-gray-700 dark:bg-gray-800/60 ${showSuggestedTime ? 'md:grid-cols-3 xl:grid-cols-5' : 'md:grid-cols-4'}`}>
                   <div>
                     <label className="text-xs text-slate-500 dark:text-gray-400">Section Name</label>
                     <input
@@ -806,6 +807,23 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                       className="mt-1 w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-rose-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
                     />
                   </div>
+                  {showSuggestedTime ? (
+                    <div>
+                      <label htmlFor={`section-time-${index}`} className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 dark:bg-violet-900/20 dark:text-violet-300">Suggested time (min)</label>
+                      <input
+                        id={`section-time-${index}`}
+                        type="number"
+                        min="1"
+                        max="1440"
+                        step="1"
+                        value={section.suggestedMinutes ?? ''}
+                        onChange={(e) => updateSection(index, { suggestedMinutes: e.target.value === '' ? '' : Math.max(0, Math.round(Number(e.target.value) || 0)) })}
+                        placeholder="e.g. 25"
+                        className="mt-1 w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-violet-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                      />
+                      <p className="mt-1 text-[10.5px] text-slate-500 dark:text-gray-400">Shown in the exam pattern. Only the total duration is timed.</p>
+                    </div>
+                  ) : null}
                 </div>
 
                 {['mcq', 'short', 'one_line'].includes(section.type) && (

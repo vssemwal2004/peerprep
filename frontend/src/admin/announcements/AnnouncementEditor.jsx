@@ -4,6 +4,8 @@ import { api } from '../../utils/api';
 import AnnouncementView from '../../components/announcements/AnnouncementView';
 import AnnouncementDialog from '../../components/announcements/AnnouncementDialog';
 import RichTextEditor from '../../components/announcements/RichTextEditor';
+import AudienceSection from './AudienceSection';
+import { audienceLabel } from './audienceModel';
 import { CATEGORIES, DESIGNS, TEMPLATES, THEMES, THEME_KEYS, categoryOf, plainTextOf } from '../../components/announcements/announcementMeta';
 
 const input = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:ring-sky-500/20';
@@ -32,17 +34,35 @@ export function formFromAnnouncement(announcement = null) {
     priority: item.priority || 'normal',
     expiryDate: item.expiryDate ? new Date(item.expiryDate).toISOString().slice(0, 10) : '',
     showAsPopup: Boolean(item.showAsPopup),
+    // Who sees it. A saved "selected" announcement loads its students separately (audienceLoaded).
+    audience: item.audience === 'selected' ? 'selected' : 'all',
+    students: [],
+    hiddenCount: 0,
+    audienceCount: Number(item.audienceCount) || 0,
+    audienceLoaded: item.audience !== 'selected',
+    audienceError: '',
   };
 }
 
-/** What the API saves from the form. */
+/** What the API saves from the form. The audience is sent only once the chosen students are known. */
 export function payloadFromForm(form, statusOverride) {
-  return {
+  const payload = {
     title: form.title.trim(), messageHtml: form.messageHtml, category: form.category, label: form.label.trim(),
     design: form.design, theme: form.theme, imageUrl: form.imageUrl.trim(), imageAlt: form.imageAlt.trim(),
     ctaLabel: form.ctaLabel.trim(), ctaUrl: form.ctaUrl.trim(), status: statusOverride || form.status, priority: form.priority,
     expiryDate: form.expiryDate || null, showAsPopup: form.showAsPopup,
   };
+  if (form.audienceLoaded !== false) {
+    payload.audience = form.audience === 'selected' ? 'selected' : 'all';
+    if (payload.audience === 'selected') payload.studentIds = (form.students || []).map((student) => String(student._id));
+  }
+  return payload;
+}
+
+/** A reason the form cannot be saved yet because of its audience, or ''. */
+export function audienceProblem(form) {
+  if (form.audience !== 'selected' || form.audienceLoaded === false) return '';
+  return form.students?.length ? '' : 'Choose the students who should see this, or pick "All students".';
 }
 
 /** A draft as students would see it (preview). */
@@ -194,6 +214,8 @@ export default function AnnouncementEditor({ form, setForm, actions, extra = nul
           </div>
         </section>
 
+        <AudienceSection form={form} setForm={setForm} className={section} />
+
         <section className={section} data-guide="ac-type-status" aria-labelledby="ann-publish">
           <h2 id="ann-publish" className="text-sm font-semibold text-slate-900 dark:text-white">Publishing</h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-3" data-guide="ac-priority-expiry">
@@ -229,6 +251,7 @@ export default function AnnouncementEditor({ form, setForm, actions, extra = nul
             <AnnouncementView announcement={preview} titleId="ann-preview-title" bodyId="ann-preview-body" preview bodyMaxClass="max-h-[340px]" />
           </div>
           <p className="mt-3 text-[11.5px] leading-snug text-slate-500 dark:text-zinc-400">On the dashboard it shows as <strong className="text-slate-700 dark:text-zinc-200">{preview.label || CATEGORIES.find((item) => item.key === form.category)?.label}</strong> in the colour you chose.</p>
+          <p className="mt-1.5 text-[11.5px] leading-snug text-slate-500 dark:text-zinc-400">Shown to <strong className="text-slate-700 dark:text-zinc-200">{audienceLabel(form.audience, form.audienceLoaded ? form.students.length + (form.hiddenCount || 0) : form.audienceCount)}</strong>.</p>
         </div>
       </aside>
 

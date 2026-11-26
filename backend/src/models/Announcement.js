@@ -25,11 +25,15 @@ const announcementSchema = new mongoose.Schema({
   priority: { type: String, enum: ['high', 'normal', 'low'], default: 'normal' },
   // Also shown as a popup to students right after they log in (once per login).
   showAsPopup: { type: Boolean, default: false },
+  // Who sees it: every student, or only the chosen students (services/announcementAudience.js).
+  audience: { type: String, enum: ['all', 'selected'], default: 'all' },
+  studentIds: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], default: [] },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   expiryDate: { type: Date }
 }, { timestamps: true });
 
 announcementSchema.index({ status: 1, expiryDate: 1 });
 announcementSchema.index({ priority: 1, createdAt: -1 });
+announcementSchema.index({ studentIds: 1 });
 
 export default tenantModel(mongoose.model('Announcement', announcementSchema));

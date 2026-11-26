@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { api } from '../utils/api';
 import PageGuideButton from '../guide/platform/PageGuideButton';
-import AnnouncementEditor, { formFromAnnouncement, payloadFromForm } from './announcements/AnnouncementEditor';
+import AnnouncementEditor, { audienceProblem, formFromAnnouncement, payloadFromForm } from './announcements/AnnouncementEditor';
+import { audienceLabel } from './announcements/audienceModel';
 import AnnouncementEmailDialog from './announcements/AnnouncementEmailDialog';
 import { EmailToggle } from './announcements/EmailToggle';
 
@@ -16,10 +17,14 @@ export default function AnnouncementCreate() {
 
   const submit = async (statusOverride) => {
     if (!form.title.trim() || !form.messageHtml.trim()) { setError('Title and message are required.'); return; }
+    const problem = audienceProblem(form);
+    if (problem) { setError(problem); return; }
     setSaving(true); setError(''); setSuccess('');
     try {
-      await api.createAnnouncement(payloadFromForm(form, statusOverride));
-      setSuccess(statusOverride === 'active' || (!statusOverride && form.status === 'active') ? 'Announcement published. Students see it now.' : 'Announcement saved as a draft.');
+      const saved = await api.createAnnouncement(payloadFromForm(form, statusOverride));
+      const who = audienceLabel(saved?.announcement?.audience, saved?.announcement?.audienceCount);
+      const skipped = saved?.skippedStudents ? ` ${saved.skippedStudents} chosen student${saved.skippedStudents === 1 ? ' was' : 's were'} not found and left out.` : '';
+      setSuccess(statusOverride === 'active' || (!statusOverride && form.status === 'active') ? `Announcement published to ${who.toLowerCase()}.${skipped}` : `Announcement saved as a draft (for ${who.toLowerCase()}).${skipped}`);
       setForm(formFromAnnouncement(null));
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
@@ -49,7 +54,8 @@ export default function AnnouncementCreate() {
               className="rounded-xl bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-60">{saving ? 'Saving…' : 'Publish'}</button>
           </>} />
       </div>
-      <AnnouncementEmailDialog open={emailOpen} onClose={() => setEmailOpen(false)} announcement={payloadFromForm(form)} onSent={setEmailSent} />
+      <AnnouncementEmailDialog open={emailOpen} onClose={() => setEmailOpen(false)} announcement={payloadFromForm(form)} onSent={setEmailSent}
+        initialStudents={form.audience === 'selected' ? form.students : null} />
     </div>
   );
 }

@@ -71,6 +71,16 @@ export const assessmentEditorSteps = [
     body: "Prep Mocks only: the job role this mock is for, such as SDE 1 or Data Analyst. Roles students reported for the chosen company come first. Type a new role and choose Add to save it for next time. A mock needs a role before it can be published.",
   },
   {
+    id: "ae-pattern-from", target: "ae-pattern-from", chapter: "parts",
+    title: "OA pattern from",
+    body: "Prep Mocks only: the month and year the company used this OA pattern, for example March 2025. Students see it as \"OA pattern · Mar 2025\", so they know how recent it is. Drafts can be saved without it; publishing needs it.",
+  },
+  {
+    id: "ae-pattern", target: "ae-pattern", chapter: "parts",
+    title: "Exam pattern",
+    body: "Prep Mocks only: the table students see before they start. Questions and marks come from your sections, so it always matches the real test. Give each section a suggested time to match the company's OA; the times are guidance only, the timer runs for the whole mock, and together they cannot be more than the duration.",
+  },
+  {
     id: "ae-instructions", target: "ae-instructions", chapter: "parts",
     title: "Candidate instructions",
     body: "The platform's standard instructions are always included; open them to read what students see. Add your own instructions below; they are listed after the standard ones.",

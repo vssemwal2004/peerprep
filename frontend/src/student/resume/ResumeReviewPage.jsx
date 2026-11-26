@@ -19,8 +19,37 @@ import { sampleResumeFor } from '../../features/resume/templates/sampleResume';
 import { api } from '../../utils/api';
 import RequirePasswordChange from '../RequirePasswordChange';
 import PageGuideButton from '../../guide/platform/PageGuideButton';
+import { hasStudentFeature } from '../studentFeatureAccess';
+import { useJdMatch } from '../../features/resume/review/jdMatch/useJdMatch';
+import JdMatchPopup from '../../features/resume/review/jdMatch/JdMatchPopup';
 
 const ReviewPreview = memo(ResumePreview);
+
+const plainText = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/** The preview element that shows one résumé line (ANVI report cards point at it). */
+function findPreviewLine(root, lineText) {
+  if (!root || !lineText) return null;
+  const source = String(lineText).replace(/^tech:\s*/i, '').split(' — ')[0];
+  const needle = plainText(source);
+  if (needle.length < 3) return null;
+  const head = needle.slice(0, 28);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const value = plainText(walker.currentNode.textContent);
+    if (value.length < 3) continue;
+    const hit = value.includes(head) || (value.length >= 12 && needle.startsWith(value.slice(0, 28)));
+    if (!hit) continue;
+    // Climb to the element that holds the whole line (lines can be split into several spans).
+    let element = walker.currentNode.parentElement;
+    for (let depth = 0; element && depth < 4 && element !== root; depth += 1) {
+      if (plainText(element.textContent).includes(needle.slice(0, 60))) return element;
+      element = element.parentElement;
+    }
+    return walker.currentNode.parentElement;
+  }
+  return null;
+}
 
 /** Builder deep link for a place in the resume. */
 export function focusLink({ section, entryIndex = null, field = null, bulletIndex = null } = {}) {
@@ -141,6 +170,57 @@ export default function ResumeReviewPage() {
   const onLocate = useCallback((target) => go(focusLink(target)), [go]);
   const onBrowseTemplates = useCallback(() => go('/student/resume/create?templates=1'), [go]);
 
+  // ANVI JD Match (opt-in per student; the server checks the feature again before any charge).
+  const jdEnabled = hasStudentFeature(user, 'resume_jd_match');
+  const jd = useJdMatch({ enabled: jdEnabled, userId: user?._id || user?.id });
+  const [viewRequest, setViewRequest] = useState(null);
+  const previewRef = useRef(null);
+  const marked = useRef(null);
+  const highlightLine = useCallback((text, { scroll = false } = {}) => {
+    marked.current?.classList.remove('jd-line-highlight');
+    marked.current = null;
+    if (!text) return;
+    const element = findPreviewLine(previewRef.current, text);
+    if (!element) return;
+    element.classList.add('jd-line-highlight');
+    marked.current = element;
+    if (scroll) element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+  const [revealMiss, setRevealMiss] = useState('');
+  const revealLine = useCallback((text) => {
+    // Only switch to the résumé tab when the line can be found there.
+    if (!findPreviewLine(previewRef.current, text)) {
+      setRevealMiss('That line could not be found in the preview. Use “Fix in builder” to open it.');
+      setTimeout(() => setRevealMiss(''), 3500);
+      return;
+    }
+    setMobileTab('resume');
+    setTimeout(() => {
+      highlightLine(text, { scroll: true });
+      setTimeout(() => highlightLine(null), 2600);
+    }, 180);
+  }, [highlightLine]);
+  const jdMatch = jdEnabled ? {
+    enabled: true, overview: jd.overview, overviewError: jd.overviewError, popup: jd.popup, match: jd.match, previousScore: jd.previousScore,
+    opening: jd.opening, refresh: jd.refresh, showPopup: jd.showPopup, lastRequest: jd.lastRequest,
+    studentName: resume?.basics?.name || user?.name || '',
+    start: async (request, shownCost) => { if (await save()) jd.start(request, shownCost); },
+    openReport: jd.openReport,
+    clearReport: () => { highlightLine(null); jd.clearReport(); },
+    onFix: (focus) => go(focus ? `/student/resume/create?focus=${encodeURIComponent(focus)}` : '/student/resume/create'),
+    onHighlight: (text) => highlightLine(text),
+    onReveal: revealLine,
+  } : null;
+  // A report reopened after "Fix in builder" (or picked from history) opens the job view.
+  const openMatchId = jd.match?.status === 'done' ? jd.match.id : null;
+  useEffect(() => { if (openMatchId) setViewRequest({ view: 'job', at: openMatchId }); }, [openMatchId]);
+  const closeJdPopup = jd.closePopup;
+  const showReport = useCallback(() => {
+    closeJdPopup();
+    setMobileTab('check');
+    setViewRequest({ view: 'job', at: Date.now() });
+  }, [closeJdPopup]);
+
   const download = async () => {
     if (!resume || downloading) return;
     setDownloading(true);
@@ -203,7 +283,7 @@ export default function ResumeReviewPage() {
         <main className="mx-auto grid w-full max-w-[1680px] flex-1 gap-5 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_480px]">
           {/* The resume, on a desk */}
           <section data-guide="rr-preview" className={`${mobileTab === 'resume' ? 'block' : 'hidden lg:block'} min-w-0`}>
-            <div className="relative overflow-hidden rounded-3xl border border-[#e9eaee] bg-[#eef1f5] bg-[radial-gradient(rgba(15,23,42,0.07)_1px,transparent_1px)] [background-size:16px_16px] dark:border-white/[0.07] dark:bg-[#1e1e1e] dark:bg-[radial-gradient(rgba(255,255,255,0.05)_1px,transparent_1px)] lg:sticky lg:top-[80px]" style={panelHeight}>
+            <div ref={previewRef} className="relative overflow-hidden rounded-3xl border border-[#e9eaee] bg-[#eef1f5] bg-[radial-gradient(rgba(15,23,42,0.07)_1px,transparent_1px)] [background-size:16px_16px] dark:border-white/[0.07] dark:bg-[#1e1e1e] dark:bg-[radial-gradient(rgba(255,255,255,0.05)_1px,transparent_1px)] lg:sticky lg:top-[80px]" style={panelHeight}>
               <ReviewPreview resume={previewResume} mode="scroll" onLayoutChange={hasContent ? handleLayoutChange : undefined} sampleNotice={hasContent ? '' : 'Sample details — create your resume to see your own'} />
             </div>
           </section>
@@ -213,7 +293,7 @@ export default function ResumeReviewPage() {
             <AnviAura radius="1.5rem" innerClassName="!bg-[#f6f7f9] dark:!bg-[#1c1c1c]">
               <div className="h-[calc(100dvh-145px)] min-h-[365px] lg:h-[calc(100dvh-98px)]">
                 {hasContent ? (
-                  <ResumeCheckPanel key={initialTab + initialAction} className="h-full" initialTab={initialTab} initialAction={initialAction} check={panelCheck} resume={resume} hasContent={hasContent} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} />
+                  <ResumeCheckPanel key={initialTab + initialAction} className="h-full" initialTab={initialTab} initialAction={initialAction} check={panelCheck} resume={resume} hasContent={hasContent} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} jdMatch={jdMatch} viewRequest={viewRequest} />
                 ) : (
                   <div className="relative flex h-full flex-col items-center justify-center p-8 text-center">
                     <AnviGlowBackdrop />
@@ -228,6 +308,8 @@ export default function ResumeReviewPage() {
             </AnviAura>
           </aside>
         </main>
+        {jdEnabled && jd.popup && !jd.popup.hidden ? <JdMatchPopup state={jd.popup} onClose={jd.closePopup} onRetry={jd.retry} onShowReport={showReport} /> : null}
+        {revealMiss ? <div role="status" className="fixed inset-x-4 bottom-4 z-[70] mx-auto max-w-sm rounded-xl bg-slate-900 px-4 py-3 text-[13px] text-white shadow-lg dark:bg-white dark:text-slate-900">{revealMiss}</div> : null}
       </div>
     </RequirePasswordChange>
   );

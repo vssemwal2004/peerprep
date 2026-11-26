@@ -17,6 +17,7 @@ import { getTemplate, getTemplateTheme } from './templates/catalog';
 import { FONT_FAMILIES, registerPdfFonts } from './templates/fonts';
 import { applyLineBreaks } from './templates/lineBreaks';
 import { ResumePageBody } from './templates/ResumeRenderer';
+import { fitTheme } from './templates/theme';
 
 registerPdfFonts(Font);
 
@@ -79,8 +80,9 @@ function savedDate(value) {
   return Number.isFinite(date.getTime()) ? date : undefined;
 }
 
-export default function ResumePdfDocument({ resume, pages, lineBreaks = null, safeFonts = false }) {
-  const baseTheme = getTemplateTheme(resume.template);
+export default function ResumePdfDocument({ resume, pages, lineBreaks = null, safeFonts = false, fitScale = 1 }) {
+  // The one-page fit chosen by the preview, so the PDF matches it exactly.
+  const baseTheme = fitTheme(getTemplateTheme(resume.template), fitScale);
   const theme = safeFonts ? withBuiltinFonts(baseTheme) : baseTheme;
   const layout = buildLayout(resume, theme);
   const ids = new Set([...layout.columns.main, ...layout.columns.side].map((block) => block.id));

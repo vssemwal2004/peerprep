@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Eye, Mail, X } from 'lucide-react';
+import { Eye, Mail, Users, X } from 'lucide-react';
 import AnnouncementEmailDialog from './announcements/AnnouncementEmailDialog';
 import { EmailToggle } from './announcements/EmailToggle';
 import { api } from '../utils/api';
 import { SortHeader, TablePager, useClientTable } from '../components/table';
 import PageGuideButton from '../guide/platform/PageGuideButton';
-import AnnouncementEditor, { formFromAnnouncement, payloadFromForm } from './announcements/AnnouncementEditor';
+import AnnouncementEditor, { audienceProblem, formFromAnnouncement, payloadFromForm } from './announcements/AnnouncementEditor';
+import { audienceLabel } from './announcements/audienceModel';
 import AnnouncementDialog from '../components/announcements/AnnouncementDialog';
 import { CATEGORIES, DESIGNS, categoryOf, labelOf, themeOf } from '../components/announcements/announcementMeta';
 
@@ -53,6 +54,7 @@ export default function AnnouncementManage() {
   const [editError, setEditError] = useState('');
   // Email: { announcement (form values), id } for the email dialog.
   const [emailFor, setEmailFor] = useState(null);
+  const editToken = useRef(0);
 
   const loadAnnouncements = async () => {
     setLoading(true);
@@ -76,6 +78,13 @@ export default function AnnouncementManage() {
     setEditing(announcement);
     setEditError('');
     setForm(formFromAnnouncement(announcement));
+    const token = editToken.current + 1;
+    editToken.current = token;
+    if (announcement.audience !== 'selected') return;
+    // The chosen students load separately; until then the audience is left unchanged on save.
+    api.getAnnouncementAudience(announcement._id)
+      .then((data) => { if (editToken.current === token) setForm((current) => ({ ...current, students: data?.students || [], hiddenCount: Number(data?.hiddenCount) || 0, audienceLoaded: true, audienceError: '' })); })
+      .catch((err) => { if (editToken.current === token) setForm((current) => ({ ...current, audienceError: err?.message || 'The chosen students could not be loaded.' })); });
   };
 
   const closeEdit = () => {
@@ -85,6 +94,8 @@ export default function AnnouncementManage() {
   const handleSave = async () => {
     if (!editing) return;
     if (!form.title.trim() || !form.messageHtml.trim()) { setEditError('Title and message are required.'); return; }
+    const problem = audienceProblem(form);
+    if (problem) { setEditError(problem); return; }
     setEditError('');
     setSaving(true);
     try {
@@ -188,6 +199,9 @@ export default function AnnouncementManage() {
                         <div className="flex flex-wrap items-center gap-2 font-semibold text-slate-900 dark:text-white">
                           {ann.title}
                           {ann.showAsPopup ? <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 ring-1 ring-inset ring-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/20" title="Shown as a popup when students log in">Popup</span> : null}
+                          {ann.audience === 'selected'
+                            ? <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-400/20" title="Only chosen students see this"><Users className="h-3 w-3" />{audienceLabel('selected', ann.audienceCount)}</span>
+                            : null}
                         </div>
                         <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 line-clamp-2">{ann.message}</div>
                       </td>
@@ -267,7 +281,7 @@ export default function AnnouncementManage() {
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
             <div className="mx-auto max-w-7xl">
               <AnnouncementEditor form={form} setForm={setForm} error={editError}
-                extra={<EmailToggle onOpen={() => setEmailFor({ announcement: payloadFromForm(form), id: editing._id })} />}
+                extra={<EmailToggle onOpen={() => setEmailFor({ announcement: payloadFromForm(form), id: editing._id, students: form.audience === 'selected' ? form.students : null })} />}
                 actions={<>
                   <button type="button" onClick={closeEdit} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-slate-200 dark:hover:bg-gray-800">Cancel</button>
                   <button type="button" onClick={handleSave} disabled={saving} className="rounded-xl bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-60">{saving ? 'Saving…' : 'Save changes'}</button>
@@ -277,7 +291,7 @@ export default function AnnouncementManage() {
         </div>,
         document.body,
       ) : null}
-      <AnnouncementEmailDialog open={Boolean(emailFor)} onClose={() => setEmailFor(null)} announcement={emailFor?.announcement} announcementId={emailFor?.id} />
+      <AnnouncementEmailDialog open={Boolean(emailFor)} onClose={() => setEmailFor(null)} announcement={emailFor?.announcement} announcementId={emailFor?.id} initialStudents={emailFor?.students || null} />
       {previewing ? <AnnouncementDialog items={[previewing]} onClose={() => setPreviewing(null)} zIndex="z-[200]" doneLabel="Close preview" preview /> : null}
     </div>
   );

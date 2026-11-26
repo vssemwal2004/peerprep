@@ -12,7 +12,10 @@ import {
 test('missing access data keeps every standard module; opt-in Prep Mates and Prep Mock need an admin to turn them on', () => {
   assert.deepEqual(normalizeStudentAccess(), { mode: 'all', features: STANDARD_STUDENT_FEATURES });
   assert.equal(hasStudentFeature({ role: 'student' }, 'prep_coding'), true);
-  assert.deepEqual(OPT_IN_STUDENT_FEATURES, ['peers', 'prep_mock']);
+  assert.deepEqual(OPT_IN_STUDENT_FEATURES, ['peers', 'prep_mock', 'resume_jd_match']);
+  assert.equal(hasStudentFeature({ role: 'student' }, 'resume_jd_match'), false, '"All access" does not include ANVI JD Match');
+  assert.equal(hasStudentFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['resume', 'resume_jd_match'] } }, 'resume_jd_match'), true);
+  assert.equal(hasStudentFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['resume_jd_match'] } }, 'resume_jd_match'), false, 'JD Match needs Prep Resume too');
   assert.equal(hasStudentFeature({ role: 'student' }, 'prep_mock'), false, '"All access" does not include Prep Mock');
   assert.equal(hasStudentFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['prep_mock'] } }, 'prep_mock'), true);
   assert.equal(hasStudentFeature({ role: 'student' }, 'peers'), false, '"All access" does not include Prep Mates');

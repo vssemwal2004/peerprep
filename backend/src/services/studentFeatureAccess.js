@@ -12,6 +12,7 @@ export const STUDENT_FEATURES = Object.freeze([
   'prep_coins',
   'peers',
   'prep_mock',
+  'resume_jd_match',
 ]);
 
 export const STUDENT_FEATURE_SET = new Set(STUDENT_FEATURES);
@@ -20,9 +21,12 @@ export const STUDENT_FEATURE_SET = new Set(STUDENT_FEATURES);
  * Features a student has only when an admin turns them on for that student (or in the default for
  * new students). "All access" never includes them. Prep Mates: universities decide who may find
  * and contact classmates, so it is never on for everyone by default. Prep Mock: company mock tests
- * are given to the students an admin chooses.
+ * are given to the students an admin chooses. Resume JD Match: a paid Gemini check (Prep Coins),
+ * rolled out to chosen students first; it also needs Prep Resume.
  */
-export const OPT_IN_STUDENT_FEATURES = Object.freeze(['peers', 'prep_mock']);
+export const OPT_IN_STUDENT_FEATURES = Object.freeze(['peers', 'prep_mock', 'resume_jd_match']);
+/** Features that only work together with another one (the student needs both). */
+export const STUDENT_FEATURE_REQUIRES = Object.freeze({ resume_jd_match: 'resume' });
 const OPT_IN_SET = new Set(OPT_IN_STUDENT_FEATURES);
 /** What "All access" means: every feature except the opt-in ones. */
 export const STANDARD_STUDENT_FEATURES = Object.freeze(STUDENT_FEATURES.filter((feature) => !OPT_IN_SET.has(feature)));
@@ -63,7 +67,9 @@ export function applyStudentFeatureChange(current, change) {
 export function studentHasFeature(user, feature) {
   if (!user || user.role !== 'student') return true;
   if (!STUDENT_FEATURE_SET.has(feature)) return false;
-  return normalizeStudentFeatureAccess(user.featureAccess, { legacyAccessScope: user.accessScope }).features.includes(feature);
+  const features = normalizeStudentFeatureAccess(user.featureAccess, { legacyAccessScope: user.accessScope }).features;
+  const needs = STUDENT_FEATURE_REQUIRES[feature];
+  return features.includes(feature) && (!needs || features.includes(needs));
 }
 
 export function studentFeatureQuery(feature) {

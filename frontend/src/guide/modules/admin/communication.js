@@ -19,6 +19,11 @@ export const announcementCreateSteps = [
     body: "The full text of the announcement. Keep it short and say what students should do.",
   },
   {
+    id: "ac-audience", target: "ac-audience", chapter: "parts", quick: true,
+    title: "Who sees this",
+    body: "All students, or only selected students. Choose Selected students to tick registered students (search, semester and other filters, select all filtered) or upload a CSV/Excel list with name and email (semester, college and branch are optional). Only the chosen students will see it.",
+  },
+  {
     id: "ac-type-status", target: "ac-type-status", chapter: "parts",
     title: "Type and status",
     body: "Type labels the announcement as Motivation, Info or Alert. Status decides whether Save makes it visible: Active shows it to students, Inactive keeps it as a draft.",

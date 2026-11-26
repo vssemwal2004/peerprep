@@ -13,7 +13,7 @@ const userSchema = new mongoose.Schema({
     mode: { type: String, enum: ['all', 'custom'], default: 'all' },
     features: [{
       type: String,
-      enum: ['dashboard', 'quickprep', 'analysis', 'rankings', 'interviews', 'ai_interviews', 'assessments', 'learning', 'prep_coding', 'resume', 'prep_coins', 'peers', 'prep_mock'],
+      enum: ['dashboard', 'quickprep', 'analysis', 'rankings', 'interviews', 'ai_interviews', 'assessments', 'learning', 'prep_coding', 'resume', 'prep_coins', 'peers', 'prep_mock', 'resume_jd_match'],
     }],
     source: { type: String, enum: ['default', 'manual', 'legacy'], default: 'default' },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

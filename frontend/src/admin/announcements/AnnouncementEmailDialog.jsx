@@ -26,7 +26,7 @@ export function textEmailToHtml(text) {
  * yourself, then confirm. The announcement's title, content, name and button fill the template.
  * `announcement`: the form's current values (it need not be saved yet).
  */
-export default function AnnouncementEmailDialog({ open, onClose, announcement, announcementId = null, onSent }) {
+export default function AnnouncementEmailDialog({ open, onClose, announcement, announcementId = null, onSent, initialStudents = null }) {
   const titleId = useId();
   const htmlRef = useRef(null);
   const textRef = useRef(null);
@@ -49,7 +49,11 @@ export default function AnnouncementEmailDialog({ open, onClose, announcement, a
   const draft = useMemo(() => ({ subject, html: mode === 'text' ? textEmailToHtml(text) : html }), [html, mode, subject, text]);
   const [shownDraft, setShownDraft] = useState(draft);
   const ids = useMemo(() => students.map((student) => String(student._id || student.id)).filter(Boolean), [students]);
-  const announcementKey = JSON.stringify(announcement || {});
+  // Only the content matters for the email (the chosen-student list can be long).
+  const announcementKey = useMemo(() => {
+    const { studentIds, audience, ...content } = announcement || {}; // eslint-disable-line no-unused-vars
+    return JSON.stringify(content);
+  }, [announcement]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -65,6 +69,11 @@ export default function AnnouncementEmailDialog({ open, onClose, announcement, a
       .catch((cause) => { if (live) setTemplates({ loading: false, list: [], variables: [], error: cause.message }); });
     return () => { live = false; };
   }, [open]);
+
+  // An announcement for selected students starts with the same students to email.
+  useEffect(() => {
+    if (open && initialStudents?.length) setStudents((current) => (current.length ? current : initialStudents));
+  }, [initialStudents, open]);
 
   const startFrom = useCallback((template) => { setSubject(template.subject || ''); setHtml(template.html || ''); }, []);
   useEffect(() => { if (chosen) startFrom(chosen); }, [chosen, startFrom]);

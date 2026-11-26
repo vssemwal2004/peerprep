@@ -64,9 +64,9 @@ test('job match accepts a job description before the first scan', async () => {
   await mount(fixture({ runJobMatch: value => { received = value; } }), { initialTab: 'job' });
   const input = host.querySelector('textarea[aria-label="Job description"]');
   assert.ok(input);
-  assert.ok(button('Match to this job').disabled);
+  assert.ok(button('Run quick match').disabled);
   await mount(fixture({ jobText: 'React developer', runJobMatch: value => { received = value; } }), { initialTab: 'job', key: 'saved' });
-  await click(button('Match to this job'));
+  await click(button('Run quick match'));
   assert.equal(received, 'React developer');
 });
 

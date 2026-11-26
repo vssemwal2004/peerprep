@@ -15,6 +15,10 @@
 .resume-preview-pagination svg { height:13px; width:13px; }
 .resume-sample-ribbon { position:absolute; left:50%; top:10px; z-index:2; transform:translateX(-50%); max-width:calc(100% - 100px); border-radius:999px; background:rgba(15,23,42,.86); padding:5px 12px; color:#fff; font-size:10.5px; font-weight:700; letter-spacing:.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 10px 24px -14px rgba(0,0,0,.6); }
 .resume-preview-scroll { position:relative; height:100%; overflow:auto; padding:16px 12px 32px; }
+/* One-page fit status under the page (never part of the résumé or its PDF). */
+.resume-fit-note { position:absolute; left:50%; top:10px; z-index:2; transform:translateX(-50%); max-width:calc(100% - 24px); border-radius:10px; background:rgba(15,23,42,.82); padding:6px 12px; color:#fff; font-size:11.5px; font-weight:600; line-height:1.35; text-align:center; box-shadow:0 10px 24px -14px rgba(0,0,0,.6); }
+.resume-fit-note--warn { background:#b45309; }
+.resume-preview-scroll .resume-fit-note { position:sticky; top:0; display:table; margin:0 auto 12px; transform:none; left:auto; }
 .resume-preview-scroll .resume-sample-ribbon { position:sticky; top:0; display:table; margin:0 auto 12px; transform:none; left:auto; }
 .resume-preview-scroll-page { display:flex; flex-direction:column; align-items:center; margin-bottom:18px; }
 .resume-preview-scroll-caption { margin-top:6px; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:rgb(148 163 184); }
@@ -24,6 +28,8 @@
 /* A field opened from the ANVI check flashes so the student sees where to edit. */
 @keyframes resume-review-flash { 0%,100% { box-shadow:0 0 0 0 rgba(139,92,246,0); } 20%,60% { box-shadow:0 0 0 4px rgba(139,92,246,.45); } }
 .resume-review-flash { animation:resume-review-flash 1.2s ease-in-out 2; border-radius:10px; }
+/* ANVI JD Match: a temporary marker on the preview line a report card points at (never template styling). */
+.jd-line-highlight { background:rgba(139,92,246,.16) !important; box-shadow:0 0 0 3px rgba(139,92,246,.38); border-radius:3px; transition:background .15s ease, box-shadow .15s ease; }
 .resume-workspace { display:block; }
 .resume-workspace-divider { display:none; }
 @media (prefers-reduced-motion:reduce) { .resume-preview-scaler { transition:none; } }
@@ -43,4 +49,4 @@
   .dark .resume-workspace-divider button { border-color:rgb(51 65 85); background:rgb(15 23 42); color:rgb(148 163 184); }
   .dark .resume-workspace-resize span { background:rgb(30 41 59); }
 }
-@media print { .resume-preview-pagination,.resume-preview-expand,.resume-sample-ribbon { display:none; } .resume-preview-viewport { position:static; } .resume-preview-page-frame { width:793.71px!important; height:1122.52px!important; box-shadow:none; } .resume-preview-scaler { transform:none!important; } }
+@media print { .resume-preview-pagination,.resume-preview-expand,.resume-sample-ribbon,.resume-fit-note { display:none; } .resume-preview-viewport { position:static; } .resume-preview-page-frame { width:793.71px!important; height:1122.52px!important; box-shadow:none; } .resume-preview-scaler { transform:none!important; } }

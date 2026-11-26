@@ -288,10 +288,19 @@ test('publishing a university mock assigns the university and reset removes acce
         { questionId: 'uni-mock-q', type: 'mcq', questionText: 'University question?', options: ['Yes', 'No'], correctOptionIndex: 0 },
       ] }],
     });
+    // Publishing a mock needs the month and year of its OA pattern.
+    const noDate = capture();
+    await updateAssessment({ user: admin, socket: { remoteAddress: '127.0.0.1' }, params: { id: String(mock._id) }, body: {
+      lifecycleStatus: 'published', availabilityMode: 'always', duration: 30, targetType: 'selected',
+      mockAudienceMode: 'universities', mockUniversityIds: ['mock-test-uni'], assignedStudents: [],
+    } }, noDate);
+    assert.equal(noDate.state.statusCode, 400);
+    assert.match(JSON.stringify(noDate.state.body), /month and year/);
     const published = capture();
     await updateAssessment({ user: admin, socket: { remoteAddress: '127.0.0.1' }, params: { id: String(mock._id) }, body: {
       lifecycleStatus: 'published', availabilityMode: 'always', duration: 30, targetType: 'selected',
       mockAudienceMode: 'universities', mockUniversityIds: ['mock-test-uni'], assignedStudents: [],
+      patternFrom: { month: 3, year: 2025 },
     } }, published);
     assert.equal(published.state.statusCode, 200, JSON.stringify(published.state.body));
     const publication = await Publication.findOne({ kind: 'assessment', contentId: mock._id }).lean();

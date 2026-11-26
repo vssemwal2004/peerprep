@@ -166,9 +166,26 @@ const coinPricingSchema = new mongoose.Schema({
   features: { type: mongoose.Schema.Types.Mixed, default: {} },
   // Only on the 'earning' document: coins students earn (platform/coinEarn.js).
   earning: mongoose.Schema.Types.Mixed,
+  // Only on the 'resume_jd_match' document: Gemini budget limits (modules/resumeReview/jdMatch.limits.js).
+  limits: mongoose.Schema.Types.Mixed,
   updatedBy: mongoose.Schema.Types.ObjectId,
   reason: { type: String, default: '' },
 }, { timestamps: true, minimize: false });
+
+// What paid AI calls cost PeerPrep, one row per feature per IST month (e.g. 'resume_jd_match:2026-11').
+// Counts every billed Gemini response, including ones that were then refused, so the budget is real.
+const aiSpendSchema = new mongoose.Schema({
+  _id: String,
+  feature: { type: String, required: true },
+  month: { type: String, required: true },
+  calls: { type: Number, default: 0 },
+  inputTokens: { type: Number, default: 0 },
+  outputTokens: { type: Number, default: 0 },
+  thoughtTokens: { type: Number, default: 0 },
+  usd: { type: Number, default: 0 },
+  maxCallUsd: { type: Number, default: 0 },
+  overCap: { type: Number, default: 0 },
+}, { timestamps: true });
 
 // Serializes account creation across API replicas while a university's live
 // account count is checked. An expired lease recovers after a process crash.
@@ -188,4 +205,5 @@ export const PlatformCoinWallet = mongoose.models.PlatformCoinWallet || mongoose
 export const PlatformCoinMovement = mongoose.models.PlatformCoinMovement || mongoose.model('PlatformCoinMovement', coinMovementSchema);
 export const PlatformCoinCharge = mongoose.models.PlatformCoinCharge || mongoose.model('PlatformCoinCharge', coinChargeSchema);
 export const PlatformCoinPricing = mongoose.models.PlatformCoinPricing || mongoose.model('PlatformCoinPricing', coinPricingSchema);
+export const PlatformAiSpend = mongoose.models.PlatformAiSpend || mongoose.model('PlatformAiSpend', aiSpendSchema);
 export const PlatformAccountCreationLock =mongoose.models.PlatformAccountCreationLock || mongoose.model('PlatformAccountCreationLock', accountCreationLockSchema);

@@ -31,6 +31,8 @@ import Notification from '../models/Notification.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
 import { syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
 import { resetMockDefinition, unpublishMockDefinition } from '../services/prepMockLifecycle.js';
+import { patternForMock } from '../services/prepMockPattern.js';
+import { HttpError } from '../utils/errors.js';
 import { deleteAssessmentQuestionArtifacts } from '../services/assessmentQuestionCleanupService.js';
 import { logActivity } from './adminActivityController.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
@@ -1788,11 +1790,35 @@ export function normalizeAssessmentSections(sections = []) {
         coding: normalizedCoding,
       };
     });
+    const minutes = Number(section?.suggestedMinutes);
     return {
       ...section,
+      // Whole minutes 1–1440, or none (an empty box clears it).
+      suggestedMinutes: Number.isFinite(minutes) && minutes >= 1 ? Math.min(1440, Math.round(minutes)) : undefined,
       questions: normalizedQuestions,
     };
   });
+}
+
+/** Prep Mock "pattern from": { month 1–12, year } or null. Future months are not allowed. */
+export function normalizePatternFrom(value, now = new Date()) {
+  const month = Number(value?.month);
+  const year = Number(value?.year);
+  if (!Number.isInteger(month) || !Number.isInteger(year) || month < 1 || month > 12 || year < 2000) return null;
+  if (year > now.getFullYear() || (year === now.getFullYear() && month > now.getMonth() + 1)) return null;
+  return { month, year };
+}
+
+/**
+ * Publish check for a Prep Mock: it shows an exam pattern (written per company + role, with the
+ * month and year of the OA). The pattern is for students to read; it does not have to match the
+ * questions exactly. Returns an error message or ''.
+ */
+export function mockPatternProblem({ mockPattern }) {
+  if (!mockPattern || !Array.isArray(mockPattern.rows) || !mockPattern.rows.length || !mockPattern.patternFrom) {
+    return 'Choose or create the exam pattern for this mock (Pattern step).';
+  }
+  return '';
 }
 
 function normalizeAssessmentQuestionSets(questionSets = [], fallbackSections = []) {
@@ -2064,6 +2090,8 @@ function buildStudentSectionSummary(sections = []) {
       totalMarks: Number(section?.totalMarks || 0) || (questionCount * marksPerQuestion),
       // Shown in the exam pattern before a student starts (Prep Mock overview), like any test paper.
       negativeMarksPerQuestion: Math.max(0, Number(section?.negativeMarksPerQuestion || 0) || 0),
+      // Suggested minutes for this section (guidance; only the total duration is enforced).
+      suggestedMinutes: Number(section?.suggestedMinutes) > 0 ? Number(section.suggestedMinutes) : null,
     };
   });
 }
@@ -2450,7 +2478,12 @@ export async function createAssessment(req, res) {
     if (mockKind && !String(company || '').trim()) return res.status(400).json({ error: 'Choose a company for this mock.' });
     const mockRole = mockKind ? cleanMockRole(req.body?.role) : '';
     if (mockKind && !mockRole) return res.status(400).json({ error: 'Choose a role for this mock.' });
-    const mockAudience = await validateMockAudience({ kind: mockKind ? 'mock' : 'assessment', mode: mockAudienceMode, universityIds: mockUniversityIds, user: req.user, requireSelection: lifecycleStatus !== 'draft' });
+    // A Prep Mock is created without students or universities: Master Admin gives it to
+    // universities (their package dates decide access) and to own students afterwards.
+    const mockAudience = mockKind
+      ? { mode: 'students', universityIds: [] }
+      : await validateMockAudience({ kind: 'assessment', mode: mockAudienceMode, universityIds: mockUniversityIds, user: req.user, requireSelection: lifecycleStatus !== 'draft' });
+    const mockPatternCopy = mockKind && req.body?.patternId ? await patternForMock(req.body.patternId, { company, role: mockRole }) : null;
 
     if (req.user?.role === 'coordinator'
       && !hasCoordinatorPermission(req.user, 'coordinator.assessment.candidates')
@@ -2487,7 +2520,8 @@ export async function createAssessment(req, res) {
     let end = null;
     let durationNum = null;
 
-    const alwaysOnMock = req.body?.kind === 'mock' && availabilityMode === 'always';
+    // Prep Mocks are always open; only the attempt length is set on the mock.
+    const alwaysOnMock = mockKind;
     if (!isDraft) {
       if (!title || (!alwaysOnMock && (!startTime || !endTime)) || !duration) {
         return res.status(400).json({ error: 'Title, startTime, endTime, and duration are required.' });
@@ -2518,19 +2552,23 @@ export async function createAssessment(req, res) {
       durationNum = duration !== undefined ? Number(duration) : null;
     }
 
-    const normalizedTarget = mockAudience.mode === 'universities'
-      ? (isUniversity() ? 'all' : 'selected') : targetType === 'selected' ? 'selected' : 'all';
+    // Mocks: a university's own mock is for its students (Prep Mock access decides who); on the
+    // platform nobody is assigned until Master Admin adds own students.
+    const normalizedTarget = mockKind
+      ? (isUniversity() ? 'all' : 'selected')
+      : mockAudience.mode === 'universities'
+        ? (isUniversity() ? 'all' : 'selected') : targetType === 'selected' ? 'selected' : 'all';
     const normalizedDraftTarget = normalizedTarget === 'all'
       ? 'all'
       : (draftTargetMode || 'individual');
     let ids = [];
     let users = [];
     let created = [];
-    const draftAssigned = normalizedTarget === 'all'
+    const draftAssigned = normalizedTarget === 'all' || mockKind
       ? []
       : (Array.isArray(assignedStudents) ? assignedStudents : []);
 
-    if (!isDraft && mockAudience.mode !== 'universities') {
+    if (!isDraft && !mockKind && mockAudience.mode !== 'universities') {
       const resolved = await resolveAssignedStudents({
         targetType: normalizedTarget,
         assignedStudents,
@@ -2552,6 +2590,12 @@ export async function createAssessment(req, res) {
         await validatePublishedAssessmentSections(questionSet.sections);
       }
     }
+    // Prep Mock pattern: the copy of the company + role pattern (with the OA month and year).
+    const mockPatternFrom = mockPatternCopy?.patternFrom || null;
+    if (mockKind && !isDraft) {
+      const problem = mockPatternProblem({ mockPattern: mockPatternCopy });
+      if (problem) return res.status(400).json({ error: problem });
+    }
 
     const newAssessmentId = new mongoose.Types.ObjectId();
     await claimAssessmentDraftProblems(effectiveQuestionSets, {
@@ -2565,6 +2609,9 @@ export async function createAssessment(req, res) {
       company: mockKind ? String(company).trim() : '',
       role: mockRole,
       companyLogo: mockKind ? await companyLogoSnapshot(company) : null,
+      patternFrom: mockPatternFrom,
+      patternId: mockPatternCopy?.patternId || null,
+      mockPattern: mockPatternCopy,
       mockAudienceMode: mockAudience.mode,
       mockUniversityIds: mockAudience.universityIds,
       title: title || '',
@@ -3095,6 +3142,13 @@ export async function updateAssessment(req, res) {
     if (!isDraft) {
       for (const questionSet of assessmentQuestionSets) {
         await validatePublishedAssessmentSections(questionSet.sections || []);
+      }
+    }
+    if (assessment.kind === 'mock') {
+      if (req.body?.patternFrom !== undefined) assessment.patternFrom = normalizePatternFrom(req.body.patternFrom);
+      if (!isDraft) {
+        const problem = mockPatternProblem({ patternFrom: assessment.patternFrom, sections: assessmentQuestionSets[0]?.sections || assessment.sections, duration: assessment.duration });
+        if (problem) return res.status(400).json({ error: problem });
       }
     }
 
@@ -4110,6 +4164,8 @@ export async function getStudentAssessmentDashboard(req, res) {
             role: assessment.role || '',
             companyLogo: logoFor(assessment.company || '', assessment.companyLogo),
             availabilityMode: assessment.availabilityMode || 'scheduled',
+            // When the company used this OA pattern ({ month, year }), or null when not set yet.
+            patternFrom: assessment.patternFrom?.month && assessment.patternFrom?.year ? { month: assessment.patternFrom.month, year: assessment.patternFrom.year } : null,
           } : {}),
         };
 

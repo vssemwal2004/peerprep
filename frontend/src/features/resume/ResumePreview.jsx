@@ -42,23 +42,35 @@ function ScaledPage({ scale, children, label }) {
   );
 }
 
+/** What the one-page fit did, in words a student understands. */
+function FitNote({ fit, pageCount, sample }) {
+  if (sample) return null;
+  if (fit.overflow) {
+    return <div className="resume-fit-note resume-fit-note--warn" role="status">Too much for one page even at the smallest readable size: it runs onto {pageCount} pages. Shorten older or repeated points to keep it to one page.</div>;
+  }
+  if (fit.scale < 1) {
+    return <div className="resume-fit-note" role="status">Fitted to one page: spacing and text tightened to {Math.round(fit.scale * 100)}%.</div>;
+  }
+  return null;
+}
+
 /**
  * Live preview. `mode="page"` shows one page with pagination; `mode="scroll"`
  * stacks every page for a full review. `onPagesChange` receives the measured
  * pages so the PDF can use the very same page breaks.
  */
 export default function ResumePreview({ resume, page = 0, onPageChange, onExpand, onLayoutChange, sampleNotice = '', mode = 'page', className = '' }) {
-  const { theme, layout, pages, measured, measureNode, getLineBreaks } = useResumePages(resume);
+  const { theme, layout, pages, measured, measureNode, getLineBreaks, fit } = useResumePages(resume);
   const viewportRef = useRef(null);
   const scale = useFitScale(viewportRef, { fitWidthOnly: mode === 'scroll' });
   const safePage = Math.min(Math.max(page || 0, 0), pages.length - 1);
   const breaksRef = useRef(getLineBreaks);
   breaksRef.current = getLineBreaks;
 
-  // Reports measured pages plus a reader for line breaks, so the PDF can copy both.
+  // Reports measured pages, the one-page fit and a reader for line breaks, so the PDF copies all three.
   useEffect(() => {
-    if (measured) onLayoutChange?.({ pages, template: resume.template, getLineBreaks: () => breaksRef.current() });
-  }, [measured, pages, resume.template, onLayoutChange]);
+    if (measured) onLayoutChange?.({ pages, template: resume.template, fitScale: fit.scale, fitOverflow: fit.overflow, getLineBreaks: () => breaksRef.current() });
+  }, [measured, pages, resume.template, fit.scale, fit.overflow, onLayoutChange]);
 
   if (!hasResumeContent(resume)) {
     return (
@@ -76,6 +88,7 @@ export default function ResumePreview({ resume, page = 0, onPageChange, onExpand
       <div className={`resume-preview-scroll ${className}`} ref={viewportRef}>
         {measureNode}
         {sampleNotice ? <div className="resume-sample-ribbon">{sampleNotice}</div> : null}
+        <FitNote fit={fit} pageCount={pages.length} sample={Boolean(sampleNotice)} />
         {pages.map((item, index) => (
           <div key={index} className="resume-preview-scroll-page">
             <ScaledPage scale={scale} label={`Page ${index + 1} of ${pages.length}`}>
@@ -97,6 +110,7 @@ export default function ResumePreview({ resume, page = 0, onPageChange, onExpand
         </ScaledPage>
       </div>
       {sampleNotice ? <div className="resume-sample-ribbon">{sampleNotice}</div> : null}
+      <FitNote fit={fit} pageCount={pages.length} sample={Boolean(sampleNotice)} />
       {onExpand ? <button type="button" onClick={onExpand} className="resume-preview-expand" aria-label="Open full preview" title="Open full preview"><Expand /></button> : null}
       {pages.length > 1 ? (
         <div className="resume-preview-pagination">

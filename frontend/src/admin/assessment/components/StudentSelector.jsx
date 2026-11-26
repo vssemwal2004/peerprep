@@ -32,7 +32,12 @@ const EMPTY_FILTERS = {
   accountStatus: '',
 };
 
-export default function StudentSelector({ selected = [], onChange, onBusyChange }) {
+/**
+ * selectAllMode: 'replace' (assessments: "select all filtered" becomes the whole selection) or
+ * 'add' (announcements: adds them to students chosen another way, e.g. from an uploaded list).
+ * showSelectedList: false when the page shows the chosen students itself.
+ */
+export default function StudentSelector({ selected = [], onChange, onBusyChange, selectAllMode = 'replace', showSelectedList = true }) {
   const [students, setStudents] = useState([]);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -190,6 +195,11 @@ export default function StudentSelector({ selected = [], onChange, onBusyChange 
         sortOrder: 'asc',
       });
       const matchingStudents = Array.isArray(data.students) ? data.students : [];
+      if (selectAllMode === 'add') {
+        const additions = matchingStudents.filter((student) => !selectedIds.has(String(student._id)));
+        if (additions.length > 0) onChange([...selected, ...additions]);
+        return;
+      }
       // "Select all matching" represents the current filtered audience exactly.
       // Replacing the selection prevents students from an older filter remaining
       // silently included in the assessment.
@@ -214,9 +224,10 @@ export default function StudentSelector({ selected = [], onChange, onBusyChange 
   const visibleSelected = students.filter((student) => selectedIds.has(String(student._id))).length;
   const allVisibleSelected = students.length > 0 && visibleSelected === students.length;
   const hasActiveCriteria = Boolean(debouncedQuery || activeFilterCount > 0 || uploadBatchId);
+  // In 'add' mode other students may be chosen too, so only a single fully-ticked page proves it.
   const allMatchingSelected = hasActiveCriteria
     && pagination.total > 0
-    && selected.length === pagination.total
+    && (selectAllMode === 'add' ? pagination.total <= students.length : selected.length === pagination.total)
     && allVisibleSelected;
   const firstResult = pagination.total === 0 ? 0 : ((pagination.page - 1) * PAGE_SIZE) + 1;
   const lastResult = Math.min(pagination.page * PAGE_SIZE, pagination.total);
@@ -359,7 +370,7 @@ export default function StudentSelector({ selected = [], onChange, onBusyChange 
       <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 text-[11px] text-slate-500 dark:border-gray-800 dark:text-gray-400">
         <span>{pagination.total.toLocaleString()} matching students</span>
         <span className={`font-semibold ${allMatchingSelected ? 'text-emerald-700 dark:text-emerald-300' : 'text-sky-700 dark:text-sky-300'}`}>
-          {allMatchingSelected ? `All ${pagination.total.toLocaleString()} filtered students selected` : `${selected.length} selected`}
+          {allMatchingSelected ? `All ${pagination.total.toLocaleString()} filtered students selected` : `${selected.length.toLocaleString()} selected`}
         </span>
       </div>
 
@@ -435,7 +446,7 @@ export default function StudentSelector({ selected = [], onChange, onBusyChange 
         </div>
       </div>
 
-      {selected.length > 0 && (
+      {showSelectedList && selected.length > 0 && (
         <div className="border-t border-slate-200 px-3 py-2.5 dark:border-gray-700">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-[11px] font-semibold text-slate-600 dark:text-gray-300">Selected students</span>

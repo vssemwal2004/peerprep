@@ -214,6 +214,8 @@ export default [
     steps: [
       { id: "rr-check", target: "rr-check", chapter: "parts", quick: true, title: "ANVI check", body: "Run the check to get ATS readiness, grammar and spelling issues, and the fixes to do first. Switch between the ATS and Grammar tabs for details." },
       { id: "rr-preview", target: "rr-preview", chapter: "parts", title: "Your resume", body: "Every page exactly as it downloads. Fixes you apply update it straight away." },
+      // Only on the page when an admin turned on JD Match for this student; otherwise the step is skipped.
+      { id: "rr-jd-anvi", target: "rr-jd-anvi", chapter: "parts", title: "Deep check with ANVI", body: "In Match a job, paste a job description and let ANVI list every missing keyword, heading by heading and line by line, with how to write it. Each check uses Prep Coins (shown on the button) and is refunded if ANVI cannot finish; the same résumé and job again within 24 hours is free." },
       { id: "rr-edit", target: "rr-edit", chapter: "actions", quick: true, title: "Edit resume", body: "Opens Create resume to change anything. Your check stays here; run it again after big edits." },
       { id: "rr-download", target: "rr-download", chapter: "actions", title: "Download PDF", body: "Downloads the same PDF that ANVI checked." },
     ],

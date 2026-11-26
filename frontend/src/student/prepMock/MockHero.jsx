@@ -49,13 +49,14 @@ function Stat({ label, value, detail, dot = false, className = '' }) {
  */
 export function PrepMockHeader({ totals }) {
   return (
-    <header data-guide="pmock-header" className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div className="min-w-0">
-        <p className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-[0.13em] text-violet-700 dark:text-violet-300"><TicketGlyph className="h-4 w-4" />Company mock tests</p>
-        <h1 id="pmock-title" className="mt-1 flex items-center text-[26px] font-medium leading-tight tracking-[-0.03em] text-slate-900 sm:text-[30px] dark:text-zinc-50">
+    // One compact row: title (with its label beside it) on the left, the at-a-glance chips on the right.
+    <header data-guide="pmock-header" className="mb-4 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <h1 id="pmock-title" className="flex items-center text-[24px] font-medium leading-tight tracking-[-0.03em] text-slate-900 sm:text-[26px] dark:text-zinc-50">
           <span>Prep <span className="relative inline-block font-bold text-violet-600 dark:text-violet-400">Mock<TitleUnderline /></span></span>
-          <PageGuideButton className="ml-3" />
+          <PageGuideButton className="ml-2.5" />
         </h1>
+        <p className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-[0.13em] text-violet-700 dark:text-violet-300"><TicketGlyph className="h-4 w-4" />Company mock tests</p>
       </div>
       {totals && (
         <ul aria-label="Prep Mock at a glance" className="flex flex-wrap gap-1.5 text-[12px]">

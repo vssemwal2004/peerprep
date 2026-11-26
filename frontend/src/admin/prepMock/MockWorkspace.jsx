@@ -6,6 +6,7 @@ import {
   MoreVertical, Pencil, Plus, Repeat, RotateCcw, Search, ShieldCheck, ShieldOff, SlidersHorizontal, Timer, X,
 } from 'lucide-react';
 import CompanyLogo from './CompanyLogo';
+import { formatPatternFrom } from '../../features/prepMock/patternModel';
 import { TablePager, nextSort, sortRows } from '../../components/table';
 import GridSortButton from '../assessment/components/GridSortButton';
 import {
@@ -133,10 +134,12 @@ function mockPattern(mock) {
       marks: Number(section.totalMarks) || count * (Number(section.marksPerQuestion) || 0),
       negative: Number(section.negativeMarksPerQuestion) || 0,
       difficulty: levels,
+      minutes: Number(section.suggestedMinutes) > 0 ? Number(section.suggestedMinutes) : null,
     };
   });
   return {
     sections,
+    patternFrom: formatPatternFrom(mock.patternFrom),
     types,
     difficulty,
     sets: mock.questionSets?.length || 0,
@@ -480,7 +483,7 @@ function CompanyRail({ companies, selectedKey, selectedRole, onSelect, onSelectR
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a company or role" aria-label="Find a company or role" className={searchClass} />
         </div>
       </div>
-      <nav aria-label="Companies and roles" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2 [scrollbar-width:thin]">
+      <nav aria-label="Companies and roles" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button type="button" onClick={() => onSelect('')} aria-current={!selectedKey ? 'page' : undefined}
           className={`mb-1.5 flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${!selectedKey ? 'bg-sky-50 ring-1 ring-inset ring-sky-200 dark:bg-sky-500/10 dark:ring-sky-500/30' : 'hover:bg-slate-50 dark:hover:bg-gray-900'}`}>
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-white dark:text-gray-950"><Layers className="h-4 w-4" /></span>
@@ -551,8 +554,11 @@ function Overview({ companies, mocks, logoOf, onJump, canCreate, onCreateMock })
   const published = mocks.filter(isPublished).length;
   const drafts = mocks.filter(isDraft).length;
   const withoutRole = mocks.filter((mock) => !roleOf(mock));
+  // Published before the OA date existed: editing asks for it, so flag them for the admin.
+  const withoutDate = mocks.filter((mock) => !isDraft(mock) && roleOf(mock) && !formatPatternFrom(mock.patternFrom));
   const attention = [
     ...withoutRole.map((mock) => ({ mock, reason: 'No role', tone: 'amber' })),
+    ...withoutDate.map((mock) => ({ mock, reason: 'No OA date', tone: 'amber' })),
     ...mocks.filter((mock) => isDraft(mock) && roleOf(mock)).map((mock) => ({ mock, reason: 'Draft', tone: 'slate' })),
   ].slice(0, 8);
   const recent = [...mocks].sort((left, right) => timeOf(right.updatedAt || right.createdAt) - timeOf(left.updatedAt || left.createdAt)).slice(0, 8);
@@ -594,7 +600,7 @@ function Overview({ companies, mocks, logoOf, onJump, canCreate, onCreateMock })
         <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
           <SectionTitle icon={AlertTriangle} aside={withoutRole.length > 0 && <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">{plural(withoutRole.length, 'mock')} without a role</span>}>Needs attention</SectionTitle>
           {attention.length ? <ul className="-mx-2">{attention.map(row)}</ul> : (
-            <p className="flex items-center gap-2 py-4 text-xs text-slate-500 dark:text-gray-400"><Check className="h-4 w-4 text-emerald-500" /> Every mock has a role and nothing is waiting in draft.</p>
+            <p className="flex items-center gap-2 py-4 text-xs text-slate-500 dark:text-gray-400"><Check className="h-4 w-4 text-emerald-500" /> Every mock has a role and an OA date, and nothing is waiting in draft.</p>
           )}
         </section>
         <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
@@ -622,6 +628,7 @@ function PatternTable({ pattern }) {
   if (!sections.length) return <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400 dark:border-gray-700 dark:text-gray-500">No sections yet. Edit the mock to add questions.</p>;
   const showDifficulty = sections.some((section) => levelText(section.difficulty));
   const showNegative = sections.some((section) => section.negative);
+  const showTime = sections.some((section) => section.minutes);
   const totalQuestions = sections.reduce((sum, section) => sum + section.count, 0);
   const totalMarks = sections.reduce((sum, section) => sum + (section.marks || 0), 0);
   const cell = 'px-3 py-2.5';
@@ -634,6 +641,7 @@ function PatternTable({ pattern }) {
             <th scope="col" className={`${cell} font-semibold`}>Section</th>
             <th scope="col" className={`${cell} font-semibold`}>Type</th>
             <th scope="col" className={`${cell} text-right font-semibold`}>Questions</th>
+            {showTime && <th scope="col" className={`${cell} text-right font-semibold`}>Time (min)</th>}
             {showDifficulty && <th scope="col" className={`${cell} font-semibold`}>Difficulty</th>}
             <th scope="col" className={`${cell} text-right font-semibold`}>Marks</th>
             {showNegative && <th scope="col" className={`${cell} text-right font-semibold`}>Negative</th>}
@@ -646,6 +654,7 @@ function PatternTable({ pattern }) {
               <td className={`${cell} max-w-[16rem] truncate font-semibold`} title={section.name}>{section.name}</td>
               <td className={`${cell} text-slate-500 dark:text-gray-400`}>{SECTION_TYPES[section.type] || section.type || '—'}</td>
               <td className={`${cell} text-right tabular-nums`}>{section.count}</td>
+              {showTime && <td className={`${cell} text-right tabular-nums`}>{section.minutes ?? '—'}</td>}
               {showDifficulty && <td className={`${cell} whitespace-nowrap text-slate-500 dark:text-gray-400`}>{levelText(section.difficulty) || '—'}</td>}
               <td className={`${cell} text-right tabular-nums`}>{section.marks || '—'}</td>
               {showNegative && <td className={`${cell} text-right tabular-nums ${section.negative ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`}>{section.negative ? `−${section.negative} / Q` : '—'}</td>}
@@ -658,6 +667,7 @@ function PatternTable({ pattern }) {
             <td className={`${cell} text-sky-700 dark:text-sky-300`}>Total</td>
             <td className={cell} />
             <td className={`${cell} text-right tabular-nums`}>{totalQuestions}</td>
+            {showTime && <td className={`${cell} text-right tabular-nums`}>{pattern.duration || sections.reduce((sum, section) => sum + (section.minutes || 0), 0)}</td>}
             {showDifficulty && <td className={`${cell} whitespace-nowrap font-medium text-slate-500 dark:text-gray-400`}>{levelText(pattern.difficulty)}</td>}
             <td className={`${cell} text-right tabular-nums`}>{totalMarks || pattern.marks || '—'}</td>
             {showNegative && <td className={cell} />}
@@ -671,6 +681,7 @@ function PatternTable({ pattern }) {
 /** The rules a student sees before starting, as small labelled facts. */
 function PatternFacts({ pattern, mock }) {
   const facts = [
+    { icon: CalendarClock, label: 'OA pattern from', value: pattern.patternFrom || 'Not set', warn: !pattern.patternFrom },
     { icon: Timer, label: 'Duration', value: pattern.duration ? `${pattern.duration} min` : 'Not set' },
     { icon: ListChecks, label: 'Questions', value: pattern.questions },
     { icon: BarChart3, label: 'Marks', value: pattern.marks || '—' },
@@ -681,11 +692,11 @@ function PatternFacts({ pattern, mock }) {
     pattern.sets > 1 && { icon: Layers, label: 'Question sets', value: pattern.sets },
   ].filter(Boolean);
   return (
-    <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-100 sm:grid-cols-3 xl:grid-cols-6 dark:border-gray-800 dark:bg-gray-800">
-      {facts.map(({ icon: Icon, label, value }) => (
+    <dl className="grid grid-cols-[repeat(auto-fill,minmax(118px,1fr))] gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-gray-800 dark:bg-gray-800">
+      {facts.map(({ icon: Icon, label, value, warn }) => (
         <div key={label} className="bg-white px-3 py-2 dark:bg-gray-900">
-          <dt className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 dark:text-gray-500"><Icon className="h-3 w-3" aria-hidden="true" />{label}</dt>
-          <dd className="mt-0.5 text-[13px] font-semibold tabular-nums text-slate-900 dark:text-white">{value}</dd>
+          <dt className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-gray-400"><Icon className="h-3 w-3" aria-hidden="true" />{label}</dt>
+          <dd className={`mt-0.5 text-[13px] font-semibold tabular-nums ${warn ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>{value}</dd>
         </div>
       ))}
     </dl>
@@ -714,7 +725,8 @@ function patternGroups(mocks) {
   const map = new Map();
   mocks.forEach((mock) => {
     const pattern = mockPattern(mock);
-    const key = JSON.stringify([pattern.duration, pattern.sections.map((section) => [section.name.trim().toLowerCase(), section.type, section.count, section.marks, section.negative])]);
+    // Same OA date and same structure (including suggested section times) = one pattern.
+    const key = JSON.stringify([pattern.patternFrom, pattern.duration, pattern.sections.map((section) => [section.name.trim().toLowerCase(), section.type, section.count, section.marks, section.negative, section.minutes])]);
     const group = map.get(key) || { key, mocks: [] };
     group.mocks.push(mock);
     map.set(key, group);
@@ -941,7 +953,7 @@ function RolePattern({ mocks }) {
               {groups.map((entry, index) => (
                 <button key={entry.key} type="button" role="tab" aria-selected={index === active} onClick={() => setActive(index)}
                   className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${index === active ? 'border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
-                  Pattern {index + 1} <span className="font-normal opacity-70">· {plural(entry.mocks.length, 'mock')}</span>
+                  {entry.pattern.patternFrom || `Pattern ${index + 1}`} <span className="font-normal opacity-70">· {plural(entry.mocks.length, 'mock')}</span>
                 </button>
               ))}
             </div>

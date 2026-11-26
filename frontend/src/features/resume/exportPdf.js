@@ -15,12 +15,14 @@ export async function buildResumePdfBlob(resume, measured = null) {
   const measuredLayout = typeof measured === 'function' ? measured() : measured;
   const layout = measuredLayout?.template === documentResume.template ? measuredLayout : null;
   const lineBreaks = layout?.getLineBreaks?.() || null;
+  // The same one-page fit as the preview (1 = the template as designed).
+  const fitScale = layout?.fitScale || 1;
   let blob;
   try {
-    blob = await pdf(createElement(ResumePdfDocument, { resume: documentResume, pages: layout?.pages, lineBreaks })).toBlob();
+    blob = await pdf(createElement(ResumePdfDocument, { resume: documentResume, pages: layout?.pages, lineBreaks, fitScale })).toBlob();
   } catch (error) {
     console.error('Prep Resume PDF render failed; retrying with standard fonts', error);
-    blob = await pdf(createElement(ResumePdfDocument, { resume: documentResume, safeFonts: true })).toBlob();
+    blob = await pdf(createElement(ResumePdfDocument, { resume: documentResume, safeFonts: true, fitScale })).toBlob();
   }
   if (!blob?.size) throw new Error('The generated PDF was empty. Please try again.');
   return blob;

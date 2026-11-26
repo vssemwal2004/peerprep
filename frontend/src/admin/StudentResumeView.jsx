@@ -41,10 +41,10 @@ export default function StudentResumeView() {
       const measured = layoutRef.current?.template === resume.template ? layoutRef.current : null;
       let blob;
       try {
-        blob = await pdf(<ResumePdfDocument resume={resume} pages={measured?.pages} lineBreaks={measured?.getLineBreaks?.() || null} />).toBlob();
+        blob = await pdf(<ResumePdfDocument resume={resume} pages={measured?.pages} lineBreaks={measured?.getLineBreaks?.() || null} fitScale={measured?.fitScale || 1} />).toBlob();
       } catch (renderError) {
         console.error('Prep Resume PDF render failed; retrying with standard fonts', renderError);
-        blob = await pdf(<ResumePdfDocument resume={resume} safeFonts />).toBlob();
+        blob = await pdf(<ResumePdfDocument resume={resume} safeFonts fitScale={measured?.fitScale || 1} />).toBlob();
       }
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');

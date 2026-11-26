@@ -7,6 +7,7 @@ import PrepCoinIcon from '../components/prepCoin/PrepCoinIcon';
 import { CoinPage, InfoTitle } from './prepCoins/shared';
 import { buttonClass, inputClass } from './prepCoins/coinModel';
 import EarningSettings from './prepCoins/EarningSettings';
+import JdMatchBudget from './prepCoins/JdMatchBudget';
 
 const whole = (value) => Number.isSafeInteger(value) && value >= 0;
 
@@ -92,7 +93,7 @@ export default function PrepCoinPricing() {
 
           <Glass data-guide="pcp-save" className="sticky bottom-4 mt-4 p-4">
             {invalid && <p role="alert" className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">Use whole numbers of 0 or more.</p>}
-            <CardHeader title={<InfoTitle title="Save changes" step="pcp-save" />} subtitle={pricing.updatedAt ? `Version ${pricing.version} · last changed ${new Date(pricing.updatedAt).toLocaleString()}` : 'Every feature is free until a price is saved.'} Icon={Save} />
+            <CardHeader title={<InfoTitle title="Save changes" step="pcp-save" />} subtitle={pricing.updatedAt ? `Version ${pricing.version} · last changed ${new Date(pricing.updatedAt).toLocaleString()}` : 'Features are free until a price is saved, except Resume JD Match (10 coins by default).'} Icon={Save} />
             <div className="flex flex-col gap-2 sm:flex-row">
               <input className={inputClass} maxLength={300} value={reason} onChange={(event) => setReason(event.target.value)} aria-label="Reason for this change (optional)"
                 placeholder="Reason for this change (optional), e.g. AI interviews now use a paid speech model" />
@@ -100,6 +101,7 @@ export default function PrepCoinPricing() {
               <button type="button" onClick={save} disabled={busy || !unsaved || invalid} className={`${buttonClass.primary} h-10 shrink-0`}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{busy ? 'Saving…' : 'Save prices'}</button>
             </div>
           </Glass>
+          <JdMatchBudget />
         </>
       )}
     </CoinPage>

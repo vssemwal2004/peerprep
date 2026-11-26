@@ -14,7 +14,7 @@ const RULES = [
   { icon: Laptop, text: 'Laptop or desktop only' },
   { icon: ShieldCheck, text: 'Same rules, timer and proctoring as assessments' },
   { icon: KeyRound, text: 'Password when your admin set one' },
-  { icon: Repeat2, text: 'One attempt per mock' },
+  { icon: Repeat2, text: 'One attempt per mock unless your admin allows more' },
 ];
 
 export function BackLink() {
@@ -68,31 +68,30 @@ export default function CompanyView({ company, reports, onStart, onViewResult, o
   };
 
   return (
-    <div className="min-w-0 space-y-4">
+    <div className="min-w-0 space-y-3">
       <Crumbs company={company} role={role} />
 
+      {/* Compact banner: logo, name, counts and progress in one row; the rules as one line under it. */}
       <header data-guide="pmock-banner" className="relative overflow-hidden rounded-2xl border border-[#e8e5f4] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-[#242424]">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_120%_at_0%_0%,rgba(139,92,246,0.12),transparent_65%),radial-gradient(40%_100%_at_100%_0%,rgba(14,165,233,0.09),transparent_65%)]" aria-hidden="true" />
-        <div className="relative flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
-          <CompanyLogo name={company.name} logo={company.logo} size="md" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_120%_at_0%_0%,rgba(139,92,246,0.10),transparent_65%),radial-gradient(40%_100%_at_100%_0%,rgba(14,165,233,0.08),transparent_65%)]" aria-hidden="true" />
+        <div className="relative flex items-center gap-3 px-4 py-3 sm:gap-4">
+          <CompanyLogo name={company.name} logo={company.logo} size="sm" />
           <div className="min-w-0 flex-1">
-            <h2 className="flex items-center gap-2 text-[22px] font-semibold leading-tight tracking-[-0.025em] text-slate-900 sm:text-[26px] dark:text-zinc-50">
-              <span className="min-w-0 truncate" title={company.name}>{company.name}</span>
-            </h2>
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-slate-500 dark:text-zinc-400">
+            <h2 className="truncate text-[19px] font-semibold leading-tight tracking-[-0.02em] text-slate-900 sm:text-[21px] dark:text-zinc-50" title={company.name}>{company.name}</h2>
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500 dark:text-zinc-400">
               <span>{plural(company.roles.length, 'role')} · {plural(counts.total, 'mock')}{counts.upcoming ? ` · ${counts.upcoming} upcoming` : ''}</span>
               <OpenNowBadge count={counts.open} />
             </p>
           </div>
-          <div className="flex items-center gap-3 sm:w-[200px]">
-            <CompletionRing done={counts.completed} total={counts.total} size={44} />
-            <div className="min-w-0 flex-1">
-              <p className="text-[18px] font-bold leading-none tabular-nums text-slate-900 dark:text-white">{counts.completed}<span className="text-[13px] font-semibold text-slate-400 dark:text-zinc-500">/{counts.total}</span></p>
-              <p className="mt-1 text-[11.5px] text-slate-500 dark:text-zinc-400">mocks completed</p>
+          <div className="flex shrink-0 items-center gap-2.5" aria-label={`${counts.completed} of ${counts.total} mocks completed`}>
+            <CompletionRing done={counts.completed} total={counts.total} size={36} />
+            <div className="hidden min-w-0 sm:block">
+              <p className="text-[16px] font-bold leading-none tabular-nums text-slate-900 dark:text-white">{counts.completed}<span className="text-[12px] font-semibold text-slate-400 dark:text-zinc-500">/{counts.total}</span></p>
+              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-zinc-400">completed</p>
             </div>
           </div>
         </div>
-        <ul data-guide="pmock-rules" aria-label="Test rules" className="relative flex flex-wrap gap-x-5 gap-y-1.5 border-t border-black/[0.05] bg-white/55 px-4 py-2.5 text-[12px] text-slate-600 backdrop-blur sm:px-5 dark:border-white/[0.06] dark:bg-white/[0.02] dark:text-zinc-300">
+        <ul data-guide="pmock-rules" aria-label="Test rules" className="relative flex flex-wrap gap-x-4 gap-y-1 border-t border-black/[0.05] bg-white/55 px-4 py-2 text-[11.5px] text-slate-600 backdrop-blur dark:border-white/[0.06] dark:bg-white/[0.02] dark:text-zinc-300">
           {RULES.map(({ icon: Icon, text }) => <li key={text} className="inline-flex items-center gap-1.5"><Icon className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" aria-hidden="true" />{text}</li>)}
         </ul>
       </header>

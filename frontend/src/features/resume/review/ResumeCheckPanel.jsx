@@ -4,11 +4,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'framer-motion';
 import {
   AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleDashed, Clock3,
-  EyeOff, FileSearch, Info, LayoutTemplate, Loader2, MapPin, RefreshCw, ScanText, Sparkles, SpellCheck2, Target, Wand2, X,
+  EyeOff, FileSearch, Info, LayoutTemplate, Loader2, MapPin, RefreshCw, ScanText, ShieldCheck, Sparkles, SpellCheck2, Target, Wand2, X,
 } from 'lucide-react';
 import { describeAtsFinding } from './describeAtsFinding';
 import { getTemplate } from '../templates/catalog';
 import { AnviOrb as Orb, AnviGauge, AnviWord } from './AnviVisuals';
+import PrepCoinIcon from '../../../components/prepCoin/PrepCoinIcon';
+import JdMatchReport from './jdMatch/JdMatchReport';
+import { JD_MIN_CHARS } from './jdMatch/jdMatchModel';
+import { resumeStrength } from './resumeStrength';
 import { DraftChecklist, RewriteTool, ScanScene, UndoNotice } from './ReviewWorkspace';
 import { ATS_CATEGORY_LABELS, SECTION_LABEL, atsRuleInfo, fixFirst, groupIssues, locationLabel, verdictFor } from './reviewModel';
 
@@ -174,26 +178,180 @@ function Field({ label, value, missing }) {
 
 const dateText = (date) => (date?.year ? `${date.month ? `${String(date.month).padStart(2, '0')}/` : ''}${date.year}` : '');
 
-function JobMatch({ check }) {
+// Résumé strength: content quality checks (separate from ATS readability), biggest gaps first.
+function StrengthCard({ strength, onLocate, onTool, writingChecked }) {
+  const [all, setAll] = useState(false);
+  const list = all ? strength.checks : strength.improvements.slice(0, 4);
+  return (
+    <section id="anvi-strength" className="anvi-review-card">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-[14px] font-semibold">Résumé strength <span className="ml-1 tabular-nums text-violet-600 dark:text-violet-300">{strength.score}/100</span></h3>
+        <button type="button" onClick={() => setAll((value) => !value)} className="anvi-text-link text-[12px]">{all ? 'Only gaps' : 'All checks'}</button>
+      </div>
+      <p className="mt-0.5 text-[11.5px] leading-4 text-slate-500 dark:text-zinc-400">What a recruiter reads: real work, measurable results and clear bullets.</p>
+      {list.length ? <ul className="mt-2.5 space-y-1.5">
+        {list.map((item) => (
+          <li key={item.id} className="flex items-start gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[12px] dark:bg-white/[0.04]">
+            {item.passed ? <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" /> : <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />}
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center justify-between gap-2"><b className="font-semibold text-slate-800 dark:text-zinc-100">{item.title}</b><span className="shrink-0 tabular-nums text-[11px] text-slate-400">{Math.round(item.earned)}/{item.weight}</span></span>
+              <span className="block text-slate-500 dark:text-zinc-400">{item.detail}</span>
+              {!item.passed ? <span className="mt-0.5 block text-slate-700 dark:text-zinc-200">{item.fix}</span> : null}
+              {!item.passed && item.target ? <button type="button" onClick={() => onLocate(item.target)} className="anvi-text-link mt-1 text-[11.5px]"><MapPin size={11} />Go to</button> : null}
+              {!item.passed && item.tool ? <button type="button" onClick={() => onTool(item.tool)} className="anvi-text-link mt-1 text-[11.5px]"><SpellCheck2 size={11} />Open grammar fixes</button> : null}
+            </span>
+          </li>
+        ))}
+      </ul> : <p className="mt-2 text-[12px] text-emerald-700 dark:text-emerald-300">Every strength check passes. Nice work.</p>}
+      {!writingChecked ? <button type="button" onClick={() => onTool('grammar')} className="anvi-text-link mt-2 text-[11.5px]"><SpellCheck2 size={11} />Run the grammar check to include writing in this score</button> : null}
+    </section>
+  );
+}
+
+// "Match a job": one job description box, then two clearly explained checks — the free Quick match
+// (exact words) and the ANVI deep check (opt-in, Prep Coins: meaning, and exactly where to add).
+const jdFieldClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-100 sm:text-[13px] dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:ring-violet-950';
+const JD_PLACEHOLDER = 'Paste the complete job description: role summary, responsibilities and requirements.\n\nExample:\nSoftware Engineer Intern, Acme\nRequirements: Java or Node.js, REST APIs, SQL databases, Git…';
+
+function StepLabel({ n, children }) {
+  return <p className="flex items-center gap-2 text-[12.5px] font-semibold text-slate-800 dark:text-zinc-100"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-[11px] font-bold text-white dark:bg-white dark:text-slate-900">{n}</span>{children}</p>;
+}
+
+function AnviDeepCheck({ jd, text, role, company }) {
+  const overview = jd.overview;
+  const chars = text.trim().length;
+  const short = chars < JD_MIN_CHARS;
+  const left = overview ? Math.max(0, overview.dailyLimit - overview.usedToday) : null;
+  const price = overview ? overview.cost : null;
+  const running = Boolean(jd.popup && ['quote', 'charging', 'running'].includes(jd.popup.phase));
+  const turnedOff = jd.overviewError?.status === 403;
+  let blocked = '';
+  if (turnedOff) blocked = 'ANVI JD Match is not turned on for your account. Ask your admin.';
+  else if (jd.overviewError && !overview) blocked = 'ANVI JD Match could not be loaded.';
+  else if (!overview) blocked = 'Loading the price…';
+  else if (price === null) blocked = 'The price could not be loaded right now.';
+  else if (overview.paused) blocked = 'Paused for now: this month\'s ANVI check budget is used up. No coins are taken.';
+  else if (left === 0) blocked = `You have used today's ${overview.dailyLimit} ANVI checks. Try again tomorrow.`;
+  else if (overview.resumeTooLong) blocked = 'Your résumé is longer than ANVI can check in one go (about two pages). Shorten it first, for example by removing old or repeated points.';
+  // The limit for this student's résumé comes from the server (same rule it checks before charging).
+  const jdMax = overview?.jdMaxChars ?? null;
+  const tooLong = jdMax !== null && chars > jdMax;
+  const why = short ? `Paste the full job description first (${JD_MIN_CHARS - chars} more characters needed).`
+    : blocked || (tooLong ? `This job description is too long for one check: shorten it to ${jdMax.toLocaleString('en-IN')} characters (remove about ${(chars - jdMax).toLocaleString('en-IN')}). Keep the role summary and requirements; company introductions and benefits can go.` : '');
+  return (
+    <div data-guide="rr-jd-anvi" className="rounded-2xl border border-violet-200 bg-violet-50/40 p-4 dark:border-violet-400/25 dark:bg-violet-500/[0.05]">
+      <div className="flex items-start gap-3">
+        <Orb size={34} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[14px] font-semibold text-slate-900 dark:text-white"><AnviWord /> deep check</p>
+            {price !== null ? <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11.5px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-400/25"><PrepCoinIcon size={13} />{price ? `${price} Prep Coins` : 'Free this time'}</span> : null}
+          </div>
+          <p className="mt-0.5 text-[12.5px] leading-5 text-slate-600 dark:text-zinc-300">ANVI reads the job like a recruiter and compares it with every line of your résumé.</p>
+        </div>
+      </div>
+      <ul className="mt-3 space-y-1.5 text-[12.5px] leading-5 text-slate-700 dark:text-zinc-200">
+        {['Every keyword the job needs that your résumé is missing, must-haves first', 'The exact line of your résumé to change, section by section', 'An example of how to write it, and a PDF report you can download'].map((item) => (
+          <li key={item} className="flex gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600 dark:text-violet-300" />{item}</li>
+        ))}
+      </ul>
+      {running && jd.popup.hidden ? (
+        <button type="button" onClick={jd.showPopup} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-white px-3 py-2.5 text-[13px] font-semibold text-violet-800 ring-1 ring-inset ring-violet-300 dark:bg-violet-500/10 dark:text-violet-200 dark:ring-violet-400/30"><Loader2 className="h-4 w-4 animate-spin" />ANVI is checking this job · View</button>
+      ) : (
+        <button type="button" disabled={Boolean(why) || running} onClick={() => jd.start({ jobDescription: text, role, company }, price)}
+          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-3 py-2.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none dark:disabled:bg-white/10 dark:disabled:text-zinc-400">
+          {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          {running ? 'ANVI is checking…' : price ? `Check with ANVI · ${price} coins` : 'Check with ANVI'}
+        </button>
+      )}
+      <p className={`mt-2 text-center text-[12px] leading-4 ${why ? 'text-amber-800 dark:text-amber-300' : 'text-slate-600 dark:text-zinc-400'}`}>
+        {why || `${left} of ${overview.dailyLimit} checks left today · coins come back automatically if ANVI can't finish · the same job again within 24 hours is free`}
+        {jd.overviewError && !overview && !turnedOff ? <button type="button" onClick={jd.refresh} className="ml-1 font-semibold underline">Retry</button> : null}
+      </p>
+      {overview?.history?.length ? (
+        <div className="mt-3 border-t border-violet-100 pt-3 dark:border-white/[0.06]">
+          <p className="text-[11.5px] font-semibold text-slate-600 dark:text-zinc-300">Your earlier ANVI checks {jd.opening ? <Loader2 className="ml-1 inline h-3 w-3 animate-spin" /> : null}</p>
+          <ul className="mt-1.5 space-y-1">
+            {overview.history.slice(0, 5).map((item) => (
+              <li key={item.id}>
+                <button type="button" onClick={() => jd.openReport(item.id)} className="flex min-h-10 w-full items-center gap-2 rounded-lg bg-white/70 px-2.5 py-2 text-left text-[12.5px] hover:bg-white dark:bg-white/[0.03] dark:hover:bg-white/[0.06]">
+                  <span className="min-w-0 flex-1 truncate font-medium text-slate-800 dark:text-zinc-100">{[item.role, item.company].filter(Boolean).join(' · ') || 'Job description'}</span>
+                  <span className="shrink-0 text-slate-500 dark:text-zinc-400">{new Date(item.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}</span>
+                  <span className="shrink-0 rounded-md bg-violet-100 px-1.5 py-0.5 font-semibold tabular-nums text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">{item.score ?? '–'}%</span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function JobMatch({ check, jd = null }) {
   const report = check.ats.report;
-  const [text, setText] = useState(check.jobText);
+  const [text, setText] = useState(check.jobText || jd?.lastRequest?.jobDescription || '');
+  const [role, setRole] = useState(jd?.lastRequest?.role || '');
+  const [company, setCompany] = useState(jd?.lastRequest?.company || '');
   const running = check.ats.status === 'running';
   const job = text.trim() === check.jobText.trim() ? report?.job : null;
+  if (jd?.enabled && jd.match?.status === 'done') {
+    return <JdMatchReport match={jd.match} previousScore={jd.previousScore} onBack={jd.clearReport} onFix={jd.onFix} onHighlight={jd.onHighlight} onReveal={jd.onReveal} studentName={jd.studentName} />;
+  }
+  const chars = text.trim().length;
+  const enough = chars >= JD_MIN_CHARS;
+  const jdMax = jd?.enabled ? jd.overview?.jdMaxChars ?? null : null;
+  const limit = Math.min(12000, jdMax ?? 12000);
+  const over = chars > limit;
   return (
     <section id="anvi-job-match" className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(16,24,40,0.05)] ring-1 ring-inset ring-black/[0.06] dark:bg-[#242424] dark:ring-white/[0.07]">
-      <h4 className="flex items-center gap-2 text-sm font-black text-slate-900 dark:text-white"><Briefcase className="h-4 w-4 text-violet-500" />Job match <span className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-400">Optional</span></h4>
-      <p className="mt-1 text-[11px] leading-4 text-slate-500">Paste a job description to compare it with your resume, requirement by requirement. This score is separate from ATS readiness.</p>
-      <textarea aria-label="Job description" value={text} onChange={(event) => setText(event.target.value)} rows={4} maxLength={12000} placeholder="Paste the job description here…" className="mt-3 w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-violet-950" />
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => check.runJobMatch(text)} disabled={running || !text.trim()} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-violet-700 disabled:opacity-50">{running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Target className="h-3.5 w-3.5" />}{job ? 'Match again' : 'Match to this job'}</button>
-        {text && text !== check.jobText ? <span className="text-[10px] text-slate-400">Not matched yet</span> : null}
-        {report?.job && !text.trim() ? <button type="button" onClick={() => { setText(''); check.runJobMatch(''); }} className="text-[11px] font-bold text-slate-400 hover:text-rose-600">Remove job match</button> : null}
+      <h4 className="flex items-center gap-2 text-[15px] font-semibold text-slate-900 dark:text-white"><Briefcase className="h-4 w-4 text-violet-600 dark:text-violet-300" />Match your résumé to a job</h4>
+      <p className="mt-1 text-[12.5px] leading-5 text-slate-600 dark:text-zinc-300">Copy the job description from the company's careers page, LinkedIn or your placement cell and paste it below. It is compared with your saved résumé.</p>
+      <div className="mt-4 space-y-2">
+        <StepLabel n={1}>Paste the job description</StepLabel>
+        <textarea aria-label="Job description" value={text} onChange={(event) => setText(event.target.value)} rows={7} maxLength={12000} placeholder={JD_PLACEHOLDER} className={`${jdFieldClass} resize-y leading-5`} />
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
+          <span className={chars === 0 ? 'text-slate-600 dark:text-zinc-400' : over ? 'font-medium text-rose-700 dark:text-rose-300' : enough ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-800 dark:text-amber-300'}>
+            {chars === 0 ? 'Include the requirements or skills list: that is what gets matched.'
+              : over ? `Too long for an ANVI check: remove about ${(chars - limit).toLocaleString('en-IN')} characters (company intro, benefits).`
+                : enough ? 'Looks complete.' : `Add a little more: at least ${JD_MIN_CHARS} characters, including the requirements.`}
+          </span>
+          <span className={`tabular-nums ${over ? 'font-semibold text-rose-700 dark:text-rose-300' : 'text-slate-500 dark:text-zinc-400'}`}>{chars.toLocaleString('en-IN')} / {limit.toLocaleString('en-IN')}</span>
+        </div>
+        {jd?.enabled ? (
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="text-[12px] font-medium text-slate-700 dark:text-zinc-300">Role <span className="font-normal text-slate-500 dark:text-zinc-400">(optional)</span>
+              <input value={role} onChange={(event) => setRole(event.target.value)} maxLength={80} placeholder="e.g. SDE Intern" className={`${jdFieldClass} mt-1`} />
+            </label>
+            <label className="text-[12px] font-medium text-slate-700 dark:text-zinc-300">Company <span className="font-normal text-slate-500 dark:text-zinc-400">(optional)</span>
+              <input value={company} onChange={(event) => setCompany(event.target.value)} maxLength={80} placeholder="e.g. Infosys" className={`${jdFieldClass} mt-1`} />
+            </label>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-4 space-y-2.5">
+        <StepLabel n={2}>Choose a check</StepLabel>
+        <div className="rounded-2xl border border-slate-200 p-4 dark:border-white/10">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[14px] font-semibold text-slate-900 dark:text-white">Quick match</p>
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11.5px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/20">Free · instant</span>
+          </div>
+          <p className="mt-0.5 text-[12.5px] leading-5 text-slate-600 dark:text-zinc-300">Looks for the job's exact words in your résumé PDF and lists the ones that are missing.</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => check.runJobMatch(text)} disabled={running || !text.trim()} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-[13px] font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:bg-transparent dark:text-zinc-100 dark:hover:bg-white/5">{running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Target className="h-3.5 w-3.5" />}{job ? 'Run quick match again' : 'Run quick match'}</button>
+            {report?.job && text.trim() && text !== check.jobText ? <span className="text-[12px] text-slate-500 dark:text-zinc-400">The text changed: run it again to update</span> : null}
+            {report?.job && !text.trim() ? <button type="button" onClick={() => { setText(''); check.runJobMatch(''); }} className="text-[12px] font-semibold text-slate-500 hover:text-rose-600">Remove job match</button> : null}
+          </div>
+        </div>
+        {jd?.match?.status === 'failed' ? <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-[12px] text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">{jd.match.error?.message || 'This ANVI report could not be opened.'}</p> : null}
+        {jd?.enabled ? <AnviDeepCheck jd={jd} text={text} role={role} company={company} /> : null}
       </div>
       {job ? (
         <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
           <div className="flex items-center gap-4">
             <ScoreRing score={job.score} size={76} stroke={8} label="match" />
-            <div className="text-xs leading-5 text-slate-600 dark:text-slate-300"><b className="text-slate-900 dark:text-white">Job match {job.score ?? '–'}/100.</b> {job.requirements.filter((r) => r.status === 'met').length} of {job.requirements.length || 0} requirements clearly met. Add a skill only if you have genuinely used it.</div>
+            <div className="text-xs leading-5 text-slate-600 dark:text-slate-300"><b className="text-slate-900 dark:text-white">Quick match: {job.score ?? '–'}/100 on exact words.</b> {job.requirements.filter((r) => r.status === 'met').length} of {job.requirements.length || 0} requirements clearly met. Add a skill only if you have genuinely used it.</div>
           </div>
           {job.requirements.length ? (
             <ul className="mt-3 space-y-1.5">
@@ -407,8 +565,10 @@ const REVIEW_TOOLS = [
   { id: 'rewrite', label: 'Improve a bullet', icon: Wand2 },
 ];
 
-export default function ResumeCheckPanel({ check, resume, hasContent, onLocate, onBrowseTemplates, onClose = null, className = '', initialTab = 'overview', initialAction = '' }) {
+export default function ResumeCheckPanel({ check, resume, hasContent, onLocate, onBrowseTemplates, onClose = null, className = '', initialTab = 'overview', initialAction = '', jdMatch = null, viewRequest = null }) {
   const [view, setView] = useState(initialAction === 'rewrite' ? 'rewrite' : initialTab);
+  // The page can ask for a view (e.g. the job view when an ANVI report is ready).
+  useEffect(() => { if (viewRequest?.view) setView(viewRequest.view); }, [viewRequest]);
   const scrollRef = useRef(null);
   const headingRef = useRef(null);
   const lastView = useRef(view);
@@ -420,6 +580,9 @@ export default function ResumeCheckPanel({ check, resume, hasContent, onLocate, 
   }, [view]);
   const templateName = getTemplate(resume.template).name;
   const { grammar, ats, requirements } = check;
+  // Writing issues count toward strength once the grammar check has run on this draft.
+  const writingIssues = grammar.status === 'done' && !check.grammarOutdated ? check.visibleIssues.length : null;
+  const strength = useMemo(() => resumeStrength(resume, { writingIssues }), [resume, writingIssues]);
   const ready = requirements.ready;
   const latest = ready && !check.atsOutdated ? ats.report : null;
   const issues = check.grammarOutdated ? EMPTY_ISSUES : check.visibleIssues;
@@ -464,12 +627,23 @@ export default function ResumeCheckPanel({ check, resume, hasContent, onLocate, 
           {grammar.status === 'error' && overview ? <ErrorCard message={grammar.error} onRetry={() => check.runCheck({ only: 'grammar' })} /> : null}
 
           {overview && (!check.running || latest || issuesCount !== null) ? <>
-            {latest ? <section className="anvi-review-card anvi-score-card anvi-reveal flex items-center gap-4">
-              <AnviGauge score={latest.readinessScore} size={82} stroke={7} />
-              <div><h3 className="text-[15px] font-semibold">ATS readiness</h3>
-                <p className="mt-1 text-[13px] leading-5 text-slate-600 dark:text-zinc-300">{latest.checksPassed} of {latest.checksTotal} checks passed on your {templateName} PDF.</p>
-                <button type="button" onClick={() => selectView('ats')} className="anvi-text-link mt-1">View PDF checks <ArrowRight size={13} /></button>
+            {latest ? <section className="anvi-review-card anvi-score-card anvi-reveal">
+              {/* Two different questions: can an ATS read the PDF, and is the content strong? */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col items-center text-center">
+                  <AnviGauge score={latest.readinessScore} size={78} stroke={7} label="ATS readability" />
+                  <h3 className="mt-1.5 text-[13px] font-semibold">ATS readability</h3>
+                  <p className="text-[11px] leading-4 text-slate-500 dark:text-zinc-400">Can a machine read your {templateName} PDF</p>
+                  <button type="button" onClick={() => selectView('ats')} className="anvi-text-link mt-1 text-[12px]">PDF checks <ArrowRight size={12} /></button>
+                </div>
+                <div className="flex flex-col items-center border-l border-slate-200/70 text-center dark:border-white/10">
+                  <AnviGauge score={strength.score} size={78} stroke={7} label="Résumé strength" />
+                  <h3 className="mt-1.5 text-[13px] font-semibold">Résumé strength</h3>
+                  <p className="text-[11px] leading-4 text-slate-500 dark:text-zinc-400">How good the content is · {strength.label}</p>
+                  <button type="button" onClick={() => document.getElementById('anvi-strength')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="anvi-text-link mt-1 text-[12px]">What to improve <ArrowRight size={12} /></button>
+                </div>
               </div>
+              {latest.readinessScore - strength.score >= 20 ? <p className="mt-3 rounded-lg bg-amber-50 px-2.5 py-2 text-[11.5px] leading-4 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">Your PDF is easy for an ATS to read, but recruiters judge the content. Work on the strength points below before applying.</p> : null}
             </section> : ready && !check.running && ats.status !== 'error' ? <section className="anvi-review-card anvi-start-card">
               <div className="relative"><span className="anvi-tool-icon mb-3"><ScanText size={20} /></span>
                 <h3 className="text-lg font-semibold tracking-tight">{check.atsOutdated ? 'Your draft has changed' : 'Ready for a résumé check?'}</h3>
@@ -479,6 +653,7 @@ export default function ResumeCheckPanel({ check, resume, hasContent, onLocate, 
             </section> : null}
 
             <FixFirst items={top} resume={resume} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} />
+            <StrengthCard strength={strength} onLocate={onLocate} onTool={selectView} writingChecked={writingIssues !== null} />
             {latest || issues.length ? <ExplainCard check={check} resume={resume} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} /> : null}
             <nav aria-label="Review tools" className="grid grid-cols-2 gap-2">{REVIEW_TOOLS.map(({ id, label, icon: Icon }) =>
               <button type="button" key={id} onClick={() => selectView(id)} className="anvi-action-card">
@@ -489,7 +664,7 @@ export default function ResumeCheckPanel({ check, resume, hasContent, onLocate, 
           {view === 'rewrite' ? <RewriteTool resume={resume} check={check} onLocate={onLocate} /> : null}
           {!grammarRunning && view === 'grammar' ? (grammar.status === 'idle' || check.grammarOutdated ? <button className="anvi-primary" type="button" onClick={() => check.runCheck({ only: 'grammar' })}><SpellCheck2 size={15} />Check grammar</button> : <GrammarTab check={check} resume={resume} onLocate={onLocate} />) : null}
           {!pdfRunning && view === 'ats' && ready ? latest || ats.status === 'error' ? <AtsTab check={check} resume={resume} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} /> : <button type="button" className="anvi-primary" onClick={() => check.runCheck({ only: 'ats' })}><ScanText size={15} />Check this PDF</button> : null}
-          {view === 'job' && ready ? <div hidden={pdfRunning}><JobMatch check={check} /></div> : null}
+          {view === 'job' && ready ? <div hidden={pdfRunning && !(jdMatch?.match?.status === 'done')}><JobMatch check={check} jd={jdMatch} /></div> : null}
         </div>
       </div>
     </MotionConfig>

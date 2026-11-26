@@ -77,6 +77,9 @@ const sectionSchema = new mongoose.Schema({
   marksPerQuestion: { type: Number, default: 1 },
   negativeMarksPerQuestion: { type: Number, default: 0 },
   totalMarks: { type: Number, default: 0 },
+  // Prep Mock pattern: suggested minutes for this section (guidance only; the test enforces
+  // only the mock's total duration).
+  suggestedMinutes: { type: Number, min: 0, max: 1440 },
   questions: { type: [questionSchema], default: [] },
 }, { _id: false });
 
@@ -122,6 +125,11 @@ const assessmentSchema = new mongoose.Schema({
   // at save time, so shared mocks show it in every university.
   role: { type: String, trim: true, maxlength: 80, default: '' },
   companyLogo: { type: new mongoose.Schema({ url: String, width: Number, height: Number }, { _id: false }), default: null },
+  // Prep Mock only: when the company used this OA pattern (month 1–12 + year). Required to publish.
+  patternFrom: { type: new mongoose.Schema({ month: { type: Number, min: 1, max: 12 }, year: { type: Number, min: 2000, max: 2100 } }, { _id: false }), default: null },
+  // Prep Mock exam pattern (PrepMockPattern) and the copy students and universities see.
+  patternId: { type: mongoose.Schema.Types.ObjectId, default: null },
+  mockPattern: { type: mongoose.Schema.Types.Mixed, default: null },
   mockAudienceMode: { type: String, enum: ['students', 'universities'], default: 'students' },
   mockUniversityIds: { type: [String], default: [] },
   title: { type: String },
@@ -166,6 +174,7 @@ const assessmentSchema = new mongoose.Schema({
 assessmentSchema.index({ startTime: 1, endTime: 1 });
 assessmentSchema.index({ createdBy: 1, createdAt: -1 });
 assessmentSchema.index({ kind: 1, createdAt: -1 });
+assessmentSchema.index({ patternId: 1 }, { sparse: true });
 assessmentSchema.index({ lifecycleStatus: 1, startTime: 1, endTime: 1 });
 assessmentSchema.index({ assignedStudents: 1, lifecycleStatus: 1, startTime: 1 });
 
