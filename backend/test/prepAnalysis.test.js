@@ -225,7 +225,8 @@ test('a university without the questions module gets no Prep Coding or Quick Pre
   assert.deepEqual(Object.keys(catalog.qualifiers), ['learning']);
   assert.deepEqual(publicFieldCatalog(undefined).areas.map((area) => area.key), ['all', 'coding', 'quickprep', 'learning', 'interview', 'assessment', 'prepmock'], 'Quick Prep and PrepMock are their own areas');
   assert.deepEqual(publicFieldCatalog({ events: true }).areas.map((area) => area.key), ['interview'], 'mock interviews alone turn on Prep Interview');
-  assert.deepEqual(publicFieldCatalog({ interviews: true, assessments: true }).areas.map((area) => area.key), ['all', 'interview', 'assessment', 'prepmock']);
+  assert.deepEqual(publicFieldCatalog({ interviews: true, assessments: true }).areas.map((area) => area.key), ['all', 'interview', 'assessment']);
+  assert.deepEqual(publicFieldCatalog({ prepmock: true }).areas.map((area) => area.key), ['prepmock']);
   assert.ok(publicFieldCatalog(undefined).fields.filter((field) => field.key.startsWith('quickprep.')).every((field) => field.module === 'quickprep'));
   assert.throws(() => validatePrepAnalysisQuery({ module: 'quickprep' }, { questions: false, learning: true }), /not enabled/, 'Quick Prep is licensed with coding');
   assert.throws(() => validatePrepAnalysisQuery({ module: 'coding' }, { questions: false, learning: true }), /not enabled/);

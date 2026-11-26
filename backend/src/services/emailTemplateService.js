@@ -28,7 +28,7 @@ const defaultTemplates = [
           <p style="margin:0 0 12px 0;font-size:17px;font-weight:700;color:#0c4a6e;">Your Login Credentials</p>
           <table style="width:100%;font-size:15px;">
             <tr>
-              <td style="padding:8px 0;color:#475569;width:40%;"><strong>Email:</strong></td>
+              <td style="padding:8px 0;color:#475569;width:40%;"><strong>Contact email:</strong></td>
               <td style="padding:8px 0;color:#0f172a;font-weight:600;">{{email}}</td>
             </tr>
             <tr>

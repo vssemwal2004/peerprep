@@ -22,7 +22,7 @@ export function loginEmailKey(value) {
 // login request cannot carry an arbitrary payload into the lookup.
 export function normalizedLoginStudentId(value) {
   const studentId = String(value ?? '').trim();
-  return /^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$/.test(studentId) ? studentId : '';
+  return /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(studentId) ? studentId : '';
 }
 
 export function loginStudentIdKey(value) {

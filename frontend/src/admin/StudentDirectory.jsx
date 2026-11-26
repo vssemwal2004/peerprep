@@ -1587,11 +1587,11 @@ export default function StudentDirectory() {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={(event) => handleCopyStudentValue(s, s.studentId, 'Student ID', event)}
+                                    onClick={(event) => handleCopyStudentValue(s, s.loginStudentId || s.studentId, 'Login ID', event)}
                                     className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800"
                                   >
                                     <ClipboardCopy className="h-4 w-4 text-slate-500" />
-                                    Copy student ID
+                                    Copy login ID
                                   </button>
                                   <button
                                     type="button"
@@ -1770,6 +1770,7 @@ export default function StudentDirectory() {
                     {[
                       { label: "Name",                value: selectedStudent.name },
                       { label: "Student ID",          value: selectedStudent.studentId },
+                      { label: "Login ID",            value: selectedStudent.loginStudentId },
                       { label: "Course",              value: selectedStudent.course },
                       { label: "Branch",              value: selectedStudent.branch },
                       { label: "Email",               value: selectedStudent.email },

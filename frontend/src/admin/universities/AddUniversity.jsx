@@ -15,7 +15,7 @@ const EMPTY = {
   universityId: '', name: '', contactEmail: '',
   dbUri: '', judge0Url: '', judge0AuthHeader: '', judge0AuthToken: '', interviewServiceUrl: '', interviewServiceSecret: '',
   adminEmail: '', adminPassword: '', limitedAdminEmail: '', limitedAdminPassword: '',
-  serviceStartDate: today(), serviceEndDate: inAYear(), coordinatorLimit: '20', studentLimit: '1000', initialCoins: '0',
+  serviceStartDate: today(), serviceEndDate: inAYear(), coordinatorLimit: '20', studentLimit: '1000', assessmentStudentLimit: '1000', prepMockStudentLimit: '0', initialCoins: '0',
 };
 const STEPS = [
   { key: 'identity', title: 'Identity', hint: 'Name and web address' },
@@ -47,16 +47,16 @@ function stepProblems(step, form, dbTest) {
     if (form.interviewServiceSecret && form.interviewServiceSecret.length < 32) problems.push('The AI interview secret must be at least 32 characters.');
   }
   if (step === 'admin') {
-    if (!EMAIL.test(form.adminEmail)) problems.push('Enter the first admin\'s email.');
+    if (!EMAIL.test(form.adminEmail)) problems.push('Enter the SPOC email.');
     if (form.adminPassword.length < 12) problems.push('The starting password needs at least 12 characters.');
-    if (!EMAIL.test(form.limitedAdminEmail)) problems.push('Enter the second admin\'s email.');
+    if (!EMAIL.test(form.limitedAdminEmail)) problems.push('Enter the university admin email.');
     if (form.limitedAdminEmail.trim().toLowerCase() === form.adminEmail.trim().toLowerCase()) problems.push('The two admins need different email addresses.');
-    if (form.limitedAdminPassword.length < 12) problems.push('The second admin password needs at least 12 characters.');
+    if (form.limitedAdminPassword.length < 12) problems.push('The university admin password needs at least 12 characters.');
   }
   if (step === 'plan') {
     if (!form.serviceStartDate || !form.serviceEndDate) problems.push('Set both service dates.');
     else if (form.serviceEndDate < form.serviceStartDate) problems.push('The service must end after it starts.');
-    for (const [key, label] of [['coordinatorLimit', 'Maximum coordinators'], ['studentLimit', 'Maximum students'], ['initialCoins', 'Starting Prep Coins']]) {
+    for (const [key, label] of [['coordinatorLimit', 'Maximum coordinators'], ['studentLimit', 'Maximum students'], ['assessmentStudentLimit', 'Assessment student places'], ['prepMockStudentLimit', 'PrepMock student limit'], ['initialCoins', 'Starting Prep Coins']]) {
       if (!/^\d+$/.test(String(form[key]))) problems.push(`${label} must be a whole number.`);
     }
   }
@@ -82,7 +82,7 @@ export default function AddUniversity() {
   const set = (key) => (event) => setForm((previous) => ({ ...previous, [key]: key === 'universityId' ? event.target.value.toLowerCase().replace(/\s+/g, '-') : event.target.value }));
   const current = STEPS[step];
   const problems = useMemo(() => stepProblems(current.key, form, dbTest), [current.key, form, dbTest]);
-  const defaultModules = MODULES.filter(({ key }) => defaults?.permissions?.[key] === true);
+  const defaultModules = MODULES.filter(({ key }) => key !== 'prepmock' && defaults?.permissions?.[key] === true);
 
   async function testDatabase() {
     const { universityId: id, dbUri: uri } = form;
@@ -198,8 +198,8 @@ export default function AddUniversity() {
         {current.key === 'admin' && (
           <div className="grid gap-6">
             <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Full admin email" required hint="Keeps all current admin rights. An existing admin account with this email is kept."><input className={inputClass} type="email" value={form.adminEmail} onChange={set('adminEmail')} placeholder="admin@university.edu" /></Field>
-            <Field label="Full admin starting password" required hint="At least 12 characters. New admins must change it on first sign-in.">
+            <Field label="SPOC email" required hint="Has full rights, including adding and editing students and coordinators. An existing account with this email is kept."><input className={inputClass} type="email" value={form.adminEmail} onChange={set('adminEmail')} placeholder="spoc@university.edu" /></Field>
+            <Field label="SPOC starting password" required hint="At least 12 characters. New admins must change it on first sign-in.">
               <span className="flex gap-2">
                 <input className={inputClass} type={showPassword ? 'text' : 'password'} autoComplete="new-password" value={form.adminPassword} onChange={set('adminPassword')} />
                 <Button variant="secondary" onClick={() => setShowPassword((value) => !value)}>{showPassword ? 'Hide' : 'Show'}</Button>
@@ -208,8 +208,8 @@ export default function AddUniversity() {
             </Field>
             </div>
             <div className="grid gap-4 border-t border-slate-200 pt-5 md:grid-cols-2 dark:border-slate-800">
-              <Field label="Second admin email" required hint="Can use content and reports, but cannot add coordinators or change student accounts."><input className={inputClass} type="email" value={form.limitedAdminEmail} onChange={set('limitedAdminEmail')} placeholder="content-admin@university.edu" /></Field>
-              <Field label="Second admin starting password" required hint="At least 12 characters. New admins must change it on first sign-in.">
+              <Field label="University admin email" required hint="Can use content and reports, but cannot add coordinators or add, edit, or delete students."><input className={inputClass} type="email" value={form.limitedAdminEmail} onChange={set('limitedAdminEmail')} placeholder="admin@university.edu" /></Field>
+              <Field label="University admin starting password" required hint="At least 12 characters. New admins must change it on first sign-in.">
                 <span className="flex gap-2">
                   <input className={inputClass} type={showLimitedPassword ? 'text' : 'password'} autoComplete="new-password" value={form.limitedAdminPassword} onChange={set('limitedAdminPassword')} />
                   <Button variant="secondary" onClick={() => setShowLimitedPassword((value) => !value)}>{showLimitedPassword ? 'Hide' : 'Show'}</Button>
@@ -227,13 +227,15 @@ export default function AddUniversity() {
             <Field label="Starting Prep Coins" hint="Added to the university wallet; its admin passes them to coordinators."><input className={inputClass} type="number" min="0" step="1" value={form.initialCoins} onChange={set('initialCoins')} /></Field>
             <Field label="Maximum coordinators" required hint="No new coordinator can be added beyond this, including by bulk upload."><input className={inputClass} type="number" min="0" step="1" value={form.coordinatorLimit} onChange={set('coordinatorLimit')} /></Field>
             <Field label="Maximum students" required><input className={inputClass} type="number" min="0" step="1" value={form.studentLimit} onChange={set('studentLimit')} /></Field>
+            <Field label="Assessment student places" required hint="Each student added to an assessment uses one place, including an existing student added to another assessment."><input className={inputClass} type="number" min="0" step="1" value={form.assessmentStudentLimit} onChange={set('assessmentStudentLimit')} /></Field>
+            <Field label="PrepMock student limit" required hint="Only students uploaded by the SPOC can use PrepMock."><input className={inputClass} type="number" min="0" step="1" value={form.prepMockStudentLimit} onChange={set('prepMockStudentLimit')} /></Field>
           </div>
         )}
 
         {current.key === 'review' && (
           <div className="grid gap-5 lg:grid-cols-2">
-            <div><p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">University</p><Summary rows={[['Name', form.name], ['ID', form.universityId], ['Student link', `peerprep.co.in/u/${form.universityId}/student`], ['Contact', form.contactEmail], ['Full admin', form.adminEmail], ['Limited admin', form.limitedAdminEmail]]} /></div>
-            <div><p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">Plan and connections</p><Summary rows={[['Service', `${form.serviceStartDate} to ${form.serviceEndDate}`], ['Limits', `${form.coordinatorLimit} coordinators · ${form.studentLimit} students`], ['Starting Prep Coins', Number(form.initialCoins || 0).toLocaleString()], ['Database', 'Verified'], ['Judge0', form.judge0Url], ['AI interviews', form.interviewServiceUrl ? 'Connected' : 'Not connected']]} /></div>
+            <div><p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">University</p><Summary rows={[['Name', form.name], ['ID', form.universityId], ['Student link', `peerprep.co.in/u/${form.universityId}/student`], ['Contact', form.contactEmail], ['SPOC', form.adminEmail], ['University admin', form.limitedAdminEmail]]} /></div>
+            <div><p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">Plan and connections</p><Summary rows={[['Service', `${form.serviceStartDate} to ${form.serviceEndDate}`], ['Limits', `${form.coordinatorLimit} coordinators · ${form.studentLimit} students · ${form.assessmentStudentLimit} assessment places · ${form.prepMockStudentLimit} PrepMock students`], ['Starting Prep Coins', Number(form.initialCoins || 0).toLocaleString()], ['Database', 'Verified'], ['Judge0', form.judge0Url], ['AI interviews', form.interviewServiceUrl ? 'Connected' : 'Not connected']]} /></div>
             <div className="lg:col-span-2 rounded-xl bg-slate-50 p-4 text-sm dark:bg-slate-800/50">
               <p className="font-semibold text-slate-900 dark:text-white">Modules it starts with</p>
               <p className={`mt-1 ${helper}`}>{defaultModules.length ? defaultModules.map((module) => module.label).join(', ') : 'None'}. These come from the <Link to="/admin/universities/defaults" className="font-semibold text-sky-700 underline dark:text-sky-300">new-university defaults</Link>; you can change them on the university's page afterwards.</p>

@@ -25,6 +25,14 @@ const universitySchema = new mongoose.Schema({
   coinBalance: { type: Number, default: 0, min: 0 },
   coordinatorLimit: { type: Number, default: null, min: 0 },
   studentLimit: { type: Number, default: null, min: 0 },
+  // Cumulative assessment assignments. The same student in two assessments
+  // consumes two places; a Master Admin reset starts a new quota period.
+  assessmentStudentLimit: { type: Number, default: null, min: 0 },
+  assessmentStudentUsed: { type: Number, default: 0, min: 0 },
+  assessmentStudentQuotaGeneration: { type: Number, default: 0, min: 0 },
+  prepMockStudentLimit: { type: Number, default: 0, min: 0 },
+  prepMockStartDate: { type: String, default: null },
+  prepMockEndDate: { type: String, default: null },
   // Older registrations may carry a retired per-installation key. Shared
   // registrations use signed internal requests and never create a new key.
   apiKeyHash: { type: String, select: false },
@@ -39,7 +47,7 @@ const universitySchema = new mongoose.Schema({
     assessments: { type: Boolean, default: true },
     questions: { type: Boolean, default: true },
     quickprep: { type: Boolean, default: true },
-    prepmock: { type: Boolean, default: true },
+    prepmock: { type: Boolean, default: false },
     events: { type: Boolean, default: true },
     interviews: { type: Boolean, default: true },
     resumes: { type: Boolean, default: true },
@@ -79,7 +87,7 @@ const settingsSchema = new mongoose.Schema({
     assessments: { type: Boolean, default: true },
     questions: { type: Boolean, default: true },
     quickprep: { type: Boolean, default: true },
-    prepmock: { type: Boolean, default: true },
+    prepmock: { type: Boolean, default: false },
     events: { type: Boolean, default: true },
     interviews: { type: Boolean, default: true },
     resumes: { type: Boolean, default: true },

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, ExternalLink, Power } from 'lucide-react';
 import { api } from '../../utils/api';
@@ -8,7 +8,8 @@ import { portalUrl, STATUS_META, universityHealth } from './universityModel';
 import { Button, Card, EmptyState, LoadingBlock, Notice, pageShell, Pill, helper } from './ui';
 import UniversityBadge from './UniversityBadge';
 import PageGuideButton from '../../guide/platform/PageGuideButton';
-import OverviewTab from './detail/OverviewTab';
+import OverviewDashboard from '../../overview/OverviewDashboard';
+import ManagementTab from './detail/OverviewTab';
 import ProfileTab from './detail/ProfileTab';
 import ModulesTab from './detail/ModulesTab';
 import PlanTab from './detail/PlanTab';
@@ -33,8 +34,20 @@ export default function UniversityDetail() {
   const { universities, defaults, loading, error, reload } = useUniversities();
   const { busy, message, run } = useAction(reload);
   const university = useMemo(() => universities.find((row) => row.universityId === universityId), [universities, universityId]);
+  const adminUniversityId = university?.universityId;
   const tab = TABS.some((item) => item.key === params.get('tab')) ? params.get('tab') : 'overview';
+  const [adminEmails, setAdminEmails] = useState({ loading: true, adminEmail: null, spocEmail: null, error: '' });
+  useEffect(() => {
+    if (!adminUniversityId || tab !== 'profile') return undefined;
+    let active = true;
+    setAdminEmails({ loading: true, adminEmail: null, spocEmail: null, error: '' });
+    api.universityAdminEmails(adminUniversityId)
+      .then((result) => { if (active) setAdminEmails({ loading: false, adminEmail: result.adminEmail, spocEmail: result.spocEmail, error: '' }); })
+      .catch((error) => { if (active) setAdminEmails({ loading: false, adminEmail: null, spocEmail: null, error: error.message || 'Could not load admin emails.' }); });
+    return () => { active = false; };
+  }, [adminUniversityId, tab]);
   const tabLink = useCallback((key) => `/admin/universities/${universityId}?tab=${key}`, [universityId]);
+  const loadUniversityOverview = useCallback((range) => api.universityOverviewInsights(universityId, range), [universityId]);
 
   if (loading) return <LoadingBlock label="Loading university…" />;
   if (!university) {
@@ -63,10 +76,10 @@ export default function UniversityDetail() {
         </div>
         <div data-guide="unid-actions" className="flex flex-wrap gap-2">
           <a href={portalUrl(university)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"><ExternalLink className="h-4 w-4" aria-hidden="true" />Open portal</a>
-          <Button variant={university.active ? 'danger' : 'primary'} icon={Power} busy={busy === 'active'}
+          {tab !== 'overview' && <Button variant={university.active ? 'danger' : 'primary'} icon={Power} busy={busy === 'active'}
             onClick={() => run('active', () => api.updateUniversity(university.universityId, { active: !university.active }), university.active ? 'University disabled: its users cannot sign in.' : 'University enabled.')}>
             {university.active ? 'Disable' : 'Enable'}
-          </Button>
+          </Button>}
         </div>
       </header>
 
@@ -83,10 +96,10 @@ export default function UniversityDetail() {
       </nav>
 
       <div role="tabpanel" key={tab}>
-        {tab === 'overview' && <OverviewTab {...props} onDelete={remove} />}
-        {tab === 'profile' && <ProfileTab {...props} />}
+        {tab === 'overview' && <OverviewDashboard role="admin" readOnly universityName={university.name} loadInsights={loadUniversityOverview} />}
+        {tab === 'profile' && <div className="space-y-5"><ProfileTab {...props} /><ManagementTab {...props} adminEmails={adminEmails} onDelete={remove} /></div>}
         {tab === 'modules' && <ModulesTab {...props} />}
-        {tab === 'plan' && <PlanTab key={`${university.serviceStartDate}|${university.serviceEndDate}|${university.coordinatorLimit}|${university.studentLimit}`} {...props} />}
+        {tab === 'plan' && <PlanTab key={`${university.serviceStartDate}|${university.serviceEndDate}|${university.coordinatorLimit}|${university.studentLimit}|${university.assessmentStudentLimit}|${university.prepMockStudentLimit}`} {...props} />}
         {tab === 'connections' && <ConnectionsTab {...props} />}
         {tab === 'progression' && (
           <Card id="progression-title" title="Level progression" description="How quickly this university's students move up levels. Starts from the platform defaults.">

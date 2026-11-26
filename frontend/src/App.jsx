@@ -13,7 +13,7 @@ import DesktopOnly from './components/DesktopOnly';
 import { LandingPageSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
 import { hideGlobalLoader } from './utils/globalLoader';
 import { useAuth } from './context/AuthContext';
-import { isLimitedUniversityAdmin, limitedAdminBlockedPath } from './platform/adminAccess';
+import { isLimitedUniversityAdmin, isUniversitySpoc, limitedAdminBlockedPath, spocBlockedMockPath } from './platform/adminAccess';
 import { hasPermission } from './admin/coordinatorPermissions';
 import PopupDismissManager from './components/PopupDismissManager';
 import PlatformGuideProvider from './guide/platform/PlatformGuideProvider';
@@ -33,6 +33,7 @@ const Footer = lazy(() => import('./components/Footer').then(m => ({ default: m.
 // Auth & Public Pages
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const StudentLogin = lazy(() => import("./auth/StudentLogin"));
+const MockStudentUploadPage = lazy(() => import('./admin/prepMock/MockStudentUploadPage'));
 const ResetPassword = lazy(() => import("./auth/ResetPassword"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsAndConditions = lazy(() => import("./pages/TermsAndConditions"));
@@ -297,6 +298,7 @@ function AdminShell({ children, layout = true }) {
   const { user } = useAuth();
   const { pathname } = useLocation();
   if (isLimitedUniversityAdmin(user) && limitedAdminBlockedPath(pathname)) return <Navigate to="/admin/students" replace />;
+  if ((isUniversitySpoc(user) || isLimitedUniversityAdmin(user)) && spocBlockedMockPath(pathname)) return <Navigate to="/admin/prepmock" replace />;
   const page = <ShellPage>{children}</ShellPage>;
   return (
     <AdminProtectedRoute>
@@ -571,6 +573,7 @@ function AppContent() {
         <Route path="/admin/assessment/reports" element={<AdminShell><AssessmentReports /></AdminShell>} />
         <Route path="/admin/assessment-feedback" element={<AdminShell><AssessmentFeedback /></AdminShell>} />
         <Route path="/admin/prepmock" element={<AdminShell><AssessmentDashboard /></AdminShell>} />
+        <Route path="/admin/prepmock/upload-students" element={<AdminShell><MockStudentUploadPage /></AdminShell>} />
         <Route path="/admin/prepmock/create" element={<AdminShell><CreateAssessment /></AdminShell>} />
         <Route path="/admin/prepmock/companies" element={<AdminShell><MockCompaniesPage /></AdminShell>} />
         <Route path="/admin/prepmock/analysis" element={<Navigate to="/admin/analysis?area=prepmock" replace />} />

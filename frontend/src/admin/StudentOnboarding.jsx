@@ -18,7 +18,7 @@ import GuideInfo from '../guide/platform/GuideInfo';
 const UPLOAD_RESULT_COLUMNS = [
   { key: 'row', label: 'Row', value: (result) => Number(result.row) || null, headerClassName: 'w-16', className: 'whitespace-nowrap text-xs text-slate-600 dark:text-gray-400' },
   { key: 'email', label: 'Email', value: (result) => result.email || null, headerClassName: 'min-w-[180px]', className: 'whitespace-nowrap text-xs' },
-  { key: 'studentid', label: 'Student ID', value: (result) => result.studentid || null, headerClassName: 'w-24', className: 'whitespace-nowrap text-xs' },
+  { key: 'studentid', label: 'Login ID', value: (result) => result.loginStudentId || result.studentid || null, headerClassName: 'w-24', className: 'whitespace-nowrap text-xs' },
   {
     key: 'status',
     label: 'Status',
@@ -514,7 +514,7 @@ export default function StudentOnboarding() {
           toast.error(mailError.message || mailMessage);
         }
       }
-      setSingleMsg(`Student ${data.name || data.email} has been added. ${mailMessage}`);
+      setSingleMsg(`Student ${data.name || data.email} has been added. Login ID: ${data.loginStudentId || data.studentid}. ${mailMessage}`);
       toast.success(`Student ${data.name || data.email} added successfully. ${mailMessage}`);
       setTimeout(() => setSingleMsg(''), 4000);
       

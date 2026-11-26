@@ -24,6 +24,8 @@ export function moduleForPath(pathname = '') {
   if (/^\/student\/challenges(?:\/|$)/.test(path)) return 'challenges';
   if (/^\/student\/(?:quests|quickprep)(?:\/|$)/.test(path)) return 'quickprep';
   if (/^\/student\/prep-mock(?:\/|$)|^\/admin\/prepmock(?:\/|$)/.test(path)) return 'prepmock';
+  if (/^\/student\/assessment\/[^/]+(?:\/|$)/.test(path)) return 'assessment_or_mock';
+  if (/^\/admin\/assessment\/(?:reports\/submissions|submissions\/[^/]+\/violations)(?:\/|$)/.test(path)) return 'assessment_or_mock';
   if (/^\/(?:admin|student)\/ai-interviews(?:\/|$)|^\/coordinator\/ai-interviews(?:\/|$)/.test(path)) return 'interviews';
   if (/^\/(?:admin|student)\/learning(?:\/|$)|^\/coordinator\/subjects(?:\/|$)/.test(path)) return 'learning';
   if (/^\/admin\/(?:quests|quickprep)(?:\/|$)/.test(path)) return 'quickprep';
@@ -41,7 +43,8 @@ export function moduleEnabled(permissions, moduleName) {
   if (moduleName === 'coding') return permissions.coding === undefined
     ? permissions.questions === true : permissions.coding === true;
   if (moduleName === 'quickprep') return permissions.questions === true && permissions.quickprep !== false;
-  if (moduleName === 'prepmock') return permissions.assessments === true && permissions.prepmock !== false;
+  if (moduleName === 'prepmock') return permissions.prepmock === true;
+  if (moduleName === 'assessment_or_mock') return permissions.assessments === true || permissions.prepmock === true;
   return permissions[moduleName] === true;
 }
 

@@ -22,6 +22,8 @@ export default function PlanTab({ university, run, busy }) {
   const [end, setEnd] = useState(university.serviceEndDate || '');
   const [coordinatorLimit, setCoordinatorLimit] = useState(String(university.coordinatorLimit ?? ''));
   const [studentLimit, setStudentLimit] = useState(String(university.studentLimit ?? ''));
+  const [assessmentStudentLimit, setAssessmentStudentLimit] = useState(String(university.assessmentStudentLimit ?? ''));
+  const [prepMockStudentLimit, setPrepMockStudentLimit] = useState(String(university.prepMockStudentLimit ?? 0));
   const [counts, setCounts] = useState(null);
   const [countError, setCountError] = useState('');
   const [topUp, setTopUp] = useState('');
@@ -32,10 +34,11 @@ export default function PlanTab({ university, run, busy }) {
     let live = true;
     api.universityAccountCounts(id).then((value) => { if (live) setCounts(value); }).catch((error) => { if (live) setCountError(error.message || 'Current usage is unavailable.'); });
     return () => { live = false; };
-  }, [id, university.coordinatorLimit, university.studentLimit]);
+  }, [id, university.coordinatorLimit, university.studentLimit, university.assessmentStudentLimit, university.prepMockStudentLimit]);
 
   const datesChanged = start !== (university.serviceStartDate || '') || end !== (university.serviceEndDate || '');
-  const limitsChanged = coordinatorLimit !== String(university.coordinatorLimit ?? '') || studentLimit !== String(university.studentLimit ?? '');
+  const limitsChanged = coordinatorLimit !== String(university.coordinatorLimit ?? '') || studentLimit !== String(university.studentLimit ?? '') || assessmentStudentLimit !== String(university.assessmentStudentLimit ?? '') || prepMockStudentLimit !== String(university.prepMockStudentLimit ?? 0);
+  const refreshCounts = () => api.universityAccountCounts(id).then(setCounts).catch((error) => setCountError(error.message || 'Current usage is unavailable.'));
   const whole = (value) => /^\d+$/.test(value);
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -49,17 +52,23 @@ export default function PlanTab({ university, run, busy }) {
           onClick={() => run('dates', () => api.updateUniversity(id, { serviceStartDate: start, serviceEndDate: end }), 'Service period saved.')}>Save service period</Button>
       </Card>
 
-      <Card id="limits-title" title="Account limits" icon={Users} description="When a limit is reached, no new account of that type can be created, including through bulk uploads.">
+      <Card id="limits-title" title="Account and assessment limits" icon={Users} description="Account limits control new accounts. Assessment places count every student added to a published university assessment, including existing students and the same student in another assessment.">
         <div className="space-y-3">
-          {counts ? <><Usage label="Coordinators" used={counts.coordinators} limit={university.coordinatorLimit} /><Usage label="Students" used={counts.students} limit={university.studentLimit} /></>
+          {counts ? <><Usage label="Coordinators" used={counts.coordinators} limit={university.coordinatorLimit} /><Usage label="Students" used={counts.students} limit={university.studentLimit} /><Usage label="Assessment student places" used={counts.assessmentStudentUsed ?? 0} limit={counts.assessmentStudentLimit} /><Usage label="PrepMock students" used={counts.prepMockStudents ?? 0} limit={university.prepMockStudentLimit ?? 0} /></>
             : <p className={helper}>{countError || 'Checking current usage…'}</p>}
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <Field label="Maximum coordinators"><input className={inputClass} type="number" min="0" step="1" value={coordinatorLimit} onChange={(event) => setCoordinatorLimit(event.target.value)} /></Field>
           <Field label="Maximum students"><input className={inputClass} type="number" min="0" step="1" value={studentLimit} onChange={(event) => setStudentLimit(event.target.value)} /></Field>
+          <Field label="Assessment student places"><input className={inputClass} type="number" min="0" step="1" value={assessmentStudentLimit} onChange={(event) => setAssessmentStudentLimit(event.target.value)} placeholder="Set a limit" /></Field>
+          <Field label="PrepMock student limit"><input className={inputClass} type="number" min="0" step="1" value={prepMockStudentLimit} onChange={(event) => setPrepMockStudentLimit(event.target.value)} /></Field>
         </div>
-        <Button className="mt-4" busy={busy === 'limits'} disabled={!limitsChanged || !whole(coordinatorLimit) || !whole(studentLimit)}
-          onClick={() => run('limits', () => api.updateUniversity(id, { coordinatorLimit: Number(coordinatorLimit), studentLimit: Number(studentLimit) }), 'Account limits saved.')}>Save limits</Button>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button busy={busy === 'limits'} disabled={!limitsChanged || !whole(coordinatorLimit) || !whole(studentLimit) || !whole(assessmentStudentLimit) || !whole(prepMockStudentLimit)}
+            onClick={async () => { const result = await run('limits', () => api.updateUniversity(id, { coordinatorLimit: Number(coordinatorLimit), studentLimit: Number(studentLimit), assessmentStudentLimit: Number(assessmentStudentLimit), prepMockStudentLimit: Number(prepMockStudentLimit) }), 'Limits saved.'); if (result) refreshCounts(); }}>Save limits</Button>
+          <Button variant="secondary" busy={busy === 'reset-assessment-quota'} disabled={!counts || !counts.assessmentStudentUsed}
+            onClick={async () => { if (!window.confirm('Reset assessment student places used to zero? Existing assessment assignments and reports will stay in place.')) return; const result = await run('reset-assessment-quota', () => api.resetUniversityAssessmentQuota(id), 'Assessment student quota reset.'); if (result) refreshCounts(); }}>Reset assessment quota</Button>
+        </div>
       </Card>
 
       <Card id="wallet-title" data-guide="unid-wallet" title="University wallet" icon={Coins} className="lg:col-span-2" description="The university admin passes these Prep Coins to coordinators, who pass them to students.">

@@ -72,7 +72,7 @@ export function resetSharedQuestCache() {
 export async function sharedAssessments(kind = 'assessment', { includeHistorical = false } = {}) {
   if (!isUniversity()) return [];
   const policy = await universityPolicy();
-  if (!policy.permissions?.assessments) return [];
+  if (kind === 'mock' ? !policy.permissions?.prepmock : !policy.permissions?.assessments) return [];
   const { assessments } = await controlRequest(includeHistorical && kind === 'mock' ? 'assessments/history' : 'assessments');
   return assessments
     .filter((assessment) => kind === 'mock' ? assessment.kind === 'mock' : assessment.kind !== 'mock')
@@ -82,7 +82,7 @@ export async function sharedAssessments(kind = 'assessment', { includeHistorical
 export async function sharedAssessment(id) {
   if (!isUniversity() || !id) return null;
   const policy = await universityPolicy();
-  if (!policy.permissions?.assessments) return null;
+  if (!policy.permissions?.assessments && !policy.permissions?.prepmock) return null;
   try {
     const { assessment } = await controlRequest(`assessments/${encodeURIComponent(String(id))}`);
     return { ...Assessment.hydrate(assessment).toObject(), platformShared: true, platformPublished: assessment.platformPublished };

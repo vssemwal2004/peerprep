@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../utils/api';
-import { isControlDeployment } from '../platform/universityPermissions';
+import { isUniversityDeployment } from '../platform/universityPermissions';
 import { useToast } from '../components/CustomToast';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from './coordinatorPermissions';
@@ -111,6 +111,7 @@ const ASSESSMENT_STEPS = [
   { id: 'preview', label: 'Review', description: 'Validate the complete assessment before publishing.' },
 ];
 const SETTINGS_GROUP_IDS = ['access', 'allocation', 'proctoring', 'behavior', 'results'];
+const MOCK_SETTINGS_GROUP_IDS = ['access', 'proctoring', 'behavior', 'results'];
 
 const normalizeBuilderStep = (step) => {
   return ASSESSMENT_STEPS.some((item) => item.id === step) ? step : 'basic';
@@ -373,12 +374,11 @@ export default function CreateAssessment({ viewOnly = false }) {
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const isMock = location.pathname.startsWith('/admin/prepmock');
   const isMockPublishing = isMock && new URLSearchParams(location.search).get('publish') === '1';
+  const settingsGroupIds = isMock ? MOCK_SETTINGS_GROUP_IDS : SETTINGS_GROUP_IDS;
   const steps = isMock
     ? isMockPublishing
       ? [
-        { id: 'schedule', label: 'Availability', description: 'Choose a time window or keep the mock always on.' },
-        { id: 'target', label: 'Students', description: 'Choose students who can attempt this mock.' },
-        { id: 'settings', label: 'Settings', description: 'Configure attempt duration and delivery settings.' },
+        { id: 'settings', label: 'Settings', description: 'Set the attempt duration and delivery settings.' },
         { id: 'preview', label: 'Review', description: 'Review and publish the mock.' },
       ]
       : [
@@ -396,7 +396,7 @@ export default function CreateAssessment({ viewOnly = false }) {
   const requestedAudience = 'platform_students';
 
   const [currentId, setCurrentId] = useState(id || null);
-  const [activeStep, setActiveStep] = useState(location.state?.editQuestion ? 'sections' : isMockPublishing ? 'schedule' : 'basic');
+  const [activeStep, setActiveStep] = useState(location.state?.editQuestion ? 'sections' : isMockPublishing ? 'settings' : 'basic');
   const [completedSteps, setCompletedSteps] = useState([]);
   const [form, setForm] = useState({
     title: '',
@@ -404,7 +404,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     instructions: '',
     startTime: '',
     endTime: '',
-    availabilityMode: 'scheduled',
+    availabilityMode: isMock ? 'always' : 'scheduled',
     duration: 60,
     allowLateSubmission: false,
     attemptLimit: 1,
@@ -416,7 +416,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     company: '',
     role: '',
     patternFrom: null,
-    mockAudienceMode: 'students',
+    mockAudienceMode: isMock ? 'universities' : 'students',
     mockUniversityIds: [],
     assessmentId: generateUniqueAssessmentId(),
     isVisible: true,
@@ -441,12 +441,12 @@ export default function CreateAssessment({ viewOnly = false }) {
     }));
   };
   const [selectedStudents, setSelectedStudents] = useState([]);
+  const [assessmentQuota, setAssessmentQuota] = useState(null);
+  const [publishedStudentKeys, setPublishedStudentKeys] = useState([]);
   // The companies students see on Prep Coding: [{ company, count, logo, domain }].
   const [mockCompanies, setMockCompanies] = useState({ loading: true, rows: [], error: '' });
   const [mockCompaniesVersion, setMockCompaniesVersion] = useState(0);
   const [logoEditorOpen, setLogoEditorOpen] = useState(false);
-  const [universities, setUniversities] = useState([]);
-  const [universityLoadError, setUniversityLoadError] = useState('');
   const [studentEntryMode, setStudentEntryMode] = useState('');
   const [csvState, setCsvState] = useState(emptyCsvState);
   const [loading, setLoading] = useState(false);
@@ -473,6 +473,13 @@ export default function CreateAssessment({ viewOnly = false }) {
   const [allocationDrawerOpen, setAllocationDrawerOpen] = useState(false);
   const [semesterSetPlan, setSemesterSetPlan] = useState({});
 
+  useEffect(() => {
+    if (!isUniversityDeployment || isMock) return undefined;
+    let active = true;
+    api.universityAccountLimits().then((value) => { if (active) setAssessmentQuota(value); }).catch(() => {});
+    return () => { active = false; };
+  }, [isMock]);
+
   const draftLoadedRef = useRef(false);
   const isSavingRef = useRef(false);
   const publishRequestRef = useRef(false);
@@ -489,20 +496,6 @@ export default function CreateAssessment({ viewOnly = false }) {
     });
     return () => { active = false; };
   }, [isMock, toast, mockCompaniesVersion]);
-
-  useEffect(() => {
-    if (!isMock || !isMockPublishing) return undefined;
-    let active = true;
-    const load = isControlDeployment ? api.platformOverview() : api.universityPolicy();
-    load.then((result) => {
-      if (!active) return;
-      setUniversities(isControlDeployment
-        ? (result.universities || []).filter((row) => row.active !== false && row.permissions?.assessments !== false)
-        : [{ universityId: result.universityId, name: result.name || result.universityId, active: true }]);
-      setUniversityLoadError('');
-    }).catch((error) => { if (active) setUniversityLoadError(error.message || 'Could not load universities.'); });
-    return () => { active = false; };
-  }, [isMock, isMockPublishing]);
 
   // Generate a unique session key for new assessments so drafts don't leak across sessions
   const sessionIdRef = useRef(null);
@@ -875,7 +868,7 @@ export default function CreateAssessment({ viewOnly = false }) {
         }
         if (draft.activeStep && steps.some((step) => step.id === draft.activeStep)) setActiveStep((previous) => previous === 'sections' ? previous : normalizeBuilderStep(draft.activeStep));
         if (Array.isArray(draft.completedSteps)) setCompletedSteps(draft.completedSteps.filter((step) => steps.some((item) => item.id === step)));
-        if (Array.isArray(draft.visitedSettingsGroups)) setVisitedSettingsGroups(draft.visitedSettingsGroups.filter((group) => SETTINGS_GROUP_IDS.includes(group)));
+        if (Array.isArray(draft.visitedSettingsGroups)) setVisitedSettingsGroups(draft.visitedSettingsGroups.filter((group) => settingsGroupIds.includes(group)));
       }
       return;
     }
@@ -887,6 +880,11 @@ export default function CreateAssessment({ viewOnly = false }) {
         const assessment = data.assessment || {};
         if ((assessment.kind === 'mock') !== isMock) throw new Error('This item belongs to a different section.');
         const isDraft = assessment.lifecycleStatus === 'draft';
+        setPublishedStudentKeys((assessment.assignedStudents || []).flatMap((student) => [
+          student?._id && `id:${student._id}`,
+          student?.email && `email:${String(student.email).toLowerCase()}`,
+          (student?.studentId || student?.studentid) && `student:${student.studentId || student.studentid}`,
+        ].filter(Boolean)));
         const draftAssigned = Array.isArray(assessment.draftAssignedStudents) ? assessment.draftAssignedStudents : [];
         const savedSessionDraft = loadAssessmentDraft(id);
         const sessionDraft = !viewOnly && isAssessmentDraftCompatible(savedSessionDraft, assessment) ? savedSessionDraft : null;
@@ -904,7 +902,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           instructions: assessment.instructions || '',
           startTime: assessment.startTime ? toLocalIsoMinutes(assessment.startTime) : '',
           endTime: assessment.endTime ? toLocalIsoMinutes(assessment.endTime) : '',
-          availabilityMode: assessment.availabilityMode || 'scheduled',
+          availabilityMode: isMock ? 'always' : assessment.availabilityMode || 'scheduled',
           duration: assessment.duration || 60,
           allowLateSubmission: Boolean(assessment.allowLateSubmission),
           attemptLimit: Math.max(1, Number(assessment.attemptLimit) || 1),
@@ -916,8 +914,8 @@ export default function CreateAssessment({ viewOnly = false }) {
           company: assessment.company || '',
           role: assessment.role || '',
           patternFrom: assessment.patternFrom?.month ? { month: assessment.patternFrom.month, year: assessment.patternFrom.year } : null,
-          mockAudienceMode: assessment.mockAudienceMode || 'students',
-          mockUniversityIds: Array.isArray(assessment.mockUniversityIds) ? assessment.mockUniversityIds : [],
+          mockAudienceMode: isMock ? 'universities' : 'students',
+          mockUniversityIds: [],
           assessmentId: assessment.assessmentId || '',
           isVisible: assessment.isVisible !== false,
           customInstructions: Array.isArray(assessment.customInstructions) ? assessment.customInstructions : [],
@@ -932,6 +930,9 @@ export default function CreateAssessment({ viewOnly = false }) {
           title: draftForm?.title?.trim() || baseForm.title,
           testType: draftForm?.testType || baseForm.testType,
           targetMode: 'individual',
+          availabilityMode: isMock ? 'always' : (draftForm?.availabilityMode || baseForm.availabilityMode),
+          mockAudienceMode: isMock ? 'universities' : 'students',
+          mockUniversityIds: [],
           assessmentId: draftForm?.assessmentId || baseForm.assessmentId || prev.assessmentId,
           settings: withAiProctoringSettings(draftForm?.settings || baseForm.settings),
         }));
@@ -949,8 +950,8 @@ export default function CreateAssessment({ viewOnly = false }) {
         if (draftStep && !isMockPublishing && steps.some((step) => step.id === draftStep)) setActiveStep((previous) => previous === 'sections' ? previous : normalizeBuilderStep(draftStep));
         if (Array.isArray(sessionDraft?.completedSteps)) setCompletedSteps(sessionDraft.completedSteps.filter((step) => steps.some((item) => item.id === step)));
         else if (assessment.lifecycleStatus === 'published') setCompletedSteps(steps.slice(0, -1).map((step) => step.id));
-        if (Array.isArray(sessionDraft?.visitedSettingsGroups)) setVisitedSettingsGroups(sessionDraft.visitedSettingsGroups.filter((group) => SETTINGS_GROUP_IDS.includes(group)));
-        else if (assessment.lifecycleStatus === 'published') setVisitedSettingsGroups(SETTINGS_GROUP_IDS);
+        if (Array.isArray(sessionDraft?.visitedSettingsGroups)) setVisitedSettingsGroups(sessionDraft.visitedSettingsGroups.filter((group) => settingsGroupIds.includes(group)));
+        else if (assessment.lifecycleStatus === 'published') setVisitedSettingsGroups(settingsGroupIds);
 
         const mappedSections = (assessment.sections || []).map((section, sectionIndex) => {
           const questions = (section.questions || []).map((question, questionIndex) => {
@@ -1110,15 +1111,15 @@ export default function CreateAssessment({ viewOnly = false }) {
   }, [assessmentKey, viewOnly]);
 
   const assignedSummary = useMemo(() => {
-    if (isMock && form.mockAudienceMode === 'universities') return {
-      count: form.mockUniversityIds.length,
-      accountSummary: `All students in ${form.mockUniversityIds.length} selected universit${form.mockUniversityIds.length === 1 ? 'y' : 'ies'}`,
+    if (isMock) return {
+      count: 'Automatic',
+      accountSummary: 'Uploaded students at universities with active PrepMock access',
     };
     return {
       count: selectedStudents.length,
       accountSummary: 'Individually selected students',
     };
-  }, [form.mockAudienceMode, form.mockUniversityIds, isMock, selectedStudents]);
+  }, [isMock, selectedStudents]);
 
   const assessmentValidation = useMemo(() => {
     const configuredSets = form.settings?.questionSetEnabled ? questionSets : questionSets.slice(0, 1);
@@ -1210,9 +1211,8 @@ export default function CreateAssessment({ viewOnly = false }) {
 
   const buildPayload = (statusOverride) => {
     const lifecycleStatus = statusOverride || form.lifecycleStatus || 'draft';
-    const universityMock = isMock && form.mockAudienceMode === 'universities';
-    const normalizedTargetType = universityMock && !isControlDeployment ? 'all' : 'selected';
-    const assignedStudents = universityMock ? [] : candidateAssignments;
+    const normalizedTargetType = 'selected';
+    const assignedStudents = isMock ? [] : candidateAssignments;
 
     const normalizeSectionsForPayload = (sourceSections = []) => (sourceSections || []).map((section) => {
       const questions = (section.questions || []).map((question) => {
@@ -1267,9 +1267,9 @@ export default function CreateAssessment({ viewOnly = false }) {
       // The picker stores wall-clock time locally for display. Send an
       // explicit UTC timestamp so production server timezone cannot shift the
       // selected calendar date/time during persistence.
-      startTime: toUtcISOString(form.startTime),
-      endTime: toUtcISOString(form.endTime),
-      availabilityMode: isMock ? form.availabilityMode : 'scheduled',
+      startTime: isMock ? null : toUtcISOString(form.startTime),
+      endTime: isMock ? null : toUtcISOString(form.endTime),
+      availabilityMode: isMock ? 'always' : 'scheduled',
       duration: form.duration,
       allowLateSubmission: form.allowLateSubmission,
       attemptLimit: Math.max(1, Number(form.attemptLimit) || 1),
@@ -1281,14 +1281,14 @@ export default function CreateAssessment({ viewOnly = false }) {
         ? normalizedQuestionSets.slice(0, normalizedSettings.questionSetCount)
         : normalizedQuestionSets.slice(0, 1),
       lifecycleStatus,
-      sendEmail: lifecycleStatus === 'published' && !universityMock && Boolean(form.sendEmail),
+      sendEmail: lifecycleStatus === 'published' && !isMock && Boolean(form.sendEmail),
       audienceType: form.audienceType || 'platform_students',
       testType: form.testType || '',
       company: isMock ? form.company : undefined,
       role: isMock ? String(form.role || '').trim() : undefined,
       patternFrom: isMock ? (form.patternFrom?.month && form.patternFrom?.year ? { month: Number(form.patternFrom.month), year: Number(form.patternFrom.year) } : null) : undefined,
-      mockAudienceMode: isMock ? form.mockAudienceMode : undefined,
-      mockUniversityIds: isMock ? form.mockUniversityIds : undefined,
+      mockAudienceMode: isMock ? 'universities' : undefined,
+      mockUniversityIds: isMock ? [] : undefined,
       assessmentId: form.assessmentId || '',
       isVisible: form.isVisible !== false,
       customInstructions: form.customInstructions || [],
@@ -1348,8 +1348,16 @@ export default function CreateAssessment({ viewOnly = false }) {
 
   const publishAssessment = async () => {
     if (isSavingRef.current) return;
-    if (!form.title || (!(isMock && form.availabilityMode === 'always') && (!form.startTime || !form.endTime)) || !form.duration) {
-      toast.error(isMock && form.availabilityMode === 'always' ? 'Please complete the mock title and attempt duration before publishing.' : 'Please complete title, start/end time, and duration before publishing.');
+    if (assessmentQuotaUnconfigured) {
+      toast.error('Ask the Master Admin to set the assessment student limit before publishing.');
+      return false;
+    }
+    if (assessmentQuotaExceeded) {
+      toast.error('Assessment student quota reached. Ask the Master Admin to increase or reset it.');
+      return false;
+    }
+    if (!form.title || (!isMock && (!form.startTime || !form.endTime)) || !form.duration) {
+      toast.error(isMock ? 'Please complete the mock title and attempt duration before publishing.' : 'Please complete title, start/end time, and duration before publishing.');
       return false;
     }
     if (isMock && (!String(form.company || '').trim() || !String(form.role || '').trim())) {
@@ -1391,8 +1399,8 @@ export default function CreateAssessment({ viewOnly = false }) {
       toast.error('All coding questions must be published and validated before publishing the assessment.');
       return false;
     }
-    if (assignedSummary.count === 0) {
-      toast.error(isMock && form.mockAudienceMode === 'universities' ? 'Select at least one university before publishing.' : 'Select at least one student before publishing.');
+    if (!isMock && assignedSummary.count === 0) {
+      toast.error('Select at least one student before publishing.');
       return false;
     }
     isSavingRef.current = true;
@@ -1429,6 +1437,9 @@ export default function CreateAssessment({ viewOnly = false }) {
       return true;
     } catch (err) {
       toast.error(err.message || 'Failed to publish assessment');
+      if (isUniversityDeployment && !isMock) {
+        api.universityAccountLimits().then(setAssessmentQuota).catch(() => {});
+      }
       return false;
     } finally {
       isSavingRef.current = false;
@@ -1512,14 +1523,24 @@ export default function CreateAssessment({ viewOnly = false }) {
   const stepIndex = steps.findIndex((step) => step.id === activeStep);
   const singleScheduleValid = Boolean(
     Number(form.duration) > 0
-    && ((isMock && form.availabilityMode === 'always') || (form.startTime
+    && (isMock || (form.startTime
     && form.endTime
     && new Date(form.endTime).getTime() > new Date(form.startTime).getTime()
     && (!isMockPublishing || new Date(form.startTime).getTime() >= Date.now() - 60000))),
   );
-  const candidateSelectionValid = isMock && form.mockAudienceMode === 'universities'
-    ? form.mockUniversityIds.length > 0 && (!form.settings?.questionSetEnabled || form.settings?.automaticSetAssignment !== false)
-    : selectedStudents.length > 0 && (
+  const remainingAssessmentPlaces = assessmentQuota?.assessmentStudentLimit == null
+    ? null : Math.max(0, Number(assessmentQuota.assessmentStudentLimit) - Number(assessmentQuota.assessmentStudentUsed || 0));
+  const assessmentQuotaUnconfigured = isUniversityDeployment && !isMock
+    && assessmentQuota && assessmentQuota.assessmentStudentLimit == null;
+  const previousCandidateKeys = new Set(publishedStudentKeys);
+  const newAssessmentCandidates = selectedStudents.filter((student) => ![
+    student?._id && `id:${student._id}`,
+    student?.email && `email:${String(student.email).toLowerCase()}`,
+    (student?.studentId || student?.studentid) && `student:${student.studentId || student.studentid}`,
+  ].filter(Boolean).some((key) => previousCandidateKeys.has(key))).length;
+  const assessmentQuotaExceeded = isUniversityDeployment && !isMock
+    && remainingAssessmentPlaces !== null && newAssessmentCandidates > remainingAssessmentPlaces;
+  const candidateSelectionValid = isMock || selectedStudents.length > 0 && !assessmentQuotaUnconfigured && !assessmentQuotaExceeded && (
     !form.settings?.questionSetEnabled
     || form.settings?.automaticSetAssignment !== false
     || selectedStudents.every((student) => {
@@ -1576,7 +1597,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     sections: assessmentValidation.totalQuestions > 0 && !assessmentValidation.emptySection && questionDeliveryValid && multiSetParityValid,
     schedule: singleScheduleValid,
     target: candidateSelectionValid,
-    settings: SETTINGS_GROUP_IDS.every((group) => visitedSettingsGroups.includes(group)),
+    settings: settingsGroupIds.every((group) => visitedSettingsGroups.includes(group)),
     preview: false,
   };
   let maxUnlockedStepIndex = 0;
@@ -1951,21 +1972,10 @@ export default function CreateAssessment({ viewOnly = false }) {
     target: (
       <div className="space-y-4">
         <div data-guide="ae-students"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">{isMock ? 'Who can attempt this mock?' : 'Students'}{!isMock && <GuideInfo step="ae-students" />}</span>} subtitle={isMock ? 'Choose individual students or every student in a university.' : 'Choose how to add students to this assessment.'}>
-          {isMock && <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Mock audience">
-            <button type="button" aria-pressed={form.mockAudienceMode !== 'universities'} onClick={() => updateForm({ mockAudienceMode: 'students', mockUniversityIds: [] })} className={`rounded-lg border px-4 py-2 text-xs font-semibold ${form.mockAudienceMode !== 'universities' ? 'border-sky-500 bg-sky-50 text-sky-800' : 'border-slate-200 text-slate-600 dark:border-gray-700 dark:text-gray-300'}`}>Selected students</button>
-            <button type="button" aria-pressed={form.mockAudienceMode === 'universities'} onClick={() => updateForm({ mockAudienceMode: 'universities' })} className={`rounded-lg border px-4 py-2 text-xs font-semibold ${form.mockAudienceMode === 'universities' ? 'border-sky-500 bg-sky-50 text-sky-800' : 'border-slate-200 text-slate-600 dark:border-gray-700 dark:text-gray-300'}`}>University students</button>
-          </div>}
-          {isMock && form.mockAudienceMode === 'universities' ? <div className="space-y-3">
-            <p className="text-xs text-slate-500 dark:text-gray-400">All current and future students in each selected university can attempt the published mock.</p>
-            {universityLoadError && <p role="alert" className="text-xs text-rose-600">{universityLoadError}</p>}
-            <div className="grid gap-2 sm:grid-cols-2">
-              {universities.map((university) => <label key={university.universityId} className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                <input type="checkbox" checked={form.mockUniversityIds.includes(university.universityId)} onChange={(event) => updateForm({ mockUniversityIds: event.target.checked ? [...form.mockUniversityIds, university.universityId] : form.mockUniversityIds.filter((id) => id !== university.universityId) })} />
-                {university.name || university.universityId}
-              </label>)}
-            </div>
-            {!universities.length && !universityLoadError && <p className="text-xs text-slate-500">No universities are available for assessments.</p>}
-          </div> : <>
+          {assessmentQuotaUnconfigured && <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">Ask the Master Admin to set this university’s assessment student limit before publishing.</p>}
+          {isUniversityDeployment && !isMock && assessmentQuota?.assessmentStudentLimit != null && <p className={`mb-4 rounded-lg border px-3 py-2 text-xs font-medium ${assessmentQuotaExceeded ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-sky-200 bg-sky-50 text-sky-800'}`}>
+            Assessment places: {Number(assessmentQuota.assessmentStudentUsed || 0).toLocaleString()} of {Number(assessmentQuota.assessmentStudentLimit).toLocaleString()} used · {remainingAssessmentPlaces.toLocaleString()} left. {newAssessmentCandidates.toLocaleString()} new place{newAssessmentCandidates === 1 ? '' : 's'} needed for this assessment. The same student in another assessment uses another place.
+          </p>}
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-3">
               {[
@@ -1983,42 +1993,18 @@ export default function CreateAssessment({ viewOnly = false }) {
             </div>
             {studentEntryMode && <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 dark:border-gray-700 dark:bg-gray-950/30">
               {canCreateAssessmentCandidates && <div className={studentEntryMode === 'existing' ? 'hidden' : ''}><AssessmentCandidateEditor mode={studentEntryMode} selected={selectedStudents} onChange={updateSelectedStudents} /></div>}
-              {studentEntryMode === 'existing' && <StudentSelector selected={selectedStudents} onChange={updateSelectedStudents} />}
+              {studentEntryMode === 'existing' && <StudentSelector selected={selectedStudents} onChange={updateSelectedStudents} prepMockOnly={isMock && isUniversityDeployment} />}
             </div>}
             {selectedStudents.length > 0 && <p className="text-xs font-medium text-slate-600 dark:text-gray-300">{selectedStudents.length} student{selectedStudents.length === 1 ? '' : 's'} selected for this assessment</p>}
           </div>
-          </>}
         </SectionCard></div>
-        {selectedStudents.length > 0 && form.mockAudienceMode !== 'universities' && form.settings?.questionSetEnabled && <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800 dark:border-sky-900 dark:bg-sky-950/20 dark:text-sky-200"><strong>{selectedStudents.length} students ready.</strong> Review the formula, set counts, filters and manual overrides in <strong>Settings → Set allocation</strong>.</div>}
+        {selectedStudents.length > 0 && form.settings?.questionSetEnabled && <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800 dark:border-sky-900 dark:bg-sky-950/20 dark:text-sky-200"><strong>{selectedStudents.length} students ready.</strong> Review the formula, set counts, filters and manual overrides in <strong>Settings → Set allocation</strong>.</div>}
       </div>
     ),
     schedule: (
       <div className="space-y-4">
-      {isMockPublishing && <section aria-label="Mock company and role" className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <CompanyLogo name={form.company || '?'} logo={selectedMockCompany?.logo} size="xl" />
-          <div className="min-w-0">
-            <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-slate-400">Mock for</p>
-            <p className="truncate text-base font-semibold text-slate-900 dark:text-white">{form.company || 'No company'}</p>
-            <p className={`truncate text-[13px] font-medium ${form.role ? 'text-sky-700 dark:text-sky-300' : 'text-amber-600 dark:text-amber-400'}`}>{form.role || 'No role yet: choose one before publishing'}</p>
-            <p className={`truncate text-[12px] ${form.patternFrom?.month && form.patternFrom?.year ? 'text-slate-500 dark:text-gray-400' : 'font-medium text-amber-600 dark:text-amber-400'}`}>
-              {form.patternFrom?.month && form.patternFrom?.year ? `OA pattern from ${PATTERN_MONTHS[form.patternFrom.month - 1]} ${form.patternFrom.year}` : 'OA pattern month and year missing: set them in Details before publishing'}
-            </p>
-          </div>
-        </div>
-        {!String(form.role || '').trim() && <div className="w-full sm:w-72">
-          <label htmlFor="mock-publish-role" className="text-xs font-semibold text-slate-700 dark:text-gray-300">Role <span className="text-rose-500">*</span></label>
-          <RolePicker id="mock-publish-role" company={form.company} value={form.role || ''} invalid onChange={(role) => updateForm({ role })} />
-        </div>}
-      </section>}
-      <div data-guide="ae-schedule"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">{isMock ? 'Mock availability' : 'Assessment schedule'}{!isMock && <GuideInfo step="ae-schedule" />}</span>} subtitle={isMock ? 'Choose when the selected audience can access this mock.' : 'Define the duration and availability window. Fields marked with * are required.'}>
-        {isMock && <div className="mb-4 flex flex-wrap gap-3" role="group" aria-label="Mock availability">
-          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-gray-700"><input type="radio" name="mockAvailability" checked={form.availabilityMode !== 'always'} onChange={() => updateForm({ availabilityMode: 'scheduled' })} /> Start and end time</label>
-          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-gray-700"><input type="radio" name="mockAvailability" checked={form.availabilityMode === 'always'} onChange={() => updateForm({ availabilityMode: 'always', startTime: '', endTime: '' })} /> Always on</label>
-          {form.availabilityMode === 'always' && <p className="w-full text-xs text-slate-500">Students can attempt this mock until you unpublish or reset it. Each attempt still has a duration.</p>}
-        </div>}
+      <div data-guide="ae-schedule"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">Assessment schedule<GuideInfo step="ae-schedule" /></span>} subtitle="Define the duration and availability window. Fields marked with * are required.">
         <div className="grid gap-4 md:grid-cols-2">
-          {(!isMock || form.availabilityMode !== 'always') && <>
           <div>
             <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">Start date & time <span className="text-rose-500">*</span></label>
             <div className="mt-1">
@@ -2057,8 +2043,7 @@ export default function CreateAssessment({ viewOnly = false }) {
               />
             </div>
           </div>
-          </>}
-          {!isMock && <div>
+          <div>
             <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">Duration <span className="text-rose-500">*</span></label>
             <input
               type="number"
@@ -2067,17 +2052,17 @@ export default function CreateAssessment({ viewOnly = false }) {
               onChange={(e) => updateForm({ duration: Number(e.target.value) })}
               className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
             />
-          </div>}
+          </div>
         </div>
 
-        {(!isMock || form.availabilityMode !== 'always') && <div className="mt-4 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+        <div className="mt-4 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
           <input
             type="checkbox"
             checked={form.allowLateSubmission}
             onChange={(e) => updateForm({ allowLateSubmission: e.target.checked })}
           />
           Allow late submission (after window closes)
-        </div>}
+        </div>
 
       </SectionCard></div>
       </div>
@@ -2246,16 +2231,33 @@ export default function CreateAssessment({ viewOnly = false }) {
         { id: 'proctoring', label: 'Proctoring', description: 'Integrity controls', Icon: Shield },
         { id: 'behavior', label: 'Behavior', description: 'Navigation and timing', Icon: Navigation },
         { id: 'results', label: 'Results', description: 'Scores and retakes', Icon: CheckSquare },
-      ];
+      ].filter((group) => settingsGroupIds.includes(group.id));
       const maxSettingsGroupIndex = Math.min(visitedSettingsGroups.length, settingsGroups.length - 1);
 
       return (
         <div className="space-y-3">
+          {isMockPublishing && <section aria-label="Mock company and role" className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <CompanyLogo name={form.company || '?'} logo={selectedMockCompany?.logo} size="xl" />
+              <div className="min-w-0">
+                <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-slate-400">Mock for</p>
+                <p className="truncate text-base font-semibold text-slate-900 dark:text-white">{form.company || 'No company'}</p>
+                <p className={`truncate text-[13px] font-medium ${form.role ? 'text-sky-700 dark:text-sky-300' : 'text-amber-600 dark:text-amber-400'}`}>{form.role || 'No role yet: choose one before publishing'}</p>
+                <p className={`truncate text-[12px] ${form.patternFrom?.month && form.patternFrom?.year ? 'text-slate-500 dark:text-gray-400' : 'font-medium text-amber-600 dark:text-amber-400'}`}>
+                  {form.patternFrom?.month && form.patternFrom?.year ? `OA pattern from ${PATTERN_MONTHS[form.patternFrom.month - 1]} ${form.patternFrom.year}` : 'OA pattern month and year missing: set them in Basic details before publishing'}
+                </p>
+              </div>
+            </div>
+            {!String(form.role || '').trim() && <div className="w-full sm:w-72">
+              <label htmlFor="mock-publish-role" className="text-xs font-semibold text-slate-700 dark:text-gray-300">Role <span className="text-rose-500">*</span></label>
+              <RolePicker id="mock-publish-role" company={form.company} value={form.role || ''} invalid onChange={(role) => updateForm({ role })} />
+            </div>}
+          </section>}
           {isMock && <SectionCard compact title="Attempt duration" subtitle="Each student gets this many minutes after starting the mock.">
             <label className="block text-xs font-semibold text-slate-700 dark:text-gray-300" htmlFor="mock-attempt-duration">Minutes per attempt</label>
             <input id="mock-attempt-duration" type="number" min="1" value={form.duration} onChange={(event) => updateForm({ duration: Number(event.target.value) })} className="mt-1 w-full max-w-48 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
           </SectionCard>}
-          <div data-guide="ae-settings-tabs" className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm sm:grid-cols-5 dark:border-gray-800 dark:bg-gray-900" role="tablist" aria-label="Assessment setting categories">
+          <div data-guide="ae-settings-tabs" className={`grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm ${isMock ? 'sm:grid-cols-4' : 'sm:grid-cols-5'} dark:border-gray-800 dark:bg-gray-900`} role="tablist" aria-label="Assessment setting categories">
             {settingsGroups.map(({ id: groupId, label, description, Icon }, groupIndex) => {
               const locked = groupIndex > maxSettingsGroupIndex;
               const visited = visitedSettingsGroups.includes(groupId);
@@ -2674,7 +2676,7 @@ export default function CreateAssessment({ viewOnly = false }) {
             <div className="flex items-center gap-2"><span className={`flex h-7 w-7 items-center justify-center rounded-full text-white ${publishReady ? 'bg-emerald-500' : 'bg-amber-500'}`}>{publishReady ? <Check className="h-4 w-4" /> : <Clock className="h-4 w-4" />}</span><div><p className={`text-sm font-bold ${publishReady ? 'text-emerald-900 dark:text-emerald-200' : 'text-amber-900 dark:text-amber-200'}`}>{isMock && !isMockPublishing ? publishReady ? 'Ready to save' : 'Review required' : isPublishedEdit ? 'Published assessment' : publishReady ? 'Ready to publish' : 'Review required'}</p><p className={`text-[10px] ${publishReady ? 'text-emerald-700/80 dark:text-emerald-300/70' : 'text-amber-700/80 dark:text-amber-300/70'}`}>{isMock && !isMockPublishing ? 'Save now, then publish from All Mocks' : isPublishedEdit ? 'Changes to this assessment can be saved here' : publishReady ? 'All required phases are complete' : 'Return to any incomplete phase before publishing'}</p></div></div>
             <div className="mt-3 grid grid-cols-3 divide-x divide-emerald-200 text-center dark:divide-emerald-900">
               <div><strong className="block text-sm text-slate-900 dark:text-white">{assessmentValidation.totalQuestions}</strong><span className="text-[9px] uppercase text-slate-500">Questions</span></div>
-              <div><strong className="block text-sm text-slate-900 dark:text-white">{assignedSummary.count}</strong><span className="text-[9px] uppercase text-slate-500">{isMock && form.mockAudienceMode === 'universities' ? 'Universities' : 'Candidates'}</span></div>
+              <div><strong className="block text-sm text-slate-900 dark:text-white">{assignedSummary.count}</strong><span className="text-[9px] uppercase text-slate-500">{isMock ? 'Access' : 'Candidates'}</span></div>
               <div><strong className="block text-sm text-slate-900 dark:text-white">{form.duration}m</strong><span className="text-[9px] uppercase text-slate-500">Duration</span></div>
             </div>
           </section>
@@ -2711,17 +2713,17 @@ export default function CreateAssessment({ viewOnly = false }) {
       return;
     }
     if (activeStep === 'settings') {
-      const groupIndex = SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup);
+      const groupIndex = settingsGroupIds.indexOf(activeSettingsGroup);
       const nextVisitedGroups = visitedSettingsGroups.includes(activeSettingsGroup)
         ? visitedSettingsGroups
         : [...visitedSettingsGroups, activeSettingsGroup];
       setVisitedSettingsGroups(nextVisitedGroups);
       setDirty(true);
-      if (groupIndex < SETTINGS_GROUP_IDS.length - 1) {
-        setActiveSettingsGroup(SETTINGS_GROUP_IDS[groupIndex + 1]);
+      if (groupIndex < settingsGroupIds.length - 1) {
+        setActiveSettingsGroup(settingsGroupIds[groupIndex + 1]);
         return;
       }
-      if (!SETTINGS_GROUP_IDS.every((group) => nextVisitedGroups.includes(group))) {
+      if (!settingsGroupIds.every((group) => nextVisitedGroups.includes(group))) {
         toast.error('Review each settings category before continuing.');
         return;
       }
@@ -2736,7 +2738,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           : 'Complete the required assessment name and type.',
         sections: 'Add at least one valid question and check the delivery rules.',
         schedule: 'Complete the required assessment schedule.',
-        target: isMock ? 'Select students or universities for this mock.' : 'Select who can take this assessment.',
+        target: 'Select who can take this assessment.',
       };
       toast.error(messages[activeStep] || 'Complete this phase before continuing.');
       return;
@@ -2773,7 +2775,7 @@ export default function CreateAssessment({ viewOnly = false }) {
                 {!viewOnly && <><span className={`h-1.5 w-1.5 rounded-full ${dirty ? 'bg-amber-400' : 'bg-emerald-500'}`} />{autoSaveStatus || (dirty ? 'Unsaved changes' : 'All changes saved')}<span aria-hidden="true">&middot;</span></>}
                 {form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}
                 <span aria-hidden="true">&middot;</span>
-                <span className="font-semibold text-sky-600 dark:text-sky-300">{isMock && !isMockPublishing ? 'Questions' : 'Students'}</span>
+                <span className="font-semibold text-sky-600 dark:text-sky-300">{isMock ? isMockPublishing ? 'Publish settings' : 'Questions' : 'Students'}</span>
               </p>
               {mockIdentity && <div className="mt-1.5">{mockIdentity}</div>}
             </div>
@@ -2808,7 +2810,7 @@ export default function CreateAssessment({ viewOnly = false }) {
         </header>
 
         <nav data-guide="ae-progress" className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white px-2 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-label="Assessment creation progress">
-          <ol className="relative grid min-w-[760px]" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+          <ol className={`relative grid ${steps.length <= 3 ? 'min-w-[320px]' : 'min-w-[760px]'}`} style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
             <span className="absolute left-[8%] right-[8%] top-4 h-0.5 bg-slate-200 dark:bg-gray-700" aria-hidden="true">
               <span className="block h-full bg-sky-500 transition-all duration-500" style={{ width: `${(Math.max(0, maxUnlockedStepIndex) / (steps.length - 1)) * 100}%` }} />
             </span>
@@ -2843,7 +2845,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           >
             Previous
           </button>
-          {stepIndex < steps.length - 1 ? <button type="button" onClick={goNext} className="rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500">{viewOnly ? 'Next' : activeStep === 'settings' && SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) < SETTINGS_GROUP_IDS.length - 1 ? `Next: ${SETTINGS_GROUP_IDS[SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) + 1].charAt(0).toUpperCase()}${SETTINGS_GROUP_IDS[SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) + 1].slice(1)}` : 'Continue'}</button> : viewOnly ? <button type="button" onClick={() => navigate(assessmentRoot)} className="rounded-lg border border-slate-200 px-5 py-2 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:text-gray-200">Back to {isMock ? 'mocks' : 'assessments'}</button> : isMock && !isMockPublishing && !isPublishedEdit ? <button type="button" onClick={saveMock} disabled={loading || !publishReady} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" /> Save Mock</button> : isPublishedEdit ? <button type="button" onClick={() => saveDraft(false)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" /> Save Changes</button> : <button type="button" onClick={() => setShowPublishModal(true)} disabled={loading || !publishReady} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Send className="h-3.5 w-3.5" /> Publish {isMock ? 'Mock' : 'Assessment'}</button>}
+          {stepIndex < steps.length - 1 ? <button type="button" onClick={goNext} className="rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500">{viewOnly ? 'Next' : activeStep === 'settings' && settingsGroupIds.indexOf(activeSettingsGroup) < settingsGroupIds.length - 1 ? `Next: ${settingsGroupIds[settingsGroupIds.indexOf(activeSettingsGroup) + 1].charAt(0).toUpperCase()}${settingsGroupIds[settingsGroupIds.indexOf(activeSettingsGroup) + 1].slice(1)}` : 'Continue'}</button> : viewOnly ? <button type="button" onClick={() => navigate(assessmentRoot)} className="rounded-lg border border-slate-200 px-5 py-2 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:text-gray-200">Back to {isMock ? 'mocks' : 'assessments'}</button> : isMock && !isMockPublishing && !isPublishedEdit ? <button type="button" onClick={saveMock} disabled={loading || !publishReady} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" /> Save Mock</button> : isPublishedEdit ? <button type="button" onClick={() => saveDraft(false)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" /> Save Changes</button> : <button type="button" onClick={() => setShowPublishModal(true)} disabled={loading || !publishReady} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Send className="h-3.5 w-3.5" /> Publish {isMock ? 'Mock' : 'Assessment'}</button>}
         </div>
 
         {showPublishModal && !isPublishedEdit && (
@@ -2866,7 +2868,7 @@ export default function CreateAssessment({ viewOnly = false }) {
 
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{isMock && form.mockAudienceMode === 'universities' ? 'Universities' : 'Total Students'}</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{isMock ? 'Student access' : 'Total Students'}</div>
                   <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-white">{assignedSummary.count}</div>
                   <div className="mt-1 text-[11px] text-slate-500">{assignedSummary.accountSummary}</div>
                 </div>
@@ -2888,13 +2890,13 @@ export default function CreateAssessment({ viewOnly = false }) {
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Assignment</div>
-                  <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-white">{isMock && form.mockAudienceMode === 'universities' ? 'University wide' : 'Direct selection'}</div>
-                  <div className="mt-1 text-[11px] text-slate-500">{isMock && form.mockAudienceMode === 'universities' ? 'Every student in each selected university can access the mock' : 'Only selected students receive access'}</div>
+                  <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-white">{isMock ? 'Automatic' : 'Direct selection'}</div>
+                  <div className="mt-1 text-[11px] text-slate-500">{isMock ? 'Uploaded students at every university with active PrepMock access can attempt this mock' : 'Only selected students receive access'}</div>
                 </div>
               </div>
 
               <div className="mt-4 space-y-2 text-xs text-slate-600 dark:text-gray-300">
-                {(!isMock || form.mockAudienceMode !== 'universities') && <div className="rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-slate-700 dark:border-sky-900/40 dark:bg-sky-900/10 dark:text-gray-200">
+                {!isMock && <div className="rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-slate-700 dark:border-sky-900/40 dark:bg-sky-900/10 dark:text-gray-200">
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <div className="text-sm font-semibold text-slate-900 dark:text-white">Email assessment access</div>

@@ -14,12 +14,14 @@ test('QuickPrep and legacy quest routes require QuickPrep and question sheets ac
   }
 });
 
-test('PrepMock has its own switch and still requires assessments', () => {
+test('PrepMock has its own switch and allows mock attempts without Assessments', () => {
   assert.equal(moduleForPath('/admin/prepmock'), 'prepmock');
   assert.equal(moduleForPath('/student/prep-mock'), 'prepmock');
-  assert.equal(pathAllowed('/admin/prepmock', { assessments: true }, 'admin', '', university), true);
+  assert.equal(pathAllowed('/admin/prepmock', { assessments: true }, 'admin', '', university), false);
   assert.equal(pathAllowed('/admin/prepmock', { assessments: true, prepmock: false }, 'admin', '', university), false);
-  assert.equal(pathAllowed('/student/prep-mock', { assessments: false, prepmock: true }, 'student', '', university), false);
+  assert.equal(pathAllowed('/student/prep-mock', { assessments: false, prepmock: true }, 'student', '', university), true);
+  assert.equal(pathAllowed('/student/assessment/507f1f77bcf86cd799439011', { assessments: false, prepmock: true }, 'student', '', university), true);
+  assert.equal(pathAllowed('/student/assessments', { assessments: false, prepmock: true }, 'student', '', university), false);
   assert.equal(pathAllowed('/admin/prep-analysis', { assessments: true, prepmock: false }, 'admin', '?area=prepmock', university), false);
 });
 

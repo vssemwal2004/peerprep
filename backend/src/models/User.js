@@ -33,6 +33,13 @@ const userSchema = new mongoose.Schema({
   coordinatorId: { type: String, unique: true, sparse: true },
   teacherIds: [String], // For students: links to coordinator's coordinatorID (supports multiple)
   passwordHash: { type: String, required: true },
+  // Only students explicitly uploaded by the university SPOC may open PrepMocks.
+  prepMockEnrolledAt: { type: Date, default: null },
+  // A PrepMock membership for a student whose original PeerPrep account lives elsewhere.
+  prepMockIdentity: {
+    universityId: String, // 'platform' for the main workspace
+    userId: mongoose.Schema.Types.ObjectId,
+  },
   mustChangePassword: { type: Boolean, default: false },
   temporaryPasswordEncrypted: { type: String, select: false },
   credentialEmailStatus: {
@@ -126,6 +133,7 @@ userSchema.index({ role: 1, createdAt: -1 });
 // index, every page fetched and sorted every student in memory.
 userSchema.index({ role: 1, createdAt: 1, _id: 1 });
 userSchema.index({ role: 1, updatedAt: 1 });
+userSchema.index({ role: 1, prepMockEnrolledAt: 1 });
 
 attachAdminAnalyticsInvalidation(userSchema, {
   source: 'analytics-cohort',

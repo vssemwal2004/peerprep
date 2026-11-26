@@ -3,8 +3,8 @@ import { Building2, Check, ChevronDown, Search, X } from 'lucide-react';
 import CompanyLogo from '../../prepMock/CompanyLogo';
 
 /**
- * A company mock's Company: picked from the companies students see on Prep Coding (same names and
- * question counts), searchable, most-asked first. companies: [{ company, count, logo? }].
+ * A company mock's Company: picked from starter companies and companies seen on Prep Coding,
+ * searchable with question counts where available. companies: [{ company, count, logo? }].
  */
 export default function CompanyPicker({ id, value, companies = [], loading = false, error = '', onChange }) {
   const listId = useId();
@@ -54,7 +54,7 @@ export default function CompanyPicker({ id, value, companies = [], loading = fal
               className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-9 text-sm text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:ring-sky-950" />
             {query && <button type="button" onClick={() => setQuery('')} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-700"><X className="h-3.5 w-3.5" /></button>}
           </label>
-          <p className="mt-2 text-[11.5px] text-slate-500 dark:text-gray-400">The same companies students see on Prep Coding, with the number of practice questions tagged for each.</p>
+          <p className="mt-2 text-[11.5px] text-slate-500 dark:text-gray-400">Choose a company for this mock. Practice question counts appear where company tags are available.</p>
           <ul id={listId} role="listbox" aria-label="Companies" className="mt-2 flex max-h-72 flex-wrap content-start gap-2 overflow-y-auto overscroll-contain pr-1">
             {loading && !companies.length && Array.from({ length: 12 }, (_, index) => <li key={index} className="h-8 w-28 animate-pulse rounded-full bg-slate-100 dark:bg-white/[0.06]" />)}
             {matches.map(({ company, count, logo }) => {
@@ -71,7 +71,7 @@ export default function CompanyPicker({ id, value, companies = [], loading = fal
                 </li>
               );
             })}
-            {!loading && !matches.length && <li className="w-full py-6 text-center text-sm text-slate-500">{error || (companies.length ? `No company matches “${query}”.` : 'No companies yet: they appear once practice questions carry company tags.')}</li>}
+            {!loading && !matches.length && <li className="w-full py-6 text-center text-sm text-slate-500">{error || (companies.length ? `No company matches “${query}”.` : 'Companies could not be loaded. Try again.')}</li>}
           </ul>
         </div>
       )}

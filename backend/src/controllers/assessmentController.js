@@ -43,6 +43,7 @@ import { reconcileExpiredAssessmentSubmissions } from '../services/assessmentExp
 import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js';
 import { studentFeatureQuery, studentHasFeature } from '../services/studentFeatureAccess.js';
 import { companyLogoSnapshot, logosForCompanies } from '../services/prepMockCatalog.js';
+import { publishedMockAlwaysOn } from '../services/prepMockAvailability.js';
 import { isStudentAssignedToAssessment } from '../utils/assessmentAssignment.js';
 import { claimAssessmentDraftProblems } from '../services/assessmentProblemCloneService.js';
 import {
@@ -59,6 +60,7 @@ import { getAssessmentAttemptDeadline, getAssessmentSubmitGraceMs, SECURITY_PAUS
 import { concealHiddenSubmitResult } from './compilerHelpers.js';
 import { notifyAssessmentReportChanged } from '../services/assessmentReportRealtime.js';
 import { authorizeAssessmentReportAccess } from '../services/assessmentReportAccess.js';
+import { countNewAssessmentCandidates, reserveAssessmentCandidatePlaces, releaseAssessmentCandidatePlaces } from '../services/assessmentCandidateQuota.js';
 import crypto from 'crypto';
 import {
   AI_PROCTORING_VIOLATION_TYPES,
@@ -471,9 +473,10 @@ function canManageAssessmentForRequest(assessment = {}, user = {}) {
 
 async function resolveEligibleAssessmentStudents(assessment = {}) {
   const selectedIds = (assessment.assignedStudents || []).map((id) => String(id));
+  const mockEnrollment = assessment.kind === 'mock' && isUniversity() ? studentFeatureQuery('prep_mock') : {};
   const query = assessment.targetType === 'all' && selectedIds.length === 0
-    ? { role: 'student', accessScope: { $ne: 'assessment_only' }, ...studentFeatureQuery('assessments') }
-    : { _id: { $in: selectedIds }, role: 'student' };
+    ? eligibleStudentsQuery(assessment)
+    : { _id: { $in: selectedIds }, role: 'student', ...mockEnrollment };
   return User.find(query)
     .select('_id name email studentId accessScope +temporaryPasswordEncrypted course branch college semester group teacherIds phone isActive createdAt')
     .sort({ name: 1, studentId: 1 })
@@ -1814,9 +1817,18 @@ export function normalizePatternFrom(value, now = new Date()) {
  * month and year of the OA). The pattern is for students to read; it does not have to match the
  * questions exactly. Returns an error message or ''.
  */
-export function mockPatternProblem({ mockPattern }) {
-  if (!mockPattern || !Array.isArray(mockPattern.rows) || !mockPattern.rows.length || !mockPattern.patternFrom) {
+export function mockPatternProblem({ mockPattern, patternFrom, sections = [], duration }) {
+  if (!normalizePatternFrom(mockPattern?.patternFrom || patternFrom)) {
+    return 'Choose the month and year of the OA pattern before publishing this mock.';
+  }
+  if (mockPattern && (!Array.isArray(mockPattern.rows) || !mockPattern.rows.length)) {
     return 'Choose or create the exam pattern for this mock (Pattern step).';
+  }
+  const suggestedMinutes = (Array.isArray(sections) ? sections : [])
+    .reduce((total, section) => total + (Number(section?.suggestedMinutes) || 0), 0);
+  const mockDuration = Number(duration);
+  if (Number.isFinite(mockDuration) && mockDuration > 0 && suggestedMinutes > mockDuration) {
+    return `The section times total ${suggestedMinutes} minutes, more than the mock's ${mockDuration}-minute duration.`;
   }
   return '';
 }
@@ -2190,9 +2202,9 @@ export async function previewAssessmentStudents(req, res) {
   return res.json({ preview });
 }
 
-async function resolveAssignedStudents({ targetType, assignedStudents, audienceType = 'platform_students', candidateCredentialMode = 'secure_generated' }) {
+async function resolveAssignedStudents({ targetType, assignedStudents, audienceType = 'platform_students', candidateCredentialMode = 'secure_generated', requirePrepMockEnrollment = false }) {
   if (targetType === 'all') {
-    const students = await User.find({ role: 'student', accessScope: { $ne: 'assessment_only' } }).select('_id email name studentId accessScope semester').lean();
+    const students = await User.find({ role: 'student', accessScope: { $ne: 'assessment_only' }, ...(requirePrepMockEnrollment ? studentFeatureQuery('prep_mock') : {}) }).select('_id email name studentId accessScope semester').lean();
     return { ids: students.map(s => s._id), users: students, created: [] };
   }
 
@@ -2329,6 +2341,15 @@ async function resolveAssignedStudents({ targetType, assignedStudents, audienceT
   return { ids: assignedIds, users, created };
 }
 
+async function validateUniversityMockStudents(assessment) {
+  if (!isUniversity() || assessment.kind !== 'mock' || assessment.targetType !== 'selected') return;
+  const assignedIds = assessment.assignedStudents || [];
+  const eligible = await User.countDocuments({ _id: { $in: assignedIds }, ...studentFeatureQuery('prep_mock') });
+  if (eligible !== assignedIds.length) {
+    throw new AssessmentWriteError(400, 'INVALID_MOCK_AUDIENCE', 'Select only students uploaded for this university’s PrepMock.');
+  }
+}
+
 async function queueAssessmentAudienceEmails({ assessment, users = [], created = [], requestedBy, newOnly = false }) {
   if (!users.length) return { queued: 0 };
   let assessmentPassword = '';
@@ -2405,39 +2426,36 @@ export async function sendAssessmentTestEmail(req, res) {
 /** A Prep Mock's job role: trimmed, single spaces, at most 80 characters. */
 const cleanMockRole = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').slice(0, 80);
 
-async function validateMockAudience({ kind, mode, universityIds, user, requireSelection = false }) {
-  if (kind !== 'mock' || mode !== 'universities') return { mode: 'students', universityIds: [] };
-  if (user?.role !== 'admin') throw new AssessmentWriteError(403, 'MOCK_UNIVERSITY_FORBIDDEN', 'Only an administrator can publish a university-wide mock.');
-  if (isUniversity()) {
-    const id = currentTenant()?.universityId || process.env.PEERPREP_UNIVERSITY_ID;
-    if (!id) throw new AssessmentWriteError(400, 'MOCK_UNIVERSITY_MISSING', 'University context is required.');
-    return { mode: 'universities', universityIds: [id] };
+async function validateMockAudience({ kind, user }) {
+  if (kind !== 'mock') return { mode: 'students', universityIds: [] };
+  if (user?.role !== 'admin' || !isControlPlane()) {
+    throw new AssessmentWriteError(403, 'MOCK_PUBLISH_FORBIDDEN', 'Only the Master Admin can publish PrepMocks.');
   }
-  if (!isControlPlane()) throw new AssessmentWriteError(400, 'MOCK_UNIVERSITY_UNAVAILABLE', 'University publishing is unavailable.');
-  const ids = [...new Set((Array.isArray(universityIds) ? universityIds : []).map(String))];
-  if ((requireSelection && !ids.length) || ids.some((id) => !/^[a-z0-9][a-z0-9-]{1,62}$/.test(id))) {
-    throw new AssessmentWriteError(400, 'MOCK_UNIVERSITY_REQUIRED', 'Select at least one valid university.');
-  }
-  const count = await University.countDocuments({ universityId: { $in: ids }, active: true, deletedAt: null, 'permissions.assessments': { $ne: false } });
-  if (count !== ids.length) throw new AssessmentWriteError(400, 'MOCK_UNIVERSITY_INVALID', 'One or more universities cannot use assessments.');
-  return { mode: 'universities', universityIds: ids };
+  // The Master Admin grants PrepMock for a date range on each university. Every published mock
+  // reaches all universities with that grant; request-supplied university and student IDs are ignored.
+  return { mode: 'universities', universityIds: [] };
 }
 
 async function syncMockPublication(assessment, actorId) {
   if (!isControlPlane() || assessment.kind !== 'mock') return;
   const previous = await Publication.findOne({ kind: 'assessment', contentId: assessment._id }).lean();
-  const activeIds = assessment.lifecycleStatus === 'published' && assessment.mockAudienceMode === 'universities'
-    ? assessment.mockUniversityIds || [] : [];
-  if (!previous && !activeIds.length) return;
+  const activeIds = assessment.lifecycleStatus === 'published' && assessment.isVisible !== false
+    ? await University.find({ active: true, deletedAt: null,
+      'permissions.prepmock': true, prepMockStartDate: { $exists: true, $nin: [null, ''] },
+      prepMockEndDate: { $exists: true, $nin: [null, ''] } }).distinct('universityId')
+    : [];
   const everUniversityIds = [...new Set([...(previous?.everUniversityIds || previous?.universityIds || []), ...activeIds])];
   await Publication.findOneAndUpdate(
     { kind: 'assessment', contentId: assessment._id },
-    { $set: { published: activeIds.length > 0, universityIds: activeIds, everUniversityIds, publishedBy: actorId } },
+    { $set: { published: assessment.lifecycleStatus === 'published' && assessment.isVisible !== false,
+      universityIds: activeIds, everUniversityIds, publishedBy: actorId } },
     { upsert: true, new: true },
   );
 }
 
 export async function createAssessment(req, res) {
+  let quotaReservation = null;
+  let quotaCommitted = false;
   try {
     const {
       title,
@@ -2478,11 +2496,8 @@ export async function createAssessment(req, res) {
     if (mockKind && !String(company || '').trim()) return res.status(400).json({ error: 'Choose a company for this mock.' });
     const mockRole = mockKind ? cleanMockRole(req.body?.role) : '';
     if (mockKind && !mockRole) return res.status(400).json({ error: 'Choose a role for this mock.' });
-    // A Prep Mock is created without students or universities: Master Admin gives it to
-    // universities (their package dates decide access) and to own students afterwards.
-    const mockAudience = mockKind
-      ? { mode: 'students', universityIds: [] }
-      : await validateMockAudience({ kind: 'assessment', mode: mockAudienceMode, universityIds: mockUniversityIds, user: req.user, requireSelection: lifecycleStatus !== 'draft' });
+    const mockAudience = await validateMockAudience({ kind: mockKind ? 'mock' : 'assessment',
+      mode: mockAudienceMode, universityIds: mockUniversityIds, user: req.user, requireSelection: lifecycleStatus !== 'draft' });
     const mockPatternCopy = mockKind && req.body?.patternId ? await patternForMock(req.body.patternId, { company, role: mockRole }) : null;
 
     if (req.user?.role === 'coordinator'
@@ -2552,12 +2567,7 @@ export async function createAssessment(req, res) {
       durationNum = duration !== undefined ? Number(duration) : null;
     }
 
-    // Mocks: a university's own mock is for its students (Prep Mock access decides who); on the
-    // platform nobody is assigned until Master Admin adds own students.
-    const normalizedTarget = mockKind
-      ? (isUniversity() ? 'all' : 'selected')
-      : mockAudience.mode === 'universities'
-        ? (isUniversity() ? 'all' : 'selected') : targetType === 'selected' ? 'selected' : 'all';
+    const normalizedTarget = mockKind ? 'selected' : targetType === 'selected' ? 'selected' : 'all';
     const normalizedDraftTarget = normalizedTarget === 'all'
       ? 'all'
       : (draftTargetMode || 'individual');
@@ -2568,17 +2578,25 @@ export async function createAssessment(req, res) {
       ? []
       : (Array.isArray(assignedStudents) ? assignedStudents : []);
 
+    if (!isDraft && !mockKind && isUniversity()) {
+      quotaReservation = await reserveAssessmentCandidatePlaces(
+        normalizedTarget === 'all' ? 0 : await countNewAssessmentCandidates(assignedStudents),
+        { targetType: normalizedTarget },
+      );
+    }
     if (!isDraft && !mockKind && mockAudience.mode !== 'universities') {
       const resolved = await resolveAssignedStudents({
         targetType: normalizedTarget,
         assignedStudents,
         audienceType,
         candidateCredentialMode: normalizedSettings.candidateCredentialMode,
+        requirePrepMockEnrollment: mockKind && isUniversity(),
       });
       ids = resolved.ids;
       users = resolved.users;
       created = resolved.created;
     }
+    if (!isDraft) await validateUniversityMockStudents({ kind: mockKind ? 'mock' : 'assessment', targetType: normalizedTarget, assignedStudents: ids });
 
     const attemptLimitNum = attemptLimit !== undefined ? Number(attemptLimit) : 1;
     if (attemptLimitNum !== null && (Number.isNaN(attemptLimitNum) || attemptLimitNum < 1)) {
@@ -2591,9 +2609,10 @@ export async function createAssessment(req, res) {
       }
     }
     // Prep Mock pattern: the copy of the company + role pattern (with the OA month and year).
-    const mockPatternFrom = mockPatternCopy?.patternFrom || null;
+    const mockPatternFrom = mockPatternCopy?.patternFrom || (mockKind ? normalizePatternFrom(req.body?.patternFrom) : null);
     if (mockKind && !isDraft) {
-      const problem = mockPatternProblem({ mockPattern: mockPatternCopy });
+      const problem = mockPatternProblem({ mockPattern: mockPatternCopy, patternFrom: mockPatternFrom,
+        sections: effectiveQuestionSets[0]?.sections || normalizedSections, duration });
       if (problem) return res.status(400).json({ error: problem });
     }
 
@@ -2664,6 +2683,7 @@ export async function createAssessment(req, res) {
     }
 
     await assessment.save();
+    quotaCommitted = true;
     await syncAssessmentCandidateBatch(assessment);
     await syncMockPublication(assessment, req.user._id);
 
@@ -2729,14 +2749,18 @@ export async function createAssessment(req, res) {
     });
   } catch (err) {
     console.error('Error creating assessment:', err);
-    res.status(err instanceof AssessmentWriteError ? err.status : 500).json({ error: err.message || 'Failed to create assessment' });
+    res.status(err?.status || 500).json({ error: err.message || 'Failed to create assessment' });
+  } finally {
+    if (!quotaCommitted) await releaseAssessmentCandidatePlaces(quotaReservation);
   }
 }
 
 export async function listAssessments(req, res) {
   try {
     const mock = req.query.kind === 'mock';
+    if (mock && req.user?.role !== 'admin') return res.status(403).json({ error: 'Only administrators can view PrepMocks.' });
     const query = { kind: mock ? 'mock' : { $ne: 'mock' } };
+    if (mock && isUniversity()) query._id = null;
     if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       query.createdBy = req.user._id;
     }
@@ -2758,7 +2782,8 @@ export async function listAssessments(req, res) {
     ]);
     const remoteAssessments = isUniversity() && req.user?.role === 'admin'
       ? (await sharedAssessments(mock ? 'mock' : 'assessment', { includeHistorical: mock && req.query.includeHistorical === 'true' })).map((item) => ({ ...item, shared: true })) : [];
-    const combined = [...localAssessments, ...remoteAssessments].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    const combined = [...localAssessments, ...remoteAssessments].map((item) => publishedMockAlwaysOn(item))
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     const total = isUniversity() ? combined.length : localTotal;
     const assessments = paginated && isUniversity()
       ? combined.slice((requestedPage - 1) * requestedLimit, requestedPage * requestedLimit) : combined;
@@ -2811,6 +2836,9 @@ export async function listAssessments(req, res) {
     // candidateCount = assigned (or, for 'all', eligible) students; see finalizeCounts.
     const needsEligible = assessments.some((a) => a.targetType === 'all' && !assignedCountOf(a, 0));
     const eligibleCount = needsEligible ? await User.countDocuments(eligibleStudentsQuery()).maxTimeMS(3000) : 0;
+    const needsMockEligible = assessments.some((a) => a.kind === 'mock' && a.targetType === 'all' && !assignedCountOf(a, 0));
+    const mockEligibleCount = needsMockEligible && isUniversity()
+      ? await User.countDocuments(eligibleStudentsQuery({ kind: 'mock' })).maxTimeMS(3000) : eligibleCount;
     const data = assessments.map((a) => {
       const status = computeStatus(now, a);
       const lifecycleBucket = lifecycleBucketForAssessment(a, now);
@@ -2821,7 +2849,7 @@ export async function listAssessments(req, res) {
           : (a.assignedStudents?.length || 0));
       const tally = countsByAssessment.get(String(a._id)) || {};
       const passPercentage = passPercentageOf(a.settings);
-      const counts = finalizeCounts({ ...emptyTally(), ...tally }, { assignedCount: assignedCountOf(a, eligibleCount), passPercentage });
+      const counts = finalizeCounts({ ...emptyTally(), ...tally }, { assignedCount: assignedCountOf(a, a.kind === 'mock' ? mockEligibleCount : eligibleCount), passPercentage });
 
       return {
         ...sanitizeAssessmentForResponse(a),
@@ -2868,6 +2896,9 @@ export async function getAssessment(req, res) {
     const assessment = await Assessment.findById(id).populate('assignedStudents', 'name email studentId accessScope semester').lean()
       || await sharedAssessment(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    if (isUniversity() && assessment.kind === 'mock' && assessment.platformShared && assessment.platformPublished === false) {
+      return res.status(404).json({ error: 'Mock not available' });
+    }
     const status = computeStatus(new Date(), assessment);
     const assignmentByStudent = new Map((assessment.candidateSetAssignments || []).map((entry) => [
       String(entry?.student?._id || entry?.student || ''),
@@ -2925,6 +2956,8 @@ export async function unpublishMock(req, res) {
 }
 
 export async function updateAssessment(req, res) {
+  let quotaReservation = null;
+  let quotaCommitted = false;
   try {
     const { id } = req.params;
     const {
@@ -2978,6 +3011,7 @@ export async function updateAssessment(req, res) {
 
     const assessment = await Assessment.findById(id).select('+passwordEncrypted');
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    const previousAssignedStudentIds = [...(assessment.assignedStudents || [])];
     const nextCompany = company === undefined ? assessment.company : String(company || '').trim();
     if (assessment.kind === 'mock' && lifecycleStatus === 'published' && !nextCompany) return res.status(400).json({ error: 'Choose a company for this mock.' });
     const nextRole = req.body?.role === undefined ? assessment.role || '' : cleanMockRole(req.body.role);
@@ -3023,14 +3057,15 @@ export async function updateAssessment(req, res) {
       assessment.role = nextRole;
       assessment.mockAudienceMode = mockAudience.mode;
       assessment.mockUniversityIds = mockAudience.universityIds;
+      assessment.targetType = 'selected';
+      assessment.assignedStudents = [];
+      assessment.draftAssignedStudents = [];
+      assessment.availabilityMode = 'always';
     }
     if (description !== undefined) assessment.description = description;
     if (instructions !== undefined) assessment.instructions = instructions;
     if (lifecycleStatus) {
       assessment.lifecycleStatus = lifecycleStatus === 'draft' ? 'draft' : 'published';
-    }
-    if (assessment.kind === 'mock' && availabilityMode !== undefined) {
-      assessment.availabilityMode = availabilityMode === 'always' ? 'always' : 'scheduled';
     }
     if (allowLateSubmission !== undefined) {
       assessment.allowLateSubmission = Boolean(allowLateSubmission);
@@ -3155,8 +3190,7 @@ export async function updateAssessment(req, res) {
     let resolvedAudienceUsers = [];
     let newlyCreatedAudienceUsers = [];
     if (targetType) {
-      const normalizedTarget = mockAudience.mode === 'universities'
-        ? (isUniversity() ? 'all' : 'selected') : targetType === 'selected' ? 'selected' : 'all';
+      const normalizedTarget = assessment.kind === 'mock' ? 'selected' : targetType === 'selected' ? 'selected' : 'all';
       assessment.targetType = normalizedTarget;
 
       if (isDraft) {
@@ -3168,6 +3202,12 @@ export async function updateAssessment(req, res) {
         }
         assessment.assignedStudents = [];
       } else {
+        if (isUniversity() && assessment.kind !== 'mock') {
+          quotaReservation = await reserveAssessmentCandidatePlaces(
+            normalizedTarget === 'all' ? 0 : await countNewAssessmentCandidates(assignedStudents, previousAssignedStudentIds),
+            { targetType: normalizedTarget },
+          );
+        }
         const { ids, users, created } = mockAudience.mode === 'universities'
           ? { ids: [], users: [], created: [] }
           : await resolveAssignedStudents({
@@ -3175,6 +3215,7 @@ export async function updateAssessment(req, res) {
           assignedStudents,
           audienceType: assessment.audienceType,
           candidateCredentialMode: assessment.settings?.candidateCredentialMode,
+          requirePrepMockEnrollment: assessment.kind === 'mock' && isUniversity(),
         });
         assessment.assignedStudents = ids;
         resolvedAudienceUsers = users;
@@ -3203,6 +3244,8 @@ export async function updateAssessment(req, res) {
       }
     }
 
+    if (!isDraft) await validateUniversityMockStudents(assessment);
+
     if (!isDraft) {
       const deliveryError = validateQuestionDeliverySettings(assessment);
       if (deliveryError) return res.status(400).json({ error: deliveryError });
@@ -3221,6 +3264,7 @@ export async function updateAssessment(req, res) {
     assessment.versionUpdatedAt = new Date();
 
     await assessment.save();
+    quotaCommitted = true;
     await syncAssessmentCandidateBatch(assessment);
     await syncMockPublication(assessment, req.user._id);
     if (!isDraft && (sendEmail || newlyCreatedAudienceUsers.length)) {
@@ -3322,7 +3366,9 @@ export async function updateAssessment(req, res) {
     }
   } catch (err) {
     console.error('Error updating assessment:', err);
-    res.status(err instanceof AssessmentWriteError ? err.status : 500).json({ error: err.message || 'Failed to update assessment' });
+    res.status(err?.status || 500).json({ error: err.message || 'Failed to update assessment' });
+  } finally {
+    if (!quotaCommitted) await releaseAssessmentCandidatePlaces(quotaReservation);
   }
 }
 
@@ -3449,6 +3495,8 @@ export async function listAssessmentEligibleStudents(req, res) {
 }
 
 export async function addAssessmentEligibleStudents(req, res) {
+  let quotaReservation = null;
+  let quotaCommitted = false;
   try {
     const { id } = req.params;
     const studentIds = Array.isArray(req.body?.studentIds)
@@ -3515,6 +3563,9 @@ export async function addAssessmentEligibleStudents(req, res) {
       return res.status(400).json({ error: 'Selected students are already eligible for this assessment.' });
     }
 
+    if (isUniversity() && assessment.kind !== 'mock') {
+      quotaReservation = await reserveAssessmentCandidatePlaces(addIds.length);
+    }
     assessment.targetType = 'selected';
     assessment.assignedStudents = [...currentIdSet, ...addIds].map((studentId) => new mongoose.Types.ObjectId(studentId));
     if (assessment.settings?.questionSetEnabled) {
@@ -3528,6 +3579,7 @@ export async function addAssessmentEligibleStudents(req, res) {
     assessment.version = (assessment.version || 1) + 1;
     assessment.versionUpdatedAt = new Date();
     await assessment.save();
+    quotaCommitted = true;
 
     logActivity({
       userEmail: req.user?.email,
@@ -3551,7 +3603,9 @@ export async function addAssessmentEligibleStudents(req, res) {
     });
   } catch (err) {
     console.error('Error adding assessment eligible students:', err);
-    return res.status(500).json({ error: 'Failed to add students to assessment.' });
+    return res.status(err?.status || 500).json({ error: err?.status ? err.message : 'Failed to add students to assessment.' });
+  } finally {
+    if (!quotaCommitted) await releaseAssessmentCandidatePlaces(quotaReservation);
   }
 }
 
@@ -4101,7 +4155,9 @@ export async function getStudentAssessmentDashboard(req, res) {
         .filter((a) => a.lifecycleStatus !== 'draft' && a.isVisible !== false && a.startTime && a.endTime)),
       AssessmentSubmission.find({ studentId: req.user._id }).sort({ updatedAt: -1 }).lean(),
     ]);
-    const assessments = loadedAssessments.filter((a) => (mockOnly ? a.kind === 'mock' : a.kind !== 'mock'));
+    const assessments = loadedAssessments.filter((a) => (mockOnly
+      ? a.kind === 'mock' && (!isUniversity() || (a.platformShared && a.platformPublished !== false))
+      : a.kind !== 'mock'));
     const logoFor = mockOnly ? await logosForCompanies(assessments.map((a) => a.company || '')) : null;
 
     const submissionsByAssessment = new Map(
@@ -6535,6 +6591,16 @@ export async function getAssessmentEvidence(req, res) {
   try {
     const event = await AssessmentEvent.findOne({ _id: req.params.eventId, kind: 'snapshot' }).select('+legacyDataUrl').lean();
     if (!event) throw new AssessmentWriteError(404, 'EVIDENCE_NOT_FOUND', 'Evidence not found.');
+    if (isUniversity()) {
+      const local = await Assessment.findById(event.assessmentId).select('kind').lean();
+      if (local?.kind === 'mock') throw new AssessmentWriteError(404, 'EVIDENCE_NOT_FOUND', 'Evidence not found.');
+      if (!local) {
+        const shared = await sharedAssessment(event.assessmentId);
+        if (shared?.kind === 'mock' && shared.platformPublished === false) {
+          throw new AssessmentWriteError(404, 'EVIDENCE_NOT_FOUND', 'Evidence not found.');
+        }
+      }
+    }
     if (req.user.role !== 'admin') {
       const assessment = await assessmentDefinitionById(event.assessmentId);
       if (!assessment || (req.user.coordinatorDataScope !== 'all' && String(assessment.createdBy) !== String(req.user._id))) {

@@ -233,6 +233,7 @@ export default function ProfileSidebar({
             <DetailRow icon={<BookOpen className="h-3.5 w-3.5" />} label="Course" value={user?.course} />
             <DetailRow icon={<GitBranch className="h-3.5 w-3.5" />} label="Branch" value={user?.branch} />
             <DetailRow icon={<Hash className="h-3.5 w-3.5" />} label="Student ID" value={user?.studentId} />
+            {user?.loginStudentId && user.loginStudentId !== user.studentId && <DetailRow icon={<Hash className="h-3.5 w-3.5" />} label="Login ID" value={user.loginStudentId} />}
             <DetailRow icon={<CalendarRange className="h-3.5 w-3.5" />} label="Semester" value={user?.semester ? `Semester ${user.semester}` : ''} />
             <DetailRow wide icon={<Mail className="h-3.5 w-3.5" />} label="Email" value={user?.email} />
           </dl>

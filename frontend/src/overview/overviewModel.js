@@ -63,9 +63,9 @@ export const PENDING = [
   { key: 'notActivated', tone: 'slate', label: (n) => `${n} student${n === 1 ? ' has' : 's have'} not signed in yet`, link: 'students' },
 ];
 
-export function pendingRows(pending = {}, links, period) {
+export function pendingRows(pending = {}, links, period, includeUnlinked = false) {
   return PENDING
-    .filter((item) => Number(pending[item.key]) > 0 && links[item.link])
+    .filter((item) => Number(pending[item.key]) > 0 && (includeUnlinked || links[item.link]))
     .map((item) => ({ key: item.key, tone: item.tone, label: item.label(Number(pending[item.key]), period), to: links[item.link] }));
 }
 

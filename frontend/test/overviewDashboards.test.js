@@ -80,6 +80,25 @@ test('a coordinator with only assessments sees a compact overview without other 
   assert.deepEqual(items, ['/coordinator/assessment/create'], 'only what this coordinator may create');
 });
 
+test('a Master Admin sees a selected university dashboard without university admin actions', async () => {
+  const requested = [];
+  const loadInsights = async (range) => { requested.push(range); return {
+    ...structuredClone(COORDINATOR_VIEW), role: 'admin', ownScope: false, access: { students: true, activity: true },
+    people: { students: 17, newStudents: 2, activeWeek: 6, activeToday: 2 },
+    recent: [{ id: 'activity-1', actor: 'uni-admin@example.test', title: 'Updated university assessment', at: new Date().toISOString() }],
+  }; };
+  await render(h(OverviewDashboard, { role: 'admin', readOnly: true, universityName: 'South College', loadInsights }));
+  assert.match(document.body.textContent, /South College/);
+  assert.match(document.body.textContent, /Students17/);
+  assert.match(document.body.textContent, /1 draft assessment not yet published/);
+  assert.match(document.body.textContent, /Arrays test/);
+  assert.match(document.body.textContent, /Updated university assessment/);
+  assert.equal(document.querySelector('button[aria-haspopup="menu"]'), null);
+  assert.equal(document.querySelector('[role="search"]'), null);
+  assert.ok(![...document.querySelectorAll('a[href]')].some((link) => link.getAttribute('href')?.startsWith('/admin/')));
+  assert.equal(requested[0].range, '30d');
+});
+
 test('the Master Admin overview totals universities and flags an unreachable database', async () => {
   const iso = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
   const registration = (universityId, name, extra = {}) => ({ universityId, name, active: true, dbConfigured: true, judgeConfigured: true, serviceStartDate: iso(-30), serviceEndDate: iso(200), coordinatorLimit: 5, studentLimit: 500, coinBalance: 100, permissions: { assessments: true }, ...extra });

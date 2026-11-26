@@ -17,12 +17,13 @@ import {
   resolveStudentMasterFields,
 } from '../services/masterDataService.js';
 import { resolveNewStudentFeatureAccess } from './studentAccessController.js';
-import { applyStudentFeatureChange, normalizeStudentFeatureAccess, normalizeStudentFeatures, parseStudentFeatureAccess } from '../services/studentFeatureAccess.js';
+import { applyStudentFeatureChange, normalizeStudentFeatureAccess, normalizeStudentFeatures, parseStudentFeatureAccess, studentFeatureQuery } from '../services/studentFeatureAccess.js';
 import { invalidateUserCache } from '../middleware/auth.js';
 import { getIo } from '../utils/io.js';
 import { personalRoom } from '../utils/realtime.js';
 import { exactEmailPattern, normalizeEmailAddress } from '../utils/emailIdentity.js';
 import { currentTenant } from '../platform/tenantContext.js';
+import { studentIdFromUniversityLogin, universityStudentLoginId } from '../platform/studentLoginId.js';
 import { storedScoresFor } from '../services/prepScore/sync.js';
 
 // Generate random password (7-8 characters)
@@ -57,7 +58,9 @@ function studentScope(user = {}) {
 }
 
 function buildStudentListQuery(user, params = {}) {
-  const baseQuery = studentScope(user);
+  const baseQuery = String(params.prepMockOnly || '') === 'true'
+    ? { ...studentScope(user), ...studentFeatureQuery('prep_mock') }
+    : studentScope(user);
   const filters = [];
   const search = String(params.search || '').trim().slice(0, 120);
 
@@ -73,11 +76,13 @@ function buildStudentListQuery(user, params = {}) {
 
   if (search) {
     const searchRegex = new RegExp(escapeRegex(search), 'i');
+    const academicSearchId = studentIdFromUniversityLogin(search, currentTenant()?.universityId);
     filters.push({
       $or: [
         { name: searchRegex },
         { email: searchRegex },
         { studentId: searchRegex },
+        ...(academicSearchId ? [{ studentId: new RegExp(escapeRegex(academicSearchId), 'i') }] : []),
         { branch: searchRegex },
         { course: searchRegex },
         { college: searchRegex },
@@ -300,6 +305,7 @@ export async function listAllStudents(req, res) {
       const lastActive = latestActivity || s.activeSessionCreatedAt || null;
       return {
         ...s,
+        loginStudentId: universityStudentLoginId(currentTenant()?.universityId, s.studentId) || s.studentId,
         featureAccess: normalizeStudentFeatureAccess(s.featureAccess, { legacyAccessScope: s.accessScope }),
         teacherId: Array.isArray(s.teacherIds) ? s.teacherIds.join(', ') : (s.teacherIds || ''),
         // Legacy/imported students may not have mustChangePassword populated.
@@ -394,7 +400,7 @@ export async function resendStudentCredentials(req, res) {
         $unset: { credentialEmailLastError: 1 },
       },
       { new: false },
-    ).select('_id name email passwordHash');
+    ).select('_id name email studentId passwordHash');
     if (claimed) students.push(claimed);
   }
 
@@ -412,6 +418,7 @@ export async function resendStudentCredentials(req, res) {
       payload: {
         to: email,
         password,
+        loginStudentId: universityStudentLoginId(currentTenant()?.universityId, student.studentId) || student.studentId,
         previousPasswordHash: student.passwordHash,
       },
     };
@@ -1156,7 +1163,9 @@ export async function uploadStudentsCsv(req, res) {
   }
 
   // Send response immediately
-  res.json({ count: results.length, results, batch });
+  res.json({ count: results.length, results: results.map((entry) => ({ ...entry,
+    ...(entry.studentid ? { loginStudentId: universityStudentLoginId(currentTenant()?.universityId, entry.studentid) || entry.studentid } : {}),
+  })), batch });
 
   if (createdUserIds.length > 0) {
     setImmediate(async () => {
@@ -1305,7 +1314,8 @@ export async function createStudent(req, res) {
       req
     });
 
-    res.status(201).json({ id: user._id, email: user.email, studentid: user.studentId, status: 'created' });
+    res.status(201).json({ id: user._id, email: user.email, studentid: user.studentId,
+      loginStudentId: universityStudentLoginId(currentTenant()?.universityId, user.studentId) || user.studentId, status: 'created' });
 
     return;
   } catch (err) {

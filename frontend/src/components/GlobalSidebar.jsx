@@ -55,7 +55,7 @@ import {
   Target,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { isLimitedUniversityAdmin } from '../platform/adminAccess';
+import { isLimitedUniversityAdmin, isUniversitySpoc } from '../platform/adminAccess';
 import { canManageInterviewCompanies, isControlDeployment, isUniversityDeployment, PREP_COIN_PRICING_PATH, QUICKPREP_ANALYSIS_PATH, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { useTheme } from '../context/ThemeContext';
@@ -515,7 +515,8 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const displayName = user?.name || localStorage.getItem(`${storagePrefix}Name`) || roleLabel;
   const displayEmail = user?.email || localStorage.getItem(`${storagePrefix}Email`) || '';
   const avatarUrl = user?.avatarUrl || localStorage.getItem(`${storagePrefix}AvatarUrl`) || '';
-  const homePath = isCoordinator ? '/coordinator/overview' : isAssessmentCandidate ? '/student/assessments' : isStudent ? firstStudentFeaturePath(user) : '/admin/overview';
+  const homePath = isCoordinator ? '/coordinator/overview' : isAssessmentCandidate ? '/student/assessments'
+    : isStudent ? firstStudentFeaturePath(user, (path) => allowsPath(path, 'student')) : '/admin/overview';
   const accountMenuId = `${storagePrefix}-account-menu`;
   const accent = isCoordinator ? 'emerald' : 'sky';
   // The Prep Mates count sits under the student's name in the account block (desktop rail only)
@@ -529,7 +530,8 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
     const items = buildNavItems(role, user?.accessScope);
     if (role === 'student') {
       return items
-        .filter((item) => !item.featureKey || (item.featureKey === 'peers' ? canUsePeers(user) : hasStudentFeature(user, item.featureKey)))
+        .filter((item) => allowsPath(item.to, 'student')
+          && (!item.featureKey || (item.featureKey === 'peers' ? canUsePeers(user) : hasStudentFeature(user, item.featureKey))))
         // Waiting Prep Mate requests show as a red count on the Prep Mates link (desktop and phone).
         .map((item) => (item.featureKey === 'peers' && pendingMateRequests > 0
           ? { ...item, badge: pendingMateRequests, badgeLabel: `${pendingMateRequests} Prep Mate ${pendingMateRequests === 1 ? 'request' : 'requests'} waiting` }
@@ -537,12 +539,19 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
     }
     if (role !== 'student' && (isUniversityDeployment || role !== 'admin')) items.unshift({ type: 'link', label: 'Prep Coin management', to: `/${role}/wallet`, icon: Wallet });
     if (role !== 'coordinator') {
-      const limitedItems = isLimitedUniversityAdmin(user) ? items.map((item) => {
+      const universityItems = isUniversityDeployment ? items.map((item) => {
+        if (item.key === 'prepmock') return isUniversitySpoc(user) ? { ...item, items: [
+          ...item.items.filter((child) => ['All Mocks', 'Analysis'].includes(child.label)),
+          { label: 'Upload Students', to: '/admin/prepmock/upload-students', icon: UserPlus },
+        ] } : isLimitedUniversityAdmin(user) ? { ...item, items: item.items.filter((child) => child.label === 'All Mocks') } : null;
+        return item;
+      }).filter(Boolean) : items;
+      const limitedItems = isLimitedUniversityAdmin(user) ? universityItems.map((item) => {
         if (item.key === 'student-management') return { ...item, items: item.items.filter((child) => child.to !== '/admin/onboarding') };
         if (item.key === 'coordinator-management') return { ...item, items: item.items.filter((child) => child.to !== '/admin/coordinators') };
         if (item.key === 'settings') return { ...item, items: item.items.filter((child) => child.label !== 'Students') };
         return item;
-      }) : items;
+      }) : universityItems;
       return applyPlatformPermissions(limitedItems, allowsPath, role);
     }
     return applyPlatformPermissions(items

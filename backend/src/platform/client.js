@@ -2,6 +2,7 @@ import { isUniversity } from './deployment.js';
 import { deploymentRole } from './deployment.js';
 import { currentTenant } from './tenantContext.js';
 import crypto from 'node:crypto';
+import { effectiveUniversityPermissions } from './servicePeriod.js';
 
 function sharedHeaders() {
   const universityId = currentTenant()?.universityId;
@@ -49,7 +50,8 @@ export async function controlRequest(path, { method = 'GET', body } = {}) {
 export async function universityPolicy() {
   if (deploymentRole() === 'shared' && currentTenant()) {
     const tenant = currentTenant();
-    return { universityId: tenant.universityId, active: true, permissions: tenant.permissions, sources: tenant.sources };
+    return { universityId: tenant.universityId, active: true, permissions: effectiveUniversityPermissions(tenant), sources: tenant.sources,
+      prepMockStartDate: tenant.prepMockStartDate, prepMockEndDate: tenant.prepMockEndDate };
   }
   return controlRequest('policy');
 }

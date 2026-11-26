@@ -19,8 +19,9 @@ test('legacy students retain every standard module; opt-in Prep Mates and Prep M
   assert.equal(studentHasFeature({ role: 'student' }, 'resume_jd_match'), false, 'ANVI JD Match is given to chosen students only');
   assert.deepEqual(access.features, STUDENT_FEATURES.filter((feature) => !OPT_IN_STUDENT_FEATURES.includes(feature)));
   assert.equal(studentHasFeature({ role: 'student' }, 'prep_mock'), false, 'Prep Mock is given to chosen students only');
-  assert.equal(studentHasFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['prep_mock'] } }, 'prep_mock'), true);
-  assert.deepEqual(studentFeatureQuery('prep_mock'), { 'featureAccess.mode': 'custom', 'featureAccess.features': 'prep_mock' });
+  assert.equal(studentHasFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['prep_mock'] } }, 'prep_mock'), false, 'a feature toggle alone cannot bypass SPOC upload');
+  assert.equal(studentHasFeature({ role: 'student', prepMockEnrolledAt: new Date(), featureAccess: { mode: 'custom', features: ['prep_mock'] } }, 'prep_mock'), true);
+  assert.deepEqual(studentFeatureQuery('prep_mock'), { role: 'student', prepMockEnrolledAt: { $ne: null }, 'featureAccess.mode': 'custom', 'featureAccess.features': 'prep_mock' });
   assert.equal(studentHasFeature({ role: 'student' }, 'peers'), false, 'not on for everyone');
   assert.equal(studentHasFeature({ role: 'student', featureAccess: { mode: 'all', features: STUDENT_FEATURES } }, 'peers'), false, 'an old "all" record listing peers still does not grant it');
   assert.equal(studentHasFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['peers'] } }, 'peers'), true, 'only an explicit grant');

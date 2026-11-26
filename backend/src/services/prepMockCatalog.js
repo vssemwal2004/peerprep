@@ -1,5 +1,5 @@
-// Prep Mock catalogue: the companies a mock can be for (the ones students see on Prep Coding), their
-// logos, and the job roles a mock can be for.
+// Prep Mock catalogue: starter companies, companies from Prep Coding, their logos,
+// and the job roles a mock can be for.
 //
 // Logos resolve in this order: a logo set on this deployment (website fetch or upload, stored in
 // Cloudinary) > the built-in logo list shipped with the code (data/companyLogos.json, filled by
@@ -29,6 +29,11 @@ export const COMMON_ROLES = Object.freeze([
   'Android Developer', 'iOS Developer', 'Data Analyst', 'Data Scientist', 'Data Engineer', 'Machine Learning Engineer',
   'DevOps Engineer', 'Site Reliability Engineer', 'Cloud Engineer', 'Security Engineer', 'QA Engineer', 'SDET',
   'Business Analyst', 'Product Manager', 'Technical Support Engineer',
+]);
+
+export const STARTER_MOCK_COMPANIES = Object.freeze([
+  'Amazon', 'Google', 'Microsoft', 'Meta', 'Apple',
+  'TCS', 'Infosys', 'Wipro', 'Accenture', 'IBM',
 ]);
 
 const ROLE_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} .,&+#/()'’-]*$/u;
@@ -80,8 +85,8 @@ export async function logosForCompanies(names) {
 }
 
 /**
- * Every company a mock can be for: the companies students see on Prep Coding plus any company that
- * already has mocks here. [{ company, key, questions, mocks, published, logo, domain }]
+ * Every company a mock can be for: ten starter choices, companies students see on Prep Coding,
+ * and any company that already has mocks here. [{ company, key, questions, mocks, published, logo, domain }]
  */
 export async function listMockCatalogCompanies() {
   const [practice, mockRows, profiles] = await Promise.all([
@@ -95,7 +100,13 @@ export async function listMockCatalogCompanies() {
   ]);
   const profileByKey = new Map(profiles.map((profile) => [profile.key, profile]));
   const rows = new Map();
-  for (const { company, count } of practice) rows.set(companyKey(company), { company, questions: count, mocks: 0, published: 0 });
+  for (const company of STARTER_MOCK_COMPANIES) {
+    rows.set(companyKey(company), { company, questions: 0, mocks: 0, published: 0 });
+  }
+  for (const { company, count } of practice) {
+    const key = companyKey(company);
+    rows.set(key, { company: rows.get(key)?.company || company, questions: count, mocks: 0, published: 0 });
+  }
   for (const row of mockRows) {
     const key = companyKey(row.company);
     const entry = rows.get(key) || { company: row.company, questions: 0, mocks: 0, published: 0 };

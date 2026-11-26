@@ -236,24 +236,31 @@ test('PrepMock records and questions stay out of regular assessment and library 
 });
 
 test('creating a mock draft persists its kind and syncs authored questions into Mock Library', async () => {
-  const response = capture();
-  await createAssessment({ user: admin, ip: '127.0.0.1', get: () => 'test', body: {
-    kind: 'mock', company: 'Amazon', role: 'SDE 1', title: 'Created through mock flow', lifecycleStatus: 'draft',
-    sections: [{ sectionName: 'MCQ', type: 'mcq', questions: [{ questionId: 'created-mock-q', type: 'mcq', questionText: 'Created mock question?', options: ['A', 'B'], correctOptionIndex: 0 }] }],
-  } }, response);
-  assert.equal(response.state.statusCode, 201, JSON.stringify(response.state.body));
-  const saved = await Assessment.findById(response.state.body.assessmentId).lean();
-  assert.equal(saved.kind, 'mock');
-  assert.equal(saved.company, 'Amazon');
-  assert.equal(saved.role, 'SDE 1');
-  const noRole = capture();
-  await createAssessment({ user: admin, ip: '127.0.0.1', get: () => 'test', body: { kind: 'mock', company: 'Amazon', title: 'No role', lifecycleStatus: 'draft', sections: [] } }, noRole);
-  assert.equal(noRole.state.statusCode, 400);
-  assert.match(noRole.state.body.error, /role/);
-  const mockQuestions = await library({ type: 'mcq', status: 'draft', scope: 'mock', search: 'Created mock question', includeMeta: 'false' });
-  assert.deepEqual(mockQuestions.questions.map((item) => item.questionText), ['Created mock question?']);
-  const regularQuestions = await library({ type: 'mcq', status: 'draft', search: 'Created mock question', includeMeta: 'false' });
-  assert.equal(regularQuestions.questions.length, 0);
+  const originalRole = process.env.PEERPREP_DEPLOYMENT_ROLE;
+  process.env.PEERPREP_DEPLOYMENT_ROLE = 'control';
+  try {
+    const response = capture();
+    await createAssessment({ user: admin, ip: '127.0.0.1', get: () => 'test', body: {
+      kind: 'mock', company: 'Amazon', role: 'SDE 1', title: 'Created through mock flow', lifecycleStatus: 'draft',
+      sections: [{ sectionName: 'MCQ', type: 'mcq', questions: [{ questionId: 'created-mock-q', type: 'mcq', questionText: 'Created mock question?', options: ['A', 'B'], correctOptionIndex: 0 }] }],
+    } }, response);
+    assert.equal(response.state.statusCode, 201, JSON.stringify(response.state.body));
+    const saved = await Assessment.findById(response.state.body.assessmentId).lean();
+    assert.equal(saved.kind, 'mock');
+    assert.equal(saved.company, 'Amazon');
+    assert.equal(saved.role, 'SDE 1');
+    const noRole = capture();
+    await createAssessment({ user: admin, ip: '127.0.0.1', get: () => 'test', body: { kind: 'mock', company: 'Amazon', title: 'No role', lifecycleStatus: 'draft', sections: [] } }, noRole);
+    assert.equal(noRole.state.statusCode, 400);
+    assert.match(noRole.state.body.error, /role/);
+    const mockQuestions = await library({ type: 'mcq', status: 'draft', scope: 'mock', search: 'Created mock question', includeMeta: 'false' });
+    assert.deepEqual(mockQuestions.questions.map((item) => item.questionText), ['Created mock question?']);
+    const regularQuestions = await library({ type: 'mcq', status: 'draft', search: 'Created mock question', includeMeta: 'false' });
+    assert.equal(regularQuestions.questions.length, 0);
+  } finally {
+    if (originalRole === undefined) delete process.env.PEERPREP_DEPLOYMENT_ROLE;
+    else process.env.PEERPREP_DEPLOYMENT_ROLE = originalRole;
+  }
 });
 
 test('mock company choices are exactly the companies students see on Prep Coding', async () => {
@@ -277,11 +284,12 @@ test('mock company choices are exactly the companies students see on Prep Coding
   assert.ok(companies.findIndex((row) => row.company.toLowerCase() === 'orbit inc') < companies.findIndex((row) => row.company.toLowerCase() === 'zenith corp'), 'ties sort by name');
 });
 
-test('publishing a university mock assigns the university and reset removes access', async () => {
+test('publishing a mock automatically reaches universities with PrepMock dates and reset removes access', async () => {
   const originalRole = process.env.PEERPREP_DEPLOYMENT_ROLE;
   process.env.PEERPREP_DEPLOYMENT_ROLE = 'control';
   try {
-    await University.create({ universityId: 'mock-test-uni', name: 'Mock Test University' });
+    await University.create({ universityId: 'mock-test-uni', name: 'Mock Test University',
+      permissions: { assessments: true, prepmock: true }, prepMockStartDate: '2020-01-01', prepMockEndDate: '2099-12-31' });
     const mock = await Assessment.create({
       kind: 'mock', company: 'Amazon', role: 'SDE 1', title: 'University mock', createdBy: adminId,
       lifecycleStatus: 'draft', sections: [{ sectionName: 'Questions', type: 'mcq', questions: [
@@ -297,16 +305,20 @@ test('publishing a university mock assigns the university and reset removes acce
     assert.equal(noDate.state.statusCode, 400);
     assert.match(JSON.stringify(noDate.state.body), /month and year/);
     const published = capture();
-    await updateAssessment({ user: admin, socket: { remoteAddress: '127.0.0.1' }, params: { id: String(mock._id) }, body: {
-      lifecycleStatus: 'published', availabilityMode: 'always', duration: 30, targetType: 'selected',
-      mockAudienceMode: 'universities', mockUniversityIds: ['mock-test-uni'], assignedStudents: [],
+    await updateAssessment({ user: admin, socket: { remoteAddress: '127.0.0.1' }, connection: { remoteAddress: '127.0.0.1' }, get: () => 'test', params: { id: String(mock._id) }, body: {
+      lifecycleStatus: 'published', availabilityMode: 'always', duration: 30,
+      mockAudienceMode: 'students', mockUniversityIds: [], assignedStudents: [],
       patternFrom: { month: 3, year: 2025 },
     } }, published);
     assert.equal(published.state.statusCode, 200, JSON.stringify(published.state.body));
     const publication = await Publication.findOne({ kind: 'assessment', contentId: mock._id }).lean();
     assert.equal(publication.published, true);
     assert.deepEqual(publication.universityIds, ['mock-test-uni']);
-    assert.deepEqual((await Assessment.findById(mock._id).lean()).assignedStudents, []);
+    const saved = await Assessment.findById(mock._id).lean();
+    assert.deepEqual(saved.assignedStudents, []);
+    assert.equal(saved.availabilityMode, 'always');
+    assert.equal(saved.mockAudienceMode, 'universities');
+    assert.equal(saved.targetType, 'selected');
 
     const reset = capture();
     await resetMock({ user: admin, params: { id: String(mock._id) } }, reset);

@@ -5,6 +5,7 @@ import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import AssessmentReportSummary from '../models/AssessmentReportSummary.js';
 import User from '../models/User.js';
 import { currentTenant } from '../platform/tenantContext.js';
+import { isUniversity } from '../platform/deployment.js';
 import { studentFeatureQuery } from './studentFeatureAccess.js';
 import {
   DEFAULT_PASS_PERCENTAGE, TERMINAL_STATUSES, FINISHED_STATUSES, assignedCountOf, attemptCountFields, emptyTally, finalizeCounts, passPercentageOf,
@@ -77,14 +78,18 @@ export function attemptTallyFields({ graded = evaluatedAssessmentExpression, pas
   };
 }
 
-export const eligibleStudentsQuery = () => ({ role: 'student', accessScope: { $ne: 'assessment_only' }, ...studentFeatureQuery('assessments') });
+export const eligibleStudentsQuery = (assessment = null) => ({
+  role: 'student',
+  accessScope: { $ne: 'assessment_only' },
+  ...studentFeatureQuery(assessment?.kind === 'mock' && isUniversity() ? 'prep_mock' : 'assessments'),
+});
 
 /** Candidates known from the assignment (see finalizeCounts). One user count at most. */
 export async function assignedCountForAssessment(assessment, eligibleCount = null) {
   if (!assessment) return 0;
   const needsEligible = assessment.targetType === 'all' && !assignedCountOf(assessment, 0);
   const eligible = needsEligible
-    ? (eligibleCount ?? await User.countDocuments(eligibleStudentsQuery()).maxTimeMS(3000))
+    ? (eligibleCount ?? await User.countDocuments(eligibleStudentsQuery(assessment)).maxTimeMS(3000))
     : 0;
   return assignedCountOf(assessment, eligible);
 }

@@ -8,6 +8,7 @@ import { currentTenant } from '../platform/tenantContext.js';
 import { deploymentRole } from '../platform/deployment.js';
 import { studentHasFeature } from '../services/studentFeatureAccess.js';
 import { endedSessionError, touchSession } from '../services/userSessions.js';
+import { linkedPrepMockSessionActive } from '../services/prepMockIdentity.js';
 
 /**
  * Simple in-memory cache for user data to reduce database hits
@@ -181,7 +182,7 @@ export async function requireAuth(req, res, next) {
     // All tokens now resolve to the unified User model
     // Use lean() + select() for faster query - only fetch needed fields
     user = await User.findById(payload.sub)
-      .select('_id email name role accessScope featureAccess semester activeSessionToken passwordChangedAt avatarUrl coordinatorId teacherIds studentId course branch college group department phone isSpecialStudent isActive coordinatorPermissions coordinatorDataScope')
+      .select('_id email name role accessScope featureAccess prepMockEnrolledAt prepMockIdentity semester activeSessionToken passwordChangedAt avatarUrl coordinatorId teacherIds studentId course branch college group department phone isSpecialStudent isActive coordinatorPermissions coordinatorDataScope')
       .lean();
     if (!user) throw new HttpError(401, 'User not found');
     
@@ -218,6 +219,10 @@ export async function requireAuth(req, res, next) {
       // Token was issued before password change - invalidate session
       throw new HttpError(401, 'Session expired. Please login again.');
     }
+  }
+  if (user.role === 'student' && user.prepMockIdentity?.userId
+    && !await linkedPrepMockSessionActive(user, sessionState.activeSessionCreatedAt)) {
+    throw new HttpError(401, 'Original PeerPrep account changed. Please sign in again.');
   }
   
   // "Last active" for the popup another sign-in shows (written at most every few minutes).

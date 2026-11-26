@@ -41,12 +41,12 @@ export function normalizeStudentAccess(access, accessScope = 'full') {
 export function hasStudentFeature(user, feature) {
   const features = normalizeStudentAccess(user?.featureAccess, user?.accessScope).features;
   const needs = STUDENT_FEATURE_REQUIRES[feature];
+  if (feature === 'prep_mock' && !user?.prepMockEnrolledAt) return false;
   return features.includes(feature) && (!needs || features.includes(needs));
 }
 
-export function firstStudentFeaturePath(user) {
-  const enabled = new Set(normalizeStudentAccess(user?.featureAccess, user?.accessScope).features);
-  return STUDENT_FEATURE_CATALOG.find((feature) => enabled.has(feature.key))?.path || '/student/profile';
+export function firstStudentFeaturePath(user, canOpen = () => true) {
+  return STUDENT_FEATURE_CATALOG.find((feature) => hasStudentFeature(user, feature.key) && canOpen(feature.path))?.path || '/student/profile';
 }
 
 export function featureForStudentPath(pathname = '') {

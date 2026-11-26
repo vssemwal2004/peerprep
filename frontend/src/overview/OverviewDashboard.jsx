@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Activity, AlertCircle, BarChart3, BellRing, BookOpen, Bot, Building2, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, Code2,
@@ -18,26 +18,31 @@ import { rangeLabel, rangeToQuery } from '../components/dateRange/dateRangeModel
 
 const REFRESH_MS = 5 * 60_000;
 
-function useOverview(range) {
+function useOverview(range, loadInsights) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const requestId = useRef(0);
   const query = JSON.stringify(rangeToQuery(range));
   const load = useCallback(async () => {
+    const currentRequest = ++requestId.current;
     setLoading(true);
     setError('');
     try {
-      setData(await api.overviewInsights(JSON.parse(query)));
+      const result = await loadInsights(JSON.parse(query));
+      if (currentRequest === requestId.current) setData(result);
     } catch (failure) {
-      setError(failure?.message || 'The overview could not be loaded.');
+      if (currentRequest === requestId.current) setError(failure?.message || 'The overview could not be loaded.');
     } finally {
-      setLoading(false);
+      if (currentRequest === requestId.current) setLoading(false);
     }
-  }, [query]);
+  }, [query, loadInsights]);
   useEffect(() => {
+    const requests = requestId;
+    setData(null);
     load();
     const timer = setInterval(load, REFRESH_MS);
-    return () => clearInterval(timer);
+    return () => { ++requests.current; clearInterval(timer); };
   }, [load]);
   return { data, loading, error, reload: load };
 }
@@ -151,17 +156,19 @@ export function LearningPanel({ learning, students, links, short = '14 days' }) 
   );
 }
 
-export default function OverviewDashboard({ role = 'admin', allowPath = () => true, can = () => true }) {
+export default function OverviewDashboard({ role = 'admin', allowPath = () => true, can = () => true,
+  loadInsights = api.overviewInsights, readOnly = false, universityName = '' }) {
   const { user } = useAuth();
   const [range, setRange] = useState({ preset: '30d' });
-  const { data, loading, error, reload } = useOverview(range);
+  const { data, loading, error, reload } = useOverview(range, loadInsights);
   const periodLabel = rangeLabel(range);
   const period = periodPhrase(periodLabel);
   const short = periodShort(range);
   const links = useMemo(() => {
     const base = linksFor(role);
+    if (readOnly) return Object.fromEntries(Object.entries(base).map(([key, value]) => [key, typeof value === 'function' ? () => null : null]));
     return Object.fromEntries(Object.entries(base).map(([key, value]) => [key, typeof value === 'string' && !allowPath(value) ? null : value]));
-  }, [role, allowPath]);
+  }, [role, allowPath, readOnly]);
 
   const view = useMemo(() => {
     if (!data) return null;
@@ -172,17 +179,17 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
     const glance = data.glance?.length === 2 ? data.glance : trend;
     const today = glance.at(-1) || {};
     const yesterday = glance.at(-2) || {};
-    return { series, trend, totals, today, yesterday, pending: pendingRows(data.pending, links, short) };
-  }, [data, links, short]);
+    return { series, trend, totals, today, yesterday, pending: pendingRows(data.pending, links, short, readOnly) };
+  }, [data, links, short, readOnly]);
 
   const firstName = user?.name?.split(' ')[0] || (role === 'admin' ? 'Admin' : 'Coordinator');
   const people = data?.people || {};
-  const showSkeleton = loading && !data;
+  const showSkeleton = !data;
 
   // Header: only what this role may open (links are already limited to licensed modules).
   const isAdmin = role === 'admin';
   const allowed = (to) => Boolean(to) && allowPath(to);
-  const createItems = [
+  const createItems = readOnly ? [] : [
     can('coordinator.students.create') && links.onboarding && { label: 'Add students', hint: 'One student or a CSV list', to: links.onboarding, Icon: UserPlus },
     data?.assessments && can('coordinator.assessment.create') && links.assessmentCreate && { label: 'New assessment', hint: 'Coding, MCQ and written tests', to: links.assessmentCreate, Icon: ClipboardList },
     data?.mockInterviews && can('coordinator.interviews.create') && links.interviewCreate && { label: 'New interview event', hint: 'Peer mock interviews', to: links.interviewCreate, Icon: CalendarDays },
@@ -190,7 +197,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
     (isAdmin ? allowed('/admin/announcements/add') : can('coordinator.announcements.create')) && { label: 'Announcement', hint: 'Notify students', to: isAdmin ? '/admin/announcements/add' : '/coordinator/announcements/add', Icon: Megaphone },
     isAdmin && { label: 'Add coordinator', hint: 'Give a faculty member access', to: '/admin/coordinators', Icon: UserCog },
   ].filter(Boolean);
-  const shortcuts = (isAdmin ? [
+  const shortcuts = readOnly ? [] : (isAdmin ? [
     { label: 'Students', to: links.students, Icon: Users },
     { label: 'Prep Analysis', to: links.analysis, Icon: BarChart3 },
     { label: 'Assessment reports', to: links.reports, Icon: ClipboardList },
@@ -210,7 +217,7 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
     can('coordinator.activity.view') && { label: 'My activity', to: links.activity, Icon: Activity },
   ]).filter((item) => item && item.to);
   const headerStats = data && view ? [
-    { label: 'Need your attention', value: formatNumber(view.pending.length), hint: view.pending.length ? 'open items' : 'all clear', Icon: BellRing, tone: view.pending.length ? 'rose' : 'emerald', href: '#needs-attention' },
+    { label: readOnly ? 'Needs attention' : 'Need your attention', value: formatNumber(view.pending.length), hint: view.pending.length ? 'open items' : 'all clear', Icon: BellRing, tone: view.pending.length ? 'rose' : 'emerald', href: '#needs-attention' },
     (data.assessments || data.mockInterviews) && { label: 'Coming up', value: formatNumber(data.upcoming?.length || 0), hint: 'tests and interviews', Icon: CalendarDays, tone: 'amber', href: '#upcoming' },
     { label: 'Active today', value: formatNumber(people.activeToday), hint: `${percent(people.activeToday, people.students)}% of students`, Icon: Activity, tone: 'emerald' },
     data.access?.students && { label: 'Joined in 30 days', value: formatNumber(people.newStudents), hint: data.ownScope ? 'your students' : 'new students', Icon: UserPlus, tone: 'sky', to: links.students },
@@ -240,10 +247,11 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
   return (
     <OverviewShell>
       <OverviewHeader
-        badge={isAdmin ? 'University Admin' : 'Coordinator'}
+        badge={readOnly ? 'University overview' : isAdmin ? 'University Admin' : 'Coordinator'}
         BadgeIcon={isAdmin ? Building2 : UserCog}
-        title={`${greeting()}, ${firstName}`}
-        subtitle={isAdmin ? 'Your university at a glance: students, practice, tests and interviews' : data?.ownScope ? 'Your assigned students at a glance' : 'Your students at a glance'}
+        title={readOnly ? universityName : `${greeting()}, ${firstName}`}
+        subtitle={readOnly ? 'Students, practice, tests and interviews at this university' : isAdmin ? 'Your university at a glance: students, practice, tests and interviews' : data?.ownScope ? 'Your assigned students at a glance' : 'Your students at a glance'}
+        showGuide={!readOnly}
         chips={[
           ...(data?.ownScope ? [{ label: 'Your assigned students' }] : []),
           ...(view?.series || []).map((key) => ({ label: MODULE_META[key].label, className: MODULE_META[key].soft })),
@@ -286,18 +294,17 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
             )}
           </Glass>
           <Glass id="needs-attention" data-guide="ov-attention" className="scroll-mt-24 p-5">
-            <CardHeader title="Needs attention" subtitle="Open items you can act on" Icon={BellRing} />
+            <CardHeader title="Needs attention" subtitle={readOnly ? 'Open items at this university' : 'Open items you can act on'} Icon={BellRing} />
             {showSkeleton ? <SkeletonRows rows={3} /> : view.pending.length ? (
               <ul className="space-y-1.5">
                 {view.pending.map((item) => (
                   <li key={item.key}>
-                    <Link to={item.to} className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs text-slate-700 transition hover:bg-slate-900/[0.04] dark:text-slate-200 dark:hover:bg-white/[0.05]">
-                      <ToneDot tone={item.tone} /><span className="min-w-0 flex-1">{item.label}</span>
-                    </Link>
+                    {item.to ? <Link to={item.to} className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs text-slate-700 transition hover:bg-slate-900/[0.04] dark:text-slate-200 dark:hover:bg-white/[0.05]"><ToneDot tone={item.tone} /><span className="min-w-0 flex-1">{item.label}</span></Link>
+                      : <div className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs text-slate-700 dark:text-slate-200"><ToneDot tone={item.tone} /><span className="min-w-0 flex-1">{item.label}</span></div>}
                   </li>
                 ))}
               </ul>
-            ) : <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-3 text-xs font-medium text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200"><CheckCircle2 className="h-4 w-4" />Nothing is waiting on you right now.</div>}
+            ) : <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-3 text-xs font-medium text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200"><CheckCircle2 className="h-4 w-4" />{readOnly ? 'No open items right now.' : 'Nothing is waiting on you right now.'}</div>}
           </Glass>
         </div>
       </div>
@@ -316,10 +323,10 @@ export default function OverviewDashboard({ role = 'admin', allowPath = () => tr
                   return (
                     <li key={`${item.type}-${item.id}`} className="relative pl-6">
                       <span className="absolute left-0 top-1.5 h-[11px] w-[11px] rounded-full ring-4 ring-white dark:ring-slate-900" style={{ backgroundColor: color }} />
-                      <Link to={to} className="block rounded-lg transition hover:text-sky-700 dark:hover:text-sky-300">
+                      {to ? <Link to={to} className="block rounded-lg transition hover:text-sky-700 dark:hover:text-sky-300">
                         <span className="block truncate text-xs font-semibold text-slate-900 dark:text-white">{item.title}</span>
                         <span className={`text-[11px] ${item.live ? 'font-semibold text-emerald-600 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400'}`}>{item.type === 'interview' ? 'Interview' : 'Assessment'} · {whenLabel(item)}</span>
-                      </Link>
+                      </Link> : <div className="block rounded-lg"><span className="block truncate text-xs font-semibold text-slate-900 dark:text-white">{item.title}</span><span className={`text-[11px] ${item.live ? 'font-semibold text-emerald-600 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400'}`}>{item.type === 'interview' ? 'Interview' : 'Assessment'} · {whenLabel(item)}</span></div>}
                     </li>
                   );
                 })}

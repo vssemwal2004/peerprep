@@ -35,11 +35,14 @@ export async function authorizeAssessmentReportAccess(user, assessmentId, { perm
   if (!/^[a-f\d]{24}$/i.test(id) || !mongoose.isValidObjectId(id)) {
     throw new AssessmentAccessError(400, 'INVALID_ASSESSMENT_ID', 'Invalid assessment id.');
   }
-  let assessment = await Assessment.findById(id).select('_id createdBy lifecycleStatus').lean();
+  let assessment = await Assessment.findById(id).select('_id kind createdBy lifecycleStatus').lean();
+  if (isUniversity() && assessment?.kind === 'mock') {
+    throw new AssessmentAccessError(404, 'ASSESSMENT_NOT_FOUND', 'Assessment not found.');
+  }
   let shared = false;
   if (!assessment && isUniversity()) {
     const remote = await sharedAssessment(id);
-    if (remote) {
+    if (remote && !(remote.kind === 'mock' && remote.platformPublished === false)) {
       assessment = { _id: remote._id, createdBy: remote.createdBy, lifecycleStatus: remote.lifecycleStatus };
       shared = true;
     }

@@ -17,7 +17,8 @@ test('missing access data keeps every standard module; opt-in Prep Mates and Pre
   assert.equal(hasStudentFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['resume', 'resume_jd_match'] } }, 'resume_jd_match'), true);
   assert.equal(hasStudentFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['resume_jd_match'] } }, 'resume_jd_match'), false, 'JD Match needs Prep Resume too');
   assert.equal(hasStudentFeature({ role: 'student' }, 'prep_mock'), false, '"All access" does not include Prep Mock');
-  assert.equal(hasStudentFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['prep_mock'] } }, 'prep_mock'), true);
+  assert.equal(hasStudentFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['prep_mock'] } }, 'prep_mock'), false, 'upload is required');
+  assert.equal(hasStudentFeature({ role: 'student', prepMockEnrolledAt: '2026-01-01', featureAccess: { mode: 'custom', features: ['prep_mock'] } }, 'prep_mock'), true);
   assert.equal(hasStudentFeature({ role: 'student' }, 'peers'), false, '"All access" does not include Prep Mates');
   assert.equal(hasStudentFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['peers'] } }, 'peers'), true);
 });
@@ -27,6 +28,8 @@ test('custom access selects the first permitted landing page', () => {
   // The catalogue follows the student sidebar order, where Resume comes before Learning.
   assert.equal(firstStudentFeaturePath(user), '/student/resume');
   assert.equal(firstStudentFeaturePath({ role: 'student', featureAccess: { mode: 'custom', features: ['learning'] } }), '/student/learning');
+  assert.equal(firstStudentFeaturePath({ role: 'student', prepMockEnrolledAt: '2026-01-01',
+    featureAccess: { mode: 'custom', features: ['prep_mock'] } }, (path) => path !== '/student/prep-mock'), '/student/profile');
   assert.equal(hasStudentFeature(user, 'dashboard'), false);
 });
 

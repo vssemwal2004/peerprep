@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { saveRankSnapshot, readGlobalRank } from './globalRanking.js';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
-import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, cacheUserSessionState } from '../middleware/auth.js';
 import { HttpError } from '../utils/errors.js';
 import Assessment from '../models/Assessment.js';
 import QuestionLibrary from '../models/QuestionLibrary.js';
@@ -30,13 +30,17 @@ import { personalRoom } from '../utils/realtime.js';
 import { backfillTenantLoginDirectory } from './loginDirectory.js';
 import { seedEmailTemplates } from '../services/emailTemplateService.js';
 import { seedDefaultMasterData } from '../services/masterDataService.js';
-import { serviceDates } from './servicePeriod.js';
+import { effectiveUniversityPermissions, prepMockAccessStatus, serviceDates } from './servicePeriod.js';
 import { coinAmount, coinRequestId, creditPlatformUser, PLATFORM_WALLET_SCOPE, topUpUniversity } from './coins.js';
 import { accountLimit, withAccountCreationLocks } from './accountLimits.js';
 import { buildOverview, overviewRange, universitySnapshot } from '../services/overviewInsights.js';
 import { rangeEcho } from '../utils/dateRange.js';
 import { platformCentralSummary } from './platformInsights.js';
 import { masterActivityFeed } from './masterActivity.js';
+import { validatePasswordStrength } from '../utils/validators.js';
+import { universityStudentCode } from './studentLoginId.js';
+import { existingAssessmentCandidatePlaces } from '../services/assessmentCandidateQuota.js';
+import { publishedMockAlwaysOn } from '../services/prepMockAvailability.js';
 
 const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
@@ -46,6 +50,7 @@ const moduleNames = ['learning', 'assessments', 'questions', 'quickprep', 'prepm
 const sourceNames = ['learning', 'questions'];
 const clean = (doc) => {
   const value = doc.toObject ? doc.toObject() : { ...doc };
+  value.prepMockAccessStatus = prepMockAccessStatus(value);
   value.dbConfigured = Boolean(value.dbUriEncrypted || doc.dbUriEncrypted);
   value.judgeConfigured = Boolean(value.judge0UrlEncrypted || doc.judge0UrlEncrypted);
   value.judgeAuthConfigured = Boolean((value.judge0AuthHeaderEncrypted || doc.judge0AuthHeaderEncrypted)
@@ -219,6 +224,11 @@ async function tenantOnly(req, res, next) {
 function requireModule(moduleName) {
   return (req, res, next) => req.platformUniversity.permissions?.[moduleName] === true
     ? next() : next(new HttpError(403, `${moduleName} is disabled`));
+}
+
+function requireAssessmentOrMock(req, res, next) {
+  return req.platformUniversity.permissions?.assessments === true || prepMockAccessStatus(req.platformUniversity) === 'active'
+    ? next() : next(new HttpError(403, 'Assessments and PrepMock are disabled'));
 }
 
 router.get('/admin/overview', masterOnly, asyncRoute(async (req, res) => {
@@ -426,12 +436,22 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
   const initialCoins = req.body?.initialCoins === '' || req.body?.initialCoins == null ? 0 : coinAmount(req.body.initialCoins);
   const coordinatorLimit = accountLimit(req.body?.coordinatorLimit, 'coordinator limit');
   const studentLimit = accountLimit(req.body?.studentLimit, 'student limit');
+  const assessmentStudentLimit = accountLimit(req.body?.assessmentStudentLimit ?? req.body?.studentLimit, 'assessment student limit');
+  const prepMockStudentLimit = accountLimit(req.body?.prepMockStudentLimit ?? 0, 'PrepMock student limit');
   // Validate every field before touching an archived registration with the same ID.
   const details = deploymentRole() === 'shared'
     ? { contactEmail: contactEmail(req.body?.contactEmail) }
     : { contactEmail: contactEmail(req.body?.contactEmail), deploymentUrl: frontendUrl(req.body?.deploymentUrl), apiUrl: inspectionOrigin(req.body?.apiUrl) };
   const previous = await University.findOne({ universityId });
   if (previous && !previous.deletedAt) throw new HttpError(409, 'University ID already exists');
+  const studentCode = universityStudentCode(universityId);
+  const registeredUniversities = await University.find({ deletedAt: null, universityId: { $ne: universityId } }).select('universityId').lean();
+  if (registeredUniversities.some((registered) => {
+    const existingCode = universityStudentCode(registered.universityId);
+    return existingCode.startsWith(studentCode) || studentCode.startsWith(existingCode);
+  })) {
+    throw new HttpError(409, 'This university ID produces a student login code that overlaps another university.');
+  }
   let sharedSetup = null;
   if (deploymentRole() === 'shared') {
     const dbUri = validateTenantMongoUri(req.body?.dbUri);
@@ -445,10 +465,10 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
     }
     const adminEmail = contactEmail(req.body?.adminEmail);
     const adminPassword = String(req.body?.adminPassword || '');
-    if (!adminEmail || adminPassword.length < 12) throw new HttpError(400, 'Admin email and a password of at least 12 characters are required');
+    if (!adminEmail || adminPassword.length < 12) throw new HttpError(400, 'SPOC email and a password of at least 12 characters are required');
     const limitedAdminEmail = contactEmail(req.body?.limitedAdminEmail);
     const limitedAdminPassword = String(req.body?.limitedAdminPassword || '');
-    if (!limitedAdminEmail || limitedAdminPassword.length < 12) throw new HttpError(400, 'Second admin email and a password of at least 12 characters are required');
+    if (!limitedAdminEmail || limitedAdminPassword.length < 12) throw new HttpError(400, 'University admin email and a password of at least 12 characters are required');
     if (limitedAdminEmail === adminEmail) throw new HttpError(400, 'The two admins need different email addresses');
     const interviewServiceUrl = String(req.body?.interviewServiceUrl || '').trim();
     const interviewServiceSecret = String(req.body?.interviewServiceSecret || '').trim();
@@ -466,8 +486,8 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
   const defaults = await loadDefaults();
   const apiKey = deploymentRole() === 'shared' ? null : crypto.randomBytes(32).toString('base64url');
   const defaultValues = defaults.toObject();
-  const university = await University.create({ universityId, name, ...details, ...period, coordinatorLimit, studentLimit, coinBalance: 0,
-    ...(apiKey ? { apiKeyHash: keyHash(apiKey) } : {}), permissions: defaultValues.permissions, sources: defaultValues.sources,
+  const university = await University.create({ universityId, name, ...details, ...period, coordinatorLimit, studentLimit, assessmentStudentLimit, prepMockStudentLimit, coinBalance: 0,
+    ...(apiKey ? { apiKeyHash: keyHash(apiKey) } : {}), permissions: { ...defaultValues.permissions, prepmock: false }, sources: defaultValues.sources,
     ...(sharedSetup ? { dbUriEncrypted: encryptTenantSecret(sharedSetup.dbUri), judge0UrlEncrypted: encryptTenantSecret(sharedSetup.judge0Url),
       ...(sharedSetup.judge0AuthHeader ? { judge0AuthHeaderEncrypted: encryptTenantSecret(sharedSetup.judge0AuthHeader),
         judge0AuthTokenEncrypted: encryptTenantSecret(sharedSetup.judge0AuthToken) } : {}),
@@ -482,15 +502,24 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
       await runForTenant(tenant, async () => {
         await seedEmailTemplates();
         await seedDefaultMasterData();
-        const [existingCoordinators, existingStudents] = await Promise.all([
+        const [existingCoordinators, existingStudents, existingPrepMockStudents] = await Promise.all([
           User.countDocuments({ role: 'coordinator' }), User.countDocuments({ role: 'student' }),
+          User.countDocuments({ role: 'student', prepMockEnrolledAt: { $ne: null } }),
         ]);
-        if (existingCoordinators > coordinatorLimit || existingStudents > studentLimit) {
-          throw new HttpError(409, `The university database already has ${existingCoordinators} coordinators and ${existingStudents} students. Increase the account limits before registration.`);
+        if (existingCoordinators > coordinatorLimit || existingStudents > studentLimit || existingPrepMockStudents > prepMockStudentLimit) {
+          throw new HttpError(409, `The university database already has ${existingCoordinators} coordinators, ${existingStudents} students, and ${existingPrepMockStudents} PrepMock students. Increase the account limits before registration.`);
+        }
+        const existingAssessmentPlaces = await existingAssessmentCandidatePlaces();
+        if (existingAssessmentPlaces > assessmentStudentLimit) {
+          throw new HttpError(409, `The university database already has ${existingAssessmentPlaces} assessment student places assigned. Increase the assessment limit before registration.`);
+        }
+        if (existingAssessmentPlaces) {
+          university.assessmentStudentUsed = existingAssessmentPlaces;
+          await university.save();
         }
         for (const [email, password, access, label] of [
-          [sharedSetup.adminEmail, sharedSetup.adminPassword, 'full', 'Admin'],
-          [sharedSetup.limitedAdminEmail, sharedSetup.limitedAdminPassword, 'limited', 'Content Admin'],
+          [sharedSetup.adminEmail, sharedSetup.adminPassword, 'full', 'SPOC'],
+          [sharedSetup.limitedAdminEmail, sharedSetup.limitedAdminPassword, 'limited', 'University Admin'],
         ]) {
           const existingAccount = await User.findOne({ email });
           if (existingAccount && existingAccount.role !== 'admin') throw new HttpError(409, `${label} email belongs to a different university role`);
@@ -529,10 +558,19 @@ router.patch('/admin/universities/:id', masterOnly, asyncRoute(async (req, res) 
   const limitUpdates = {};
   if (req.body?.coordinatorLimit !== undefined) limitUpdates.coordinatorLimit = accountLimit(req.body.coordinatorLimit, 'coordinator limit');
   if (req.body?.studentLimit !== undefined) limitUpdates.studentLimit = accountLimit(req.body.studentLimit, 'student limit');
-  if (Object.keys(limitUpdates).length && req.body?.dbUri) throw new HttpError(400, 'Save the database connection and account limits separately');
+  if (req.body?.prepMockStudentLimit !== undefined) limitUpdates.prepMockStudentLimit = accountLimit(req.body.prepMockStudentLimit, 'PrepMock student limit');
+  const assessmentStudentLimit = req.body?.assessmentStudentLimit === undefined
+    ? undefined : accountLimit(req.body.assessmentStudentLimit, 'assessment student limit');
+  if ((Object.keys(limitUpdates).length || assessmentStudentLimit !== undefined) && req.body?.dbUri) throw new HttpError(400, 'Save the database connection and account limits separately');
   if (req.body?.serviceStartDate !== undefined || req.body?.serviceEndDate !== undefined) {
     const period = serviceDates(req.body?.serviceStartDate ?? university.serviceStartDate, req.body?.serviceEndDate ?? university.serviceEndDate);
     university.set(period);
+  }
+  if (req.body?.prepMockStartDate !== undefined || req.body?.prepMockEndDate !== undefined) {
+    const dates = serviceDates(req.body?.prepMockStartDate ?? university.prepMockStartDate,
+      req.body?.prepMockEndDate ?? university.prepMockEndDate);
+    university.prepMockStartDate = dates.serviceStartDate;
+    university.prepMockEndDate = dates.serviceEndDate;
   }
   if (deploymentRole() === 'shared' && req.body?.dbUri) {
     const uri = validateTenantMongoUri(req.body.dbUri);
@@ -569,35 +607,66 @@ router.patch('/admin/universities/:id', masterOnly, asyncRoute(async (req, res) 
   for (const key of moduleNames) {
     if (req.body?.permissions?.[key] !== undefined) {
       if (typeof req.body.permissions[key] !== 'boolean') throw new HttpError(400, `Invalid permission: ${key}`);
-      university.permissions[key] = req.body.permissions[key];
+      university.set(`permissions.${key}`, req.body.permissions[key]);
     }
+  }
+  if (req.body?.permissions?.prepmock === true && (!university.prepMockStartDate || !university.prepMockEndDate)) {
+    throw new HttpError(400, 'Set PrepMock start and end dates before enabling access');
   }
   for (const key of sourceNames) {
     if (req.body?.sources?.[key] !== undefined) {
       if (!['university', 'shared'].includes(req.body.sources[key])) throw new HttpError(400, `Invalid source: ${key}`);
-      university.sources[key] = req.body.sources[key];
+      university.set(`sources.${key}`, req.body.sources[key]);
     }
   }
-  const changedRoles = Object.keys(limitUpdates).map((key) => key === 'studentLimit' ? 'student' : 'coordinator');
+  const roleForLimit = { studentLimit: 'student', coordinatorLimit: 'coordinator', prepMockStudentLimit: 'prepMock' };
+  const changedRoles = Object.keys(limitUpdates).map((key) => roleForLimit[key]);
   const save = async () => {
     if (changedRoles.length) {
       const tenant = await getTenant(university.universityId, { includeInactive: true });
       const counts = await runForTenant(tenant, async () => Object.fromEntries(await Promise.all(changedRoles.map(async (role) => [
-        role, await User.countDocuments({ role }),
+        role, await User.countDocuments(role === 'prepMock' ? { role: 'student', prepMockEnrolledAt: { $ne: null } } : { role }),
       ]))));
       for (const role of changedRoles) {
-        const limit = limitUpdates[role === 'student' ? 'studentLimit' : 'coordinatorLimit'];
+        const limit = limitUpdates[{ student: 'studentLimit', coordinator: 'coordinatorLimit', prepMock: 'prepMockStudentLimit' }[role]];
         if (limit < counts[role]) throw new HttpError(409, `Cannot set ${role} limit below the ${counts[role]} existing accounts`);
       }
       university.set(limitUpdates);
     }
+    if (assessmentStudentLimit !== undefined) {
+      const latestQuota = await University.findById(university._id)
+        .select('assessmentStudentLimit assessmentStudentUsed').lean();
+      if (latestQuota.assessmentStudentLimit == null) {
+        const tenant = await getTenant(university.universityId, { includeInactive: true });
+        university.assessmentStudentUsed = await runForTenant(tenant, existingAssessmentCandidatePlaces);
+      } else {
+        university.assessmentStudentUsed = Number(latestQuota.assessmentStudentUsed || 0);
+      }
+      if (assessmentStudentLimit < Number(university.assessmentStudentUsed || 0)) {
+        throw new HttpError(409, `Cannot set assessment student limit below ${university.assessmentStudentUsed || 0} places already used. Reset the quota first if you want a new period.`);
+      }
+      university.assessmentStudentLimit = assessmentStudentLimit;
+    }
     await university.save();
   };
-  if (changedRoles.length) await withAccountCreationLocks(university.universityId, changedRoles, save);
+  if (changedRoles.length || assessmentStudentLimit !== undefined) await withAccountCreationLocks(university.universityId, [
+    ...changedRoles, ...(assessmentStudentLimit !== undefined ? ['assessment'] : []),
+  ], save);
   else await save();
   invalidateTenantRegistration(university.universityId);
+  if (university.permissions?.prepmock === true
+    && university.prepMockStartDate && university.prepMockEndDate
+    && (req.body?.permissions?.prepmock === true || req.body?.prepMockStartDate !== undefined || req.body?.prepMockEndDate !== undefined)) {
+    const publishedMockIds = await Assessment.find({ kind: 'mock', lifecycleStatus: 'published', isVisible: { $ne: false } }).distinct('_id');
+    if (publishedMockIds.length) await Publication.bulkWrite(publishedMockIds.map((contentId) => ({ updateOne: {
+      filter: { kind: 'assessment', contentId },
+      update: { $set: { published: true }, $addToSet: { universityIds: university.universityId,
+        everUniversityIds: university.universityId } },
+      upsert: true,
+    } })));
+  }
   await audit(req, 'university.updated', university.universityId, { permissions: university.permissions, sources: university.sources, active: university.active,
-    fields: [...Object.keys(editableFields).filter((key) => req.body?.[key] !== undefined), ...Object.keys(limitUpdates)] });
+    fields: [...Object.keys(editableFields).filter((key) => req.body?.[key] !== undefined), ...Object.keys(limitUpdates), ...(assessmentStudentLimit !== undefined ? ['assessmentStudentLimit'] : [])] });
   res.json({ university: clean(university) });
 }));
 
@@ -612,14 +681,98 @@ router.post('/admin/universities/:id/coins/top-up', masterOnly, asyncRoute(async
 }));
 
 router.get('/admin/universities/:id/account-counts', masterOnly, asyncRoute(async (req, res) => {
+  const university = await University.findOne({ universityId: req.params.id, deletedAt: null })
+    .select('assessmentStudentLimit assessmentStudentUsed').lean();
+  if (!university) throw new HttpError(404, 'University not found');
   const tenant = await getTenant(req.params.id, { includeInactive: true });
   const counts = await runForTenant(tenant, async () => {
-    const [coordinators, students] = await Promise.all([
+  const [coordinators, students, prepMockStudents] = await Promise.all([
       User.countDocuments({ role: 'coordinator' }), User.countDocuments({ role: 'student' }),
+      User.countDocuments({ role: 'student', prepMockEnrolledAt: { $ne: null } }),
     ]);
-    return { coordinators, students };
+    return { coordinators, students, prepMockStudents };
   });
-  res.set('Cache-Control', 'private, no-store').json(counts);
+  res.set('Cache-Control', 'private, no-store').json({ ...counts,
+    assessmentStudentLimit: university.assessmentStudentLimit ?? null,
+    assessmentStudentUsed: Number(university.assessmentStudentUsed || 0),
+  });
+}));
+
+router.get('/admin/universities/:id/overview', masterOnly, asyncRoute(async (req, res) => {
+  const university = await University.findOne({ universityId: req.params.id, deletedAt: null })
+    .select('universityId').lean();
+  if (!university) throw new HttpError(404, 'University not found');
+  const tenant = await getTenant(university.universityId, { includeInactive: true });
+  const now = new Date();
+  const range = overviewRange(req.query, now);
+  const overview = await runForTenant(tenant, () => buildOverview(
+    { _id: req.user._id, role: 'admin' }, now, range, { permissions: tenant.permissions },
+  ));
+  res.set('Cache-Control', 'private, no-store').json(overview);
+}));
+
+router.post('/admin/universities/:id/assessment-quota/reset', masterOnly, asyncRoute(async (req, res) => {
+  const universityId = req.params.id;
+  const result = await withAccountCreationLocks(universityId, ['assessment'], async () => {
+    const university = await University.findOneAndUpdate(
+      { universityId, deletedAt: null },
+      { $set: { assessmentStudentUsed: 0 }, $inc: { assessmentStudentQuotaGeneration: 1 } },
+      { new: true },
+    ).select('assessmentStudentLimit assessmentStudentUsed assessmentStudentQuotaGeneration').lean();
+    if (!university) throw new HttpError(404, 'University not found');
+    return university;
+  });
+  await audit(req, 'university.assessment_quota_reset', universityId);
+  res.set('Cache-Control', 'private, no-store').json({ assessmentStudentLimit: result.assessmentStudentLimit ?? null,
+    assessmentStudentUsed: 0 });
+}));
+
+router.get('/admin/universities/:id/admin-emails', masterOnly, asyncRoute(async (req, res) => {
+  const university = await University.findOne({ universityId: req.params.id, deletedAt: null }).select('universityId').lean();
+  if (!university) throw new HttpError(404, 'University not found');
+  const tenant = await getTenant(university.universityId, { includeInactive: true });
+  const admins = await runForTenant(tenant, () => User.find({ role: 'admin' })
+    .select('email adminAccess').sort({ createdAt: 1 }).lean());
+  res.set('Cache-Control', 'private, no-store').json({
+    spocEmail: admins.find((admin) => admin.adminAccess !== 'limited')?.email || null,
+    adminEmail: admins.find((admin) => admin.adminAccess === 'limited')?.email || null,
+  });
+}));
+
+router.put('/admin/universities/:id/admin-password', masterOnly, asyncRoute(async (req, res) => {
+  const account = req.body?.account;
+  const password = req.body?.password;
+  if (account !== 'admin' && account !== 'spoc') throw new HttpError(400, 'Choose the admin or SPOC account');
+  if (typeof password !== 'string' || password.length < 12) throw new HttpError(400, 'Password must be at least 12 characters');
+  const university = await University.findOne({ universityId: req.params.id, deletedAt: null }).select('universityId').lean();
+  if (!university) throw new HttpError(404, 'University not found');
+  const tenant = await getTenant(university.universityId, { includeInactive: true });
+  const admin = await runForTenant(tenant, async () => {
+    const users = await User.find({ role: 'admin' }).sort({ createdAt: 1 });
+    const user = users.find((item) => account === 'admin' ? item.adminAccess === 'limited' : item.adminAccess !== 'limited');
+    if (!user) throw new HttpError(404, `${account === 'spoc' ? 'SPOC' : 'University admin'} account not found`);
+    const validation = validatePasswordStrength(password, [user.email, user.name]);
+    if (!validation.valid) throw new HttpError(400, validation.errors.join('; '));
+    user.passwordHash = await User.hashPassword(password);
+    user.mustChangePassword = true;
+    // An ended marker rejects every existing token, including one issued in the same second.
+    user.activeSessionToken = `ended:${crypto.randomBytes(12).toString('hex')}`;
+    user.activeSessionSeenAt = undefined;
+    await user.save();
+    await cacheUserSessionState(user._id, {
+      activeSessionToken: user.activeSessionToken,
+      activeSessionCreatedAt: user.activeSessionCreatedAt,
+      activeSessionDevice: user.activeSessionDevice,
+      passwordChangedAt: user.passwordChangedAt,
+      isActive: user.isActive,
+      accessScope: user.accessScope,
+      featureAccess: user.featureAccess,
+      adminAccess: user.adminAccess,
+    });
+    return { id: String(user._id), email: user.email };
+  });
+  await audit(req, 'university.admin_password_reset', university.universityId, { account, adminId: admin.id });
+  res.set('Cache-Control', 'private, no-store').json({ message: `${account === 'spoc' ? 'SPOC' : 'University admin'} password updated`, email: admin.email });
 }));
 
 router.post('/admin/universities/:id/rotate-key', masterOnly, asyncRoute(async (req, res) => {
@@ -756,7 +909,10 @@ router.get('/tenant/rankings/self', asyncRoute(async (req, res) => {
   res.set('Cache-Control', 'private, no-store');
   res.json(await readGlobalRank(req.platformUniversity, req.query));
 }));
-router.get('/tenant/policy', (req, res) => res.json({ universityId: req.platformUniversity.universityId, active: true, permissions: req.platformUniversity.permissions, sources: req.platformUniversity.sources, updatedAt: req.platformUniversity.updatedAt }));
+router.get('/tenant/policy', (req, res) => res.json({ universityId: req.platformUniversity.universityId, active: true,
+  permissions: effectiveUniversityPermissions(req.platformUniversity), sources: req.platformUniversity.sources,
+  prepMockStartDate: req.platformUniversity.prepMockStartDate, prepMockEndDate: req.platformUniversity.prepMockEndDate,
+  prepMockAccessStatus: prepMockAccessStatus(req.platformUniversity), updatedAt: req.platformUniversity.updatedAt }));
 router.post('/tenant/heartbeat', asyncRoute(async (req, res) => {
   const usage = {};
   for (const name of ['students', 'coordinators', 'submissions', 'interviewSessions']) {
@@ -767,35 +923,57 @@ router.post('/tenant/heartbeat', asyncRoute(async (req, res) => {
   res.json({ ok: true });
 }));
 
-router.get('/tenant/assessments', requireModule('assessments'), asyncRoute(async (req, res) => {
-  const ids = await Publication.find({ kind: 'assessment', published: true, universityIds: req.platformUniversity.universityId }).distinct('contentId');
-  const assessments = await Assessment.find({ _id: { $in: ids }, lifecycleStatus: { $ne: 'draft' }, isVisible: { $ne: false } }).lean();
-  res.json({ assessments: assessments.map((item) => ({ ...item, targetType: 'all', assignedStudents: [], draftAssignedStudents: [] })) });
+router.get('/tenant/assessments', requireAssessmentOrMock, asyncRoute(async (req, res) => {
+  const ids = req.platformUniversity.permissions?.assessments === true
+    ? await Publication.find({ kind: 'assessment', published: true, universityIds: req.platformUniversity.universityId }).distinct('contentId') : [];
+  const [regular, mocks] = await Promise.all([
+    Assessment.find({ _id: { $in: ids }, kind: { $ne: 'mock' }, lifecycleStatus: { $ne: 'draft' }, isVisible: { $ne: false } }).lean(),
+    prepMockAccessStatus(req.platformUniversity) === 'active'
+      ? Assessment.find({ kind: 'mock', lifecycleStatus: 'published', isVisible: { $ne: false } }).lean()
+      : [],
+  ]);
+  res.json({ assessments: [...regular, ...mocks].map((item) => ({ ...publishedMockAlwaysOn(item), targetType: 'all',
+    assignedStudents: [], draftAssignedStudents: [], ...(item.kind === 'mock' ? { platformPublished: true } : {}) })) });
 }));
-router.get('/tenant/assessments/history', requireModule('assessments'), asyncRoute(async (req, res) => {
+router.get('/tenant/assessments/history', requireAssessmentOrMock, asyncRoute(async (req, res) => {
+  if (prepMockAccessStatus(req.platformUniversity) !== 'active') throw new HttpError(403, 'PrepMock is unavailable for this university');
   const publications = await Publication.find({ kind: 'assessment', everUniversityIds: req.platformUniversity.universityId }).lean();
   const published = new Set(publications.filter((item) => item.published && item.universityIds.includes(req.platformUniversity.universityId)).map((item) => String(item.contentId)));
   const assessments = await Assessment.find({ _id: { $in: publications.map((item) => item.contentId) }, kind: 'mock', $or: [{ mockHasHistory: true }, { _id: { $in: [...published] } }] }).lean();
-  res.json({ assessments: assessments.map((item) => ({ ...item, targetType: 'all', assignedStudents: [], draftAssignedStudents: [], platformPublished: published.has(String(item._id)) })) });
+  res.json({ assessments: assessments.map((item) => ({ ...publishedMockAlwaysOn(item), targetType: 'all', assignedStudents: [], draftAssignedStudents: [], platformPublished: published.has(String(item._id)) })) });
 }));
-router.get('/tenant/assessments/:id', requireModule('assessments'), asyncRoute(async (req, res) => {
+router.get('/tenant/assessments/:id', requireAssessmentOrMock, asyncRoute(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) throw new HttpError(400, 'Invalid assessment ID');
-  const publication = await Publication.findOne({ kind: 'assessment', contentId: req.params.id,
-    $or: [{ universityIds: req.platformUniversity.universityId }, { everUniversityIds: req.platformUniversity.universityId }] }).lean();
-  if (!publication) throw new HttpError(404, 'Assessment not available');
   const assessment = await Assessment.findById(req.params.id).lean();
   if (!assessment) throw new HttpError(404, 'Assessment not available');
-  res.json({ assessment: { ...assessment, targetType: 'all', assignedStudents: [], draftAssignedStudents: [],
-    platformPublished: publication.published && publication.universityIds.includes(req.platformUniversity.universityId)
-      && assessment.lifecycleStatus !== 'draft' && assessment.isVisible !== false } });
+  if (assessment.kind !== 'mock' && req.platformUniversity.permissions?.assessments !== true) {
+    throw new HttpError(404, 'Assessment not available');
+  }
+  if (assessment.kind === 'mock' && prepMockAccessStatus(req.platformUniversity) !== 'active') {
+    throw new HttpError(404, 'Assessment not available');
+  }
+  const publication = await Publication.findOne({ kind: 'assessment', contentId: req.params.id,
+    $or: [{ universityIds: req.platformUniversity.universityId }, { everUniversityIds: req.platformUniversity.universityId }] }).lean();
+  const globalMockPublished = assessment.kind === 'mock' && assessment.lifecycleStatus === 'published' && assessment.isVisible !== false;
+  if (!publication && !globalMockPublished) throw new HttpError(404, 'Assessment not available');
+  res.json({ assessment: { ...publishedMockAlwaysOn(assessment), targetType: 'all', assignedStudents: [], draftAssignedStudents: [],
+    platformPublished: globalMockPublished || (publication?.published && publication.universityIds.includes(req.platformUniversity.universityId)
+      && assessment.lifecycleStatus !== 'draft' && assessment.isVisible !== false) } });
 }));
-router.get('/tenant/assessments/:id/problems/:problemId', requireModule('assessments'), asyncRoute(async (req, res) => {
+router.get('/tenant/assessments/:id/problems/:problemId', requireAssessmentOrMock, asyncRoute(async (req, res) => {
   const { id, problemId } = req.params;
   if (!mongoose.isValidObjectId(id) || !mongoose.isValidObjectId(problemId)) throw new HttpError(400, 'Invalid identifier');
+  const assessment = await Assessment.findById(id).lean();
+  if (assessment?.kind !== 'mock' && req.platformUniversity.permissions?.assessments !== true) {
+    throw new HttpError(404, 'Problem not available');
+  }
   const access = await Publication.exists({ kind: 'assessment', contentId: id,
     $or: [{ universityIds: req.platformUniversity.universityId }, { everUniversityIds: req.platformUniversity.universityId }] });
-  if (!access) throw new HttpError(404, 'Problem not available');
-  const assessment = await Assessment.findById(id).lean();
+  const globalMockPublished = assessment?.kind === 'mock' && assessment.lifecycleStatus === 'published'
+    && assessment.isVisible !== false && prepMockAccessStatus(req.platformUniversity) === 'active';
+  if ((!access && !globalMockPublished) || (assessment?.kind === 'mock' && prepMockAccessStatus(req.platformUniversity) !== 'active')) {
+    throw new HttpError(404, 'Problem not available');
+  }
   const included = assessment?.sections?.some((section) => section.questions?.some((question) =>
     [question.problemId, question.coding?.problemId, question.problemDataSnapshot?._id, question.coding?.problemData?._id]
       .some((value) => String(value || '') === problemId)));
@@ -879,14 +1057,18 @@ router.get('/university/policy', requireAuth, asyncRoute(async (req, res) => {
 router.get('/university/account-limits', requireAuth, asyncRoute(async (req, res) => {
   if (!isUniversity() || !['admin', 'coordinator'].includes(req.user.role)) throw new HttpError(403, 'Not available for this account');
   const universityId = currentTenant().universityId;
-  const [university, coordinators, students] = await Promise.all([
-    University.findOne({ universityId, deletedAt: null }).select('coordinatorLimit studentLimit').lean(),
+  const [university, coordinators, students, prepMockStudents] = await Promise.all([
+    University.findOne({ universityId, deletedAt: null }).select('coordinatorLimit studentLimit prepMockStudentLimit assessmentStudentLimit assessmentStudentUsed').lean(),
     User.countDocuments({ role: 'coordinator' }), User.countDocuments({ role: 'student' }),
+    User.countDocuments({ role: 'student', prepMockEnrolledAt: { $ne: null } }),
   ]);
   if (!university) throw new HttpError(404, 'University not found');
   res.set('Cache-Control', 'private, no-store').json({
     coordinatorLimit: university.coordinatorLimit, studentLimit: university.studentLimit,
-    coordinators, students,
+    prepMockStudentLimit: university.prepMockStudentLimit ?? 0,
+    assessmentStudentLimit: university.assessmentStudentLimit ?? null,
+    assessmentStudentUsed: Number(university.assessmentStudentUsed || 0),
+    coordinators, students, prepMockStudents,
   });
 }));
 router.get('/public-questions', requireAuth, asyncRoute(async (req, res) => {

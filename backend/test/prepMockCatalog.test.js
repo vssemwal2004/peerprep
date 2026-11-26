@@ -5,7 +5,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import Assessment from '../src/models/Assessment.js';
 import { PrepMockCompany, PrepMockRole } from '../src/models/PrepMockCatalog.js';
 import {
-  COMMON_ROLES, addMockRole, builtInLogo, companyLogoSnapshot, isPrivateAddress, logosForCompanies, mockRolesFor, normalizeWebsite, setBuiltInLogos,
+  COMMON_ROLES, STARTER_MOCK_COMPANIES, addMockRole, builtInLogo, companyLogoSnapshot, isPrivateAddress, listMockCatalogCompanies, logosForCompanies, mockRolesFor, normalizeWebsite, setBuiltInLogos,
 } from '../src/services/prepMockCatalog.js';
 import { OPT_IN_STUDENT_FEATURES, STANDARD_STUDENT_FEATURES, studentHasFeature } from '../src/services/studentFeatureAccess.js';
 
@@ -49,6 +49,15 @@ test('logos: a logo set here wins, a removed one stays hidden, otherwise the bui
   assert.deepEqual(logoFor('Nobody', { url: 'https://img.example/saved.png' }), { url: 'https://img.example/saved.png', width: null, height: null }, 'the copy saved on a shared mock is the last resort');
 });
 
+test('PrepMock offers ten starter companies even before questions or mocks exist', async () => {
+  const companies = await listMockCatalogCompanies();
+  const names = companies.map((row) => row.company);
+  assert.equal(STARTER_MOCK_COMPANIES.length, 10);
+  for (const name of STARTER_MOCK_COMPANIES) assert.equal(names.filter((value) => value === name).length, 1, name);
+  assert.equal(companies.find((row) => row.company === 'Amazon').domain, 'amazon.com');
+  assert.equal(companies.find((row) => row.company === 'Amazon').questions, 0);
+});
+
 test('roles: the company\'s own roles first (its mocks, then added), then every other role A–Z', async () => {
   await Assessment.create([
     { kind: 'mock', company: 'Acme', role: 'SDE 2', title: 'A', createdBy: adminId, lifecycleStatus: 'draft' },
@@ -75,6 +84,6 @@ test('Prep Mock is opt-in: "All access" students do not get it until an admin tu
   assert.ok(OPT_IN_STUDENT_FEATURES.includes('prep_mock'));
   assert.ok(!STANDARD_STUDENT_FEATURES.includes('prep_mock'));
   assert.equal(studentHasFeature({ role: 'student' }, 'prep_mock'), false);
-  assert.equal(studentHasFeature({ role: 'student', featureAccess: { mode: 'custom', features: ['assessments', 'prep_mock'] } }, 'prep_mock'), true);
+  assert.equal(studentHasFeature({ role: 'student', prepMockEnrolledAt: new Date(), featureAccess: { mode: 'custom', features: ['assessments', 'prep_mock'] } }, 'prep_mock'), true);
   assert.equal(studentHasFeature({ role: 'admin' }, 'prep_mock'), true);
 });

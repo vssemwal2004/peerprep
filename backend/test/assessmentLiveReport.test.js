@@ -282,7 +282,7 @@ test('Prep Mock: company mocks only for students given the feature, and never in
     { ...window, title: 'Weekly test' },
   ]);
   const plain = { _id: new mongoose.Types.ObjectId(), role: 'student', accessScope: 'platform' };
-  const given = { ...plain, _id: new mongoose.Types.ObjectId(), featureAccess: { mode: 'custom', features: ['assessments', 'prep_mock'] } };
+  const given = { ...plain, _id: new mongoose.Types.ObjectId(), prepMockEnrolledAt: new Date(), featureAccess: { mode: 'custom', features: ['assessments', 'prep_mock'] } };
   const ids = (body) => body.ongoingAssessments.map((card) => String(card._id));
 
   const normal = await call(plain, '/student/assessment-dashboard');

@@ -37,7 +37,7 @@ const EMPTY_FILTERS = {
  * 'add' (announcements: adds them to students chosen another way, e.g. from an uploaded list).
  * showSelectedList: false when the page shows the chosen students itself.
  */
-export default function StudentSelector({ selected = [], onChange, onBusyChange, selectAllMode = 'replace', showSelectedList = true }) {
+export default function StudentSelector({ selected = [], onChange, onBusyChange, selectAllMode = 'replace', showSelectedList = true, prepMockOnly = false }) {
   const [students, setStudents] = useState([]);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -133,6 +133,7 @@ export default function StudentSelector({ selected = [], onChange, onBusyChange,
       search: debouncedQuery,
       ...filters,
       uploadBatchId,
+      prepMockOnly,
       sortOrder: 'asc',
       page: pagination.page,
       limit: PAGE_SIZE,
@@ -168,7 +169,7 @@ export default function StudentSelector({ selected = [], onChange, onBusyChange,
       .finally(() => {
         if (requestRef.current === requestId) setLoading(false);
       });
-  }, [debouncedQuery, filters, pagination.page, uploadBatchId]);
+  }, [debouncedQuery, filters, pagination.page, uploadBatchId, prepMockOnly]);
 
   const toggleStudent = (student) => {
     const id = String(student._id);
@@ -192,6 +193,7 @@ export default function StudentSelector({ selected = [], onChange, onBusyChange,
         search: debouncedQuery,
         ...filters,
         uploadBatchId,
+        prepMockOnly,
         sortOrder: 'asc',
       });
       const matchingStudents = Array.isArray(data.students) ? data.students : [];

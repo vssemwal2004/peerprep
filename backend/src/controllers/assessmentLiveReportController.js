@@ -3,6 +3,7 @@ import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import User from '../models/User.js';
 import { sharedAssessment } from '../platform/sharedContent.js';
+import { isUniversity } from '../platform/deployment.js';
 import { evaluatedScoreExpression } from '../services/assessmentReportSummaryService.js';
 import { studentFeatureQuery } from '../services/studentFeatureAccess.js';
 import { isGraded, passPercentageOf, percentOf, summarizeAttempts } from '../services/assessmentAttemptCounts.js';
@@ -60,7 +61,7 @@ async function loadRosterAssessment(assessmentId) {
   const [local] = await Assessment.aggregate([
     { $match: { _id: new mongoose.Types.ObjectId(assessmentId) } },
     { $project: {
-      title: 1, totalMarks: 1, startTime: 1, endTime: 1, duration: 1, lifecycleStatus: 1, manuallyCompletedAt: 1,
+      kind: 1, title: 1, totalMarks: 1, startTime: 1, endTime: 1, duration: 1, lifecycleStatus: 1, manuallyCompletedAt: 1,
       targetType: 1, passPercentage: '$settings.passPercentage',
       resultsReleasedAt: '$settings.resultsReleasedAt', showResultsAfterSubmit: '$settings.showResultsAfterSubmit',
       assignedCount: { $size: { $ifNull: ['$assignedStudents', []] } },
@@ -71,7 +72,7 @@ async function loadRosterAssessment(assessmentId) {
   const shared = await sharedAssessment(assessmentId);
   if (!shared) return null;
   return {
-    _id: shared._id, title: shared.title, totalMarks: shared.totalMarks, startTime: shared.startTime, endTime: shared.endTime,
+    _id: shared._id, kind: shared.kind, title: shared.title, totalMarks: shared.totalMarks, startTime: shared.startTime, endTime: shared.endTime,
     duration: shared.duration, lifecycleStatus: shared.lifecycleStatus, manuallyCompletedAt: shared.manuallyCompletedAt,
     targetType: shared.targetType, passPercentage: shared.settings?.passPercentage,
     resultsReleasedAt: shared.settings?.resultsReleasedAt, showResultsAfterSubmit: shared.settings?.showResultsAfterSubmit,
@@ -178,9 +179,10 @@ function parseCursor(value) {
 async function assignedStudentsWithoutAttempt(assessment, attemptedIds, remaining) {
   if (remaining <= 0) return [];
   const projection = STUDENT_PROJECTION;
+  const mockEnrollment = assessment.kind === 'mock' && isUniversity() ? studentFeatureQuery('prep_mock') : {};
   if (assessment.targetType === 'all' && !assessment.assignedCount) {
     return User.find({
-      role: 'student', accessScope: { $ne: 'assessment_only' }, ...studentFeatureQuery('assessments'),
+      role: 'student', accessScope: { $ne: 'assessment_only' }, ...studentFeatureQuery(assessment.kind === 'mock' && isUniversity() ? 'prep_mock' : 'assessments'),
       _id: { $nin: [...attemptedIds].map((id) => new mongoose.Types.ObjectId(id)) },
     }).select(projection).sort({ name: 1, _id: 1 }).limit(remaining).maxTimeMS(5000).lean();
   }
@@ -191,7 +193,7 @@ async function assignedStudentsWithoutAttempt(assessment, attemptedIds, remainin
     .filter((id) => mongoose.isValidObjectId(id) && !attemptedIds.has(id))
     .slice(0, remaining);
   if (!missing.length) return [];
-  return User.find({ _id: { $in: missing }, role: 'student' }).select(projection).maxTimeMS(5000).lean();
+  return User.find({ _id: { $in: missing }, role: 'student', ...mockEnrollment }).select(projection).maxTimeMS(5000).lean();
 }
 
 /**

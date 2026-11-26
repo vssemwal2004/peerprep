@@ -4,8 +4,6 @@ import { assessmentAdmission } from '../middleware/assessmentAdmission.js';
 import Assessment from '../models/Assessment.js';
 import mongoose from 'mongoose';
 import { isUniversity } from '../platform/deployment.js';
-import { universityPolicy } from '../platform/client.js';
-import { permissionAllowed } from '../platform/enforcePolicy.js';
 import { beginStudentAssessment, listStudentAssessments, getStudentAssessment, getStudentAssessmentDashboard, logStudentHeartbeat, logStudentMonitoring, logStudentViolation, markStudentAssessmentSetupStep, saveAssessmentProgress, startStudentAssessment, submitAssessment, createStudentEvidenceUpload } from '../controllers/assessmentController.js';
 
 const router = Router();
@@ -19,9 +17,7 @@ router.use('/assessment/:id', async (req, res, next) => {
   if (!mongoose.isValidObjectId(id)) return next();
   try {
     const assessment = await Assessment.findById(id).select('kind').lean();
-    if (assessment?.kind === 'mock' && !permissionAllowed((await universityPolicy()).permissions, 'prepmock')) {
-      return res.status(403).json({ error: 'PrepMock is disabled for this university' });
-    }
+    if (assessment?.kind === 'mock') return res.status(404).json({ error: 'Mock not found' });
     return next();
   } catch (error) { return next(error); }
 });

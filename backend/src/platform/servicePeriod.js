@@ -25,6 +25,20 @@ export function serviceDates(start, end) {
   return { serviceStartDate, serviceEndDate };
 }
 
+export function prepMockAccessStatus(university, now = new Date()) {
+  if (university?.permissions?.prepmock !== true) return 'disabled';
+  if (!university.prepMockStartDate || !university.prepMockEndDate) return 'unconfigured';
+  const today = todayInIndia(now);
+  if (today < university.prepMockStartDate) return 'upcoming';
+  if (today > university.prepMockEndDate) return 'expired';
+  return 'active';
+}
+
+export function effectiveUniversityPermissions(university, now = new Date()) {
+  const permissions = university?.permissions?.toObject?.() || university?.permissions || {};
+  return { ...permissions, prepmock: prepMockAccessStatus(university, now) === 'active' };
+}
+
 export function servicePeriodStatus(university, now = new Date()) {
   // Existing universities stay accessible until the superadmin sets their dates.
   if (!university?.serviceStartDate || !university?.serviceEndDate) return 'active';

@@ -7,6 +7,7 @@ import mongoose from 'mongoose';
 import Assessment from '../../models/Assessment.js';
 import AssessmentSubmission from '../../models/AssessmentSubmission.js';
 import { sharedAssessments } from '../../platform/sharedContent.js';
+import { isUniversity } from '../../platform/deployment.js';
 import { authorizedOwnedFilter } from '../adminAnalytics/adminAnalytics.authorization.js';
 import { ATTEMPT_BUCKETS, FINISHED_STATUSES, attemptBucketOf } from '../../services/assessmentAttemptCounts.js';
 
@@ -20,12 +21,13 @@ const FINAL_STATUSES = ['submitted', 'violation', 'expired']; // graded rows (se
 const isEnded = (test, now) => Boolean(test.manuallyCompletedAt) || (test.endTime && new Date(test.endTime) <= now);
 
 export async function loadAssessmentDefinitions(user, now = new Date(), kind = 'assessment') {
-  const local = await Assessment.find({ $and: [authorizedOwnedFilter(user), { kind: kind === 'mock' ? 'mock' : { $ne: 'mock' } }] })
+  const local = await Assessment.find({ $and: [authorizedOwnedFilter(user), { kind: kind === 'mock' ? 'mock' : { $ne: 'mock' } },
+    ...(kind === 'mock' && isUniversity() ? [{ _id: null }] : [])] })
     .select('_id kind title assessmentType lifecycleStatus mockHasHistory isVisible manuallyCompletedAt startTime endTime totalMarks assignedStudents targetType')
     .limit(MAX_DEFINITIONS)
     .maxTimeMS(MAX_QUERY_MS)
     .lean();
-  const shared = user?.role === 'admin' ? (await sharedAssessments(kind === 'mock' ? 'mock' : 'assessment', { includeHistorical: kind === 'mock' })) || [] : [];
+  const shared = user?.role === 'admin' ? (await sharedAssessments(kind === 'mock' ? 'mock' : 'assessment', { includeHistorical: kind === 'mock' && !isUniversity() })) || [] : [];
   return new Map([...local, ...shared]
     .filter((test) => (test.lifecycleStatus !== 'draft' || (kind === 'mock' && test.mockHasHistory)) && (kind === 'mock' ? test.kind === 'mock' : test.kind !== 'mock'))
     .map((test) => [String(test._id), {

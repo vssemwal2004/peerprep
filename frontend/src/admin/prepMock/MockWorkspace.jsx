@@ -10,7 +10,7 @@ import { formatPatternFrom } from '../../features/prepMock/patternModel';
 import { TablePager, nextSort, sortRows } from '../../components/table';
 import GridSortButton from '../assessment/components/GridSortButton';
 import {
-  assessmentLifecycleLabel, assignedCountOf, displayStatus, formatShortDate, formatTime, statusStyles,
+  assessmentLifecycleLabel, assignedCountOf, displayStatus, formatShortDate, statusStyles,
 } from '../assessment/assessmentListShared';
 
 // All Mocks workspace (admin Prep Mock), built to scale to hundreds of companies, dozens of roles
@@ -28,7 +28,7 @@ const DIFFICULTIES = [['Easy'], ['Medium'], ['Hard']];
 // Each header cell sorts by one or two keys (date + time, status + access share a cell to keep the mock name wide).
 const MOCK_COLUMNS = [
   [['title', 'Mock']],
-  [['date', 'Date'], ['time', 'Time']],
+  [['date', 'Availability']],
   [['content', 'Content']],
   [['completion', 'Completion']],
   [['status', 'Status'], ['access', 'Access']],
@@ -148,7 +148,7 @@ function mockPattern(mock) {
     marks: Number(mock.totalMarks) || 0,
     proctored: Boolean(mock.settings?.aiProctoring?.enabled),
     attempts: Number(mock.attemptLimit) || 1,
-    always: mock.availabilityMode === 'always',
+    always: isPublished(mock) && mock.isVisible !== false,
   };
 }
 
@@ -797,8 +797,7 @@ function MockList({ table, showRole, openPathOf, onOpenPath, renderActions, asse
           const assigned = assignedCountOf(mock);
           const percent = assigned > 0 ? Math.min(100, Math.round((completed / assigned) * 100)) : 0;
           const visible = mock.isVisible !== false && !isDraft(mock);
-          const always = mock.availabilityMode === 'always' && !isDraft(mock);
-          const everyone = mock.targetType === 'all';
+          const always = isPublished(mock) && mock.isVisible !== false;
           return (
             <li key={mock._id}>
               <div role="link" tabIndex={0}
@@ -826,20 +825,20 @@ function MockList({ table, showRole, openPathOf, onOpenPath, renderActions, asse
                     </div>
                   </div>
                 </div>
-                <div className="min-w-0 text-xs" title={!always && mock.endTime ? `Ends ${formatShortDate(mock.endTime)}` : undefined}>
-                  <div className="truncate font-semibold text-slate-700 dark:text-gray-200">{always ? 'Always on' : mock.startTime ? formatShortDate(mock.startTime) : 'Not scheduled'}</div>
-                  <div className="mt-0.5 truncate text-[11px] text-slate-400 dark:text-gray-500">{always ? 'Until unpublished' : mock.startTime ? `${formatTime(mock.startTime)}${mock.endTime ? ` → ${formatShortDate(mock.endTime)}` : ''}` : 'No end date'}</div>
+                <div className="min-w-0 text-xs">
+                  <div className="truncate font-semibold text-slate-700 dark:text-gray-200">{always ? 'Always on' : isPublished(mock) ? 'Hidden' : 'Not published'}</div>
+                  <div className="mt-0.5 truncate text-[11px] text-slate-400 dark:text-gray-500">{always ? 'Until unpublished' : isPublished(mock) ? 'Unhide to make available' : 'Publish to make available'}</div>
                 </div>
                 <div className="text-xs">
                   <div className="font-semibold text-slate-700 dark:text-gray-200">{plural(Number(mock.totalQuestions || 0), 'question')}</div>
                   <div className="mt-0.5 text-[11px] text-slate-400 dark:text-gray-500">{mock.totalMarks || 0} marks · {mock.duration ? `${mock.duration} min` : 'no time'}</div>
                 </div>
-                <div className="min-w-0" title={everyone ? 'Open to all students' : undefined}>
+                <div className="min-w-0" title="All eligible universities can access a published mock">
                   <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="truncate font-semibold text-slate-700 dark:text-gray-200">{mock.shared ? `${completed} completed` : `${completed} of ${assigned.toLocaleString()}${everyone ? ' (all)' : ''}`}</span>
-                    <span className="text-[10px] tabular-nums text-slate-400 dark:text-gray-500">{percent}%</span>
+                    <span className="truncate font-semibold text-slate-700 dark:text-gray-200">{completed} completed</span>
+                    {assigned > 0 && <span className="text-[10px] tabular-nums text-slate-400 dark:text-gray-500">{percent}%</span>}
                   </div>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800"><div className="h-full rounded-full bg-sky-500" style={{ width: `${percent}%` }} /></div>
+                  <div className="mt-0.5 truncate text-[11px] text-slate-400 dark:text-gray-500">All eligible universities</div>
                 </div>
                 <div className="flex flex-col items-start gap-1">
                   <StatusBadge mock={mock} />
@@ -1108,7 +1107,7 @@ export default function MockWorkspace({
     toggle && { label: open ? 'Hide roles' : `Show ${plural(entry.roles.length, 'role')}`, icon: <BriefcaseBusiness className="h-3.5 w-3.5" />, onClick: toggle },
     entry.noRole > 0 && { label: `Show ${plural(entry.noRole, 'mock')} without role`, icon: <AlertTriangle className="h-3.5 w-3.5" />, onClick: () => jump(entry.name, NO_ROLE) },
     { divider: true, key: 'd1' },
-    { label: 'Logo, website & roles', icon: <Building2 className="h-3.5 w-3.5" />, onClick: () => onManageCompany(entry.name) },
+    canCreate && { label: 'Logo, website & roles', icon: <Building2 className="h-3.5 w-3.5" />, onClick: () => onManageCompany(entry.name) },
     entry.domain && { label: `Visit ${entry.domain}`, icon: <Globe className="h-3.5 w-3.5" />, onClick: () => window.open(`https://${entry.domain}`, '_blank', 'noopener,noreferrer') },
     inDetail && { divider: true, key: 'd2' },
     inDetail && { label: 'Close company', icon: <X className="h-3.5 w-3.5" />, onClick: onClose },

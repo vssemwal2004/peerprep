@@ -115,7 +115,7 @@ function StatCell({ label, value, hint, Icon, tone = 'slate', to, href }) {
  */
 export default function OverviewHeader({
   badge, BadgeIcon, title, subtitle, chips = [], updatedAt, loading = false, onRefresh,
-  search = null, createItems = [], stats = [], shortcuts = [], period = null,
+  search = null, createItems = [], stats = [], shortcuts = [], period = null, showGuide = true,
 }) {
   const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
   return (
@@ -129,7 +129,7 @@ export default function OverviewHeader({
             </span>
             <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{today}</span>
           </div>
-          <h1 data-guide="ov-title" className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">{title}<PageGuideButton /></h1>
+          <h1 data-guide="ov-title" className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">{title}{showGuide && <PageGuideButton />}</h1>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
             {subtitle}{updatedAt ? <span className="text-slate-400"> · Updated {relativeTime(updatedAt)}</span> : loading ? <span className="text-slate-400"> · Loading…</span> : null}
           </p>

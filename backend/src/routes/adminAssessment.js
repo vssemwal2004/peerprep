@@ -11,6 +11,11 @@ import { permissionAllowed } from '../platform/enforcePolicy.js';
 import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import mongoose from 'mongoose';
+import { currentTenant } from '../platform/tenantContext.js';
+import { sharedAssessment } from '../platform/sharedContent.js';
+import { requirePrepMockSpoc, listPrepMockStudents, uploadPrepMockStudent, uploadPrepMockStudentsBulk } from '../controllers/prepMockStudentController.js';
+import QuestionLibrary from '../models/QuestionLibrary.js';
+import { HttpError } from '../utils/errors.js';
 import { bulkOperationLimiter, uploadLimiter, compilerExecutionLimiter } from '../middleware/rateLimiter.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
 import {
@@ -82,21 +87,49 @@ const questionAssetUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 1024 * 1024, files: 1 },
 });
+const mockStudentUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
 
 router.post('/assessment/students/preview', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), previewAssessmentStudents);
 // ---- Prep Mock catalogue: companies (= the companies students see on Prep Coding, plus companies
 // that already have mocks) with logos, job roles, and logo upload/fetch. Anyone who creates mocks.
-const mockAuthor = [requireAuth, requireCoordinatorPermission('coordinator.assessment.create')];
+const spocCannotEditMock = (req, _res, next) => {
+  if (currentTenant() || req.user?.role !== 'admin') {
+    return next(new HttpError(403, 'Only the Master Admin can create or edit PrepMocks.'));
+  }
+  return next();
+};
+const mockViewer = [requireAuth, requireCoordinatorPermission('coordinator.assessment.view')];
+const mockAuthor = [requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), spocCannotEditMock];
 const noStore = (res) => res.set('Cache-Control', 'private, no-store');
 const route = (handler) => async (req, res, next) => { try { await handler(req, res); } catch (error) { next(error); } };
-router.use('/assessment/:id', async (req, res, next) => {
-  if (!isUniversity() || !mongoose.isValidObjectId(req.params.id)) return next();
+router.get('/assessment/mock-students', requireAuth, requireAdmin, requirePrepMockSpoc, route(listPrepMockStudents));
+router.post('/assessment/mock-students', requireAuth, requireAdmin, requirePrepMockSpoc, route(uploadPrepMockStudent));
+router.post('/assessment/mock-students/bulk', requireAuth, requireAdmin, requirePrepMockSpoc, uploadLimiter, bulkOperationLimiter, mockStudentUpload.single('file'), route(uploadPrepMockStudentsBulk));
+router.use('/assessment/:id', requireAuth, async (req, res, next) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return next();
   try {
     const assessment = await Assessment.findById(req.params.id).select('kind').lean();
-    if (assessment?.kind === 'mock' && !permissionAllowed((await universityPolicy()).permissions, 'prepmock')) {
+    if (assessment?.kind === 'mock' && isUniversity()) {
+      return res.status(404).json({ error: 'Mock not found' });
+    }
+    if (assessment?.kind === 'mock' && req.user?.role !== 'admin') {
+      return res.status(403).json({ error: 'Only administrators can view PrepMocks.' });
+    }
+    if (assessment?.kind === 'mock' && isUniversity() && !permissionAllowed((await universityPolicy()).permissions, 'prepmock')) {
       return res.status(403).json({ error: 'PrepMock is disabled for this university' });
     }
     return next();
+  } catch (error) { return next(error); }
+});
+router.use('/library/questions', requireAuth, (req, _res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.query?.scope !== 'mock') return next();
+  return spocCannotEditMock(req, _res, next);
+});
+router.use('/library/questions/:id', requireAuth, async (req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || !mongoose.isValidObjectId(req.params.id)) return next();
+  try {
+    const question = await QuestionLibrary.findById(req.params.id).select('scope').lean();
+    return question?.scope === 'mock' ? spocCannotEditMock(req, res, next) : next();
   } catch (error) { return next(error); }
 });
 router.use(['/assessment/reports/submissions/:submissionId', '/assessment/submissions/:submissionId/violations'], async (req, res, next) => {
@@ -105,13 +138,33 @@ router.use(['/assessment/reports/submissions/:submissionId', '/assessment/submis
     const submission = await AssessmentSubmission.findById(req.params.submissionId).select('assessmentId').lean();
     if (!submission) return next();
     const assessment = await Assessment.findById(submission.assessmentId).select('kind').lean();
-    if (assessment?.kind === 'mock' && !permissionAllowed((await universityPolicy()).permissions, 'prepmock')) {
-      return res.status(403).json({ error: 'PrepMock is disabled for this university' });
+    if (assessment?.kind === 'mock') return res.status(404).json({ error: 'Mock report not found' });
+    if (!assessment) {
+      const shared = await sharedAssessment(submission.assessmentId);
+      if (shared?.kind === 'mock' && (shared.platformPublished === false || !permissionAllowed((await universityPolicy()).permissions, 'prepmock'))) {
+        return res.status(404).json({ error: 'Mock report not found' });
+      }
     }
     return next();
   } catch (error) { return next(error); }
 });
-router.get('/assessment/mock-companies', ...mockAuthor, route(async (req, res) => {
+const universityMockReportScope = async (req, res, next) => {
+  if (!isUniversity() || req.query?.kind !== 'mock') return next();
+  try {
+    const id = req.query?.assessmentId;
+    if (!id) return res.status(400).json({ error: 'Select a published PrepMock to view its report' });
+    if (!mongoose.isValidObjectId(id)) return next();
+    const local = await Assessment.findById(id).select('kind').lean();
+    if (local?.kind === 'mock') return res.status(404).json({ error: 'Mock report not found' });
+    const shared = await sharedAssessment(id);
+    if (!shared || shared.kind !== 'mock' || shared.platformPublished === false
+      || !permissionAllowed((await universityPolicy()).permissions, 'prepmock')) {
+      return res.status(404).json({ error: 'Mock report not found' });
+    }
+    return next();
+  } catch (error) { return next(error); }
+};
+router.get('/assessment/mock-companies', ...mockViewer, route(async (req, res) => {
   const search = String(req.query.search || '').trim().toLowerCase().slice(0, 80);
   const requested = Number.parseInt(req.query.limit, 10);
   const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 2000) : 2000;
@@ -121,7 +174,7 @@ router.get('/assessment/mock-companies', ...mockAuthor, route(async (req, res) =
     .map((row) => ({ ...row, count: row.questions }));
   noStore(res).json({ companies });
 }));
-router.get('/assessment/mock-roles', ...mockAuthor, route(async (req, res) => {
+router.get('/assessment/mock-roles', ...mockViewer, route(async (req, res) => {
   noStore(res).json(await mockRolesFor(String(req.query.company || '')));
 }));
 router.post('/assessment/mock-roles', ...mockAuthor, route(async (req, res) => {
@@ -139,13 +192,13 @@ router.delete('/assessment/mock-companies/logo', ...mockAuthor, route(async (req
 router.post('/assessment/mock-companies/logos/fetch-missing', ...mockAuthor, route(async (req, res) => {
   noStore(res).json(await fetchMissingLogos({ limit: req.body?.limit, skip: req.body?.skip, userId: req.user?._id }));
 }));
-router.post('/assessment/create', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), invalidateResponseCache('assessments'), createAssessment);
+router.post('/assessment/create', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), (req, res, next) => req.body?.kind === 'mock' ? spocCannotEditMock(req, res, next) : next(), invalidateResponseCache('assessments'), createAssessment);
 router.post('/assessment/test-email', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), sendAssessmentTestEmail);
 router.get('/assessment/list', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), cacheJsonResponse({ namespace: 'assessments', ttlSeconds: Number(process.env.RESPONSE_CACHE_ASSESSMENTS_TTL_SECONDS || 30) }), listAssessments);
-router.get('/assessment/reports', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), cacheJsonResponse({ namespace: 'assessments', ttlSeconds: Number(process.env.RESPONSE_CACHE_ASSESSMENT_REPORTS_TTL_SECONDS || 15) }), getAssessmentReports);
+router.get('/assessment/reports', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), universityMockReportScope, cacheJsonResponse({ namespace: 'assessments', ttlSeconds: Number(process.env.RESPONSE_CACHE_ASSESSMENT_REPORTS_TTL_SECONDS || 15) }), getAssessmentReports);
 router.get('/assessment/reports/submissions/:submissionId', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getStudentAssessmentReport);
-router.get('/assessment/reports/export-data', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getAssessmentReportsExportData);
-router.get('/assessment/reports/export', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), exportAssessmentReports);
+router.get('/assessment/reports/export-data', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), universityMockReportScope, getAssessmentReportsExportData);
+router.get('/assessment/reports/export', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), universityMockReportScope, exportAssessmentReports);
 router.get('/assessment/submissions/:submissionId/violations', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getSubmissionViolations);
 router.get('/assessment/evidence/:eventId', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getAssessmentEvidence);
 // Live report: never response-cached (Cache-Control: no-store); scope checked by authorizeAssessmentReportAccess.

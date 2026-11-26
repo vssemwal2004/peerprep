@@ -18,7 +18,7 @@ export default function UniversityDefaults() {
         <>
           <Card id="default-modules-title" data-guide="ud-modules" info="ud-modules" title="Modules" icon={SlidersHorizontal}>
             <ul className="grid gap-3 md:grid-cols-2">
-              {MODULES.map((module) => {
+              {MODULES.filter((module) => module.key !== 'prepmock').map((module) => {
                 const on = defaults.permissions?.[module.key] === true;
                 return (
                   <li key={module.key} className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800">

@@ -5,29 +5,35 @@ import { login, requestPasswordReset } from '../controllers/authController.js';
 import { deploymentRole } from './deployment.js';
 import { currentTenant, runForTenant } from './tenantContext.js';
 import { getTenant } from './tenantConnections.js';
-import { findLiveLoginCandidates, findLiveStudentIdCandidates, normalizedLoginEmail, normalizedLoginStudentId } from './loginDirectory.js';
+import { findLiveLoginCandidates, normalizedLoginEmail, normalizedLoginStudentId } from './loginDirectory.js';
+import { University } from './models.js';
+import { studentIdFromUniversityLogin } from './studentLoginId.js';
 import { servicePeriodStatus, servicePeriodMessage } from './servicePeriod.js';
 import { exactEmailPattern } from '../utils/emailIdentity.js';
+import { verifyPrepMockStudentPassword } from '../services/prepMockIdentity.js';
 
-// Student IDs are not unique across universities: sign in only when exactly
-// one student account has this ID and the password matches it.
+// The university code points directly to candidate tenant databases. Existing
+// academic student IDs stay unchanged; only the login identifier is prefixed.
 async function routeStudentIdLogin(req, res, studentId, password) {
   const matches = [];
   const platformStudent = await User.findOne({ role: 'student', studentId }).select('passwordHash').lean();
   if (platformStudent?.passwordHash && await bcrypt.compare(password, platformStudent.passwordHash)) {
-    matches.push({ platform: true });
+    return login(req, res);
   }
-  for (const candidate of await findLiveStudentIdCandidates(studentId)) {
-    const tenant = await getTenant(candidate.universityId);
-    const user = await runForTenant(tenant, () => User.findById(candidate.userId).select('passwordHash').lean());
-    if (user?.passwordHash && await bcrypt.compare(password, user.passwordHash)) matches.push({ tenant });
+  const universities = await University.find({ active: true, deletedAt: null }).select('universityId').lean();
+  for (const university of universities) {
+    const academicId = studentIdFromUniversityLogin(studentId, university.universityId);
+    if (!academicId) continue;
+    const tenant = await getTenant(university.universityId);
+    const user = await runForTenant(tenant, () => User.findOne({ role: 'student', studentId: academicId })
+      .select('passwordHash prepMockIdentity email role').lean());
+    if (user?.role === 'student' && await verifyPrepMockStudentPassword(user, password)) matches.push({ tenant });
   }
   if (!matches.length) throw new HttpError(401, 'Invalid credentials');
   if (matches.length > 1) {
-    throw new HttpError(409, 'This student ID is used at more than one university. Sign in with your email or use the login link from your university.');
+    throw new HttpError(409, 'This login ID matches more than one account. Use your university login link.');
   }
-  const [{ platform, tenant }] = matches;
-  if (platform) return login(req, res);
+  const [{ tenant }] = matches;
   const period = servicePeriodStatus(tenant);
   if (period !== 'active') throw new HttpError(403, servicePeriodMessage(tenant, period));
   return runForTenant(tenant, () => login(req, res));
@@ -38,10 +44,10 @@ export async function routeLogin(req, res) {
   const identifier = req.body?.identifier || req.body?.email;
   const email = normalizedLoginEmail(identifier);
   const password = req.body?.password;
-  if (!password) throw new HttpError(400, 'Enter your email or student ID and password');
+  if (!password) throw new HttpError(400, 'Enter your login ID or staff email and password');
   if (!email) {
     const studentId = normalizedLoginStudentId(identifier);
-    if (!studentId) throw new HttpError(400, 'Enter your email or student ID and password');
+    if (!studentId) throw new HttpError(400, 'Enter your login ID or staff email and password');
     return routeStudentIdLogin(req, res, studentId, password);
   }
 
@@ -55,16 +61,16 @@ export async function routeLogin(req, res) {
     let passwordMatches = false;
     for (const match of matches) {
       const tenant = await getTenant(match.universityId);
-      const user = await runForTenant(tenant, () => User.findById(match.userId).select('passwordHash').lean());
-      if (user?.passwordHash && await bcrypt.compare(password, user.passwordHash)) passwordMatches = true;
+      const user = await runForTenant(tenant, () => User.findById(match.userId).select('passwordHash prepMockIdentity email role').lean());
+      if (user?.role !== 'student' && user?.passwordHash && await bcrypt.compare(password, user.passwordHash)) passwordMatches = true;
     }
     if (!passwordMatches) throw new HttpError(401, 'Invalid credentials');
     throw new HttpError(409, 'This email is used at more than one university. Use the login link from your university.');
   }
   if (!matches.length) throw new HttpError(401, 'Invalid credentials');
   const tenant = await getTenant(matches[0].universityId);
-  const user = await runForTenant(tenant, () => User.findById(matches[0].userId).select('passwordHash').lean());
-  if (!user?.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) throw new HttpError(401, 'Invalid credentials');
+  const user = await runForTenant(tenant, () => User.findById(matches[0].userId).select('passwordHash prepMockIdentity email role').lean());
+  if (!user || user.role === 'student' || !user.passwordHash || !await bcrypt.compare(password, user.passwordHash)) throw new HttpError(401, 'Invalid credentials');
   const period = servicePeriodStatus(tenant);
   if (period !== 'active') throw new HttpError(403, servicePeriodMessage(tenant, period));
   return runForTenant(tenant, () => login(req, res));

@@ -3,7 +3,7 @@ import { HttpError } from '../utils/errors.js';
 import { PlatformAccountCreationLock, University } from './models.js';
 
 const localTails = new Map();
-const LIMIT_FIELDS = { student: 'studentLimit', coordinator: 'coordinatorLimit' };
+const LIMIT_FIELDS = { student: 'studentLimit', coordinator: 'coordinatorLimit', prepMock: 'prepMockStudentLimit', assessment: 'assessmentStudentLimit' };
 const LEASE_MS = 120_000;
 
 export function accountLimit(value, label) {

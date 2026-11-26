@@ -96,10 +96,10 @@ function collector() {
   return { safe, failed };
 }
 
-export async function overviewAccess(user) {
-  const licensed = isUniversity()
+export async function overviewAccess(user, permissions = null) {
+  const licensed = permissions || (isUniversity()
     ? ((await universityPolicy())?.permissions || {})
-    : { questions: true, assessments: true, events: true, interviews: true, learning: true };
+    : { questions: true, assessments: true, events: true, interviews: true, learning: true });
   const admin = user.role === 'admin';
   const can = (...permissions) => admin || permissions.some((permission) => hasCoordinatorPermission(user, permission));
   return {
@@ -116,8 +116,8 @@ export async function overviewAccess(user) {
   };
 }
 
-export async function buildOverview(user, now = new Date(), range = overviewRange({}, now)) {
-  const access = await overviewAccess(user);
+export async function buildOverview(user, now = new Date(), range = overviewRange({}, now), options = {}) {
+  const access = await overviewAccess(user, options.permissions);
   const { safe, failed } = collector();
   const time = now.getTime();
   // Period figures (trend, submissions, scores, feedback…) follow the chosen range; "active this

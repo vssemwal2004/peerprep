@@ -133,7 +133,7 @@ export function buildICS({ uid, start, end, summary, description, url, organizer
 }
 
 // Student onboarding uses the same email address shown on the login form.
-export async function sendOnboardingEmail({ to, password }) {
+export async function sendOnboardingEmail({ to, password, loginStudentId }) {
   const email = normalizeEmailAddress(to);
   const template = normalizeStudentOnboardingTemplate(
     await getTemplateByType(EMAIL_TEMPLATE_TYPES.ONBOARDING),
@@ -143,10 +143,15 @@ export async function sendOnboardingEmail({ to, password }) {
     password: escapeHtml(password),
     dashboardUrl: getDashboardUrl(),
   };
+  const loginNote = loginStudentId && loginStudentId !== email
+    ? `<p style="margin:16px 0;font-size:15px;"><strong>Your student login ID:</strong> ${escapeHtml(loginStudentId)}<br>Use this ID with the temporary password to sign in.</p>` : '';
+  const renderedHtml = renderTemplate(template.htmlContent, vars);
   return sendMail({
     to: email,
     subject: renderTemplate(template.subject, vars),
-    html: renderTemplate(template.htmlContent, vars),
+    html: loginNote && /<\/body>/i.test(renderedHtml)
+      ? renderedHtml.replace(/<\/body>/i, `${loginNote}</body>`)
+      : `${renderedHtml}${loginNote}`,
   });
 }
 

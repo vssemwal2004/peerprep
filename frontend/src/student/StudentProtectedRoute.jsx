@@ -2,11 +2,13 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { PageSkeleton } from '../components/Skeletons';
 import UniversityFeatureGate from '../platform/UniversityFeatureGate';
+import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { featureForStudentPath, firstStudentFeaturePath, hasStudentFeature } from './studentFeatureAccess';
 
 export default function StudentProtectedRoute({ children }) {
   const { user, loading, authChecked, sessionEnded } = useAuth();
   const location = useLocation();
+  const { status: universityStatus, allowsPath } = useUniversityPolicy();
 
   // Show skeleton while auth is being checked, and under "Your session has expired" (no redirect until OK)
   if (loading || !authChecked || (sessionEnded && !user)) {
@@ -36,7 +38,12 @@ export default function StudentProtectedRoute({ children }) {
   const allowed = requestedFeature === 'assessments' && location.pathname.startsWith('/student/assessment/')
     ? ['assessments', 'prep_mock'] : [requestedFeature];
   if (requestedFeature && !allowed.some((feature) => hasStudentFeature(user, feature))) {
-    return <Navigate to={firstStudentFeaturePath(user)} replace state={{ accessDenied: requestedFeature }} />;
+    return <Navigate to={firstStudentFeaturePath(user, (path) => allowsPath(path, 'student'))} replace state={{ accessDenied: requestedFeature }} />;
+  }
+
+  if (universityStatus === 'ready' && requestedFeature && !allowsPath(location.pathname, 'student', location.search)) {
+    return <Navigate to={firstStudentFeaturePath(user, (path) => allowsPath(path, 'student'))} replace
+      state={{ accessDenied: requestedFeature }} />;
   }
 
   return <UniversityFeatureGate role="student">{children}</UniversityFeatureGate>;

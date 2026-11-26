@@ -139,6 +139,8 @@ export async function getTenant(universityId, { includeInactive = false } = {}) 
       sources: registration.sources,
       serviceStartDate: registration.serviceStartDate,
       serviceEndDate: registration.serviceEndDate,
+      prepMockStartDate: registration.prepMockStartDate,
+      prepMockEndDate: registration.prepMockEndDate,
       judge0Url: registration.judge0UrlEncrypted ? decryptTenantSecret(registration.judge0UrlEncrypted) : '',
       judge0AuthHeader: registration.judge0AuthHeaderEncrypted ? decryptTenantSecret(registration.judge0AuthHeaderEncrypted) : '',
       judge0AuthToken: registration.judge0AuthTokenEncrypted ? decryptTenantSecret(registration.judge0AuthTokenEncrypted) : '',
@@ -178,6 +180,8 @@ export async function getTenant(universityId, { includeInactive = false } = {}) 
         sources: registration.sources,
         serviceStartDate: registration.serviceStartDate,
         serviceEndDate: registration.serviceEndDate,
+        prepMockStartDate: registration.prepMockStartDate,
+        prepMockEndDate: registration.prepMockEndDate,
         judge0Url: registration.judge0UrlEncrypted ? decryptTenantSecret(registration.judge0UrlEncrypted) : '',
         judge0AuthHeader: registration.judge0AuthHeaderEncrypted ? decryptTenantSecret(registration.judge0AuthHeaderEncrypted) : '',
         judge0AuthToken: registration.judge0AuthTokenEncrypted ? decryptTenantSecret(registration.judge0AuthTokenEncrypted) : '',
@@ -215,6 +219,12 @@ async function loadRegistration(universityId, includeInactive = false) {
 export function invalidateTenantRegistration(universityId) {
   registrations.delete(universityId);
   registrations.delete(`inactive:${universityId}`);
+  // Two updates can share one MongoDB millisecond timestamp. Force the cached
+  // tenant policy to refresh even when updatedAt did not advance.
+  for (const key of [universityId, `inactive:${universityId}`]) {
+    const cached = connections.get(key);
+    if (cached) cached.revision = undefined;
+  }
 }
 
 export async function listActiveUniversityIds() {

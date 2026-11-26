@@ -418,7 +418,7 @@ export default function MockCompaniesPage() {
         <div className={`${card} flex flex-col items-center px-6 py-12 text-center`}>
           <Building2 className="h-8 w-8 text-slate-300 dark:text-zinc-600" aria-hidden="true" />
           <h2 className="mt-3 text-sm font-semibold text-slate-900 dark:text-zinc-100">{rows.length ? 'No company matches' : 'No companies yet'}</h2>
-          <p className="mt-1 max-w-sm text-[13px] text-slate-500 dark:text-zinc-400">{rows.length ? 'Try another search or filter.' : 'Companies appear once practice questions carry company tags or mocks are created.'}</p>
+          <p className="mt-1 max-w-sm text-[13px] text-slate-500 dark:text-zinc-400">{rows.length ? 'Try another search or filter.' : 'Companies could not be loaded. Try again.'}</p>
           {rows.length > 0 && <button type="button" onClick={() => { setSearch(''); setFilter('all'); }} className={`${secondaryButton} mt-4 py-2 text-xs`}>Clear search and filter</button>}
         </div>
       ) : <>

@@ -69,12 +69,14 @@ export function studentHasFeature(user, feature) {
   if (!STUDENT_FEATURE_SET.has(feature)) return false;
   const features = normalizeStudentFeatureAccess(user.featureAccess, { legacyAccessScope: user.accessScope }).features;
   const needs = STUDENT_FEATURE_REQUIRES[feature];
+  if (feature === 'prep_mock' && !user.prepMockEnrolledAt) return false;
   return features.includes(feature) && (!needs || features.includes(needs));
 }
 
 export function studentFeatureQuery(feature) {
   if (!STUDENT_FEATURE_SET.has(feature)) return { _id: null };
   // An opt-in feature needs an explicit grant; "All access" does not include it.
+  if (feature === 'prep_mock') return { role: 'student', prepMockEnrolledAt: { $ne: null }, 'featureAccess.mode': 'custom', 'featureAccess.features': feature };
   if (OPT_IN_SET.has(feature)) return { 'featureAccess.mode': 'custom', 'featureAccess.features': feature };
   return { $or: [{ 'featureAccess.mode': { $ne: 'custom' } }, { 'featureAccess.features': feature }] };
 }

@@ -234,7 +234,7 @@ export function allowedModules(permissions) {
     .filter(([key, module]) => !module.permission || !permissions || (key === 'quickprep'
       ? permissions.questions === true && permissions.quickprep !== false
       : key === 'prepmock'
-        ? permissions.assessments === true && permissions.prepmock !== false
+        ? permissions.prepmock === true
         : [].concat(module.permission).some((permission) => permissions[permission] === true)))
     .map(([key]) => key);
 }

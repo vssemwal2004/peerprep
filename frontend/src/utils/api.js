@@ -463,6 +463,7 @@ export const api = {
   platformWalletRecipients: (role, search, university = 'platform') => request(`/platform/admin/wallet-recipients?role=${encodeURIComponent(role)}&search=${encodeURIComponent(search)}&university=${encodeURIComponent(university)}`, { skipCache: true, timeoutMs: 60000 }),
   creditPlatformWalletUser: (body) => request('/platform/admin/wallet-recipients/credit', { method: 'POST', body, skipCache: true }),
   universityAccountCounts: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/account-counts`, { skipCache: true }),
+  resetUniversityAssessmentQuota: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/assessment-quota/reset`, { method: 'POST', skipCache: true }),
   universityAccountLimits: () => request('/platform/university/account-limits', { skipCache: true }),
   platformOverview: () => request('/platform/admin/overview', { skipCache: true }),
   // `range` is the { range, from?, to? } query from dateRangeModel.rangeToQuery (omitted = server default).
@@ -473,6 +474,10 @@ export const api = {
   overviewInsights: (range) => {
     const qs = new URLSearchParams(range || {}).toString();
     return request(`/overview${qs ? `?${qs}` : ''}`, { skipCache: true });
+  },
+  universityOverviewInsights: (id, range) => {
+    const qs = new URLSearchParams(range || {}).toString();
+    return request(`/platform/admin/universities/${encodeURIComponent(id)}/overview${qs ? `?${qs}` : ''}`, { skipCache: true });
   },
   coinConsoleSummary: (range) => {
     const qs = new URLSearchParams(range || {}).toString();
@@ -549,6 +554,8 @@ export const api = {
   updateUniversityDefaults: (body) => request('/platform/admin/defaults', { method: 'PUT', body }),
   updateUniversity: (id, body) => request(`/platform/admin/universities/${encodeURIComponent(id)}`, { method: 'PATCH', body }),
   deleteUniversity: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  universityAdminEmails: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/admin-emails`, { skipCache: true }),
+  resetUniversityAdminPassword: (id, account, password) => request(`/platform/admin/universities/${encodeURIComponent(id)}/admin-password`, { method: 'PUT', body: { account, password } }),
   uploadUniversityLogo: (id, file) => {
     const formData = new FormData();
     formData.append('logo', file);
@@ -893,6 +900,7 @@ export const api = {
       "credentialEligibility",
       "accountStatus",
       "uploadBatchId",
+      "prepMockOnly",
     ].forEach((key) => {
       if (options[key] !== undefined && options[key] !== "")
         params.append(key, options[key]);
@@ -1265,6 +1273,13 @@ export const api = {
     request("/admin/assessment/students/preview", { method: "POST", body: { students } }),
   /** Prep Mock companies: [{ company, key, count (questions), questions, mocks, published, logo: { url, width, height, source } | null, domain }]. */
   listMockCompanies: ({ search = '', limit = 2000 } = {}) => request(`/admin/assessment/mock-companies?${new URLSearchParams({ search, limit: String(limit) })}`, { skipCache: true }),
+  listPrepMockStudents: () => request('/admin/assessment/mock-students', { skipCache: true }),
+  uploadPrepMockStudent: (body) => request('/admin/assessment/mock-students', { method: 'POST', body }),
+  uploadPrepMockStudentsBulk: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request('/admin/assessment/mock-students/bulk', { method: 'POST', formData, timeoutMs: 120000 });
+  },
   /** Roles for a company's mock: { company: [{ name, mocks, reporters, added }], shared: [...] }. */
   listMockRoles: (company = '') => request(`/admin/assessment/mock-roles?${new URLSearchParams({ company })}`, { skipCache: true }),
   addMockRole: ({ name, company }) => request('/admin/assessment/mock-roles', { method: 'POST', body: { name, company } }),

@@ -18,6 +18,8 @@ import { deploymentRole } from '../platform/deployment.js';
 import { normalizeStudentFeatureAccess, studentHasFeature } from '../services/studentFeatureAccess.js';
 import { exactEmailPattern, normalizeEmailAddress } from '../utils/emailIdentity.js';
 import { SESSION_COOKIE_MAX_AGE_MS, liveOtherSession, startSession } from '../services/userSessions.js';
+import { verifyPrepMockStudentPassword } from '../services/prepMockIdentity.js';
+import { studentIdFromUniversityLogin, universityStudentLoginId } from '../platform/studentLoginId.js';
 
 const tenantTokenClaims = () => deploymentRole() === 'shared'
   ? { tenantId: currentTenant()?.universityId || 'platform' } : {};
@@ -94,6 +96,7 @@ export async function changePassword(req, res) {
   // Fetch the actual Mongoose document (req.user is lean object)
   const user = await User.findById(currentUser._id);
   if (!user) throw new HttpError(404, 'User not found');
+  if (user.prepMockIdentity?.userId) throw new HttpError(409, 'Change this password in your original PeerPrep account. It also signs you in here.');
   
   // Verify current password
   const ok = await user.verifyPassword(currentPassword);
@@ -240,7 +243,7 @@ export async function me(req, res) {
   // req.user comes from the auth cache, which does not select the editable profile fields.
   // Read them fresh so bio/username/links (and learner progress) survive a page reload.
   const profile = await User.findById(u._id)
-    .select('username bio linkedinUrl githubUrl portfolioUrl learnerProgress practiceLanguage featureAccess accessScope visibleToPeers')
+    .select('username bio linkedinUrl githubUrl portfolioUrl learnerProgress practiceLanguage featureAccess accessScope prepMockEnrolledAt visibleToPeers')
     .lean() || {};
   // Return fields based on role
   const response = {
@@ -263,6 +266,7 @@ export async function me(req, res) {
   // Add role-specific fields
   if (u.role === 'student') {
     response.studentId = u.studentId;
+    response.loginStudentId = universityStudentLoginId(currentTenant()?.universityId, u.studentId) || u.studentId;
     response.course = u.course;
     response.branch = u.branch;
     response.college = u.college;
@@ -271,6 +275,7 @@ export async function me(req, res) {
     response.visibleToPeers = profile.visibleToPeers !== false;
     response.practiceLanguage = profile.practiceLanguage || await latestPracticeLanguage(u._id);
     response.featureAccess = normalizeStudentFeatureAccess(profile.featureAccess || u.featureAccess, { legacyAccessScope: profile.accessScope || u.accessScope });
+    response.prepMockEnrolledAt = profile.prepMockEnrolledAt || u.prepMockEnrolledAt || null;
 
     // Fetch coordinator names from teacherIds
     if (Array.isArray(u.teacherIds) && u.teacherIds.length > 0) {
@@ -522,7 +527,8 @@ export async function updateMyAvatar(req, res) {
   }
 }
 
-// Unified login: accepts either admin email or student email / studentId as 'identifier' (or legacy 'email')
+// University students sign in with their university-prefixed student ID.
+// Staff email login and main-workspace student login keep their existing format.
 export async function login(req, res) {
   const { identifier, email, password } = req.body;
   const id = (identifier || email || '').trim();
@@ -551,15 +557,13 @@ export async function login(req, res) {
       mustChangePassword: Boolean(admin.mustChangePassword), universityId: currentTenant()?.universityId || null } });
   }
 
-  // The main login router accepts only email for PeerPrep's own accounts.
-  // It has already selected the main database before calling this handler.
-  // Try regular student by email OR studentId within the selected database.
-  const student = await User.findOne({
-    role: 'student',
-    $or: [{ email: emailPattern }, { studentId: id }],
-  });
+  const tenantId = currentTenant()?.universityId;
+  const tenantStudentId = tenantId ? studentIdFromUniversityLogin(id, tenantId) : '';
+  const student = await User.findOne(tenantId
+    ? { role: 'student', studentId: tenantStudentId || null }
+    : { role: 'student', $or: [{ email: emailPattern }, { studentId: id }] });
   if (student) {
-    const ok = await student.verifyPassword(password);
+    const ok = await verifyPrepMockStudentPassword(student, password);
     if (!ok) {
       // SECURITY: Log failed auth attempt
       logAuthAttempt(req, false, student.email, null, 'Invalid password');
@@ -581,7 +585,7 @@ export async function login(req, res) {
       metadata: { email: student.email, studentId: student.studentId, isSpecialStudent: Boolean(student.isSpecialStudent) }
     }).catch((error) => console.warn('[AUTH] Login activity write failed:', error.message));
 
-    return res.json({ user: { ...sanitizeUser(student), universityId: currentTenant()?.universityId || null } });
+    return res.json({ user: { ...sanitizeUser(student), universityId: tenantId || null } });
   }
 
   // Try coordinator by email OR coordinatorId
@@ -642,9 +646,11 @@ function sanitizeUser(u) {
     role: u.role,
     accessScope: u.accessScope || 'full',
     featureAccess: normalizeStudentFeatureAccess(u.featureAccess, { legacyAccessScope: u.accessScope }),
+    prepMockEnrolledAt: u.prepMockEnrolledAt || null,
     name: u.name,
     email: u.email,
     studentId: u.studentId,
+    loginStudentId: universityStudentLoginId(currentTenant()?.universityId, u.studentId) || u.studentId,
     mustChangePassword: u.accessScope === 'assessment_only' ? false : u.mustChangePassword,
     course: u.course,
     branch: u.branch,
@@ -679,6 +685,7 @@ export async function requestPasswordReset(req, res) {
   if (!user) {
     return res.json({ message: 'If an account exists with this email or student ID, a password reset link has been sent.' });
   }
+  if (user.prepMockIdentity?.userId) return res.json({ message: 'If an account exists with this email or student ID, a password reset link has been sent.' });
 
   // Check if user has an email address
   if (!user.email) {
@@ -762,7 +769,8 @@ export async function resetPassword(req, res) {
       {
         passwordResetToken: resetTokenHash,
         passwordResetExpires: { $gt: Date.now() },
-        passwordResetUsed: { $ne: true }
+        passwordResetUsed: { $ne: true },
+        'prepMockIdentity.userId': { $exists: false }
       },
       {
         $set: {

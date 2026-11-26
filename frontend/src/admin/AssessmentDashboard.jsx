@@ -7,6 +7,7 @@ import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from './coordinatorPermissions';
+import { isUniversityDeployment } from '../platform/universityPermissions';
 import {
   ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
   Pencil, Copy, X, MoreVertical, Lock, Unlock, Globe, ShieldOff,
@@ -81,7 +82,7 @@ const getStudentAddedBadgeClass = (createdAt) => {
   return 'border-slate-200 bg-slate-50 text-slate-500';
 };
 
-function ThreeDotsMenu({ assessment, isMock, onOpen, onPreview, onViewReport, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onAddStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers, onPublishMock, onUnpublishMock, onResetMock }) {
+function ThreeDotsMenu({ assessment, isMock, readOnly = false, onOpen, onPreview, onViewReport, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onAddStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers, onPublishMock, onUnpublishMock, onResetMock }) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState(null);
   const [menuDirection, setMenuDirection] = useState('down');
@@ -183,10 +184,10 @@ function ThreeDotsMenu({ assessment, isMock, onOpen, onPreview, onViewReport, on
           style={menuStyle}
           className="fixed z-[1000] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
         >
-          {item(<ClipboardList className="h-3.5 w-3.5" />, isMock && assessment.lifecycleStatus === 'draft' ? 'Publish Mock' : assessment.status === 'Completed' || assessment.manuallyCompletedAt ? 'View Report' : isMock ? 'View Mock' : 'View Assessment', onOpen)}
+          {item(<ClipboardList className="h-3.5 w-3.5" />, readOnly ? 'View Mock' : isMock && assessment.lifecycleStatus === 'draft' ? 'Publish Mock' : assessment.status === 'Completed' || assessment.manuallyCompletedAt ? 'View Report' : isMock ? 'View Mock' : 'View Assessment', onOpen)}
           {item(<Eye className="h-3.5 w-3.5" />, isMock ? 'Preview Mock' : 'Preview Assessment', onPreview)}
           {item(<BarChart3 className="h-3.5 w-3.5" />, 'View Report', onViewReport)}
-          {!assessment.shared && <>
+          {!assessment.shared && !readOnly && <>
           {item(<Copy className="h-3.5 w-3.5" />, isMock ? 'Copy Mock' : 'Copy Assessment', onDuplicate)}
           <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
           {item(<Pencil className="h-3.5 w-3.5" />, isMock ? 'Edit Mock Questions' : 'Edit Assessment', onEdit)}
@@ -1177,8 +1178,9 @@ export default function AssessmentDashboard() {
   const { user } = useAuth();
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const isMock = location.pathname.startsWith('/admin/prepmock');
+  const readOnlyMock = isMock && isUniversityDeployment;
   const assessmentRoot = isMock ? '/admin/prepmock' : `${rolePrefix}/assessment`;
-  const canCreateAssessments = hasPermission(user, 'coordinator.assessment.create');
+  const canCreateAssessments = !readOnlyMock && hasPermission(user, 'coordinator.assessment.create');
   const toast = useToast();
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1309,7 +1311,7 @@ export default function AssessmentDashboard() {
       return selectedRole === NO_ROLE ? !role : role === selectedRole;
     })
     : folderAssessments;
-  const mockOpenPath = (assessment) => (assessment.lifecycleStatus === 'draft'
+  const mockOpenPath = (assessment) => readOnlyMock ? `${assessmentRoot}/${assessment._id}` : (assessment.lifecycleStatus === 'draft'
     ? `${assessmentRoot}/${assessment._id}/edit?publish=1`
     : assessment.status === 'Completed' || assessment.manuallyCompletedAt
       ? `${assessmentRoot}/reports?assessmentId=${encodeURIComponent(assessment._id)}`
@@ -1433,7 +1435,7 @@ export default function AssessmentDashboard() {
               <h1 className="mt-0.5 flex items-center gap-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white">All {isMock ? 'Mocks' : 'Assessments'} {!isMock && <PageGuideButton />}</h1>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {isMock && <button type="button" onClick={() => navigate('/admin/prepmock/companies')} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+              {isMock && !readOnlyMock && <button type="button" onClick={() => navigate('/admin/prepmock/companies')} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
                 <Building2 className="h-4 w-4" /> <span className="hidden sm:inline">Companies &amp; roles</span><span className="sm:hidden">Companies</span>
               </button>}
               {canCreateAssessments && <button type="button" data-guide="as-create" onClick={() => navigate(`${assessmentRoot}/create`)} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500">
@@ -1494,6 +1496,7 @@ export default function AssessmentDashboard() {
                   <ThreeDotsMenu
                     assessment={assessment}
                     isMock
+                    readOnly={readOnlyMock}
                     onOpen={() => navigate(openPath)}
                     onPreview={() => navigate(`${assessmentRoot}/preview/${assessment._id}`)}
                     onViewReport={() => navigate(`${assessmentRoot}/reports?assessmentId=${encodeURIComponent(assessment._id)}`)}
@@ -1655,6 +1658,7 @@ export default function AssessmentDashboard() {
                         <ThreeDotsMenu
                             assessment={assessment}
                             isMock={isMock}
+                            readOnly={readOnlyMock}
                             onOpen={() => navigate(openPath)}
                             onPreview={() => navigate(`${assessmentRoot}/preview/${assessment._id}`)}
                             onViewReport={() => navigate(`${assessmentRoot}/reports?assessmentId=${encodeURIComponent(assessment._id)}`)}
@@ -1749,10 +1753,10 @@ export default function AssessmentDashboard() {
                 </div>
 
                 <div className="flex flex-wrap gap-2 pt-2">
-                  {!selected.shared && <button type="button" onClick={() => { setSelected(null); navigate(`${assessmentRoot}/${selected._id}/edit`); }} className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500">
+                  {!selected.shared && !readOnlyMock && <button type="button" onClick={() => { setSelected(null); navigate(`${assessmentRoot}/${selected._id}/edit`); }} className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500">
                     <Pencil className="h-3.5 w-3.5" /> Edit {isMock ? 'Mock' : 'Assessment'}
                   </button>}
-                  {!selected.shared && <button type="button" onClick={() => { setPasswordTarget(selected); setSelected(null); }} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200">
+                  {!selected.shared && !readOnlyMock && <button type="button" onClick={() => { setPasswordTarget(selected); setSelected(null); }} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200">
                     <Lock className="h-3.5 w-3.5" /> Edit Password
                   </button>}
                 </div>

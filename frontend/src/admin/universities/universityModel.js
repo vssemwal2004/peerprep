@@ -4,7 +4,7 @@ export const MODULES = [
   { key: 'assessments', label: 'Assessments', description: 'Tests, including shared PeerPrep assessments' },
   { key: 'questions', label: 'Question practice', description: 'Prep Coding problems' },
   { key: 'quickprep', label: 'QuickPrep', description: 'Student QuickPrep sheets; requires Question practice' },
-  { key: 'prepmock', label: 'PrepMock', description: 'Company mock assessments; requires Assessments' },
+  { key: 'prepmock', label: 'PrepMock', description: 'Company mocks for uploaded students during the granted dates' },
   { key: 'events', label: 'Peer interviews', description: 'Mock interview events with feedback' },
   { key: 'interviews', label: 'AI interviews', description: 'Voice interviews with ANVI' },
   { key: 'resumes', label: 'Resumes', description: 'Prep Resume and resume-based questions' },
@@ -35,7 +35,7 @@ export function universityHealth(university, now = new Date()) {
   if (!university.dbConfigured) issues.push('Database not connected');
   if (!university.judgeConfigured) issues.push('Code judge (Judge0) not connected');
   if (!university.serviceStartDate || !university.serviceEndDate) issues.push('Service dates not set');
-  if (university.coordinatorLimit == null || university.studentLimit == null) issues.push('Account limits not set');
+  if (university.coordinatorLimit == null || university.studentLimit == null || university.assessmentStudentLimit == null) issues.push('Account limits not set');
   const left = daysLeft(university, now);
   const start = dayStart(university.serviceStartDate);
   let status = 'live';
