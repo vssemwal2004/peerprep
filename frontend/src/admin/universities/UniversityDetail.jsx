@@ -71,7 +71,7 @@ export default function UniversityDetail() {
           <UniversityBadge university={university} size="lg" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{university.name}</h1><PageGuideButton /><Pill tone={status.tone}>{status.label}</Pill></div>
-            <p className={`mt-1 ${helper}`}><span className="font-mono">{university.universityId}</span> · peerprep.co.in/u/{university.universityId}{university.contactEmail ? ` · ${university.contactEmail}` : ''}</p>
+            <p className={`mt-1 ${helper}`}><span className="font-mono">{university.universityId}</span> · peerprep.in/u/{university.universityId}{university.contactEmail ? ` · ${university.contactEmail}` : ''}</p>
           </div>
         </div>
         <div data-guide="unid-actions" className="flex flex-wrap gap-2">
@@ -83,7 +83,7 @@ export default function UniversityDetail() {
         </div>
       </header>
 
-      {params.get('created') && <Notice tone="success">University created. Its first admin can now sign in at peerprep.co.in/u/{university.universityId} and must change the starting password.</Notice>}
+      {params.get('created') && <Notice tone="success">University created. Its first admin can now sign in at peerprep.in/u/{university.universityId} and must change the starting password.</Notice>}
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
 
       <nav data-guide="unid-tabs" className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-slate-800 dark:bg-slate-900" role="tablist" aria-label="University sections">

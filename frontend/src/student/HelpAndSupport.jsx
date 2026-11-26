@@ -404,7 +404,7 @@ export default function HelpAndSupport() {
                 <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Contact Information</h3>
                 <div className="space-y-2">
                   <p className="text-gray-700 dark:text-gray-300">
-                    <strong>Primary Support:</strong> <a href="mailto:peerprep26@gmail.com" className="text-sky-600 dark:text-sky-400 hover:underline">peerprep26@gmail.com</a>
+                    <strong>Primary Support:</strong> <a href="mailto:contact@peerprep.in" className="text-sky-600 dark:text-sky-400 hover:underline">contact@peerprep.in</a>
                   </p>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                     We typically respond within 24-48 hours. For urgent issues, please mark your email as "URGENT" in the subject line.
@@ -474,7 +474,7 @@ export default function HelpAndSupport() {
         {/* Footer Note */}
         <div className="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">
           <p>This guide is regularly updated. Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-          <p className="mt-2">Have suggestions for this guide? Contact us at <a href="mailto:peerprep26@gmail.com" className="text-sky-600 dark:text-sky-400 hover:underline">peerprep26@gmail.com</a></p>
+          <p className="mt-2">Have suggestions for this guide? Contact us at <a href="mailto:contact@peerprep.in" className="text-sky-600 dark:text-sky-400 hover:underline">contact@peerprep.in</a></p>
         </div>
       </div>
     </div>

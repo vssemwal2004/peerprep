@@ -234,7 +234,7 @@ export default [
       {
         id: "au-identity", target: "au-form", chapter: "parts", quick: true,
         title: "Identity",
-        body: "The university ID (2 to 63 lowercase letters, numbers or hyphens) becomes its web address, peerprep.co.in/u/your-id, and cannot be changed later. Add the name and an optional contact email.",
+        body: "The university ID (2 to 63 lowercase letters, numbers or hyphens) becomes its web address, peerprep.in/u/your-id, and cannot be changed later. Add the name and an optional contact email.",
       },
       {
         id: "au-connections", chapter: "parts",

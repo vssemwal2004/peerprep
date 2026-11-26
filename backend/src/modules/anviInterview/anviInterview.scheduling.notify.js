@@ -27,7 +27,7 @@ export function escapeHtml(value) {
 }
 
 function studentUrl(path = LIST_URL) {
-  const origin = (process.env.FRONTEND_ORIGIN || "https://peerprep.co.in").split(",")[0].trim().replace(/\/$/, "");
+  const origin = (process.env.FRONTEND_ORIGIN || "https://peerprep.in").split(",")[0].trim().replace(/\/$/, "");
   const tenant = currentTenant();
   return `${origin}${tenant ? `/u/${tenant.universityId}` : ""}${path}`;
 }

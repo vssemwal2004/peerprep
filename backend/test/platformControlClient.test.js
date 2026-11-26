@@ -28,7 +28,7 @@ test('a tenant reads shared content through the signed internal API', async () =
   let captured;
   try {
     process.env.PEERPREP_DEPLOYMENT_ROLE = 'shared';
-    process.env.PEERPREP_SHARED_API_ORIGIN = 'https://peerprep.co.in';
+    process.env.PEERPREP_SHARED_API_ORIGIN = 'https://peerprep.in';
     process.env.JWT_SECRET = 'shared-test-secret';
     globalThis.fetch = async (url, options) => {
       captured = { url: String(url), options };
@@ -37,7 +37,7 @@ test('a tenant reads shared content through the signed internal API', async () =
       });
     };
     const response = await runForTenant({ universityId: 'north-campus', connection: {} }, () => controlRequest('policy'));
-    assert.equal(captured.url, 'https://peerprep.co.in/api/platform/tenant/policy');
+    assert.equal(captured.url, 'https://peerprep.in/api/platform/tenant/policy');
     assert.equal(captured.options.headers['X-PeerPrep-University'], 'north-campus');
     assert.match(captured.options.headers['X-PeerPrep-Internal-Signature'], /^[a-f0-9]{64}$/);
     assert.equal(captured.options.headers['X-PeerPrep-Key'], undefined);

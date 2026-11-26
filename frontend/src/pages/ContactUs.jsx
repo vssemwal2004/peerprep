@@ -8,7 +8,7 @@ import {
 import { Footer } from '../components/Footer';
 import { useTheme } from '../context/ThemeContext';
 
-const SUPPORT_EMAIL = 'peerprep26@gmail.com';
+const SUPPORT_EMAIL = 'contact@peerprep.in';
 
 // Tokens mirror the public landing page (public/landing-page/css/base.css) so both feel like one product.
 const tokens = `
