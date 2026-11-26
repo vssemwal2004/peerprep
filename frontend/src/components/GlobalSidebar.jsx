@@ -473,7 +473,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
 // Row height comes from --nav-h (set on the nav) so every item fits on one screen without scrolling.
 const NAV_ITEM = 'group relative flex h-[var(--nav-h,2.5rem)] items-center rounded-xl text-[13px] transition-[background-color,color,box-shadow] duration-200';
 const NAV_ITEM_ACTIVE = 'font-semibold bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200/80 dark:bg-sky-500/10 dark:text-sky-200 dark:ring-sky-400/20';
-const NAV_ITEM_OPEN = 'font-medium bg-slate-100 text-slate-900 dark:bg-white/[0.06] dark:text-white';
+const NAV_ITEM_OPEN = 'font-medium bg-slate-100 text-slate-900 dark:bg-white/[0.06] dark:text-[color:var(--student-dash-fg,#fff)]';
 const NAV_ITEM_IDLE = 'font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-300 dark:hover:bg-white/[0.06] dark:hover:text-white';
 const NAV_ICON = 'absolute left-[10px] flex h-[min(2rem,calc(var(--nav-h,2.5rem)-0.25rem))] w-8 items-center justify-center rounded-lg transition-[background-color,color] duration-200';
 const NAV_ICON_ACTIVE = 'bg-sky-600 text-white shadow-[0_4px_10px_-4px_rgba(2,132,199,0.7)]';
@@ -509,6 +509,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const isCoordinator = role === 'coordinator';
   const isStudent = role === 'student';
+  const dashboardPaletteClass = isStudent && /^\/student\/dashboard\/?$/i.test(location.pathname) ? 'student-dashboard-theme' : '';
   const storagePrefix = isCoordinator ? 'coordinator' : isStudent ? 'student' : 'admin';
   const isAssessmentCandidate = isStudent && user?.accessScope === 'assessment_only';
   const roleLabel = isCoordinator ? 'Coordinator' : isAssessmentCandidate ? 'Assessment Candidate' : isStudent ? 'Student' : 'Administrator';
@@ -784,7 +785,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
       onMouseLeave={handleSidebarLeave}
       // Solid colours and one 300ms width animation on a fixed element: no backdrop blur (Safari
       // repaints the blur on every frame while the width changes) and no page relayout on hover.
-      // Same surface as the page header (white / #202020), so header, menu and footer read as one.
+      // Same surface as the page header, so header, menu and footer read as one.
       // Only the width animates (no animated blur shadow, which repaints every frame); `contain`
       // keeps each frame's layout inside the sidebar.
       className="fixed left-0 top-0 z-[70] h-screen overflow-visible bg-[var(--shell-frame)] transition-[width] duration-[280ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
@@ -801,7 +802,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                 text (not the wordmark image) so it stays readable in the dark theme. */}
             <img src="/images/peerprep-mark.png" alt="" className="absolute top-1/2 h-9 w-9 -translate-y-1/2 object-contain" style={{ left: `calc((${isStudent ? STUDENT_SIDEBAR_RAIL_WIDTH : getSidebarWidth(false)} - 1rem - 2.25rem) / 2)` }} />
             <span className={`absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[19px] font-bold tracking-[-0.02em] transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isExpanded ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0'}`} style={{ left: `calc((${isStudent ? STUDENT_SIDEBAR_RAIL_WIDTH : getSidebarWidth(false)} - 1rem - 2.25rem) / 2 + 2.75rem)` }}>
-              <span className="text-sky-600 dark:text-sky-400">Peer</span><span className="text-slate-800 dark:text-white">Prep</span>
+              <span className="text-sky-600 dark:text-sky-400">Peer</span><span className="text-slate-800 dark:text-[color:var(--student-dash-fg,#fff)]">Prep</span>
             </span>
             <span className="sr-only">PeerPrep home</span>
           </Link>
@@ -838,7 +839,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                 <span className={`${NAV_ICON} ${active ? NAV_ICON_ACTIVE : NAV_ICON_IDLE}`}>
                   <Icon className="h-[18px] w-[18px]" />
                   {item.badge > 0 && !isExpanded && (
-                    <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#202020]" aria-hidden="true" />
+                    <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[color:var(--shell-frame)]" aria-hidden="true" />
                   )}
                 </span>
                 <span className={`ml-12 min-w-0 flex-1 whitespace-nowrap pr-2 text-left leading-tight transition-[opacity,transform] duration-200 ${isExpanded ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0'}`}>
@@ -892,7 +893,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                   id={groupPanelId}
                   role="dialog"
                   aria-label={`${item.label} navigation`}
-                  className="fixed z-[9998] flex w-[15rem] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18),0_2px_6px_rgba(15,23,42,0.05)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/40"
+                  className={`${dashboardPaletteClass} fixed z-[9998] flex w-[15rem] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18),0_2px_6px_rgba(15,23,42,0.05)] dark:border-[color:var(--student-dash-border,#363636)] dark:bg-[color:var(--student-dash-card,#1a1a1a)] dark:shadow-black/40`}
                   style={{
                     left: `calc(${resolvedSidebarWidth} + 0.5rem)`,
                     top: `${groupPanelTop}px`,
@@ -900,12 +901,12 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                     maxHeight: `calc(100vh - ${groupPanelTop + 12}px)`,
                   }}
                 >
-                  <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 py-2 pl-3.5 pr-1.5 dark:border-slate-800">
-                    <h2 className="truncate text-[11.5px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">{item.label}</h2>
+                  <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 py-2 pl-3.5 pr-1.5 dark:border-[color:var(--student-dash-border,#242424)]">
+                    <h2 className="truncate text-[11.5px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-[color:var(--student-dash-muted,#94a3b8)]">{item.label}</h2>
                     <button
                       type="button"
                       onClick={() => { setOpenGroup(null); setOpenNestedGroup(null); }}
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-[color:var(--student-dash-hover,#242424)] dark:hover:text-white"
                       aria-label={`Close ${item.label} navigation`}
                     >
                       <X className="h-3.5 w-3.5" />
@@ -918,7 +919,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                     const childActive = isRouteActive(child);
                     const rowTone = childActive
                       ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300'
-                      : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white';
+                      : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950 dark:text-[color:var(--student-dash-fg,#e2e8f0)] dark:hover:bg-[color:var(--student-dash-hover,#242424)] dark:hover:text-white';
                     const iconTone = childActive ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 group-hover/flyout:text-slate-600 dark:text-slate-500 dark:group-hover/flyout:text-slate-300';
                     if (child.children?.length) {
                       const nestedKey = `${item.key}:${child.label}`;
@@ -965,18 +966,18 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                                 aria-controls={nestedPanelId}
                                 data-platform-disclosure="navigation"
                                 onClick={() => setOpenNestedGroup(nestedOpen ? null : nestedKey)}
-                                className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-sky-700 dark:hover:bg-slate-700 dark:hover:text-sky-300"
+                                className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-sky-700 dark:hover:bg-[color:var(--student-dash-hover,#363636)] dark:hover:text-sky-300"
                               >
                                 <ChevronDown className={`h-3.5 w-3.5 transition-transform ${nestedOpen ? 'rotate-180' : ''}`} />
                               </button>
                             </div>
                           )}
                           <div id={nestedPanelId} inert={!nestedOpen} className={`overflow-hidden transition-[max-height,opacity] duration-200 ${nestedOpen ? 'max-h-72 opacity-100' : 'max-h-0 opacity-0'}`}>
-                            <div className="mb-1 ml-[1.15rem] mt-0.5 space-y-0.5 border-l border-slate-200 pl-2 dark:border-slate-700">
+                            <div className="mb-1 ml-[1.15rem] mt-0.5 space-y-0.5 border-l border-slate-200 pl-2 dark:border-[color:var(--student-dash-border,#363636)]">
                               {child.children.map((nestedChild) => {
                                 const nestedActive = isRouteActive(nestedChild);
                                 return (
-                                  <Link key={nestedChild.label} to={nestedChild.to} aria-label={nestedChild.label} aria-current={nestedActive ? 'page' : undefined} className={`flex h-8 items-center rounded-md px-2.5 text-[12.5px] transition-colors ${nestedActive ? 'bg-sky-50 font-medium text-sky-700 dark:bg-sky-950/50 dark:text-sky-300' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'}`}>
+                                  <Link key={nestedChild.label} to={nestedChild.to} aria-label={nestedChild.label} aria-current={nestedActive ? 'page' : undefined} className={`flex h-8 items-center rounded-md px-2.5 text-[12.5px] transition-colors ${nestedActive ? 'bg-sky-50 font-medium text-sky-700 dark:bg-sky-950/50 dark:text-sky-300' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-[color:var(--student-dash-muted,#94a3b8)] dark:hover:bg-[color:var(--student-dash-hover,#242424)] dark:hover:text-white'}`}>
                                     <span className="min-w-0 truncate">{nestedChild.label}</span>
                                   </Link>
                                 );
@@ -1015,12 +1016,12 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
             <div
               ref={accountMenuRef}
               id={accountMenuId}
-              className={`pointer-events-auto fixed bottom-3 z-[9999] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50 duration-300`}
+              className={`${dashboardPaletteClass} pointer-events-auto fixed bottom-3 z-[9999] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-[color:var(--student-dash-border,#363636)] dark:bg-[color:var(--student-dash-card,#1a1a1a)] dark:shadow-black/50 duration-300`}
               style={{ left: `calc(${resolvedSidebarWidth} + 0.75rem)` }}
               role="dialog"
               aria-label="Account menu"
             >
-              <div className="border-b border-slate-100 bg-gradient-to-br from-slate-50 to-white px-4 py-4 dark:border-gray-800 dark:from-gray-800 dark:to-gray-900">
+              <div className="border-b border-slate-100 bg-gradient-to-br from-slate-50 to-white px-4 py-4 dark:border-[color:var(--student-dash-border,#242424)] dark:from-[color:var(--student-dash-card,#242424)] dark:to-[color:var(--student-dash-card,#1a1a1a)]">
                 <div className="flex items-center gap-3">
                   {avatarUrl ? (
                     <img src={avatarUrl} alt="" className="h-11 w-11 rounded-xl object-cover ring-2 ring-white dark:ring-gray-700" />
@@ -1030,10 +1031,10 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                     </span>
                   )}
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{displayName}</p>
-                    <p className="truncate text-xs text-slate-500 dark:text-gray-400">{displayEmail || `${roleLabel} account`}</p>
+                    <p className="truncate text-sm font-bold text-slate-900 dark:text-[color:var(--student-dash-fg,#fff)]">{displayName}</p>
+                    <p className="truncate text-xs text-slate-500 dark:text-[color:var(--student-dash-muted,#9ca3af)]">{displayEmail || `${roleLabel} account`}</p>
                   </div>
-                  <button type="button" onClick={() => updateProfileOpen(false)} className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-gray-700 dark:hover:text-gray-100" aria-label="Close account menu">
+                  <button type="button" onClick={() => updateProfileOpen(false)} className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-[color:var(--student-dash-hover,#363636)] dark:hover:text-gray-100" aria-label="Close account menu">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
@@ -1041,28 +1042,28 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
 
               <div className="p-2">
                 {(isCoordinator || (isStudent && !isAssessmentCandidate)) && (
-                  <button type="button" onClick={() => navigate(isStudent ? '/student/profile' : '/coordinator/profile')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
+                  <button type="button" onClick={() => navigate(isStudent ? '/student/profile' : '/coordinator/profile')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-[color:var(--student-dash-fg,#e5e7eb)] dark:hover:bg-[color:var(--student-dash-hover,#242424)]">
                     <User className="h-4 w-4 text-slate-400" />
                     My profile
                   </button>
                 )}
-                {!isStudent && <button type="button" onClick={() => navigate(isCoordinator ? '/coordinator/activity' : '/admin/activity')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
+                {!isStudent && <button type="button" onClick={() => navigate(isCoordinator ? '/coordinator/activity' : '/admin/activity')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-[color:var(--student-dash-fg,#e5e7eb)] dark:hover:bg-[color:var(--student-dash-hover,#242424)]">
                   <Activity className="h-4 w-4 text-slate-400" />
                   Activity log
                 </button>}
-                <button type="button" onClick={() => navigate(isCoordinator ? '/coordinator/change-password' : isStudent ? '/student/change-password' : '/admin/change-password')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
+                <button type="button" onClick={() => navigate(isCoordinator ? '/coordinator/change-password' : isStudent ? '/student/change-password' : '/admin/change-password')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-[color:var(--student-dash-fg,#e5e7eb)] dark:hover:bg-[color:var(--student-dash-hover,#242424)]">
                   <Lock className="h-4 w-4 text-slate-400" />
                   Change password
                 </button>
 
-                <div className="my-2 border-t border-slate-100 dark:border-gray-800" />
+                <div className="my-2 border-t border-slate-100 dark:border-[color:var(--student-dash-border,#242424)]" />
                 <button
                   type="button"
                   onClick={() => {
                     toggleTheme();
                     updateProfileOpen(true);
                   }}
-                  className="relative z-10 flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-gray-200 dark:hover:bg-gray-800"
+                  className="relative z-10 flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-[color:var(--student-dash-fg,#e5e7eb)] dark:hover:bg-[color:var(--student-dash-hover,#242424)]"
                   role="switch"
                   aria-checked={theme === 'dark'}
                 >
@@ -1103,7 +1104,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
             )}
             <span className={`ml-14 min-w-0 flex-1 whitespace-nowrap pr-8 transition-[opacity,transform] duration-200 ${isExpanded ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0'}`}>
               <span className="block truncate text-sm font-bold text-slate-800 dark:text-gray-100">{displayName}</span>
-              <span className="block text-[11px] font-medium text-slate-500 dark:text-gray-400">{roleLabel}</span>
+              <span className="block text-[11px] font-medium text-slate-500 dark:text-[color:var(--student-dash-muted,#9ca3af)]">{roleLabel}</span>
             </span>
             {isExpanded && <ChevronUp className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />}
           </button>
@@ -1115,8 +1116,8 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
               aria-label={`${peerSummary?.prepMates ?? 0} ${PEER_TERMS.prepMates}${pendingMateRequests ? `, ${pendingMateRequests} ${pendingMateRequests === 1 ? 'request' : 'requests'} waiting` : ''}. Show list`}
             >
               <Handshake className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-300" aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-700 dark:text-gray-200">
-                <span className="tabular-nums text-slate-900 dark:text-white">{peerSummary ? compactCount(peerSummary.prepMates) : '–'}</span> {PEER_TERMS.prepMates}
+              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-700 dark:text-[color:var(--student-dash-fg,#e5e7eb)]">
+                <span className="tabular-nums text-slate-900 dark:text-[color:var(--student-dash-fg,#fff)]">{peerSummary ? compactCount(peerSummary.prepMates) : '–'}</span> {PEER_TERMS.prepMates}
               </span>
               {pendingMateRequests > 0 && (
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rose-500 py-0.5 pl-1.5 pr-2 text-[10.5px] font-bold text-white shadow-[0_2px_8px_-2px_rgba(244,63,94,0.7)]" title="Prep Mate requests waiting">

@@ -54,7 +54,7 @@ function formatRelativeTime(dateValue) {
   return date.toLocaleDateString();
 }
 
-function NotificationBell({ buttonClassName = '' }) {
+function NotificationBell({ buttonClassName = '', panelClassName }) {
   const { user, authChecked, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
@@ -300,14 +300,14 @@ function NotificationBell({ buttonClassName = '' }) {
       <button
         type="button"
         onClick={handleToggle}
-        className={`relative flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:bg-sky-950/50 ${buttonClassName}`}
+        className={`relative flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-[color:var(--student-dash-border,#363636)] dark:bg-[color:var(--student-dash-control,#1a1a1a)] dark:text-[color:var(--student-dash-fg,#e2e8f0)] dark:hover:border-sky-700 dark:hover:bg-[color:var(--student-dash-hover,rgba(8,47,73,0.5))] ${buttonClassName}`}
         aria-label="Notifications"
         aria-expanded={isOpen}
         aria-controls="notification-panel"
       >
         <Bell className={`h-4 w-4 ${ringing ? 'bell-ring' : ''}`} />
         {unreadCount > 0 && (
-          <span className={`absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-semibold text-white ring-2 ring-white dark:ring-slate-900 ${progressPending ? 'bg-gradient-to-br from-amber-400 to-orange-500' : 'bg-red-500'}`}
+          <span className={`absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-semibold text-white ring-2 ring-white dark:ring-[color:var(--student-dash-card,#1a1a1a)] ${progressPending ? 'bg-gradient-to-br from-amber-400 to-orange-500' : 'bg-red-500'}`}
             title={progressPending ? 'New progress update' : undefined}>
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
@@ -315,6 +315,7 @@ function NotificationBell({ buttonClassName = '' }) {
       </button>
 
       <NotificationSidebar
+        paletteClassName={panelClassName}
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
         notifications={mergedSortedNotifications}

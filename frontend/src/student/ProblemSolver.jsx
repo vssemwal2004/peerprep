@@ -40,6 +40,7 @@ import QuickPrepMembership from './problems/QuickPrepMembership';
 import FailedTestCasePanel from './problems/FailedTestCasePanel';
 import { pickPracticeLanguage, rememberPracticeLanguage } from './practiceLanguage';
 import { quotaAfterSolve, quotaChip, submitNotice } from './prepScore/topicQuota';
+import { announceCoachTip } from './rewards/coachTip';
 import { announceReadinessChange } from './readiness/readinessModel';
 import SolveScoreCard from './prepScore/SolveScoreCard';
 import PageGuideButton from '../guide/platform/PageGuideButton';
@@ -63,6 +64,11 @@ import {
 } from './problemUtils';
 
 const NO_COMPANIES = [];
+// The PeerPrep number shown on the PrepCoding list (Problem.displayOrder); none for unnumbered problems.
+const problemSerial = (problem) => {
+  const value = Number(problem?.displayOrder);
+  return value > 0 && value < 2147483647 ? value : null;
+};
 // Markdown + KaTeX + Prism are only needed once the Editorial tab is opened.
 const EditorialView = lazy(() => import('../components/editorial/EditorialView'));
 
@@ -456,7 +462,10 @@ function ProblemDescriptionPanel({ problem, language, verifiedCompanies, prepQuo
   return (
     <div className="space-y-7 px-5 py-6 sm:px-6">
       <section data-guide="ps-problem-head">
-        <h1 className="text-[22px] font-semibold leading-8 text-zinc-900 dark:text-white">{problem.title}</h1>
+        <h1 className="text-[22px] font-semibold leading-8 text-zinc-900 dark:text-white">
+          {problemSerial(problem) && <span className="mr-2 font-mono text-[18px] font-medium text-zinc-400 dark:text-zinc-500" title="PeerPrep question number">#{problemSerial(problem)}</span>}
+          {problem.title}
+        </h1>
         <div className="mt-4 flex flex-wrap items-center gap-2" data-guide="ps-meta">
           <DifficultyBadge difficulty={problem.difficulty} />
           <StudentProgressBadge status={problem.studentStatus || 'Unsolved'} />
@@ -1127,6 +1136,8 @@ export default function ProblemSolver() {
     if (notice?.toast) toast[notice.toast.type](notice.toast.message, { duration: notice.toast.duration });
     if (notice?.card) setScoreCard(notice.card);
     if (outcome?.kind === 'solve') announceReadinessChange();
+    // Prep Coach: one tip at the top (topic full, Easy run, re-solve...), from the server's outcome.
+    if (outcome?.coach) announceCoachTip(outcome.coach);
   }, [toast]);
 
   const stopSubmissionPolling = useCallback(() => {
@@ -1825,6 +1836,7 @@ export default function ProblemSolver() {
               className="inline-flex max-w-[220px] items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-200 dark:text-zinc-100 dark:hover:bg-zinc-700"
             >
               {problemListOpen ? <PanelRightOpen className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+              {problemSerial(problem) && <span className="shrink-0 font-mono text-xs tabular-nums text-zinc-500 dark:text-zinc-400">#{problemSerial(problem)}</span>}
               <span className="truncate">{problem.title}</span>
             </button>
             <PageGuideButton />

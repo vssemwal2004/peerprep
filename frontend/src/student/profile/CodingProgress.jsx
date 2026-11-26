@@ -64,24 +64,24 @@ function SolvedGauge({ solved, available, values, totals, difficulty, loading, c
     <div className="relative shrink-0" style={{ width: size, height: size }} role="img" aria-label={accessibleValue}>
       <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full rotate-[135deg]" aria-hidden="true">
         {segments.map((segment, index) => (
-          <g key={segment.key} data-segment={segment.key} className="transition-opacity duration-200 motion-reduce:transition-none"
+          <g key={segment.key} data-segment={segment.key} className={`difficulty-${segment.key} transition-opacity duration-200 motion-reduce:transition-none`}
             opacity={loading ? 0.5 : difficultyIndex < 0 || difficultyIndex === index ? 1 : 0.28}>
             <circle data-track cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={segment.stroke} strokeOpacity={0.18}
-              strokeWidth={stroke} strokeLinecap="round" {...dash(segment.start, segment.length)} className="dark:[stroke-opacity:0.3]" />
+              strokeWidth={stroke} strokeLinecap="round" {...dash(segment.start, segment.length)} className="difficulty-stroke dark:[stroke-opacity:0.3]" />
             {!loading && segment.fill > 0 && (
               <circle data-fill cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={segment.stroke}
                 strokeWidth={stroke} strokeLinecap="round" {...dash(segment.start, segment.fill)}
-                className="transition-[stroke-dasharray] duration-500 motion-reduce:transition-none" />
+                className="difficulty-stroke transition-[stroke-dasharray] duration-500 motion-reduce:transition-none" />
             )}
           </g>
         ))}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center pb-1 text-center">
         <p className="leading-none tabular-nums">
-          <span className="text-[27px] font-semibold tracking-[-0.05em] text-slate-950 dark:text-zinc-50">{loading ? '—' : solved}</span>
-          <span className="ml-0.5 text-xs text-slate-400 dark:text-zinc-500">/{loading || available === null ? '—' : available}</span>
+          <span className="text-[27px] font-semibold tracking-[-0.05em] text-slate-950 dark:text-[color:var(--student-dash-fg,#fafafa)]">{loading ? '—' : solved}</span>
+          <span className="ml-0.5 text-xs text-slate-400 dark:text-[color:var(--student-dash-muted,#71717a)]">/{loading || available === null ? '—' : available}</span>
         </p>
-        <p className="mt-1 text-[10px] font-medium text-slate-500 dark:text-zinc-400">{difficultyIndex < 0 ? 'Total solved' : `${DIFFICULTIES[difficultyIndex].label} solved`}</p>
+        <p className="mt-1 text-[10px] font-medium text-slate-500 dark:text-[color:var(--student-dash-muted,#a1a1aa)]">{difficultyIndex < 0 ? 'Total solved' : `${DIFFICULTIES[difficultyIndex].label} solved`}</p>
       </div>
     </div>
   );
@@ -144,11 +144,11 @@ export default function CodingProgress({
   };
 
   return (
-    <section aria-labelledby={headingId} aria-busy={loading} className={`rounded-xl border border-slate-200/90 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.025)] dark:border-zinc-800 dark:bg-[#242424] ${className}`}>
+    <section aria-labelledby={headingId} aria-busy={loading} className={`rounded-xl border border-slate-200/90 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.025)] dark:border-[color:var(--student-dash-border,#27272a)] dark:bg-[color:var(--student-dash-card,#242424)] ${className}`}>
       <header className="flex items-start justify-between gap-3">
         <div>
-          <h2 id={headingId} className={titleIcon ? 'flex items-center gap-2.5 text-[15.5px] font-semibold tracking-[-0.015em] text-slate-900 dark:text-zinc-50' : 'text-[14px] font-semibold tracking-tight text-slate-950 dark:text-zinc-50'}>{titleIcon}Coding progress</h2>
-          {description ? <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500 dark:text-zinc-400">{description}</p> : null}
+          <h2 id={headingId} className={`font-semibold dark:text-[color:var(--student-dash-fg,#fafafa)] ${titleIcon ? 'flex items-center gap-2.5 text-[15.5px] tracking-[-0.015em] text-slate-900' : 'text-[14px] tracking-tight text-slate-950'}`}>{titleIcon}Coding progress</h2>
+          {description ? <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500 dark:text-[color:var(--student-dash-muted,#a1a1aa)]">{description}</p> : null}
         </div>
         {action === undefined ? (
           <Link to="/problems" className="mt-0.5 inline-flex shrink-0 items-center gap-0.5 rounded text-[11px] font-semibold text-sky-600 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-400 dark:hover:text-sky-300">
@@ -182,9 +182,9 @@ export default function CodingProgress({
               onMouseEnter={() => setHovered(item.key)} onFocus={() => setFocused(item.key)} onBlur={() => setFocused(null)} onClick={() => choose(item.key)}
               className={`flex w-full items-center justify-between gap-1.5 px-1.5 py-2 text-[11px] ${buttonBase} ${active === item.key ? 'bg-sky-50/80 dark:bg-sky-500/10' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/70'}`}>
               <span className={`flex items-center gap-1.5 font-medium ${item.text}`}>
-                <span className="h-1.5 w-1.5 rounded-full" style={{ background: item.stroke }} aria-hidden="true" />{item.label}
+                <span className={`h-1.5 w-1.5 rounded-full ${item.dot}`} aria-hidden="true" />{item.label}
               </span>
-              <span className="shrink-0 font-semibold tabular-nums text-slate-800 dark:text-zinc-100">{loading ? '—' : values[index]}<span className="ml-0.5 font-normal text-slate-400 dark:text-zinc-500"> / {loading || totals[index] === null ? '—' : totals[index]}</span></span>
+              <span className="shrink-0 font-semibold tabular-nums text-slate-800 dark:text-[color:var(--student-dash-fg,#f4f4f5)]">{loading ? '—' : values[index]}<span className="ml-0.5 font-normal text-slate-400 dark:text-[color:var(--student-dash-muted,#71717a)]"> / {loading || totals[index] === null ? '—' : totals[index]}</span></span>
             </button>
           ))}
         </div>

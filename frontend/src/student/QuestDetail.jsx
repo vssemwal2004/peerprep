@@ -205,6 +205,7 @@ export default function QuestDetail() {
                     <Link to={item.href} onClick={(event) => event.stopPropagation()} className={`block truncate rounded text-[14.5px] font-semibold text-slate-900 transition-colors group-hover:text-sky-700 dark:text-zinc-50 dark:group-hover:text-sky-300 ${focusRing}`}>{item.title}</Link>
                     <span className="mt-1 flex flex-wrap items-center gap-1.5">
                       <span className="sr-only">{STATUS_LABEL[item.status] || STATUS_LABEL.none}. </span>
+                      {item.serial && <span title="PeerPrep question number" className="rounded-md bg-sky-50 px-1.5 py-0.5 font-mono text-[11px] font-medium tabular-nums text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">Q#{item.serial}</span>}
                       {item.tags?.map((tag) => <span key={tag} className="rounded-md bg-[#f3f4f6] px-1.5 py-0.5 text-[11px] text-slate-500 transition-colors group-hover:bg-white dark:bg-white/[0.05] dark:text-zinc-400 dark:group-hover:bg-white/[0.08]">{tag}</span>)}
                       {tone && <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset sm:hidden ${tone.pill}`}>{item.difficulty}</span>}
                     </span>

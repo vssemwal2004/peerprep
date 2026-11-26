@@ -61,6 +61,8 @@ export function submitNotice(outcome, challenge, readiness = null) {
   }
   // A repeat accept (solved before, or the other copy of the same problem): a short note only.
   if (outcome?.kind === 'solve' && outcome.alreadySolved && !challenge?.completed) {
+    // The Prep Coach popup at the top already says it (with a link to a new question).
+    if (outcome.coach?.code === 'repeat') return null;
     return { toast: { type: 'info', duration: 5000, message: 'Accepted again. This problem already counted, so your Prep Score and Prep Readiness stay the same.' } };
   }
   const solve = outcome?.kind === 'solve' && !outcome.alreadySolved ? outcome : null;

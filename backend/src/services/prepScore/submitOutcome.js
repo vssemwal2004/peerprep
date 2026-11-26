@@ -11,6 +11,7 @@ import { cleanTopics, istDay, ledgerFor, topicUsageOn } from './points.js';
 import { allocateAcceptedSolve } from './allocation.js';
 import { quotaTag } from './quotaRules.js';
 import { nextResetAt, tagFrequencies } from './topicQuota.js';
+import { todayDifficulties } from './coach.js';
 
 // Prep Score changes are small (growth curve), so two decimals.
 const round = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
@@ -78,13 +79,18 @@ export async function prepScoreAfterSubmit(userOrId, { source, problemId, accept
       : cleanTopics(parts.map((part) => part.topic)).filter((topic) => limit && (used.get(topic.toLowerCase()) || 0) >= limit);
     // Already solved: an earlier day, or the other copy of this problem already paid.
     const repeat = alreadySolved || event.day !== today || event.key !== key || (allocation && !allocation.created && allocation.receipt?.sourceKey !== key);
+    // A topic whose last counted slot this solve just used: suggest other topics before the next one is wasted.
+    const justFilled = !repeat && limit > 0 && parts.some((part) => part.counted && part.used >= limit);
     return {
+      difficulty: event.meta?.difficulty || 'Easy',
+      difficulties: todayDifficulties(ledger, today),
+      solvePoints: { ...(config?.points?.solve || {}) },
       kind: 'solve', alreadySolved: Boolean(repeat), credited: event.raw > 0, points: repeat ? 0 : round(event.delta), total: ledger.total,
       basePoints: repeat ? 0 : round(event.raw), challengePoints: round(todayGain(ledger, 'challenge', today)),
       parts, limit, limited: Boolean(event.meta?.limited), fullTopics, allFull: parts.length > 0 && parts.every((part) => !part.counted),
       problemKey: problemKey || event.meta?.problemKey || key,
       readinessTopic: allocation?.receipt?.readinessTopic || null,
-      suggestions: fullTopics.length ? await openTopics(used, limit, parts.map((part) => part.topic)) : [],
+      suggestions: fullTopics.length || justFilled ? await openTopics(used, limit, parts.map((part) => part.topic)) : [],
       resetsAt: nextResetAt(now).toISOString(),
     };
   }
@@ -100,7 +106,7 @@ export async function prepScoreAfterSubmit(userOrId, { source, problemId, accept
   const rawNow = Math.max(0, rawToday - Math.min(cap, Math.max(0, countToday - 1) * each));
   const scoreLoss = wrongToday ? -wrongToday.delta : 0;
   const lost = round(rawToday > 0 ? scoreLoss * (rawNow / rawToday) : 0);
-  return { kind: 'wrong', lost: lost > 0 ? Math.max(0.01, lost) : 0, refundable: points.refundSameDay !== false && lost > 0, total: ledger.total, capped: countToday * each >= cap };
+  return { kind: 'wrong', lost: lost > 0 ? Math.max(0.01, lost) : 0, refundable: points.refundSameDay !== false && lost > 0, total: ledger.total, capped: countToday * each >= cap, wrongCount: countToday };
 }
 
 /** The Prep Score change from one kind of event today (e.g. the daily challenge). */

@@ -145,15 +145,20 @@ export async function saveOwnScore(student, score, version) {
 export async function rankFromStore(student, own, version, cohort) {
   const studentId = new mongoose.Types.ObjectId(String(student._id));
   const base = { policyVersion: version, cohortKey: cohortKeyFor(student), eligible: true, hasProgress: true, studentId: { $ne: studentId } };
-  const [totalStudents, higher, equal] = await Promise.all([
+  const [totalStudents, higher, equal, nextAbove] = await Promise.all([
     cohort ? User.countDocuments(cohort).maxTimeMS(QUERY_TIMEOUT_MS) : 0,
     StudentPrepScore.countDocuments({ ...base, total: { $gt: own.total } }).maxTimeMS(QUERY_TIMEOUT_MS),
     StudentPrepScore.countDocuments({ ...base, total: own.total }).maxTimeMS(QUERY_TIMEOUT_MS),
+    // The closest score above: how far the next rank is (2026-11-26 feedback: "my score rose, my rank did not").
+    StudentPrepScore.findOne({ ...base, total: { $gt: own.total } }).sort({ total: 1 }).select('total').maxTimeMS(QUERY_TIMEOUT_MS).lean(),
   ]);
   const lower = Math.max(0, totalStudents - higher - equal - 1);
+  const gap = nextAbove ? Number(nextAbove.total) - Number(own.total) : null;
   return {
     totalStudents, rank: higher + 1, tied: equal > 0,
     percentile: totalStudents > 1 ? Math.round((lower / (totalStudents - 1)) * 100) : 100,
+    // Prep Score needed to pass the next student (null at rank 1). Rounded up to 2 decimals.
+    nextRankGap: gap == null ? null : Math.max(0.01, Math.ceil(gap * 100 + 1e-9) / 100),
   };
 }
 

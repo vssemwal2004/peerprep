@@ -26,17 +26,21 @@ test('unknown and mixed labels stay neutral instead of implying easy', () => {
   assert.equal(difficultyTheme('medium-hard'), DIFFICULTY_THEME.Hard);
 });
 
-test('difficulty pill labels retain readable contrast in both themes', () => {
+test('difficulty labels in both themes and muted dark marks retain readable contrast', () => {
   const css = readFileSync(new URL('../src/styles/difficulty.css', import.meta.url), 'utf8');
   const luminance = (hex) => hex.slice(1).match(/../g).map((part) => parseInt(part, 16) / 255)
     .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
     .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+  const contrast = (foreground, background) => {
+    const [high, low] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+    return (high + 0.05) / (low + 0.05);
+  };
   for (const key of ['easy', 'medium', 'hard', 'neutral']) {
     const block = css.match(new RegExp(`\\.difficulty-${key} \\{([^}]+)\\}`))[1];
     const color = (name) => block.match(new RegExp(`--difficulty-${name}: (#[a-f0-9]+)`))[1];
     for (const [foreground, background] of [['ink', 'soft'], ['night', 'night-bg']]) {
-      const values = [luminance(color(foreground)), luminance(color(background))].sort((a, b) => b - a);
-      assert.ok((values[0] + 0.05) / (values[1] + 0.05) >= 4.5, `${key} ${foreground} contrast`);
+      assert.ok(contrast(color(foreground), color(background)) >= 4.5, `${key} ${foreground} contrast`);
     }
+    assert.ok(contrast(color('night-fill'), '#303030') >= 3, `${key} dark chart mark contrast`);
   }
 });

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ChevronRight, Trophy } from 'lucide-react';
 import { focusRing } from './format';
+import { rankGapText } from '../prepScore/formatScore';
 
 const finite = (value) => (Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0);
 
@@ -15,7 +16,7 @@ export default function SidebarRankCard({ ranking, loading = false }) {
   const topPercent = rank && total > 1 ? Math.max(1, Math.ceil((rank / total) * 100)) : null;
   const standing = rank && total > 1 ? ((total - rank) / (total - 1)) * 100 : rank ? 100 : 0;
   const hint = !ranking ? 'Rank unavailable right now'
-    : rank ? ranking.universityName || 'Your university'
+    : rank ? rankGapText(ranking) || ranking.universityName || 'Your university'
       : ranking.hasProgress ? 'Appears after the next ranking update' : 'Solve a problem to get ranked';
 
   return (
@@ -39,7 +40,7 @@ export default function SidebarRankCard({ ranking, loading = false }) {
           <span className="block h-full rounded-full bg-gradient-to-r from-sky-400 to-sky-600" style={{ width: `${Math.max(4, standing)}%` }} />
         </span>
       ) : null}
-      {!loading ? <span className="mt-1 block truncate text-[11px] text-slate-500 dark:text-zinc-400">{hint}</span> : null}
+      {!loading ? <span className="mt-1 block text-[11px] leading-snug text-slate-500 dark:text-zinc-400" title={hint}>{hint}</span> : null}
     </Link>
   );
 }

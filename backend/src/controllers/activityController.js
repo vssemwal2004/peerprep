@@ -9,6 +9,37 @@ import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import { publicCodingProblemStages, getStudentCodingSummary, getStudentActivitySummary } from '../services/studentDashboardService.js';
 import { HttpError } from '../utils/errors.js';
 import { prepStreakFor } from '../services/prepStreak.js';
+import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
+import { sharedQuestions } from '../platform/sharedContent.js';
+
+// The profile shows the latest accepted questions; "View all" opens PrepCoding filtered to Solved.
+const RECENT_SOLVED_LIMIT = 10;
+const NO_SERIAL = 2147483647;
+const serialOf = (value) => (Number(value) > 0 && Number(value) < NO_SERIAL ? Number(value) : null);
+
+/**
+ * Shared-library coding solves live in QuestionPracticeAttempt, not Submission, so the profile list
+ * used to miss them (2026-11-26 student feedback). Titles and numbers come from the cached shared feed.
+ */
+async function recentSharedSolves(studentId) {
+  const rows = await QuestionPracticeAttempt.aggregate([
+    { $match: { studentId, source: 'shared', questionType: 'coding', result: 'correct' } },
+    { $group: { _id: '$questionId', acceptedAt: { $max: '$createdAt' } } },
+    { $sort: { acceptedAt: -1 } },
+    { $limit: RECENT_SOLVED_LIMIT },
+  ]);
+  if (!rows.length) return [];
+  let catalogue = [];
+  try { catalogue = (await sharedQuestions()) || []; } catch { catalogue = []; }
+  const byId = new Map(catalogue.map((question) => [String(question._id), question]));
+  return rows.map((row) => {
+    const question = byId.get(String(row._id));
+    return question ? {
+      problemId: String(row._id), source: 'shared', title: question.questionText || 'Untitled Problem',
+      difficulty: question.difficulty || 'Easy', displayOrder: serialOf(question.displayOrder), acceptedAt: row.acceptedAt,
+    } : null;
+  }).filter(Boolean);
+}
 
 // Format seconds into a human-readable watch time string (e.g. "3m 45s", "1h 02m")
 function formatWatchTime(seconds) {
@@ -576,6 +607,7 @@ export async function getStudentStats(req, res) {
             _id: '$problem',
             title: { $first: '$codingProblem.title' },
             difficulty: { $first: '$codingProblem.difficulty' },
+            displayOrder: { $first: '$codingProblem.displayOrder' },
             acceptedAt: { $max: '$createdAt' },
           },
         },
@@ -795,6 +827,7 @@ export async function getStudentStats(req, res) {
       }
     ]);
     const totalWatchTimeHours = watchTimeData[0] ? Math.round((watchTimeData[0].totalSeconds / 3600) * 10) / 10 : 0;
+    const sharedSolved = await recentSharedSolves(student._id).catch(() => []);
     const compilerSummary = compilerSummaryAgg[0] || {};
     const totalProblemsByDifficulty = codingSummary.totalsByDifficulty;
     const solvedByDifficulty = codingSummary.solvedByDifficulty;
@@ -840,11 +873,17 @@ export async function getStudentStats(req, res) {
         statusBreakdown,
         languagesUsed,
         mostUsedLanguage,
-        recentSolvedProblems: solvedProblemsAgg.slice(0, 5).map((entry) => ({
-          title: entry.title || 'Untitled Problem',
-          difficulty: entry.difficulty || 'Easy',
-          acceptedAt: entry.acceptedAt || null,
-        })),
+        recentSolvedProblems: [
+          ...solvedProblemsAgg.slice(0, RECENT_SOLVED_LIMIT).map((entry) => ({
+            problemId: String(entry._id),
+            source: 'university',
+            title: entry.title || 'Untitled Problem',
+            difficulty: entry.difficulty || 'Easy',
+            displayOrder: serialOf(entry.displayOrder),
+            acceptedAt: entry.acceptedAt || null,
+          })),
+          ...sharedSolved,
+        ].sort((a, b) => new Date(b.acceptedAt || 0) - new Date(a.acceptedAt || 0)).slice(0, RECENT_SOLVED_LIMIT),
         recentSubmissions: recentSubmissionsAgg.map((submission) => ({
           problemTitle: submission.problemSnapshot?.title || submission.problem?.title || 'Untitled Problem',
           difficulty: submission.problemSnapshot?.difficulty || submission.problem?.difficulty || 'Easy',

@@ -96,7 +96,7 @@ export default function StudentDashboard() {
     : dashboardNudge({ data, loading: progress.loading, firstSession, week, daily: sections.engagement.data?.daily, resumeItems, canQuestions });
 
   return <RequirePasswordChange user={user}>
-    <div className="student-dashboard min-h-[calc(100dvh-65px)] bg-[#f6f7f9] bg-[radial-gradient(1100px_520px_at_12%_-180px,rgba(14,165,233,0.08),transparent_70%),radial-gradient(900px_420px_at_88%_-200px,rgba(139,92,246,0.05),transparent_70%)] bg-no-repeat font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:bg-none dark:text-zinc-100">
+    <div className="student-dashboard min-h-[calc(100dvh-65px)] bg-[#f6f7f9] bg-[radial-gradient(1100px_520px_at_12%_-180px,rgba(14,165,233,0.08),transparent_70%),radial-gradient(900px_420px_at_88%_-200px,rgba(139,92,246,0.05),transparent_70%)] bg-no-repeat font-dmsans text-slate-900 antialiased dark:bg-[color:var(--student-dash-canvas)] dark:bg-none dark:text-[color:var(--student-dash-fg)]">
       {showNoticeBar && <div className="mx-auto max-w-[1360px] px-4 pt-5 sm:px-6 lg:px-10">
         <AnnouncementBar announcement={notices[0]} total={notices.length} now={now} onView={viewNotices} onDismiss={() => dismissNotice(notices[0]._id)} />
       </div>}
@@ -118,7 +118,7 @@ export default function StudentDashboard() {
           {canQuestions && <div data-guide="dash-coding" className="min-w-0">{progress.error
             ? <section aria-labelledby="coding-error-title" className={`p-4 ${card}`}><CardTitle id="coding-error-title" title="Coding progress" icon={Gauge} tone="sky" /><Unavailable className="mt-3" message="Coding progress could not be loaded." onRetry={sections.refresh} /></section>
             : <CodingProgress {...(data?.coding || {})} compact loading={progress.loading} description={null} titleIcon={<TitleIcon icon={Gauge} tone="sky" />}
-              className="!rounded-2xl !border-[#e9eaee] !p-4 !shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:!border-white/[0.07]" />}</div>}
+              className="!rounded-2xl !border-[#e9eaee] !p-4 !shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:!border-[color:var(--student-dash-border)]" />}</div>}
           {canRanking && <div data-guide="dash-rank" className="min-w-0"><RankCard ranking={data?.ranking} loading={progress.loading} error={progress.error} onRetry={sections.refresh} /></div>}
           {(canEvents || canAssessments || canInterviews) && <div data-guide="dash-coming-up" className="min-w-0"><ComingUpCard items={upcoming} loading={dueLoading} error={dueError} onRetry={sections.refresh} canAssessments={canAssessments} canEvents={canEvents} canInterviews={canInterviews} /></div>}
         </aside>

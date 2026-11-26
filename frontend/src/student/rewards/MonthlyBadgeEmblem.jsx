@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { badgeLook, TIER_METAL } from './badgeLooks';
+import { badgeLook, DARK_TIER_METAL, TIER_METAL } from './badgeLooks';
 
 // Each monthly badge has its own emblem: a shape, a colour and an icon (badgeLooks.js). The tier
 // (Bronze … Legend) is the metal ring around it and the level is the small pip. Level 0 = locked (grey).
@@ -31,7 +31,7 @@ export default function MonthlyBadgeEmblem({ track, level = 0, tier, size = 64, 
   const metal = locked ? null : TIER_METAL[tier] || TIER_METAL.Bronze;
   const { Icon } = look;
   return <span className="relative inline-flex shrink-0" style={{ width: size, height: size }} role="img" aria-label={title || (locked ? 'Locked badge' : `Level ${level} ${tier}`)}>
-    <svg viewBox="0 0 64 64" width={size} height={size} className={locked ? 'opacity-90' : 'drop-shadow-[0_6px_10px_rgba(15,23,42,0.18)]'} aria-hidden="true">
+    <svg viewBox="0 0 64 64" width={size} height={size} className={`dark:brightness-[0.94] dark:saturate-[0.88] ${locked ? 'opacity-90' : 'drop-shadow-[0_6px_10px_rgba(15,23,42,0.18)]'}`} aria-hidden="true">
       <defs>
         <linearGradient id={`${id}-fill`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor={locked ? '#e2e8f0' : look.from} />
@@ -48,7 +48,7 @@ export default function MonthlyBadgeEmblem({ track, level = 0, tier, size = 64, 
     <span className="absolute inset-0 flex items-center justify-center" aria-hidden="true">
       <Icon className={locked ? 'text-white/80' : 'text-white drop-shadow'} style={{ width: size * 0.36, height: size * 0.36 }} strokeWidth={2.25} />
     </span>
-    {!locked && <span className="absolute -bottom-1 -right-1 flex h-[22px] min-w-[22px] items-center justify-center rounded-full px-1 text-[11px] font-black text-white ring-2 ring-white dark:ring-[#242424]"
-      style={{ backgroundColor: metal }} aria-hidden="true">{level}</span>}
+    {!locked && <span className="absolute -bottom-1 -right-1 flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-[color:var(--badge-metal)] px-1 text-[11px] font-black text-white ring-2 ring-white dark:bg-[color:var(--badge-metal-dark)] dark:ring-[#242424]"
+      style={{ '--badge-metal': metal, '--badge-metal-dark': DARK_TIER_METAL[tier] || DARK_TIER_METAL.Bronze }} aria-hidden="true">{level}</span>}
   </span>;
 }

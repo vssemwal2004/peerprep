@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowDown, ArrowUp, ArrowUpDown, Building2, Layers3, LoaderCircle, Search, Shapes, Shuffle, SlidersHorizontal, Star, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Building2, CheckCircle2, Layers3, LoaderCircle, Search, Shapes, Shuffle, SlidersHorizontal, Star, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { buildTagsParam, PROBLEM_SORT_OPTIONS } from './problemUtils';
@@ -30,6 +30,14 @@ const QUESTION_SORT_OPTIONS = [...PROBLEM_SORT_OPTIONS.filter((option) => !optio
 const ROW_GRID = 'sm:grid-cols-[24px_minmax(0,1fr)_100px_78px_32px]';
 const FAVORITES_KEY = 'peerprep:problem-favorites';
 const DIFFICULTY_OPTIONS = ['', 'Easy', 'Medium', 'Hard'];
+// The student's own progress (questionPractice.js PRACTICE_STATUSES). The profile links here with ?status=solved.
+const STATUS_OPTIONS = [
+  { value: '', label: 'All statuses' },
+  { value: 'solved', label: 'Solved' },
+  { value: 'attempted', label: 'Attempted, not solved' },
+  { value: 'unsolved', label: 'Not solved yet' },
+];
+const STATUS_LABELS = Object.fromEntries(STATUS_OPTIONS.map((option) => [option.value, option.label]));
 
 // Laptop widths (MacBook 1280–1535px) are too narrow for three columns: Topics joins the left rail there,
 // so the question list keeps room for full titles and a one-line toolbar. Three columns return at 2xl.
@@ -145,6 +153,7 @@ export default function ProblemsPage() {
   const [refreshQuestions, setRefreshQuestions] = useState(0);
   const [selectedTags, setSelectedTags] = useState(() => { const topic = (linkParams.get('topic') || '').trim().slice(0, 120); return topic ? [topic] : []; });
   const [selectedCompany, setSelectedCompany] = useState('');
+  const [progressStatus, setProgressStatus] = useState(() => (STATUS_LABELS[linkParams.get('status') || ''] ? linkParams.get('status') || '' : ''));
   const [sortValue, setSortValue] = useState(PROBLEM_SORT_OPTIONS[0].value);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [pageSize, setPageSize] = useState(readPageSize);
@@ -166,7 +175,7 @@ export default function ProblemsPage() {
   const selectedList = useMemo(() => lists.find((list) => list._id === selectedListId), [lists, selectedListId]);
   const filteredIds = showFavorites ? favorites : (selectedList ? selectedList.problemIds : null);
   // Any change to what is listed, or to the page size, starts again at page 1 without a request for the old page.
-  const filterKey = JSON.stringify([debouncedSearch, difficulty, resolvedSort.value, selectedTags, selectedCompany, showFavorites, selectedListId, pageSize]);
+  const filterKey = JSON.stringify([debouncedSearch, difficulty, progressStatus, resolvedSort.value, selectedTags, selectedCompany, showFavorites, selectedListId, pageSize]);
   // Leaving a filter combination forgets its page, so returning to it also starts at page 1 (adjusted during render).
   if (pageState.key !== filterKey) setPageState({ key: filterKey, page: 1 });
   const page = pageState.key === filterKey ? pageState.page : 1;
@@ -184,7 +193,7 @@ export default function ProblemsPage() {
     const load = async () => {
       try {
         setLoading(true);
-        const result = await api.listPracticeQuestions({ search: debouncedSearch, difficulty, tags: buildTagsParam(selectedTags), companies: selectedCompany, ...(filteredIds ? { ids: filteredIds.join(',') || '__none__' } : {}), sortBy: resolvedSort.sortBy, sortOrder: resolvedSort.sortOrder, page, limit: pageSize });
+        const result = await api.listPracticeQuestions({ search: debouncedSearch, difficulty, ...(progressStatus ? { status: progressStatus } : {}), tags: buildTagsParam(selectedTags), companies: selectedCompany, ...(filteredIds ? { ids: filteredIds.join(',') || '__none__' } : {}), sortBy: resolvedSort.sortBy, sortOrder: resolvedSort.sortOrder, page, limit: pageSize });
         if (!mounted) return;
         const lastPage = result.pagination?.pages || 1;
         // A page past the end (the list shrank) moves to the new last page instead of showing nothing.
@@ -195,7 +204,7 @@ export default function ProblemsPage() {
     };
     load();
     return () => { mounted = false; };
-  }, [debouncedSearch, difficulty, filteredIds, page, pageSize, refreshQuestions, resolvedSort.sortBy, resolvedSort.sortOrder, selectedTags, selectedCompany, toast]);
+  }, [debouncedSearch, difficulty, progressStatus, filteredIds, page, pageSize, refreshQuestions, resolvedSort.sortBy, resolvedSort.sortOrder, selectedTags, selectedCompany, toast]);
 
   const problems = (response.questions || []).map((question) => ({ ...question, title: question.questionText, listId: question.source === 'university' && question.questionType === 'coding' && question.sourceProblemId ? question.sourceProblemId : question._id }));
   const pagination = response.pagination || { page: 1, pages: 1, total: 0 };
@@ -228,7 +237,7 @@ export default function ProblemsPage() {
     setPageState({ key: filterKey, page: next });
     listTopRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
   };
-  const clearFilters = () => { clearSearch(); setDifficulty(''); setSelectedTags([]); setSelectedCompany(''); setSortValue('sequence-asc'); selectView({ kind: 'all' }); };
+  const clearFilters = () => { clearSearch(); setDifficulty(''); setProgressStatus(''); setSelectedTags([]); setSelectedCompany(''); setSortValue('sequence-asc'); selectView({ kind: 'all' }); };
   const toggleFavorite = (problemId) => setFavorites((previous) => previous.includes(String(problemId)) ? previous.filter((id) => id !== String(problemId)) : [...previous, String(problemId)]);
   const openProblem = (problem) => {
     if (openingProblemId) return;
@@ -247,6 +256,7 @@ export default function ProblemsPage() {
     selectedTopic && { key: 'topic', label: `Topic: ${selectedTopic}`, clear: () => selectTopic('') },
     selectedCompany && { key: 'company', label: `Company: ${selectedCompany}`, clear: () => selectCompany(selectedCompany) },
     difficulty && { key: 'difficulty', label: difficulty, clear: () => setDifficulty('') },
+    progressStatus && { key: 'status', label: STATUS_LABELS[progressStatus], clear: () => setProgressStatus('') },
     debouncedSearch && { key: 'search', label: searchLabel(debouncedSearch), clear: clearSearch },
   ].filter(Boolean);
   // The header follows the most specific focus: a topic, then a company, then a saved list.
@@ -314,6 +324,13 @@ export default function ProblemsPage() {
                 </button>;
               })}
             </div>
+            <label className="relative" data-guide="pc-status">
+              <span className="sr-only">Filter by your progress</span>
+              <CheckCircle2 className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${progressStatus ? 'text-emerald-500' : 'text-slate-400'}`} aria-hidden="true" />
+              <select value={progressStatus} onChange={(event) => setProgressStatus(event.target.value)} className={`pl-9 pr-8 ${fieldBase}`}>
+                {STATUS_OPTIONS.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
             <label className="relative" data-guide="pc-sort">
               <span className="sr-only">Sort questions</span>
               <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />

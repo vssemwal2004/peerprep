@@ -4,7 +4,7 @@ import { api } from '../../utils/api';
 import PrepCoinIcon from '../../components/prepCoin/PrepCoinIcon';
 import { BADGE_LEVEL_EARNED, COINS_EARNED } from '../rewards/rewardEvents';
 import MonthlyBadgeEmblem from '../rewards/MonthlyBadgeEmblem';
-import { badgeLook, TIER_METAL } from '../rewards/badgeLooks';
+import { badgeLook, DARK_TIER_METAL, TIER_METAL } from '../rewards/badgeLooks';
 import { card, focusRing, SectionHeader, Skeleton, Unavailable } from './ui';
 import GuideInfo from '../../guide/platform/GuideInfo';
 
@@ -29,33 +29,34 @@ function BadgeCard({ track }) {
   const metal = track.level ? TIER_METAL[track.tier] : null;
   return <li className={`${card} group relative overflow-hidden p-4`}>
     {/* A soft wash of the badge's own colour, so every badge reads differently at a glance. */}
-    <span className="pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full opacity-[0.12] blur-2xl transition-opacity group-hover:opacity-20" style={{ backgroundColor: look.accent }} aria-hidden="true" />
+    <span className="pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full opacity-[0.12] blur-2xl transition-opacity group-hover:opacity-20 dark:opacity-[0.07] dark:group-hover:opacity-[0.12]" style={{ backgroundColor: look.accent }} aria-hidden="true" />
     <div className="relative flex items-start gap-3.5">
       <MonthlyBadgeEmblem track={track.key} level={track.level} tier={track.tier} size={58} title={`${track.title}: ${track.level ? `level ${track.level}, ${track.tier}` : 'not started this month'}`} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-[14px] font-semibold text-slate-900 dark:text-zinc-50">{track.title}</p>
-          {track.level > 0 && <span className="shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-white" style={{ backgroundColor: metal }}>{track.tier}</span>}
+          <p className="truncate text-[14px] font-semibold text-slate-900 dark:text-[color:var(--student-dash-fg)]">{track.title}</p>
+          {track.level > 0 && <span className="shrink-0 rounded-full bg-[color:var(--badge-metal)] px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-white dark:bg-[color:var(--badge-metal-dark)]"
+            style={{ '--badge-metal': metal, '--badge-metal-dark': DARK_TIER_METAL[track.tier] || DARK_TIER_METAL.Bronze }}>{track.tier}</span>}
         </div>
-        <p className="mt-0.5 truncate text-[11.5px] text-slate-500 dark:text-zinc-400">{track.description}</p>
+        <p className="mt-0.5 truncate text-[11.5px] text-slate-500 dark:text-[color:var(--student-dash-muted)]">{track.description}</p>
         {/* Ten level pips: filled up to the current level. */}
         <ol className="mt-2.5 flex gap-1" aria-label={`Level ${track.level} of 10`}>
           {track.levels.map((entry) => <li key={entry.level} title={`Level ${entry.level} (${entry.tier}): ${entry.target} ${track.unit}${entry.coins ? ` · +${entry.coins} coins` : ''}`}
-            className={`h-1.5 flex-1 rounded-full ${entry.earned ? '' : 'bg-slate-100 dark:bg-white/[0.07]'}`} style={entry.earned ? { backgroundColor: look.accent } : undefined} />)}
+            className={`h-1.5 flex-1 rounded-full ${entry.earned ? 'dark:brightness-[0.96] dark:saturate-[0.86]' : 'bg-slate-100 dark:bg-white/[0.07]'}`} style={entry.earned ? { backgroundColor: look.accent } : undefined} />)}
         </ol>
       </div>
     </div>
     <div className="relative mt-3.5">
       <div className="mb-1.5 flex items-baseline justify-between gap-2 text-[12px]">
-        <span className="text-slate-500 dark:text-zinc-400"><b className="text-[15px] text-slate-900 dark:text-white">{track.value}</b>{next ? <span className="text-slate-400 dark:text-zinc-500"> / {next.target}</span> : null} {track.unit}</span>
+        <span className="text-slate-500 dark:text-[color:var(--student-dash-muted)]"><b className="text-[15px] text-slate-900 dark:text-[color:var(--student-dash-fg)]">{track.value}</b>{next ? <span className="text-slate-400 dark:text-[color:var(--student-dash-muted)]"> / {next.target}</span> : null} {track.unit}</span>
         {next
-          ? <span className="inline-flex items-center gap-1 text-slate-500 dark:text-zinc-400">Level {next.level}{next.coins > 0
+          ? <span className="inline-flex items-center gap-1 text-slate-500 dark:text-[color:var(--student-dash-muted)]">Level {next.level}{next.coins > 0
             ? <><PrepCoinIcon size={13} /><b className="text-amber-700 dark:text-amber-300">+{next.coins}</b></>
-            : <span className="text-slate-400 dark:text-zinc-500">· badge only</span>}</span>
+            : <span className="text-slate-400 dark:text-[color:var(--student-dash-muted)]">· badge only</span>}</span>
           : <span className="font-semibold" style={{ color: look.accent }}>All 10 levels</span>}
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.07]" role="progressbar" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100} aria-label={`${track.title} progress to the next level`}>
-        <span className="block h-full rounded-full transition-[width] duration-700 motion-reduce:transition-none" style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${look.from}, ${look.to})` }} />
+        <span className="block h-full rounded-full transition-[width] duration-700 motion-reduce:transition-none dark:brightness-[0.96] dark:saturate-[0.86]" style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${look.from}, ${look.to})` }} />
       </div>
     </div>
   </li>;
@@ -88,7 +89,7 @@ export default function MonthlyBadgesCard() {
 
   return <section id="badges" aria-labelledby="monthly-badges-title" className="scroll-mt-24">
     <SectionHeader id="monthly-badges-title" title={data ? `${monthName(data.month)} badges` : 'Monthly badges'} info={<GuideInfo step="dash-monthly-badges" />}
-      action={data && <span className="flex shrink-0 items-center gap-3 text-[12px] text-slate-500 dark:text-zinc-400">
+      action={data && <span className="flex shrink-0 items-center gap-3 text-[12px] text-slate-500 dark:text-[color:var(--student-dash-muted)]">
         <span className="inline-flex items-center gap-1"><PrepCoinIcon size={14} /><b className="text-amber-700 dark:text-amber-300">{data.coinsThisMonth}</b> earned</span>
         <span className="hidden sm:inline">New targets in {daysLeft(data.resetsAt)} days</span>
       </span>} />
@@ -99,7 +100,7 @@ export default function MonthlyBadgesCard() {
           <ul className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">{visible.map((track) => <BadgeCard key={track.key} track={track} />)}</ul>
           {hidden > 0 && <div className="mt-3 flex justify-center">
             <button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}
-              className={`inline-flex items-center gap-1.5 rounded-full border border-[#e6e7eb] bg-white px-4 py-1.5 text-[12.5px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/[0.08] dark:bg-[#242424] dark:text-zinc-200 dark:hover:bg-white/[0.06] ${focusRing}`}>
+              className={`inline-flex items-center gap-1.5 rounded-full border border-[#e6e7eb] bg-white px-4 py-1.5 text-[12.5px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-[color:var(--student-dash-border)] dark:bg-[color:var(--student-dash-card)] dark:text-[color:var(--student-dash-fg)] dark:hover:bg-[color:var(--student-dash-hover)] ${focusRing}`}>
               {expanded ? 'Show fewer badges' : `Show all ${ordered.length} badges`}<ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
             </button>
           </div>}

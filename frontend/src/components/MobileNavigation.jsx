@@ -5,7 +5,7 @@ import { ChevronDown, Compass, LogOut, Menu, Moon, Sun, X } from 'lucide-react';
 const rowBase = 'flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-[14px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60';
 const rowTone = (active) => (active
   ? 'bg-sky-50 font-semibold text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
-  : 'font-medium text-slate-700 hover:bg-slate-50 active:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/[0.05]');
+  : 'font-medium text-slate-700 hover:bg-slate-50 active:bg-slate-100 dark:text-[color:var(--student-dash-fg,#e2e8f0)] dark:hover:bg-[color:var(--student-dash-hover,rgba(255,255,255,0.05))]');
 
 function Avatar({ avatarUrl, initials, accent, size = 'h-9 w-9' }) {
   return avatarUrl
@@ -78,18 +78,18 @@ export default function MobileNavigation({
           <span className="min-w-0 flex-1 truncate">{child.label}</span>
           <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
         </button>
-        {isOpen && <div className="ml-5 mt-0.5 space-y-0.5 border-l border-slate-200 pl-2 dark:border-white/10">{child.children.map((entry) => renderLink(entry, 2))}</div>}
+        {isOpen && <div className="ml-5 mt-0.5 space-y-0.5 border-l border-slate-200 pl-2 dark:border-[color:var(--student-dash-border,rgba(255,255,255,0.1))]">{child.children.map((entry) => renderLink(entry, 2))}</div>}
       </div>
     );
   };
 
   return (
     <>
-      <header data-guide="app-nav" className="fixed inset-x-0 top-0 z-[70] flex h-14 items-center gap-2 border-b border-sky-100 bg-white/95 px-2 backdrop-blur-xl dark:border-sky-950 dark:bg-slate-950/95">
+      <header data-guide="app-nav" className="fixed inset-x-0 top-0 z-[70] flex h-14 items-center gap-2 border-b border-sky-100 bg-white/95 px-2 backdrop-blur-xl dark:border-[color:var(--student-dash-border,#082f49)] dark:bg-[color:var(--student-dash-card,rgba(20,20,20,0.95))]">
         <button type="button" onClick={() => setOpen(true)} aria-label={hasBadge ? 'Open menu (new requests waiting)' : 'Open menu'} aria-expanded={open} aria-controls="mobile-navigation"
-          className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-slate-200 dark:hover:bg-white/10">
+          className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-[color:var(--student-dash-fg,#e2e8f0)] dark:hover:bg-[color:var(--student-dash-hover,rgba(255,255,255,0.1))]">
           <Menu className="h-5 w-5" aria-hidden="true" />
-          {hasBadge && <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-950" aria-hidden="true" />}
+          {hasBadge && <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[color:var(--student-dash-card,#141414)]" aria-hidden="true" />}
         </button>
         <Link to={homePath} className="flex min-w-0 flex-1 items-center" aria-label="PeerPrep home">
           <img src={logo} alt="PeerPrep" className="h-8 w-auto max-w-[150px] object-contain" />
@@ -102,10 +102,10 @@ export default function MobileNavigation({
       {/* Backdrop + drawer. Kept mounted for the slide animation; inert while closed. */}
       <div className={`fixed inset-0 z-[80] bg-slate-950/40 backdrop-blur-[2px] transition-opacity duration-300 ${open ? 'opacity-100' : 'pointer-events-none opacity-0'}`} onClick={() => setOpen(false)} aria-hidden="true" />
       <nav id="mobile-navigation" aria-label={`${roleLabel} navigation`} inert={!open}
-        className={`fixed inset-y-0 left-0 z-[90] flex w-[86vw] max-w-[320px] flex-col bg-white transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] dark:bg-slate-950 ${open ? 'translate-x-0 shadow-2xl' : '-translate-x-full shadow-none'}`}>
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-100 px-3 dark:border-white/10">
+        className={`fixed inset-y-0 left-0 z-[90] flex w-[86vw] max-w-[320px] flex-col bg-white transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] dark:bg-[color:var(--student-dash-card,#141414)] ${open ? 'translate-x-0 shadow-2xl' : '-translate-x-full shadow-none'}`}>
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-100 px-3 dark:border-[color:var(--student-dash-border,rgba(255,255,255,0.1))]">
           <img src={logo} alt="PeerPrep" className="h-8 w-auto max-w-[150px] object-contain" />
-          <button type="button" onClick={() => setOpen(false)} aria-label="Close menu" className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:hover:bg-white/10">
+          <button type="button" onClick={() => setOpen(false)} aria-label="Close menu" className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:hover:bg-[color:var(--student-dash-hover,rgba(255,255,255,0.1))]">
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
@@ -123,18 +123,18 @@ export default function MobileNavigation({
                   <span className="min-w-0 flex-1 truncate">{item.label}</span>
                   <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
                 </button>
-                {isOpen && <div className="mb-1 ml-5 mt-0.5 space-y-0.5 border-l border-slate-200 pl-2 dark:border-white/10">{item.items.map((child) => renderChild(child, item.key))}</div>}
+                {isOpen && <div className="mb-1 ml-5 mt-0.5 space-y-0.5 border-l border-slate-200 pl-2 dark:border-[color:var(--student-dash-border,rgba(255,255,255,0.1))]">{item.items.map((child) => renderChild(child, item.key))}</div>}
               </div>
             );
           })}
         </div>
 
-        <div className="shrink-0 border-t border-slate-100 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] dark:border-white/10">
+        <div className="shrink-0 border-t border-slate-100 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] dark:border-[color:var(--student-dash-border,rgba(255,255,255,0.1))]">
           <div className="flex items-center gap-3 px-2 py-2">
             <Avatar avatarUrl={avatarUrl} initials={initials} accent={accent} size="h-10 w-10" />
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{displayName}</p>
-              <p className="truncate text-xs text-slate-500 dark:text-slate-400">{displayEmail || roleLabel}</p>
+              <p className="truncate text-sm font-bold text-slate-900 dark:text-[color:var(--student-dash-fg,#fff)]">{displayName}</p>
+              <p className="truncate text-xs text-slate-500 dark:text-[color:var(--student-dash-muted,#94a3b8)]">{displayEmail || roleLabel}</p>
             </div>
           </div>
           {accountLinks.map(({ label, to, Icon }) => (

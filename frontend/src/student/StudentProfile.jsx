@@ -31,6 +31,8 @@ import ReadinessSummaryCard from './readiness/ReadinessSummaryCard';
 import { useReadiness } from './readiness/useReadiness';
 
 const MotionDiv = motion.div;
+// Matches activityController RECENT_SOLVED_LIMIT; the full list is PrepCoding filtered to Solved.
+const RECENT_SOLVED_LIMIT = 10;
 
 function nullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -261,12 +263,15 @@ export default function StudentProfile() {
 
         fallbackRecentSolvedProblems = solvedProblems
           .map((problem) => ({
+            problemId: problem?._id ? String(problem._id) : null,
+            source: 'university',
             title: problem?.title || 'Untitled Problem',
             difficulty: problem?.difficulty || 'Easy',
+            displayOrder: problem?.displayOrder ?? null,
             acceptedAt: problem?.updatedAt || problem?.createdAt || null,
           }))
           .sort((a, b) => new Date(b.acceptedAt || 0).getTime() - new Date(a.acceptedAt || 0).getTime())
-          .slice(0, 5);
+          .slice(0, RECENT_SOLVED_LIMIT);
 
         const submissionTotals = await Promise.allSettled(
           allProblems.map((problem) => (
@@ -458,12 +463,15 @@ export default function StudentProfile() {
           solvedByDifficulty: bump(prev.solvedByDifficulty || {}),
           recentSolvedProblems: [
             {
+              problemId: submission?.problem?._id ? String(submission.problem._id) : null,
+              source: 'university',
               title: submission?.problem?.title || 'Untitled Problem',
               difficulty: submission?.problem?.difficulty || 'Easy',
+              displayOrder: submission?.problem?.displayOrder ?? null,
               acceptedAt: submission?.completedAt || submission?.updatedAt || new Date().toISOString(),
             },
             ...(Array.isArray(prev.recentSolvedProblems) ? prev.recentSolvedProblems : []),
-          ].slice(0, 5),
+          ].slice(0, RECENT_SOLVED_LIMIT),
         }
         : prev));
       setProblemStatusSummary((prev) => ({
@@ -1068,6 +1076,7 @@ export default function StudentProfile() {
 
             {canQuestions && <div data-guide="pf-history"><PracticeHistory
               solved={stats?.recentSolvedProblems}
+              solvedTotal={stats?.totalQuestionsSolved ?? stats?.problemsSolved}
               submissions={stats?.recentSubmissions}
               statusBreakdown={stats?.statusBreakdown}
               languages={languages}

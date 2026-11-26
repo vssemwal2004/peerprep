@@ -998,6 +998,8 @@ export async function getStudentQuest(student, slug, now = new Date()) {
   if (enrollment && !enrollment.completedAt) enrollment = await settleEnrollment(scope, quest, enrollment, card.solved, card.total, now);
   const items = card.windowStatus === 'upcoming' ? [] : quest.items.map((item) => ({ item, entry: index.get(itemKey(item)) })).filter(({ entry }) => entry).map(({ item, entry }) => ({
     key: entry.key, source: entry.source, problemId: entry.problemId, routeId: entry.routeId || entry.problemId, title: entry.title, difficulty: entry.difficulty, tags: entry.tags.slice(0, 4),
+    // The PeerPrep question number, the same one PrepCoding and the solver show (2026-11-26 feedback).
+    serial: Number(entry.order) > 0 && Number(entry.order) < 2147483647 ? Number(entry.order) : null,
     section: item.section || '', status: states.get(entry.key) || 'none', href: questItemHref(entry.href, quest.slug, entry.key),
   }));
   return { quest: { ...card, completedAt: enrollment?.completedAt || null, items } };

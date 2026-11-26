@@ -137,22 +137,44 @@ function HistoryChart({ days }) {
   );
 }
 
-/** The published scoring rules in plain words. */
-export function RulesList({ rules }) {
-  if (!rules) return null;
+const RULE_MARK = {
+  up: { sign: '+', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+  down: { sign: '−', className: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' },
+  no: { sign: '0', className: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+  info: { sign: 'i', className: 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-zinc-300' },
+};
+
+/**
+ * The published scoring rules as short points (2026-11-26: students found the sentences too long).
+ * Every number comes from the live policy (GET /auth/prep-score/history `rules`).
+ */
+function prepScoreRulePoints(rules) {
+  if (!rules) return [];
   const n = (value) => formatScore(Number(value) || 0);
   const curved = rules.curve && Number(rules.curve.exponent) < 1;
-  const unit = curved ? ' activity points' : '';
-  const items = [
-    curved && 'Your work earns activity points. Prep Score grows with them: quickly at first, then more slowly as it gets higher, so every point of score is earned.',
-    rules.solve && `A solve earns Easy ${n(rules.solve.Easy)}, Medium ${n(rules.solve.Medium)}, Hard ${n(rules.solve.Hard)}${unit}, shared equally across its topics.`,
-    rules.dailyTopicLimit > 0 && `Each topic pays for ${rules.dailyTopicLimit} solves a day; mix topics to keep earning.`,
-    `Daily challenge +${n(rules.dailyChallenge)}, a finished sheet +${n(rules.sheetCompleted)}, a daily visit +${n(rules.login)}, each monthly badge level +${n(rules.monthlyBadgeLevel)}.`,
-    rules.wrongSubmission > 0 && `A wrong answer costs ${n(rules.wrongSubmission)} (at most ${n(rules.wrongDailyCap)} a day)${rules.refundSameDay ? ', given back if you solve that problem the same day' : ''}.`,
-    rules.inactivity?.perDay > 0 && `After ${rules.inactivity.graceDays} days without a submission you lose ${n(rules.inactivity.perDay)} a day (at most ${n(rules.inactivity.monthlyCap)} a month). Logging in alone does not count.`,
-    rules.lossFloorShare > 0 && `Losses never take away more than ${Math.round((1 - rules.lossFloorShare) * 100)}% of what you earned by solving.`,
+  const extras = [
+    rules.dailyChallenge > 0 && 'daily challenge', rules.sheetCompleted > 0 && 'finished sheet', rules.login > 0 && 'daily login', rules.monthlyBadgeLevel > 0 && 'badges',
   ].filter(Boolean);
-  return <ul className="mt-1.5 list-disc space-y-0.5 pl-4">{items.map((item) => <li key={item}>{item}</li>)}</ul>;
+  return [
+    rules.solve && { mark: 'up', text: `Solve a NEW question: Easy ${n(rules.solve.Easy)} · Medium ${n(rules.solve.Medium)} · Hard ${n(rules.solve.Hard)} points.` },
+    rules.dailyTopicLimit > 0 && { mark: 'no', text: `Only ${rules.dailyTopicLimit} solves per topic count each day. After that, switch topic (resets at midnight).` },
+    { mark: 'no', text: 'Re-solving a question you already solved gives 0.' },
+    extras.length > 0 && { mark: 'up', text: `Extra points: ${extras.join(', ')}.` },
+    rules.wrongSubmission > 0 && { mark: 'down', text: `Wrong answer: −${n(rules.wrongSubmission)}${rules.refundSameDay ? ', back if you solve it the same day' : ''}. Max −${n(rules.wrongDailyCap)} a day.` },
+    rules.inactivity?.perDay > 0 && { mark: 'down', text: `No submission for ${rules.inactivity.graceDays}+ days: −${n(rules.inactivity.perDay)} a day (login alone doesn’t count).` },
+    curved && { mark: 'info', text: 'Score rises fast at first, then slower as it grows. That is normal, not a bug.' },
+    rules.lossFloorShare > 0 && { mark: 'info', text: `Losses never take more than ${Math.round((1 - rules.lossFloorShare) * 100)}% of your solve points.` },
+  ].filter(Boolean);
+}
+
+/** The published scoring rules, point by point. */
+export function RulesList({ rules }) {
+  const points = prepScoreRulePoints(rules);
+  if (!points.length) return null;
+  return <ul className="mt-1.5 space-y-1">{points.map((point) => <li key={point.text} className="flex items-start gap-2">
+    <span className={`mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${RULE_MARK[point.mark].className}`} aria-hidden="true">{RULE_MARK[point.mark].sign}</span>
+    <span>{point.text}</span>
+  </li>)}</ul>;
 }
 
 function KindRow({ kind, value, max }) {

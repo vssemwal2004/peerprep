@@ -11,13 +11,13 @@ function StartGuide({ canQuestions, canLearning }) {
     canLearning && { to: '/student/learning', title: 'Start learning', copy: 'Watch a lesson and finish your first topic.', cta: 'Explore subjects', Art: LearningStartIllustration },
   ].filter(Boolean);
   return <section aria-labelledby="start-guide-title" className="mt-7">
-    <h2 id="start-guide-title" className="mb-3 text-[15px] font-medium text-slate-900 dark:text-zinc-100">Start here</h2>
+    <h2 id="start-guide-title" className="mb-3 text-[15px] font-medium text-slate-900 dark:text-[color:var(--student-dash-fg,#f4f4f5)]">Start here</h2>
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       {cards.map(({ to, title, copy, cta, Art }) => <Link key={to} to={to} className={`group flex items-center gap-4 p-5 ${interactiveCard} ${focusRing}`}>
         <Art className="h-auto w-[104px] shrink-0" />
         <div className="min-w-0">
-          <h3 className="text-[15px] font-medium text-slate-900 dark:text-zinc-100">{title}</h3>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-slate-500 dark:text-zinc-400">{copy}</p>
+          <h3 className="text-[15px] font-medium text-slate-900 dark:text-[color:var(--student-dash-fg,#f4f4f5)]">{title}</h3>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-slate-500 dark:text-[color:var(--student-dash-muted,#a1a1aa)]">{copy}</p>
           <span className="mt-2.5 inline-flex items-center gap-1 text-[12.5px] font-medium text-sky-700 dark:text-sky-400">{cta}<ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" /></span>
         </div>
       </Link>)}
@@ -38,7 +38,7 @@ export default function GreetingHeader({ greeting, name, nudge, section, firstSe
   return <header className="dashboard-greeting pt-1">
     <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between lg:gap-8">
       <div className="min-w-0" data-guide="dash-greeting">
-        <h1 className="text-[28px] font-medium leading-[1.2] tracking-[-0.03em] text-slate-900 dark:text-zinc-50 sm:text-[34px]">
+        <h1 className="text-[28px] font-medium leading-[1.2] tracking-[-0.03em] text-slate-900 dark:text-[color:var(--student-dash-fg,#fafafa)] sm:text-[34px]">
           {greeting},{' '}
           <span className="relative inline-block break-words">
             <span className="font-bold text-sky-600 dark:text-sky-400">{name}</span>
@@ -46,7 +46,7 @@ export default function GreetingHeader({ greeting, name, nudge, section, firstSe
           </span>
           <PageGuideButton className="ml-3 -translate-y-1" />
         </h1>
-        {nudge && <p className="mt-4 max-w-xl text-[14.5px] leading-relaxed text-slate-500 dark:text-zinc-400">{nudge}</p>}
+        {nudge && <p className="mt-4 max-w-xl text-[14.5px] leading-relaxed text-slate-500 dark:text-[color:var(--student-dash-muted,#a1a1aa)]">{nudge}</p>}
       </div>
       {aside && <div className="shrink-0">{aside}</div>}
     </div>

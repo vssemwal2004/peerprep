@@ -382,6 +382,7 @@ function AppContent() {
     && !isAssessmentAttempt
     && !isProblemSolver;
   const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges|analysis(\/[^/]+)?|peers(\/[^/]+(\/compare)?)?|prep-mock(\/[^/]+)?)\/?$/.test(location.pathname);
+  const useDashboardPalette = isStudentShell && Boolean(matchPath('/student/dashboard', location.pathname));
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
   // Admin and coordinator shells key their own page areas. Prep Mock keeps its catalog and
   // company rail mounted as the company path and the role or mock query parameters change.
@@ -390,7 +391,7 @@ function AppContent() {
     <PlatformGuideProvider>
     <div
       data-app-shell={isStudentShell ? true : undefined}
-      className={`${isStudentShell ? 'h-screen overflow-hidden' : 'min-h-screen'} w-full flex flex-col`}
+      className={`${isStudentShell ? 'h-screen overflow-hidden' : 'min-h-screen'} w-full flex flex-col${useDashboardPalette ? ' student-dashboard-theme' : ''}`}
       style={isStudentShell ? {
         '--admin-sidebar-width': isStudentSidebarPinned ? STUDENT_SIDEBAR_PANEL_WIDTH : STUDENT_SIDEBAR_RAIL_WIDTH,
         '--app-navbar-height': '0rem',
@@ -432,7 +433,7 @@ function AppContent() {
       {/* Main content: Each route section gets a role-appropriate skeleton.
           This is the "streaming rendering" pattern - the page structure appears 
           immediately as skeleton shapes, then real content swaps in when loaded */}
-      <main data-app-scroll-container={isStudentShell ? true : undefined} tabIndex="-1" className={gradientBg + ` dark:bg-gray-900 flex-grow outline-none transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isStudentShell ? 'h-screen min-h-0 overflow-y-auto overscroll-contain' : ''}`} style={isStudentShell ? { paddingLeft: 'var(--admin-sidebar-width)', scrollPaddingTop: showStudentHeader ? 'calc(5rem + 1px)' : undefined } : undefined}>
+      <main data-app-scroll-container={isStudentShell ? true : undefined} tabIndex="-1" className={`${gradientBg} ${useDashboardPalette ? 'dark:bg-[color:var(--student-dash-canvas)]' : 'dark:bg-gray-900'} flex-grow outline-none transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isStudentShell ? 'h-screen min-h-0 overflow-y-auto overscroll-contain' : ''}`} style={isStudentShell ? { paddingLeft: 'var(--admin-sidebar-width)', scrollPaddingTop: showStudentHeader ? 'calc(5rem + 1px)' : undefined } : undefined}>
         {showStudentHeader && (
           <Suspense fallback={null}>
             <StudentDashboardHeader

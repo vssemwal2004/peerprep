@@ -115,6 +115,44 @@ export function parsePracticeSearch(raw) {
   };
 }
 
+// The student's own progress filter on the question list (2026-11-26, student feedback: "I cannot see all
+// the questions I have solved"). 'attempted' = tried but not solved yet; 'unsolved' = not solved yet.
+export const PRACTICE_STATUSES = Object.freeze(['solved', 'attempted', 'unsolved']);
+export const parsePracticeStatus = (raw) => {
+  const value = String(raw || '').trim().toLowerCase();
+  return PRACTICE_STATUSES.includes(value) ? value : '';
+};
+
+/**
+ * Keys of everything the student solved or tried: local Problem ids (coding submissions) and question
+ * ids (shared or non-coding practice). A question matches a key by its own id or its sourceProblemId.
+ */
+export async function studentPracticeKeys(studentId) {
+  const [solvedProblems, triedProblems, attempts] = await Promise.all([
+    Submission.distinct('problem', { user: studentId, mode: 'submit', status: 'AC' }),
+    Submission.distinct('problem', { user: studentId, mode: 'submit' }),
+    QuestionPracticeAttempt.find({ studentId }).select('questionId result').lean(),
+  ]);
+  const solved = new Set(solvedProblems.filter(Boolean).map(String));
+  const tried = new Set(triedProblems.filter(Boolean).map(String));
+  for (const attempt of attempts) {
+    tried.add(String(attempt.questionId));
+    if (attempt.result === 'correct') solved.add(String(attempt.questionId));
+  }
+  return { solved, tried };
+}
+
+/** Adds the status restriction to list criteria: onlyIds (must match) and excludeIds (must not match). */
+export function withPracticeStatus(criteria, status, keys) {
+  if (!status || !keys) return criteria;
+  if (status === 'solved') return { ...criteria, onlyIds: keys.solved };
+  if (status === 'attempted') return { ...criteria, onlyIds: new Set([...keys.tried].filter((key) => !keys.solved.has(key))), excludeIds: keys.solved };
+  return { ...criteria, excludeIds: keys.solved };
+}
+
+const hasQuestionKey = (keys, question) => keys.has(String(question._id)) || keys.has(String(question.sourceProblemId || ''));
+const objectIdsOf = (keys) => [...keys].filter((id) => mongoose.isValidObjectId(id)).map((id) => new mongoose.Types.ObjectId(id));
+
 /** The same rules as practiceListFilter, for shared questions that arrive as an in-memory list. */
 export function matchesPracticeCriteria(question, reportedCompanies, criteria) {
   const tags = (question.tags || []).map((value) => String(value).toLowerCase());
@@ -125,6 +163,8 @@ export function matchesPracticeCriteria(question, reportedCompanies, criteria) {
     && (!criteria.tags.length || criteria.tags.some((value) => tags.includes(value)))
     && (!criteria.companies.length || criteria.companies.some((value) => companies.includes(value)))
     && (!criteria.ids || criteria.ids.has(String(question._id)) || criteria.ids.has(String(question.sourceProblemId || '')))
+    && (!criteria.onlyIds || hasQuestionKey(criteria.onlyIds, question))
+    && (!criteria.excludeIds || !hasQuestionKey(criteria.excludeIds, question))
     && matchesSerialSearch(question, search.serial)
     && search.tagTerms.every((words) => (question.tags || []).some((tag) => tagPattern(words).test(String(tag))))
     && (!search.text || [question.questionText, ...tags, ...companies].some((value) => String(value || '').toLowerCase().includes(search.text)));
@@ -147,6 +187,14 @@ export function practiceListFilter(criteria, reportedIds = () => []) {
   if (criteria.ids) {
     const objectIds = [...criteria.ids].filter((id) => mongoose.isValidObjectId(id)).map((id) => new mongoose.Types.ObjectId(id));
     clauses.push({ $or: [{ _id: { $in: objectIds } }, { sourceProblemId: { $in: objectIds } }] });
+  }
+  if (criteria.onlyIds) {
+    const objectIds = objectIdsOf(criteria.onlyIds);
+    clauses.push({ $or: [{ _id: { $in: objectIds } }, { sourceProblemId: { $in: objectIds } }] });
+  }
+  if (criteria.excludeIds?.size) {
+    const objectIds = objectIdsOf(criteria.excludeIds);
+    clauses.push({ $nor: [{ _id: { $in: objectIds } }, { sourceProblemId: { $in: objectIds } }] });
   }
   const { search } = criteria;
   if (search.serial != null) clauses.push(serialSearchClause(search.serial));
@@ -345,9 +393,11 @@ router.get('/', asyncRoute(async (req, res) => {
     .filter((row) => `${row.scopeKey}:` === localScope && test(String(row.company || '').toLowerCase()))
     .map((row) => String(row.questionId)))]
     .filter((id) => mongoose.isValidObjectId(id)).map((id) => new mongoose.Types.ObjectId(id));
-  const filter = practiceListFilter(criteria, reportedIds);
+  const status = parsePracticeStatus(req.query.status);
+  const statusCriteria = status ? withPracticeStatus(criteria, status, await studentPracticeKeys(req.user._id)) : criteria;
+  const filter = practiceListFilter(statusCriteria, reportedIds);
   const sharedMatches = central.map((question) => ({ question, source: 'shared' }))
-    .filter((item) => matchesPracticeCriteria(item.question, reportsFor(item).map((row) => row.company), criteria));
+    .filter((item) => matchesPracticeCriteria(item.question, reportsFor(item).map((row) => row.company), statusCriteria));
   let selected;
   let total;
   if (!sharedMatches.length && sortBy !== 'latestInterviewDate') {
@@ -469,7 +519,9 @@ router.get('/shared/:id/problem', asyncRoute(async (req, res) => {
       questionType: 'coding', result: 'correct' }),
     questionQuickPreps(req.user, 'shared', question._id),
   ]);
-  res.json({ ...serializeProblem({ ...snapshot, _id: question._id, status: 'published', visibility: 'public' },
+  // The PeerPrep number lives on the library row (mirrored from Problem), not always in the snapshot.
+  res.json({ ...serializeProblem({ ...snapshot, _id: question._id, status: 'published', visibility: 'public',
+    displayOrder: question.displayOrder || snapshot.displayOrder },
     { sampleTestCases: (snapshot.sampleTestCases || []).map((item) => ({ ...item, images: sharedSampleImages(item?.images) })),
       includeEditorialSolutions: true }), platformShared: true,
   studentStatus: solved ? 'Solved' : 'Unsolved', totalSubmissions, acceptedSubmissions, quickPreps,

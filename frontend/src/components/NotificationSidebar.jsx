@@ -5,6 +5,7 @@ import NotificationItem from './NotificationItem';
 import { isProgressNotification } from './notificationKinds';
 
 function NotificationSidebar({
+  paletteClassName = '',
   isOpen,
   onClose,
   notifications,
@@ -96,43 +97,43 @@ function NotificationSidebar({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '100%', opacity: 0.96 }}
             transition={{ type: 'spring', stiffness: 360, damping: 38 }}
-            className="fixed bottom-0 right-0 top-0 z-[10001] isolate w-full overflow-hidden border-l border-slate-200 bg-white shadow-[-24px_0_70px_rgba(15,23,42,0.28)] md:w-[45vw] lg:w-[36vw] xl:w-[30vw] dark:border-slate-800 dark:bg-slate-950"
+            className={`${paletteClassName} fixed bottom-0 right-0 top-0 z-[10001] isolate w-full overflow-hidden border-l border-slate-200 bg-white shadow-[-24px_0_70px_rgba(15,23,42,0.28)] md:w-[45vw] lg:w-[36vw] xl:w-[30vw] dark:border-[color:var(--student-dash-border,#242424)] dark:bg-[color:var(--student-dash-card,#141414)]`}
           >
-            <div className="flex h-full min-h-0 flex-col bg-white dark:bg-slate-950">
-              <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
+            <div className="flex h-full min-h-0 flex-col bg-white dark:bg-[color:var(--student-dash-card,#141414)]">
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-4 dark:border-[color:var(--student-dash-border,#242424)] dark:bg-[color:var(--student-dash-card,#141414)]">
                 <div>
-                  <div id="notification-panel-title" className="text-lg font-semibold text-slate-900 dark:text-white">Notifications</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                  <div id="notification-panel-title" className="text-lg font-semibold text-slate-900 dark:text-[color:var(--student-dash-fg,#fff)]">Notifications</div>
+                  <div className="text-xs text-slate-500 dark:text-[color:var(--student-dash-muted,#94a3b8)]">
                     {unreadCount} unread
                   </div>
                 </div>
                 <button
                   onClick={onClose}
-                  className="rounded-md border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-200 hover:text-sky-500 hover:border-sky-400 transition-colors"
+                  className="rounded-md border border-slate-200 dark:border-[color:var(--student-dash-border,#363636)] px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-[color:var(--student-dash-fg,#e2e8f0)] hover:text-sky-500 hover:border-sky-400 transition-colors"
                 >
                   Close
                 </button>
               </div>
 
-              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-5 py-3 dark:border-[color:var(--student-dash-border,#242424)] dark:bg-[color:var(--student-dash-card,#141414)]">
                 <button
                   onClick={onMarkAllRead}
-                  className="text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-sky-500 transition-colors"
+                  className="text-xs font-semibold text-slate-600 dark:text-[color:var(--student-dash-fg,#cbd5e1)] hover:text-sky-500 transition-colors"
                 >
                   Mark all as read
                 </button>
                 <button
                   onClick={onClearAll}
-                  className="text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-red-500 transition-colors"
+                  className="text-xs font-semibold text-slate-600 dark:text-[color:var(--student-dash-fg,#cbd5e1)] hover:text-red-500 transition-colors"
                 >
                   Clear all notifications
                 </button>
               </div>
 
-              <div className="flex shrink-0 gap-1 border-b border-slate-200 bg-white px-5 py-2 dark:border-slate-800 dark:bg-slate-950">
-                {filters.map(([value, label, count]) => <button key={value} type="button" aria-pressed={activeFilter === value} onClick={() => setActiveFilter(value)} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition ${activeFilter === value ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}>
+              <div className="flex shrink-0 gap-1 border-b border-slate-200 bg-white px-5 py-2 dark:border-[color:var(--student-dash-border,#242424)] dark:bg-[color:var(--student-dash-card,#141414)]">
+                {filters.map(([value, label, count]) => <button key={value} type="button" aria-pressed={activeFilter === value} onClick={() => setActiveFilter(value)} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition ${activeFilter === value ? 'bg-slate-900 text-white dark:bg-[color:var(--student-dash-control,#fff)] dark:text-[color:var(--student-dash-fg,#1a1a1a)]' : 'text-slate-500 hover:bg-slate-100 dark:text-[color:var(--student-dash-muted,#94a3b8)] dark:hover:bg-[color:var(--student-dash-hover,#242424)]'}`}>
                   {label}
-                  <span className={`rounded-full px-1.5 py-px text-[10.5px] tabular-nums ${activeFilter === value ? 'bg-white/20 dark:bg-slate-900/10' : value === 'progress' && count > 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800'}`}>{count}</span>
+                  <span className={`rounded-full px-1.5 py-px text-[10.5px] tabular-nums ${activeFilter === value ? 'bg-white/20 dark:bg-slate-900/10' : value === 'progress' && count > 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' : 'bg-slate-100 dark:bg-[color:var(--student-dash-control,#242424)]'}`}>{count}</span>
                 </button>)}
               </div>
 
@@ -140,8 +141,8 @@ function NotificationSidebar({
 
               {/* Announcement highlight (auto-fades every 5s) */}
               {announcementItems.length > 0 && (
-                <div className="shrink-0 border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
-                  <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                <div className="shrink-0 border-b border-slate-200 bg-white px-5 py-4 dark:border-[color:var(--student-dash-border,#242424)] dark:bg-[color:var(--student-dash-card,#141414)]">
+                  <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 dark:text-[color:var(--student-dash-muted,#94a3b8)]">
                     Announcement highlight
                   </div>
                   <div className="mt-2">
@@ -152,23 +153,23 @@ function NotificationSidebar({
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
                         transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-                        className="rounded-xl border border-sky-500/20 bg-sky-50/70 dark:bg-slate-900/60 px-4 py-3"
+                        className="rounded-xl border border-sky-500/20 bg-sky-50/70 dark:bg-[color:var(--student-dash-control,rgba(26,26,26,0.6))] px-4 py-3"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="text-sm font-semibold text-slate-900 dark:text-white line-clamp-1">
+                            <div className="text-sm font-semibold text-slate-900 dark:text-[color:var(--student-dash-fg,#fff)] line-clamp-1">
                               {announcementItems[announcementIndex]?.title}
                             </div>
-                            <div className="mt-1 text-sm text-slate-600 dark:text-slate-300 line-clamp-2">
+                            <div className="mt-1 text-sm text-slate-600 dark:text-[color:var(--student-dash-fg,#cbd5e1)] line-clamp-2">
                               {announcementItems[announcementIndex]?.message}
                             </div>
-                            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                            <div className="mt-2 text-xs text-slate-500 dark:text-[color:var(--student-dash-muted,#94a3b8)]">
                               {formatTime(announcementItems[announcementIndex]?.createdAt)}
                             </div>
                           </div>
                           <button
                             onClick={() => onView(announcementItems[announcementIndex])}
-                            className="shrink-0 rounded-md border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-sky-400 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
+                            className="shrink-0 rounded-md border border-slate-200 dark:border-[color:var(--student-dash-border,#363636)] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-[color:var(--student-dash-fg,#e2e8f0)] hover:border-sky-400 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
                           >
                             View
                           </button>
@@ -179,10 +180,10 @@ function NotificationSidebar({
                 </div>
               )}
 
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-white px-5 py-4 [scrollbar-gutter:stable] dark:bg-slate-950">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-white px-5 py-4 [scrollbar-gutter:stable] dark:bg-[color:var(--student-dash-card,#141414)]">
                 {filteredItems.length === 0 ? (
                   <div className="flex h-full items-center justify-center">
-                    <div className="max-w-[260px] text-center text-sm text-slate-500 dark:text-slate-400">{emptyMessage}</div>
+                    <div className="max-w-[260px] text-center text-sm text-slate-500 dark:text-[color:var(--student-dash-muted,#94a3b8)]">{emptyMessage}</div>
                   </div>
                 ) : (
                   filteredItems.map((notif) => (

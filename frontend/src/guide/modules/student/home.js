@@ -54,7 +54,7 @@ export default [
       {
         id: "dash-rank", target: "dash-rank", chapter: "parts", quick: true,
         title: "Your rank",
-        body: "Where you stand by Prep Score among students of your university. Open Ranking from the menu to see the full leaderboard.",
+        body: "Your rank = your Prep Score compared with every student of your university. It updates live, but moves only when your score passes the next student's. The line under it shows how much more you need.",
       },
       {
         id: "dash-coming-up", target: "dash-coming-up", chapter: "parts", quick: true,

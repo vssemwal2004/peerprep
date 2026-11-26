@@ -18,3 +18,7 @@ export const badgeLook = (track) => BADGE_LOOKS[track] || BADGE_LOOKS.solver;
 export const TIER_METAL = {
   Bronze: '#c2773a', Silver: '#9ca3af', Gold: '#f59e0b', Platinum: '#22d3ee', Diamond: '#38bdf8', Legend: '#f43f5e',
 };
+
+export const DARK_TIER_METAL = {
+  Bronze: '#755337', Silver: '#5b636c', Gold: '#74603a', Platinum: '#43696d', Diamond: '#435d73', Legend: '#775160',
+};

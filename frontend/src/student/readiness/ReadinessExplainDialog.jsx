@@ -19,8 +19,61 @@ function Block({ icon: Icon, title, children }) {
   );
 }
 
+const times = (high, low) => {
+  const value = Number(high) / Number(low);
+  return Number.isFinite(value) && value > 1 ? `${fmt(value)}×` : '';
+};
+
+const MARK = {
+  up: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+  no: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
+  info: 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-zinc-300',
+};
+
+/** The short version students read first (2026-11-26: the full explanation was too long). */
+function SimpleReadiness({ sbc, pbc, quotaLimit }) {
+  const hardVsEasy = times(pbc.multipliers.Hard, pbc.multipliers.Easy);
+  const points = [
+    { mark: 'up', sign: '✓', text: 'Solve new questions across many topics. Each topic has a target; once a topic is full it stops adding.' },
+    { mark: 'up', sign: '✓', text: `Product-Based loves Medium and Hard${hardVsEasy ? ` (a Hard counts ${hardVsEasy} an Easy)` : ''}.` },
+    { mark: 'up', sign: '✓', text: 'Service-Based rewards strong basics: Easy and Medium count well.' },
+    { mark: 'no', sign: '✗', text: 'Solving the same question again adds nothing.' },
+    { mark: 'info', sign: 'i', text: `The daily limit (${quotaLimit || 'no'} solves per topic) is for Prep Score only. Readiness still counts every new solve.` },
+    { mark: 'info', sign: 'i', text: 'Readiness shows practice, not a promise of selection by any company.' },
+  ];
+  return (
+    <section className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <div className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/[0.04]">
+          <p className="text-[12.5px] font-semibold text-slate-900 dark:text-white">Prep Score</p>
+          <p className="mt-0.5 text-[12px] leading-snug text-slate-600 dark:text-zinc-300">Your effort. Grows with new solves, challenges and sheets.</p>
+        </div>
+        <div className="rounded-xl bg-sky-50 px-3 py-2.5 dark:bg-sky-500/10">
+          <p className="text-[12.5px] font-semibold text-sky-800 dark:text-sky-200">{TRACK_META.sbc.full}</p>
+          <p className="mt-0.5 text-[12px] leading-snug text-slate-600 dark:text-zinc-300">0–100. How ready you are for IT service firms. Target {sbc.cutoff}.</p>
+        </div>
+        <div className="rounded-xl bg-teal-50 px-3 py-2.5 dark:bg-teal-500/10">
+          <p className="text-[12.5px] font-semibold text-teal-800 dark:text-teal-200">{TRACK_META.pbc.full}</p>
+          <p className="mt-0.5 text-[12px] leading-snug text-slate-600 dark:text-zinc-300">0–100. How ready you are for product and tech firms. Target {pbc.cutoff}.</p>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-slate-200/80 p-4 dark:border-white/[0.08]">
+        <h3 className="text-[13.5px] font-semibold text-slate-900 dark:text-white">How to raise your readiness</h3>
+        <ul className="mt-2 space-y-1.5">
+          {points.map((point) => (
+            <li key={point.text} className="flex items-start gap-2 text-[12.5px] leading-snug text-slate-700 dark:text-zinc-200">
+              <span className={`mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${MARK[point.mark]}`} aria-hidden="true">{point.sign}</span>
+              {point.text}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
 /**
- * "How can I improve my score?": the three numbers, the formula with a worked solve, a topic
+ * "How can I improve my score?": the short version first, then (folded) the three numbers, the formula with a worked solve, a topic
  * target example, base points vs the displayed Prep Score change, and how full quotas work.
  * Uses the live policy values (multipliers, cutoffs, quota) when given.
  */
@@ -58,11 +111,17 @@ export default function ReadinessExplainDialog({ open, onClose, tracks = DEFAULT
             <header className="flex items-start gap-3 border-b border-slate-100 bg-gradient-to-r from-sky-600 to-sky-800 px-5 py-4 text-white dark:border-white/10">
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-sky-100">Prep Readiness</p>
-                <h2 id="readiness-explain-title" className="text-[17px] font-bold">How your readiness is calculated</h2>
+                <h2 id="readiness-explain-title" className="text-[17px] font-bold">How readiness works, in short</h2>
               </div>
               <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-white/85 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"><X className="h-4 w-4" /></button>
             </header>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 sm:p-5">
+              <SimpleReadiness sbc={sbc} pbc={pbc} quotaLimit={quotaLimit} />
+              <details className="group rounded-2xl border border-slate-200/80 dark:border-white/[0.08]">
+                <summary className="cursor-pointer list-none rounded-2xl px-4 py-3 text-[13px] font-semibold text-sky-700 hover:bg-slate-50 dark:text-sky-300 dark:hover:bg-white/[0.03]">
+                  <span className="group-open:hidden">See the exact formula ▸</span><span className="hidden group-open:inline">Hide the exact formula ▾</span>
+                </summary>
+                <div className="space-y-3 px-3 pb-3">
               <Block icon={Gauge} title="Three different numbers">
                 <p><b>Prep Score</b> is your activity score in points: solving, the daily challenge, sheets and badges add to it.</p>
                 <p><b>{TRACK_META.sbc.full}</b> (SBC, such as IT services firms) and <b>{TRACK_META.pbc.full}</b> (PBC, such as product and tech firms) readiness, each 0–100, show how close your accepted practice is to that type&apos;s practice target: {sbc.cutoff} for Service-Based, {pbc.cutoff} for Product-Based. Service-Based targets reward strong fundamentals; Product-Based targets reward depth in Medium and Hard topics. They are not a prediction of selection by any company.</p>
@@ -83,6 +142,8 @@ export default function ReadinessExplainDialog({ open, onClose, tracks = DEFAULT
                 <p>Each tag can earn Prep Score from {quotaLimit || 'any number of'} credited first solve{quotaLimit === 1 ? '' : 's'} per day. The base points split across the tags that still have room; a full tag&apos;s share moves to them. If every tag is full, the solve earns 0 base points but still counts toward readiness.</p>
                 <p>Quotas reset at 12:00 AM IST. The daily challenge changes at 2:00 AM IST. When a topic is full, ANVI Practice Next leads with a problem that still has room.</p>
               </Block>
+                </div>
+              </details>
             </div>
           </motion.div>
         </motion.div>

@@ -45,7 +45,7 @@ export default function QuestCard({ quest, preview = false }) {
   const CtaIcon = locked ? Lock : ArrowRight;
   const Wrapper = preview ? 'div' : Link;
   const wrapperProps = preview ? {} : { to: `/student/quickprep/${quest.slug}` };
-  return <Wrapper {...wrapperProps} className={`quest-card group relative flex min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e9eaee] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:border-transparent hover:shadow-[0_22px_44px_-24px_rgba(15,23,42,0.45)] motion-reduce:transform-none dark:border-white/[0.07] dark:bg-[#232325] ${focusRing}`}>
+  return <Wrapper {...wrapperProps} className={`quest-card group relative flex min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e9eaee] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:border-transparent hover:shadow-[0_22px_44px_-24px_rgba(15,23,42,0.45)] motion-reduce:transform-none dark:border-[color:var(--student-dash-border,rgba(255,255,255,0.07))] dark:bg-[color:var(--student-dash-card,#232325)] ${focusRing}`}>
     <div className={`relative h-[108px] overflow-hidden bg-gradient-to-br ${theme.band}`}>
       <span className="absolute inset-0 opacity-25 [background-image:radial-gradient(rgba(255,255,255,0.8)_1px,transparent_1px)] [background-size:14px_14px]" aria-hidden="true" />
       <Icon className="absolute -bottom-6 -right-3 h-32 w-32 rotate-[-8deg] text-white/[0.16] transition-transform duration-500 group-hover:rotate-[-2deg] group-hover:scale-110 motion-reduce:transition-none" strokeWidth={1.3} aria-hidden="true" />
@@ -66,8 +66,8 @@ export default function QuestCard({ quest, preview = false }) {
       {note && <p className={`row-start-1 mb-1.5 inline-flex items-center gap-1 self-start justify-self-start rounded-md px-1.5 py-0.5 text-[11.5px] font-semibold ${openState === 'upcoming' ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' : openState === 'ended' ? 'bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-zinc-400' : 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300'}`}>
         <CalendarClock className="h-3 w-3" aria-hidden="true" />{note}
       </p>}
-      <h3 className="row-start-2 line-clamp-2 max-w-full self-start text-[16.5px] font-semibold leading-snug tracking-[-0.015em] text-slate-950 [overflow-wrap:anywhere] transition-colors group-hover:text-sky-700 dark:text-zinc-50 dark:group-hover:text-sky-300">{quest.title}</h3>
-      {quest.description && <p className="row-start-3 mt-1 line-clamp-2 max-w-full self-start text-[12.5px] leading-relaxed text-slate-500 [overflow-wrap:anywhere] dark:text-zinc-400">{quest.description}</p>}
+      <h3 className="row-start-2 line-clamp-2 max-w-full self-start text-[16.5px] font-semibold leading-snug tracking-[-0.015em] text-slate-950 [overflow-wrap:anywhere] transition-colors group-hover:text-sky-700 dark:text-[color:var(--student-dash-fg,#fafafa)] dark:group-hover:text-sky-300">{quest.title}</h3>
+      {quest.description && <p className="row-start-3 mt-1 line-clamp-2 max-w-full self-start text-[12.5px] leading-relaxed text-slate-500 [overflow-wrap:anywhere] dark:text-[color:var(--student-dash-muted,#a1a1aa)]">{quest.description}</p>}
       {quest.topics?.length > 0 && <div className="row-start-4 mt-2.5 flex w-full flex-wrap items-start gap-1 self-start">
         {quest.topics.slice(0, 3).map((topic) => <span key={topic} title={topic} className="max-w-full truncate rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-white/[0.06] dark:text-zinc-300">{topic}</span>)}
         {quest.topics.length > 3 && <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-white/[0.06] dark:text-zinc-400">+{quest.topics.length - 3}</span>}
@@ -79,7 +79,7 @@ export default function QuestCard({ quest, preview = false }) {
         <div className={`min-w-0 rounded-lg px-2 py-1.5 ${theme.soft}`}><dt className="flex items-center gap-1 text-[10.5px] opacity-80"><Award className="h-3 w-3" aria-hidden="true" />Badge</dt><dd className="mt-0.5 truncate font-semibold" title={quest.badge?.title}>{quest.badge?.title || '—'}</dd></div>
       </dl>
       <div className="row-start-7 mt-auto pt-4">
-        <span className={`flex items-center justify-between gap-2 rounded-xl px-3.5 py-2.5 text-[13px] font-semibold transition-colors ${state === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' : locked ? 'bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-zinc-300' : 'bg-slate-900 text-white group-hover:bg-sky-600 dark:bg-white dark:text-slate-900 dark:group-hover:bg-sky-400'}`}>
+        <span className={`flex items-center justify-between gap-2 rounded-xl px-3.5 py-2.5 text-[13px] font-semibold transition-colors ${state === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' : locked ? 'bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-zinc-300' : 'bg-slate-900 text-white group-hover:bg-sky-600 dark:bg-[color:var(--student-dash-control,#fff)] dark:text-[color:var(--student-dash-fg,#1a1a1a)] dark:group-hover:bg-sky-400 dark:group-hover:text-slate-900'}`}>
           <span className="truncate">{cta}</span><CtaIcon className={`h-4 w-4 shrink-0 ${locked ? '' : 'transition-transform duration-300 group-hover:translate-x-1'}`} aria-hidden="true" />
         </span>
       </div>

@@ -19,6 +19,7 @@ import { getActivePrepScorePolicy } from './prepScore/policy.js';
 import { studentHasFeature } from './studentFeatureAccess.js';
 import { readinessAfterSolve } from './prepReadiness/readiness.js';
 import { openQuotaAlternative } from './prepReadiness/recommend.js';
+import { coachTip } from './prepScore/coach.js';
 
 async function studentOf(userOrId) {
   if (userOrId && typeof userOrId === 'object' && userOrId.role && userOrId._id) return userOrId;
@@ -43,6 +44,21 @@ async function settleDailyChallenge(student, now) {
     coins: studentHasFeature(student, 'prep_coins') ? Number(earning.challenge) || 0 : 0,
     points: Number(policy.config?.points?.dailyChallenge) || 0,
     streak: streak.current, best: streak.best,
+  };
+}
+
+/** Today's daily challenge when it is assigned and not finished yet: { open, points, coins }, else null. */
+async function openChallenge(student, now) {
+  if (!studentHasFeature(student, 'quickprep')) return null;
+  const periodKey = periodsAt(now).daily.periodKey;
+  const plan = await MissionAssignment.findOne({ studentId: new mongoose.Types.ObjectId(String(student._id)), kind: 'daily', periodKey }).select('earnedAt').lean();
+  if (!plan || plan.earnedAt) return null;
+  const [{ earning }, policy] = await Promise.all([getEarningConfig(), getActivePrepScorePolicy()]);
+  return {
+    open: true,
+    coins: studentHasFeature(student, 'prep_coins') ? Number(earning.challenge) || 0 : 0,
+    // Whether it adds Prep Score at all; the exact change (growth curve) is known only once it is done.
+    scores: (Number(policy.config?.points?.dailyChallenge) || 0) > 0,
   };
 }
 
@@ -77,6 +93,18 @@ export async function afterPracticeSubmit({ user, source, problemId, accepted, a
       if (result.prepScore.fullTopics?.length && !result.prepScore.alreadySolved) {
         result.prepScore.alternative = await openQuotaAlternative(student, { now, excludeKeys: [result.prepScore.problemKey] }).catch(() => null);
       }
+    }
+    // Prep Coach: the one tip shown at the top of the screen (coach.js). Never blocks the result.
+    if (result.prepScore) {
+      const challenge = accepted && !result.challenge ? await openChallenge(student, now).catch(() => null) : null;
+      result.prepScore.coach = coachTip({
+        outcome: result.prepScore,
+        difficulty: result.prepScore.difficulty,
+        difficulties: result.prepScore.difficulties,
+        solvePoints: result.prepScore.solvePoints,
+        challenge,
+        wrongCount: result.prepScore.wrongCount,
+      });
     }
     if (accepted) {
       void evaluateMonthlyBadgesQuietly(student);

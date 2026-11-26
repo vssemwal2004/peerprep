@@ -31,7 +31,7 @@ export function ActionItemsTab({ model, storage = defaultStorage() }) {
         const id = `anvi-action-${index}`;
         return <li key={text} data-action={index + 1} data-done={checked ? "true" : "false"}
           className={`grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2.5 rounded-xl border p-4 transition sm:grid-cols-[auto_minmax(0,1fr)_auto] ${checked ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-400/20 dark:bg-emerald-400/[0.05]" : "border-slate-200 dark:border-white/[0.08]"}`}>
-          <span aria-hidden="true" className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums ${checked ? "bg-emerald-600 text-white dark:bg-emerald-400 dark:text-emerald-950" : "bg-sky-600 text-white dark:bg-sky-500 dark:text-sky-950"}`}>
+          <span aria-hidden="true" className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums ${checked ? "bg-emerald-600 text-white dark:bg-emerald-400 dark:text-emerald-950" : "bg-sky-600 text-white dark:bg-sky-500"}`}>
             {checked ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : index + 1}
           </span>
           <p id={id} className={`min-w-0 text-sm leading-6 ${checked ? "text-slate-500 line-through decoration-slate-300 dark:text-zinc-400 dark:decoration-zinc-600" : "text-slate-800 dark:text-zinc-100"}`}>{text}</p>

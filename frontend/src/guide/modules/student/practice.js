@@ -135,7 +135,7 @@ export default [
       {
         id: "ps-quota", target: "ps-quota", chapter: "parts",
         title: "Counts toward Prep Score",
-        body: "Prep Score counts a limited number of new solves per topic each day. This chip shows the problem's topic and how many counted solves you have left today. After the limit you can still solve; it just won't add to your score until the next day.",
+        body: "What this question adds to your Prep Score today. Its points are shared across its topics, and each topic counts only a few new solves a day. A full topic gives its share to the others; when all are full it adds nothing until midnight. A tip at the top tells you when to switch.",
       },
       {
         id: "ps-statement", target: "ps-statement", chapter: "parts",

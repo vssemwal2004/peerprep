@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -34,31 +35,54 @@ function StatusIcon({ tone }) {
   return <CircleDashed className={`${className} text-slate-400 dark:text-zinc-500`} aria-hidden="true" />;
 }
 
-function SolvedList({ problems }) {
+const serialOf = (value) => (Number(value) > 0 && Number(value) < 2147483647 ? Number(value) : null);
+
+/** Latest accepted questions with their PeerPrep number; each row opens the question. */
+function SolvedList({ problems, solvedTotal }) {
   const list = Array.isArray(problems) ? problems : [];
   if (list.length === 0) {
     return <EmptyRow icon={<CheckCircle2 className="h-4 w-4" />} message="No accepted solutions yet." ctaLabel="Solve a problem" ctaTo="/problems" />;
   }
+  const total = Math.max(Number(solvedTotal) || 0, list.length);
   return (
-    <ul className="space-y-1">
-      {list.map((problem, index) => (
-        <li
-          key={`${problem.title}-${index}`}
-          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 ${index % 2 === 0 ? 'bg-slate-50/80 dark:bg-zinc-900/40' : ''}`}
-        >
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden="true" />
-          <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-800 dark:text-zinc-200" title={problem.title}>{problem.title}</p>
-          <Pill className={`hidden sm:inline-flex ${difficultyTone(problem.difficulty)}`}>{problem.difficulty}</Pill>
-          <time
-            className="shrink-0 text-[11px] text-slate-400 dark:text-zinc-500"
-            dateTime={problem.acceptedAt || undefined}
-            title={formatDateTime(problem.acceptedAt)}
-          >
-            {formatRelative(problem.acceptedAt)}
-          </time>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="space-y-1">
+        {list.map((problem, index) => {
+          const serial = serialOf(problem.displayOrder);
+          const body = (
+            <>
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden="true" />
+              <span className="w-12 shrink-0 text-right font-mono text-[12px] tabular-nums text-slate-500 dark:text-zinc-400">{serial ? `#${serial}` : '—'}</span>
+              <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-800 dark:text-zinc-200" title={problem.title}>{problem.title}</p>
+              <Pill className={`hidden sm:inline-flex ${difficultyTone(problem.difficulty)}`}>{problem.difficulty}</Pill>
+              <time
+                className="shrink-0 text-[11px] text-slate-400 dark:text-zinc-500"
+                dateTime={problem.acceptedAt || undefined}
+                title={formatDateTime(problem.acceptedAt)}
+              >
+                {formatRelative(problem.acceptedAt)}
+              </time>
+            </>
+          );
+          const rowClass = `flex items-center gap-3 rounded-lg px-3 py-2.5 ${index % 2 === 0 ? 'bg-slate-50/80 dark:bg-zinc-900/40' : ''}`;
+          return (
+            <li key={`${problem.problemId || problem.title}-${index}`}>
+              {problem.problemId
+                ? <Link to={`/problems/${problem.problemId}`} className={`${rowClass} transition-colors hover:bg-sky-50 dark:hover:bg-sky-500/10 ${focusRing}`} title={`Open ${serial ? `#${serial} ` : ''}${problem.title}`}>{body}</Link>
+                : <div className={rowClass}>{body}</div>}
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-[12.5px] dark:border-zinc-800">
+        <span className="text-slate-500 dark:text-zinc-400">
+          Showing latest {list.length} of <strong className="font-semibold tabular-nums text-slate-800 dark:text-zinc-100">{total.toLocaleString()}</strong> solved
+        </span>
+        <Link to="/problems?status=solved" className={`inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-zinc-200 ${focusRing}`}>
+          View all solved questions
+        </Link>
+      </div>
+    </>
   );
 }
 
@@ -222,7 +246,7 @@ const TABS = [
 ];
 
 /** LeetCode-style tabbed history: recent accepted, recent submissions/runs, language usage. */
-export default function PracticeHistory({ solved, submissions, statusBreakdown, languages }) {
+export default function PracticeHistory({ solved, solvedTotal, submissions, statusBreakdown, languages }) {
   const [tab, setTab] = useState('solved');
 
   return (
@@ -258,7 +282,7 @@ export default function PracticeHistory({ solved, submissions, statusBreakdown, 
         <CardLink to="/problems">Go to problems</CardLink>
       </div>
       <div id="history-panel" role="tabpanel" aria-labelledby={`history-tab-${tab}`} className="px-4 pb-4 pt-3 sm:px-5 sm:pb-5">
-        {tab === 'solved' ? <SolvedList problems={solved} /> : null}
+        {tab === 'solved' ? <SolvedList problems={solved} solvedTotal={solvedTotal} /> : null}
         {tab === 'submissions' ? <SubmissionList submissions={submissions} statusBreakdown={statusBreakdown} /> : null}
         {tab === 'languages' ? <LanguageList languages={languages} /> : null}
       </div>

@@ -31,7 +31,7 @@ export function ReportHeader({ model, headingLevel = 1, onDownload, downloading 
       <div className="flex items-center justify-between gap-3">
         <PeerPrepLogo className="h-7 w-auto sm:h-8" />
         <button type="button" onClick={onDownload} disabled={downloading} data-report-download aria-busy={downloading || undefined}
-          className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-sm font-semibold text-white shadow-[0_1px_2px_rgba(2,132,199,0.3)] transition hover:bg-sky-700 disabled:cursor-wait disabled:opacity-80 dark:bg-sky-500 dark:text-sky-950 dark:hover:bg-sky-400 ${focusRing}`}>
+          className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-sm font-semibold text-white shadow-[0_1px_2px_rgba(2,132,199,0.3)] transition hover:bg-sky-700 disabled:cursor-wait disabled:opacity-80 dark:bg-sky-500 dark:hover:bg-sky-600 ${focusRing}`}>
           {downloading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
           {downloading ? "Preparing PDF…" : "Download PDF"}
         </button>

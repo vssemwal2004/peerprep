@@ -6,8 +6,9 @@
 import { makeGlossary } from "../engine/glossaryEngine.js";
 
 export const PLATFORM_GLOSSARY = Object.freeze([
-  { key: "prepScore", term: "Prep Score", aliases: ["Prep Scores"], text: "A student's score from verified Prep Coding solves, with harder problems counting more. Coding solves count up to a daily limit per topic." },
-  { key: "prepCoins", term: "Prep Coins", aliases: ["Prep Coin", "coins"], text: "PeerPrep's reward points. Students earn them for regular practice and achievements; admins can also issue them. Every change is recorded in the wallet history." },
+  { key: "prepScore", term: "Prep Score", aliases: ["Prep Scores"], text: "A student's effort score. New solves add points (Hard most), only a few solves per topic count each day, and re-solving adds nothing. Daily challenges, sheets and badges add a little more." },
+  { key: "prepReadiness", term: "Prep Readiness", aliases: ["readiness", "Service-Based readiness", "Product-Based readiness"], text: "Two scores from 0 to 100: how ready a student's practice is for service-based and for product-based companies. New solves across many topics raise it; each topic stops adding once it reaches its target." },
+  { key: "prepCoins", term: "Prep Coins", aliases: ["Prep Coin", "coins"], text: "PeerPrep's reward points. Students earn them from daily login, the daily challenge, finished sheets and badges (solving a question gives Prep Score, not coins); admins can also issue them. Every change is in the wallet history." },
   { key: "prepCoding", term: "Prep Coding", aliases: [], text: "The coding practice area: problems by topic and difficulty, solved in the built-in code editor." },
   { key: "quickPrep", term: "Quick Prep", aliases: [], text: "Short, curated practice sheets (sets of questions on one goal or topic) that students work through at their own pace." },
   { key: "sheet", term: "sheet", aliases: ["sheets"], text: "A Quick Prep sheet: a curated list of questions. Opening it starts it; solving every question finishes it." },

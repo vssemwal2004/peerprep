@@ -40,7 +40,7 @@ function Navigator({ responses, index, onSelect }) {
           <button type="button" onClick={() => onSelect(position)} aria-current={active ? "true" : undefined}
             aria-label={`Question ${response.n}${response.percent !== null ? `, ${response.percent}%` : `, ${response.statusLabel}`}`}
             className={`inline-flex h-8 min-w-[3.25rem] items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-semibold tabular-nums transition ${focusRing} ${active
-              ? "bg-sky-600 text-white shadow-sm dark:bg-sky-500 dark:text-sky-950"
+              ? "bg-sky-600 text-white shadow-sm dark:bg-sky-500"
               : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-white/[0.06] dark:text-zinc-200 dark:hover:bg-white/[0.1]"}`}>
             <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${active ? "bg-white/90 dark:bg-sky-950/80" : response.percent !== null ? toneClasses(response.tone).bar : "bg-slate-300 dark:bg-zinc-600"}`} />
             {response.label}
@@ -96,7 +96,7 @@ function QuestionDetail({ response, student }) {
   const showTop = percent !== null || hasSplit || stats.length > 0;
   return <article className={reportCard} data-response data-question-detail={response.n} aria-labelledby={`anvi-question-${response.key}`}>
     <div className="flex flex-wrap items-center gap-2">
-      <span className="inline-flex h-6 items-center rounded-md bg-sky-600 px-2 text-xs font-semibold tabular-nums text-white dark:bg-sky-500 dark:text-sky-950">{response.label}</span>
+      <span className="inline-flex h-6 items-center rounded-md bg-sky-600 px-2 text-xs font-semibold tabular-nums text-white dark:bg-sky-500">{response.label}</span>
       {meta && <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-sky-700 dark:text-sky-300">{meta}</span>}
       {!response.answered && <Chip tone="neutral">{response.statusLabel}</Chip>}
     </div>

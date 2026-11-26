@@ -14,6 +14,21 @@
   :root { --shell-frame: #ffffff; }
   .dark { --shell-frame: #202020; }
 
+  .student-dashboard-theme,
+  .student-dashboard {
+    --student-dash-canvas: #1a1a1a;
+    --student-dash-card: #252525;
+    --student-dash-hover: #2c2c2c;
+    --student-dash-control: #303030;
+    --student-dash-border: #383838;
+    --student-dash-fg: #e6e6e6;
+    --student-dash-muted: #b4b4b4;
+  }
+
+  .dark .student-dashboard-theme {
+    --shell-frame: var(--student-dash-card);
+  }
+
   /* Hide scrollbars globally while keeping scrolling functional */
   * {
     -ms-overflow-style: none; /* IE and Edge */

@@ -8,6 +8,7 @@ import { allocateCoins, PLATFORM_WALLET_SCOPE, walletBalance, walletMovements } 
 import User from '../models/User.js';
 import { COIN_FEATURES } from '../platform/coinFeatures.js';
 import { featureQuote } from '../platform/coinSpend.js';
+import { getEarningConfig } from '../platform/coinEarn.js';
 
 const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
@@ -52,9 +53,14 @@ router.get('/summary', asyncRoute(async (req, res) => {
 router.get('/pricing', asyncRoute(async (req, res) => {
   if (req.user.role !== 'student') throw new HttpError(403, 'Prices apply to student accounts');
   const universityId = currentTenant()?.universityId || PLATFORM_WALLET_SCOPE;
-  const quotes = await Promise.all(COIN_FEATURES.map((feature) => featureQuote({ scope: universityId, userId: req.user._id, featureKey: feature.key })));
+  const [quotes, earningConfig] = await Promise.all([
+    Promise.all(COIN_FEATURES.map((feature) => featureQuote({ scope: universityId, userId: req.user._id, featureKey: feature.key }))),
+    // The live earning amounts, so the wallet's "How to earn" card never disagrees with what is paid.
+    getEarningConfig().catch(() => null),
+  ]);
   res.set('Cache-Control', 'private, no-store').json({
     features: quotes.map((quote) => ({ ...quote, label: COIN_FEATURES.find((feature) => feature.key === quote.featureKey).label })),
+    earning: earningConfig?.earning || null,
   });
 }));
 

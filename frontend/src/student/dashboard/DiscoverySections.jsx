@@ -107,8 +107,8 @@ export function PracticeSuggestions({ problems, section, onRetry }) {
   return <section aria-labelledby="practice-next-title" className={`flex flex-col p-5 ${card}`}>
     <header className="flex items-start justify-between gap-3">
       <div>
-        <h2 id="practice-next-title" className="text-[15.5px] font-semibold tracking-[-0.015em] text-slate-900 dark:text-zinc-100">Next in practice</h2>
-        <p className="mt-0.5 text-[12.5px] text-slate-500 dark:text-zinc-400">Unsolved problems, easiest first</p>
+        <h2 id="practice-next-title" className="text-[15.5px] font-semibold tracking-[-0.015em] text-slate-900 dark:text-[color:var(--student-dash-fg)]">Next in practice</h2>
+        <p className="mt-0.5 text-[12.5px] text-slate-500 dark:text-[color:var(--student-dash-muted)]">Unsolved problems, easiest first</p>
       </div>
       <Link className={`${textLink} mt-0.5`} to="/problems">PrepCoding<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>
     </header>
@@ -118,11 +118,11 @@ export function PracticeSuggestions({ problems, section, onRetry }) {
         ? <Unavailable className="mt-4" message="Practice suggestions could not be loaded." onRetry={onRetry} />
         : <ol className="mt-3 space-y-2">
           {problems.slice(0, 4).map((problem) => <li key={problem.id}>
-            <Link to={problem.href} className={`group relative flex items-center gap-3 overflow-hidden rounded-xl border border-[#eef0f3] bg-white py-3 pl-4 pr-3 transition-[border-color,box-shadow,background-color] hover:border-sky-200 hover:bg-sky-50/40 hover:shadow-[0_8px_20px_-16px_rgba(2,132,199,0.6)] dark:border-white/[0.06] dark:bg-transparent dark:hover:border-sky-400/30 dark:hover:bg-sky-500/[0.05] ${focusRing}`}>
+            <Link to={problem.href} className={`group relative flex items-center gap-3 overflow-hidden rounded-xl border border-[#eef0f3] bg-white py-3 pl-4 pr-3 transition-[border-color,box-shadow,background-color] hover:border-sky-200 hover:bg-sky-50/40 hover:shadow-[0_8px_20px_-16px_rgba(2,132,199,0.6)] dark:border-[color:var(--student-dash-border)] dark:bg-[color:var(--student-dash-hover)] dark:hover:border-sky-400/30 dark:hover:bg-[color:var(--student-dash-control)] ${focusRing}`}>
               <span className={`absolute inset-y-2.5 left-0 w-[3px] rounded-r-full ${DIFFICULTY_RAIL[String(problem.difficulty).toLowerCase()] || 'bg-slate-300'}`} aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-slate-800 dark:text-zinc-100" title={problem.title}>{problem.title}</span>
+              <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-slate-800 dark:text-[color:var(--student-dash-fg)]" title={problem.title}>{problem.title}</span>
               <DifficultyTag difficulty={problem.difficulty} />
-              <span className="inline-flex w-[62px] shrink-0 items-center justify-end gap-1 text-[12.5px] font-medium text-slate-300 transition-colors group-hover:text-sky-700 dark:text-zinc-600 dark:group-hover:text-sky-300">
+              <span className="inline-flex w-[62px] shrink-0 items-center justify-end gap-1 text-[12.5px] font-medium text-slate-300 transition-colors group-hover:text-sky-700 dark:text-[color:var(--student-dash-muted)] dark:group-hover:text-sky-300">
                 Solve<ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
               </span>
             </Link>

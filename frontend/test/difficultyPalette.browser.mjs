@@ -37,17 +37,21 @@ try {
   // Lazy-loaded legacy CSS must not override the shared palette.
   await page.addStyleTag({ content: await readFile(`${root}/src/student/engagement/studentEngagement.css`, 'utf8') });
   const expected = {
-    Easy: ['rgb(16, 185, 129)', 'rgb(4, 120, 87)', 'rgb(110, 231, 183)'],
-    Medium: ['rgb(249, 115, 22)', 'rgb(194, 65, 12)', 'rgb(253, 186, 116)'],
-    Hard: ['rgb(244, 63, 94)', 'rgb(190, 18, 60)', 'rgb(253, 164, 175)'],
+    Easy: ['rgb(16, 185, 129)', 'rgb(4, 120, 87)', 'rgb(112, 203, 173)', 'rgb(93, 185, 148)'],
+    Medium: ['rgb(249, 115, 22)', 'rgb(194, 65, 12)', 'rgb(230, 177, 110)', 'rgb(202, 152, 91)'],
+    Hard: ['rgb(244, 63, 94)', 'rgb(190, 18, 60)', 'rgb(237, 158, 170)', 'rgb(214, 140, 154)'],
   };
   for (const dark of [false, true]) {
     await page.evaluate((value) => document.documentElement.classList.toggle('dark', value), dark);
-    for (const [label, [accent, lightText, darkText]] of Object.entries(expected)) {
+    for (const [label, [lightFill, lightText, darkText, darkFill]] of Object.entries(expected)) {
       const colors = await page.locator(`#${label} .difficulty-pill`).evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).color));
       assert.deepEqual(colors, [dark ? darkText : lightText, dark ? darkText : lightText]);
-      assert.equal(await page.locator(`.difficulty-${label.toLowerCase()}.difficulty-fill`).evaluate((node) => getComputedStyle(node).backgroundColor), accent);
-      assert.equal(await page.locator(`[data-segment="${label.toLowerCase()}"] [data-fill]`).getAttribute('stroke'), DIFFICULTY_THEME[label].color);
+      const fill = dark ? darkFill : lightFill;
+      const fills = await page.locator(`.difficulty-${label.toLowerCase()}.difficulty-fill`).evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).backgroundColor));
+      assert.deepEqual(fills, [fill, fill]);
+      const arc = page.locator(`[data-segment="${label.toLowerCase()}"] [data-fill]`);
+      assert.equal(await arc.getAttribute('stroke'), DIFFICULTY_THEME[label].color);
+      assert.equal(await arc.evaluate((node) => getComputedStyle(node).stroke), fill);
     }
   }
   console.log('PASS: actual coding gauge, dashboard badges, solver badges and quest mix use one palette in light/dark modes.');
