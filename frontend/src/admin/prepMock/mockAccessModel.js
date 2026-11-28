@@ -14,8 +14,8 @@ export const isReadyMock = (mock) => !isLiveMock(mock)
   && Number(mock?.totalQuestions ?? mock?.questions) > 0
   && Number(mock?.duration) > 0;
 
-/** Where a failed publish sends the admin: the builder, at the Pattern step when the pattern is the problem. */
-export const builderPathFor = (mock, error = '') => `/admin/prepmock/${mock?._id}/edit${/pattern|month and year/i.test(String(error)) ? '?step=pattern' : ''}`;
+/** A failed pattern check opens the editor's pattern dialog on Basic details. */
+export const builderPathFor = (mock, error = '') => `/admin/prepmock/${mock?._id}/edit${/pattern|month and year/i.test(String(error)) ? '?pattern=1' : ''}`;
 
 // --- Bulk actions (Master Admin, platform) ----------------------------------------------------
 // Selection, scope resolution, batching and result merging for "assign own students to many mocks"

@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeAssignResult, mergePublishResult, mocksForScope, NO_ROLE_KEY } from '../src/admin/prepMock/mockAccessModel.js';
+import { builderPathFor, mergeAssignResult, mergePublishResult, mocksForScope, NO_ROLE_KEY } from '../src/admin/prepMock/mockAccessModel.js';
+
+test('pattern publish errors open the Basic details pattern dialog', () => {
+  const mock = { _id: 'mock-1' };
+  assert.equal(builderPathFor(mock, 'Missing exam pattern'), '/admin/prepmock/mock-1/edit?pattern=1');
+  assert.equal(builderPathFor(mock, 'Choose the month and year'), '/admin/prepmock/mock-1/edit?pattern=1');
+  assert.equal(builderPathFor(mock, 'Add questions'), '/admin/prepmock/mock-1/edit');
+});
 
 test('bulk scopes keep roles inside their company and exclude shared mocks', () => {
   const mocks = [

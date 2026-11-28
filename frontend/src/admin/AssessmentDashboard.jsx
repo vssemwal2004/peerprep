@@ -1592,7 +1592,7 @@ export default function AssessmentDashboard() {
                     onPreview={() => navigate(`${assessmentRoot}/preview/${assessment._id}`)}
                     onViewReport={() => navigate(`${assessmentRoot}/reports?assessmentId=${encodeURIComponent(assessment._id)}`)}
                     onEdit={() => navigate(`${assessmentRoot}/${assessment._id}/edit`)}
-                    onEditPattern={() => navigate(`${assessmentRoot}/${assessment._id}/edit?step=pattern`)}
+                    onEditPattern={() => navigate(`${assessmentRoot}/${assessment._id}/edit?pattern=1`)}
                     onDuplicate={() => handleDuplicate(assessment._id)}
                     onDelete={() => handleDelete(assessment._id)}
                     onReleaseAnswers={() => openReleaseAnswers(assessment)}

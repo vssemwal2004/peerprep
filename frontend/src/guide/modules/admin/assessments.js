@@ -57,13 +57,13 @@ export const assessmentEditorSteps = [
   },
   {
     id: "ae-progress", target: "ae-progress", chapter: "layout", quick: true,
-    title: "Six phases",
-    body: "Basics, Question set, Schedule, Candidates, Settings, then Review. While creating, a phase opens once the one before it is complete; a tick marks a finished phase. When editing, you can jump to any phase.",
+    title: "Builder phases",
+    body: "Assessments have six phases: Basics, Question set, Schedule, Candidates, Settings and Review. Prep Mocks have five: Basic details, Add questions, Schedule, Settings and Review. While creating, finish each phase to unlock the next one.",
   },
   {
     id: "ae-details", target: "ae-details", chapter: "parts", quick: true,
     title: "Assessment details",
-    body: "The name and type (required) and an optional short internal description. The assessment ID above is created for you.",
+    body: "Set the name, type and optional description. For Prep Mocks, choose the company and role, then use the pattern status at the top right to view or set their exam pattern. The assessment ID above is created for you.",
   },
   {
     id: "ae-role", target: "ae-role", chapter: "parts",

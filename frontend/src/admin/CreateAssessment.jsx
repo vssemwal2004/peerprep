@@ -21,6 +21,8 @@ import CompanyLogoEditor from './prepMock/CompanyLogoEditor';
 import MockPatternStep from './prepMock/MockPatternStep';
 import MockScheduleStep from './prepMock/MockScheduleStep';
 import { mockImportTargetIndex, rememberMockImportTarget, takeMockImportTarget } from './prepMock/mockImportTarget';
+import { mockQuestionSectionIndex, mockSectionNameExists } from './prepMock/mockSectionRouting';
+import { hasMockPatternForIdentity } from './prepMock/patternStatus';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem, toAssessmentProblemSnapshot } from './compiler/compilerUtils';
 import AssessmentCard from './assessment/components/AssessmentCard';
@@ -120,7 +122,6 @@ const SETTINGS_GROUP_IDS = ['access', 'allocation', 'proctoring', 'behavior', 'r
 // and dates are active; there is no per-mock university or student assignment.
 const MOCK_STEPS = [
   { id: 'basic', label: 'Basic details', description: 'Company, role, name and candidate instructions.' },
-  { id: 'pattern', label: 'Pattern', description: 'The exam pattern students see for this company and role.' },
   { id: 'sections', label: 'Add questions', description: 'Create questions or import them from the libraries.' },
   { id: 'schedule', label: 'Schedule', description: 'How long one attempt lasts. Prep Mocks are always open.' },
   { id: 'settings', label: 'Settings', description: 'Proctoring, behavior and results.' },
@@ -261,12 +262,6 @@ const LIBRARY_SECTION_LABELS = {
   coding: 'Coding Questions',
 };
 
-// Prep Mock: coding problems picked in the library go to the chosen section when it is a coding one.
-const codingImportIndex = (sections, target, fallback) => {
-  const index = mockImportTargetIndex(sections, target);
-  return index >= 0 && sections[index]?.type === 'coding' ? index : fallback;
-};
-
 const toLocalIsoMinutes = (value) => {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
@@ -399,12 +394,17 @@ export default function CreateAssessment({ viewOnly = false }) {
   const isMock = location.pathname.startsWith('/admin/prepmock');
   const steps = isMock ? MOCK_STEPS : ASSESSMENT_STEPS;
   const settingsGroupIds = isMock ? MOCK_SETTINGS_GROUP_IDS : SETTINGS_GROUP_IDS;
-  // Mock deep links when editing: ?step=pattern (⋮ Edit pattern) and the old ?publish=1 (Review).
+  // Existing Pattern-step links still open the pattern dialog on Basic details.
   const requestedMockStep = (() => {
     if (!isMock || !id) return null;
     const params = new URLSearchParams(location.search);
     const step = params.get('publish') === '1' ? 'preview' : params.get('step');
+    if (step === 'pattern' || params.get('pattern') === '1') return 'basic';
     return MOCK_STEPS.some((item) => item.id === step) ? step : null;
+  })();
+  const initiallyOpenPattern = isMock && (() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('step') === 'pattern' || params.get('pattern') === '1';
   })();
   const builderSettings = (settings) => (isMock ? withMockDelivery(withAiProctoringSettings(settings)) : withAiProctoringSettings(settings));
   const assessmentRoot = isMock ? '/admin/prepmock' : `${rolePrefix}/assessment`;
@@ -468,6 +468,11 @@ export default function CreateAssessment({ viewOnly = false }) {
   const [logoEditorOpen, setLogoEditorOpen] = useState(false);
   // Prep Mock: the section library imports go to ('' = group by question type).
   const [mockImportSection, setMockImportSection] = useState('');
+  const [addingMockSection, setAddingMockSection] = useState(false);
+  const [newMockSectionName, setNewMockSectionName] = useState('');
+  const [newMockSectionType, setNewMockSectionType] = useState('mcq');
+  const [mockSectionError, setMockSectionError] = useState('');
+  const [patternDialogOpen, setPatternDialogOpen] = useState(initiallyOpenPattern);
   const [studentEntryMode, setStudentEntryMode] = useState('');
   const [csvState, setCsvState] = useState(emptyCsvState);
   const [loading, setLoading] = useState(false);
@@ -504,10 +509,30 @@ export default function CreateAssessment({ viewOnly = false }) {
   const draftLoadedRef = useRef(false);
   const isSavingRef = useRef(false);
   const publishRequestRef = useRef(false);
+  const patternTriggerRef = useRef(null);
+  const patternDialogCloseRef = useRef(null);
   // The pattern linked when this mock was loaded (null for new and older month-only mocks).
   const loadedPatternIdRef = useRef(null);
   // The server's reason for the last failed save ('' when it was skipped or succeeded).
   const lastSaveErrorRef = useRef('');
+
+  useEffect(() => {
+    if (!patternDialogOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    patternDialogCloseRef.current?.focus();
+    const onEscape = (event) => {
+      if (event.key === 'Escape') {
+        setPatternDialogOpen(false);
+        window.requestAnimationFrame(() => patternTriggerRef.current?.focus());
+      }
+    };
+    document.addEventListener('keydown', onEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onEscape);
+    };
+  }, [patternDialogOpen]);
 
   useEffect(() => {
     if (!isMock) return undefined;
@@ -553,7 +578,16 @@ export default function CreateAssessment({ viewOnly = false }) {
   };
 
   const updateSections = (nextSections) => {
-    setSections((prev) => (typeof nextSections === 'function' ? nextSections(prev) : nextSections));
+    const next = typeof nextSections === 'function' ? nextSections(sections) : nextSections;
+    if (isMock && mockImportSection !== '') {
+      const chosenIndex = Number(mockImportSection);
+      const chosen = sections[chosenIndex];
+      const chosenKey = chosen?.__key || `${chosenIndex}-${chosen?.sectionName || 'section'}`;
+      const nextIndex = next.findIndex((section) => section.__key === chosenKey
+        || (section.sectionName === chosen?.sectionName && section.type === chosen?.type));
+      setMockImportSection(nextIndex >= 0 ? String(nextIndex) : '');
+    }
+    setSections(next);
     setDirty(true);
   };
 
@@ -599,7 +633,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     return nextSections;
   };
 
-  const addProblemsToSection = (prevSections, sectionIndex, problems = []) => {
+  const addProblemsToSection = (prevSections, sectionIndex, problems = [], target = null) => {
     if (!problems.length) return prevSections;
     const sourceSections = Array.isArray(prevSections) ? prevSections : [];
     const existingIdentities = buildAssessmentQuestionIdentitySet(sourceSections);
@@ -612,9 +646,11 @@ export default function CreateAssessment({ viewOnly = false }) {
     });
     if (!uniqueProblems.length) return sourceSections;
     const requestedSection = sourceSections[sectionIndex];
-    const existingCodingIndex = requestedSection?.type === 'coding'
-      ? sectionIndex
-      : sourceSections.findIndex((section) => section.type === 'coding');
+    const existingCodingIndex = isMock
+      ? mockQuestionSectionIndex(sourceSections, 'coding', mockImportTargetIndex(sourceSections, target))
+      : requestedSection?.type === 'coding'
+        ? sectionIndex
+        : sourceSections.findIndex((section) => section.type === 'coding');
     if (existingCodingIndex < 0) {
       const incomingQuestions = uniqueProblems.map((problem) => ensureQuestionMeta({
         type: 'coding',
@@ -696,8 +732,8 @@ export default function CreateAssessment({ viewOnly = false }) {
       });
       getLibraryQuestionIdentityKeys(libraryQuestion).forEach((key) => existingIdentities.add(key));
 
-      const existingSectionIndex = targetIndex >= 0 && nextSections[targetIndex].type === type
-        ? targetIndex
+      const existingSectionIndex = isMock
+        ? mockQuestionSectionIndex(nextSections, type, targetIndex)
         : nextSections.findIndex((section) => section.type === type);
       if (existingSectionIndex >= 0) {
         nextSections[existingSectionIndex].questions = [
@@ -838,6 +874,25 @@ export default function CreateAssessment({ viewOnly = false }) {
     rememberMockImportTarget(assessmentKey, section ? { sectionIndex: index, sectionName: section.sectionName || '', type: section.type || '' } : null);
   };
 
+  const addMockSection = (event) => {
+    event.preventDefault();
+    const name = newMockSectionName.trim();
+    if (!name) { setMockSectionError('Enter a section name.'); return; }
+    if (mockSectionNameExists(sections, name)) { setMockSectionError('A section with this name already exists.'); return; }
+    const index = sections.length;
+    updateSections((previous) => [...previous, {
+      sectionName: name,
+      type: newMockSectionType,
+      marksPerQuestion: 1,
+      negativeMarksPerQuestion: 0,
+      questions: [],
+    }]);
+    setMockImportSection(String(index));
+    setAddingMockSection(false);
+    setNewMockSectionName('');
+    setMockSectionError('');
+  };
+
   const handleOpenProblemLibrary = async (sectionType = '', source = 'mock') => {
     // Save current draft before navigating to library so data is preserved when returning
     await saveAssessmentDraft(assessmentKey, { form, sections, questionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
@@ -851,9 +906,10 @@ export default function CreateAssessment({ viewOnly = false }) {
       questionSet: String(activeQuestionSet + 1),
       questionSetCount: String(configuredSetCount),
     });
-    if (sectionType) {
-      query.set('type', sectionType);
-      query.set('lockType', sectionType);
+    const chosenType = isMock && mockImportSection !== '' ? sections[Number(mockImportSection)]?.type : '';
+    if (sectionType || chosenType) {
+      query.set('type', sectionType || chosenType);
+      query.set('lockType', sectionType || chosenType);
     }
     navigate(`${isMock && source === 'mock' ? mockLibraryRoot : `${rolePrefix}/library`}?${query.toString()}`);
   };
@@ -872,6 +928,13 @@ export default function CreateAssessment({ viewOnly = false }) {
       questionSet: String(activeQuestionSet + 1),
       questionSetCount: String(configuredSetCount),
     });
+    const chosenType = isMock && mockImportSection !== '' ? sections[Number(mockImportSection)]?.type : '';
+    if (chosenType) {
+      query.set('type', chosenType);
+      query.set('lockType', chosenType);
+      navigate(`${mockLibraryRoot}/${chosenType === 'coding' ? 'coding/create' : 'create'}?${query.toString()}`);
+      return;
+    }
     navigate(`${isMock ? mockLibraryRoot : `${rolePrefix}/library`}?${query.toString()}`);
   };
 
@@ -1057,13 +1120,17 @@ export default function CreateAssessment({ viewOnly = false }) {
         const mergedSets = (isMock ? loadedSets.slice(0, 1) : loadedSets).map((entry) => ({ ...entry, sections: [...(entry.sections || [])] }));
         problemSelections.forEach((selection) => {
           const target = Math.min(mergedSets.length - 1, Math.max(0, Number(selection.questionSet || 1) - 1));
-          mergedSets[target].sections = addProblemsToSection(mergedSets[target].sections, codingImportIndex(mergedSets[target].sections, importTarget, selection.sectionIndex), selection.problems || []);
+          mergedSets[target].sections = addProblemsToSection(mergedSets[target].sections, selection.sectionIndex, selection.problems || [], importTarget);
         });
         librarySelections.forEach((selection) => {
           const target = Math.min(mergedSets.length - 1, Math.max(0, Number(selection.questionSet || 1) - 1));
           mergedSets[target].sections = addLibraryQuestionsToSections(mergedSets[target].sections, selection.questions || [], importTarget);
         });
         setQuestionSets(mergedSets);
+        if (isMock && importTarget) {
+          const index = mockImportTargetIndex(mergedSets[0]?.sections || [], importTarget);
+          setMockImportSection(index >= 0 ? String(index) : '');
+        }
         setActiveQuestionSet(isMock ? 0 : Math.min(mergedSets.length - 1, Math.max(0, Number(sessionDraft?.activeQuestionSet) || 0)));
         setCurrentId(id);
       } catch (err) {
@@ -1156,11 +1223,12 @@ export default function CreateAssessment({ viewOnly = false }) {
     const librarySelections = consumeQuestionSelections(assessmentKey);
     const importTarget = isMock ? takeMockImportTarget(assessmentKey) : null;
     if (!problemSelections.length && !librarySelections.length) return;
+    if (isMock && importTarget) setMockImportSection(String(importTarget.sectionIndex));
     setQuestionSets((previous) => {
       const next = previous.map((entry) => ({ ...entry, sections: [...(entry.sections || [])] }));
       problemSelections.forEach((selection) => {
         const target = Math.min(next.length - 1, Math.max(0, Number(selection.questionSet || 1) - 1));
-        next[target].sections = addProblemsToSection(next[target].sections, codingImportIndex(next[target].sections, importTarget, selection.sectionIndex), selection.problems || []);
+        next[target].sections = addProblemsToSection(next[target].sections, selection.sectionIndex, selection.problems || [], importTarget);
       });
       librarySelections.forEach((selection) => {
         const target = Math.min(next.length - 1, Math.max(0, Number(selection.questionSet || 1) - 1));
@@ -1457,7 +1525,7 @@ export default function CreateAssessment({ viewOnly = false }) {
       const problem = !String(form.title || '').trim() ? 'Give the mock a name (Basic details).'
         : !String(form.company || '').trim() ? 'Choose a company for this mock (Basic details).'
           : !String(form.role || '').trim() ? 'Choose a role for this mock (Basic details).'
-            : !form.patternId ? 'Choose or create the exam pattern (Pattern step).'
+            : !mockPatternSet ? 'Choose or create the exam pattern in Mock details.'
               : !(Number(form.duration) > 0) ? 'Set the test length (Schedule step).' : '';
       if (problem) {
         toast.error(problem);
@@ -1544,7 +1612,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     if (!String(form.title || '').trim()) return 'Give the mock a name (Basic details).';
     if (!String(form.company || '').trim()) return 'Choose a company for this mock (Basic details).';
     if (!String(form.role || '').trim()) return 'Choose a role for this mock (Basic details).';
-    if (!form.patternId) return 'Choose or create the exam pattern (Pattern step).';
+    if (!mockPatternSet) return 'Choose or create the exam pattern in Mock details.';
     if (assessmentValidation.totalQuestions === 0 || assessmentValidation.emptySection) return 'Add questions and make sure no section is empty (Add questions step).';
     if (assessmentValidation.invalidCodingCount > 0) return 'Every coding question must be published and validated (Add questions step).';
     if (!(Number(form.duration) > 0)) return 'Set the test length (Schedule step).';
@@ -1552,7 +1620,11 @@ export default function CreateAssessment({ viewOnly = false }) {
   };
   const saveMockReady = async () => {
     const problem = mockReadyProblem();
-    if (problem) { toast.error(problem); return; }
+    if (problem) {
+      toast.error(problem);
+      if (/pattern/i.test(problem)) { setActiveStep('basic'); setPatternDialogOpen(true); }
+      return;
+    }
     setLoading(true);
     try {
       // The server's own reason is shown (e.g. a deleted or mismatched pattern), not a generic retry.
@@ -1560,7 +1632,7 @@ export default function CreateAssessment({ viewOnly = false }) {
       if (!saved) {
         const reason = lastSaveErrorRef.current;
         if (!reason) toast.error('Another save is still running. Try again in a moment.');
-        else if (/pattern/i.test(reason)) setActiveStep('pattern');
+        else if (/pattern/i.test(reason)) { setActiveStep('basic'); setPatternDialogOpen(true); }
         return;
       }
       toast.success('Mock saved and ready to publish. Turn on its Publish switch in All Mocks when you want students to see it.');
@@ -1707,9 +1779,9 @@ export default function CreateAssessment({ viewOnly = false }) {
     ));
     return totals.length > 1 && totals.every((total) => total > 0 && total === totals[0]);
   })();
+  const mockPatternSet = isMock && hasMockPatternForIdentity(form);
   const phaseCompletion = {
-    basic: Boolean(form.title.trim() && form.testType && (!isMock || (form.company.trim() && String(form.role || '').trim()))),
-    pattern: Boolean(form.patternId && form.mockPattern?.rows?.length),
+    basic: Boolean(form.title.trim() && form.testType && (!isMock || (form.company.trim() && String(form.role || '').trim() && mockPatternSet))),
     sections: assessmentValidation.totalQuestions > 0 && !assessmentValidation.emptySection && questionDeliveryValid && multiSetParityValid,
     schedule: singleScheduleValid,
     target: candidateSelectionValid,
@@ -1718,7 +1790,7 @@ export default function CreateAssessment({ viewOnly = false }) {
   };
   let maxUnlockedStepIndex = 0;
   for (let index = 0; index < steps.length - 1; index += 1) {
-    if (!completedSteps.includes(steps[index].id)) break;
+    if (!completedSteps.includes(steps[index].id) || (isMock && !phaseCompletion[steps[index].id])) break;
     maxUnlockedStepIndex = Math.min(index + 1, steps.length - 1);
   }
   const publishReady = steps.slice(0, -1).every((step) => (
@@ -1909,11 +1981,14 @@ export default function CreateAssessment({ viewOnly = false }) {
   const changeMockIdentity = (updates) => {
     const company = updates.company ?? form.company;
     const role = updates.role ?? form.role;
-    const pattern = form.mockPattern;
-    const keepPattern = !form.patternId || !pattern?.company || (sameText(pattern.company, company) && sameText(pattern.role, role));
+    const keepPattern = !form.patternId || (sameText(form.company, company) && sameText(form.role, role));
     updateForm({ ...updates, ...(keepPattern ? {} : { patternId: null, mockPattern: null }) });
   };
   const selectMockPattern = (copy) => updateForm({ patternId: copy?.patternId || null, mockPattern: copy || null });
+  const closePatternDialog = () => {
+    setPatternDialogOpen(false);
+    window.requestAnimationFrame(() => patternTriggerRef.current?.focus());
+  };
   const mockSuggestedName = isMock ? suggestMockName(form.company, form.role) : '';
   const mockPatternView = isMock && form.mockPattern?.rows?.length ? writtenPattern(form.mockPattern) : null;
   const mockPatternIssues = isMock && form.mockPattern?.rows?.length ? patternWarnings(form.mockPattern, sections, form.duration) : [];
@@ -1938,7 +2013,16 @@ export default function CreateAssessment({ viewOnly = false }) {
           <span className="ml-auto font-semibold text-slate-600 dark:text-gray-300">{form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}</span>
         </div>
 
-        <div data-guide="ae-details"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">{isMock ? 'Mock details' : 'Assessment details'}<GuideInfo step="ae-details" /></span>} subtitle="Fields marked with * are required before you can continue.">
+        <div data-guide="ae-details"><SectionCard compact title={<span className="inline-flex items-center gap-1.5">{isMock ? 'Mock details' : 'Assessment details'}<GuideInfo step="ae-details" /></span>} subtitle="Fields marked with * are required before you can continue." action={isMock ? <button
+          ref={patternTriggerRef}
+          type="button"
+          onClick={() => setPatternDialogOpen(true)}
+          aria-haspopup="dialog"
+          aria-expanded={patternDialogOpen}
+          className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 ${mockPatternSet
+            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 focus-visible:ring-emerald-500 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+            : 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 focus-visible:ring-rose-500 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300'}`}
+        >{mockPatternSet ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}{mockPatternSet ? 'Pattern set' : 'Pattern not set'}</button> : null}>
           <div className="grid gap-4 md:grid-cols-2">
             {isMock && <div>
               <label htmlFor="mock-company" className="text-xs font-semibold text-slate-700 dark:text-gray-300">Company <span className="text-rose-500">*</span></label>
@@ -2123,22 +2207,6 @@ export default function CreateAssessment({ viewOnly = false }) {
         {selectedStudents.length > 0 && form.settings?.questionSetEnabled && <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800 dark:border-sky-900 dark:bg-sky-950/20 dark:text-sky-200"><strong>{selectedStudents.length} students ready.</strong> Review the formula, set counts, filters and manual overrides in <strong>Settings → Set allocation</strong>.</div>}
       </div>
     ),
-    pattern: isMock ? (
-      <div data-guide="ae-mock-pattern">
-        <MockPatternStep
-          company={form.company}
-          role={form.role}
-          patternId={form.patternId}
-          selected={form.mockPattern}
-          onSelect={selectMockPattern}
-          onEditBasics={() => setActiveStep('basic')}
-          sections={sections}
-          duration={form.duration}
-          readOnly={viewOnly}
-          notify={{ success: (message) => toast.success(message), error: (message) => toast.error(message) }}
-        />
-      </div>
-    ) : null,
     schedule: isMock ? (
       <div data-guide="ae-mock-schedule">
         <MockScheduleStep
@@ -2223,16 +2291,32 @@ export default function CreateAssessment({ viewOnly = false }) {
                 <h2 id="mock-add-questions-title" className="text-sm font-semibold text-slate-900 dark:text-white">Add questions</h2>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">Write new questions or import published ones. Questions are grouped into sections by type.</p>
               </div>
-              {sections.length > 0 && (
-                <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-gray-300">
-                  <span className="whitespace-nowrap font-semibold">Imports go to</span>
-                  <select value={mockImportSection} onChange={(event) => setMockImportSection(event.target.value)} className="h-8 max-w-[15rem] rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">
+              <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-gray-300">
+                  <span className="whitespace-nowrap font-semibold">Questions go to</span>
+                  <select aria-label="Question section" value={mockImportSection} disabled={viewOnly} onChange={(event) => {
+                    if (event.target.value === '__add__') { setAddingMockSection(true); setMockSectionError(''); return; }
+                    setMockImportSection(event.target.value);
+                    setAddingMockSection(false);
+                  }} className="h-8 max-w-[15rem] rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">
                     <option value="">A section of the same type (automatic)</option>
                     {sections.map((section, index) => <option key={`${index}-${section.sectionName || ''}`} value={String(index)}>{section.sectionName || `Section ${index + 1}`} · {LIBRARY_SECTION_LABELS[section.type]?.replace(' Questions', '') || section.type}</option>)}
+                    <option value="__add__">+ Add section…</option>
                   </select>
                 </label>
-              )}
             </div>
+            {addingMockSection && !viewOnly && <form onSubmit={addMockSection} className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-sky-200 bg-sky-50/70 p-3 dark:border-sky-900 dark:bg-sky-950/20">
+              <label className="min-w-48 flex-1 text-xs font-semibold text-slate-700 dark:text-gray-200">Section name
+                <input autoFocus maxLength={80} value={newMockSectionName} onChange={(event) => { setNewMockSectionName(event.target.value); setMockSectionError(''); }} placeholder="e.g. Data structures" className="mt-1 block h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-950" />
+              </label>
+              <label className="text-xs font-semibold text-slate-700 dark:text-gray-200">Question type
+                <select value={newMockSectionType} onChange={(event) => setNewMockSectionType(event.target.value)} className="mt-1 block h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-950">
+                  {QUESTION_DELIVERY_TYPES.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
+                </select>
+              </label>
+              <button type="submit" className="h-9 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500">Add section</button>
+              <button type="button" onClick={() => { setAddingMockSection(false); setMockSectionError(''); }} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">Cancel</button>
+              {mockSectionError && <p role="alert" className="w-full text-xs font-medium text-rose-600">{mockSectionError}</p>}
+            </form>}
             <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
               {[
                 { key: 'create', title: 'Create questions', text: 'MCQ, passage, short answer or coding', Icon: FilePlus2, onClick: handleCreateQuestion },
@@ -2306,10 +2390,10 @@ export default function CreateAssessment({ viewOnly = false }) {
                 <h3 id="mock-pattern-check-title" className="text-sm font-semibold text-slate-900 dark:text-white">Pattern check</h3>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">Students read the pattern before they start. It does not have to match your questions; differences are listed here and never block publishing.</p>
               </div>
-              <button type="button" onClick={() => setActiveStep('pattern')} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">{mockPatternView ? 'Change pattern' : 'Choose pattern'}</button>
+              <button type="button" onClick={() => setPatternDialogOpen(true)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">{mockPatternView ? 'Change pattern' : 'Choose pattern'}</button>
             </div>
             {!mockPatternView ? (
-              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-500/10 dark:text-amber-200">No pattern chosen yet. Choose or create one in the Pattern step; it is needed to publish.</p>
+              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-500/10 dark:text-amber-200">No pattern chosen yet. Choose or create one from Mock details; it is needed to publish.</p>
             ) : (
               <div className="mt-3 grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)]">
                 <MockPatternTable pattern={form.mockPattern} footnote={false} caption={`${form.company} ${form.role} exam pattern`} />
@@ -2918,14 +3002,15 @@ export default function CreateAssessment({ viewOnly = false }) {
     if (!phaseCompletion[activeStep]) {
       const messages = {
         basic: isMock
-          ? (!form.company.trim() ? 'Choose the company for this mock.' : !String(form.role || '').trim() ? 'Choose a role for this mock.' : 'Complete the required mock name and type.')
+          ? (!form.company.trim() ? 'Choose the company for this mock.' : !String(form.role || '').trim() ? 'Choose a role for this mock.' : !form.title.trim() || !form.testType ? 'Complete the required mock name and type.' : 'Choose or create the exam pattern in Mock details.')
           : 'Complete the required assessment name and type.',
-        pattern: 'Choose or create the exam pattern for this company and role.',
         sections: 'Add at least one valid question and check the delivery rules.',
         schedule: isMock ? 'Choose the test length.' : 'Complete the required assessment schedule.',
         target: 'Select who can take this assessment.',
       };
       toast.error(messages[activeStep] || 'Complete this phase before continuing.');
+      if (isMock && activeStep === 'basic' && form.company.trim() && String(form.role || '').trim()
+        && form.title.trim() && form.testType && !mockPatternSet) setPatternDialogOpen(true);
       return;
     }
     setDirty(true);
@@ -3020,6 +3105,24 @@ export default function CreateAssessment({ viewOnly = false }) {
         <fieldset disabled={viewOnly} className="mt-3 min-w-0" onClickCapture={viewOnly ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}>
           {stepContent[activeStep]}
         </fieldset>
+
+        {isMock && patternDialogOpen && <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-6">
+          <button type="button" onClick={closePatternDialog} aria-label="Close exam pattern" className="absolute inset-0 bg-slate-950/60" />
+          <div role="dialog" aria-modal="true" aria-labelledby="mock-pattern-dialog-title" className="relative flex max-h-[92dvh] w-full max-w-[1180px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl dark:border-gray-700 dark:bg-gray-950">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900 sm:px-5">
+              <div>
+                <h2 id="mock-pattern-dialog-title" className="text-base font-bold text-slate-950 dark:text-white">Exam pattern</h2>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">{form.company && form.role ? `${form.company} · ${form.role}` : 'Choose a company and role in Mock details first.'}</p>
+              </div>
+              <button ref={patternDialogCloseRef} type="button" onClick={closePatternDialog} aria-label="Close exam pattern" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
+            </div>
+            <div data-guide="ae-mock-pattern" className="min-h-0 overflow-y-auto p-3 sm:p-5">
+              <MockPatternStep company={form.company} role={form.role} patternId={form.patternId} selected={form.mockPattern}
+                onSelect={selectMockPattern} onEditBasics={closePatternDialog} sections={sections} duration={form.duration}
+                readOnly={viewOnly} notify={{ success: (message) => toast.success(message), error: (message) => toast.error(message) }} />
+            </div>
+          </div>
+        </div>}
 
         <div data-guide="ae-footer" className="sticky bottom-0 z-30 -mx-4 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-2.5 shadow-[0_-6px_18px_rgba(15,23,42,0.05)] sm:-mx-6 sm:px-6 dark:border-gray-800 dark:bg-gray-900">
           <button
