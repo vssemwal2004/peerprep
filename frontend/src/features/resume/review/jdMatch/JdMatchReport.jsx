@@ -1,5 +1,5 @@
 // The ANVI JD Match report: score, keywords to add, then the résumé heading by heading and line by
-// line — what to add on each line, an example of how to write it, and a button to fix it in the
+// line — what to add on each line, a reference example (never copied in; the student writes), and a button to fix it in the
 // builder. Hovering a line card highlights that line on the résumé preview.
 import { useState } from 'react';
 import { motion } from 'framer-motion';
@@ -45,12 +45,10 @@ function LineCard({ line, onFix, onHighlight, onReveal }) {
       </div>
       {line.example ? (
         <div className="mt-2.5 rounded-lg bg-violet-50/80 px-2.5 py-2 dark:bg-violet-500/10">
-          <div className="flex items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-[.1em] text-violet-700 dark:text-violet-300"><Sparkles className="h-3 w-3" />Write it like</span>
-            <CopyButton text={line.example} />
-          </div>
-          <p className="mt-1 text-[12.5px] leading-5 text-slate-800 dark:text-zinc-100">{line.example}</p>
-          <p className="mt-1 text-[11px] leading-4 text-violet-800/80 dark:text-violet-200/70">An example: keep your own facts and use it only if it is true.</p>
+          {/* Reference only, with no copy button: the student writes their own line (copied ANVI text reads as AI-written). */}
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-[.08em] text-violet-700 dark:text-violet-300"><Sparkles className="h-3 w-3" />For reference only</span>
+          <p className="mt-1 text-[12.5px] italic leading-5 text-slate-700 dark:text-zinc-200">{line.example}</p>
+          <p className="mt-1 text-[11.5px] leading-4 text-violet-900/80 dark:text-violet-200/80">Write your own line with your real facts. Copying this word for word can read as AI-written.</p>
         </div>
       ) : null}
       {line.tip ? <p className="mt-2 flex gap-1.5 text-[11.5px] leading-4 text-slate-500 dark:text-zinc-400"><Lightbulb className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />{line.tip}</p> : null}

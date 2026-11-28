@@ -239,7 +239,7 @@ function DetailSectionEditor({ sectionKey, entries, onChange, onRemove, noun, pl
             <Field data-review={`${sectionKey}|${index}|date`} label="Date / Duration" value={entry.date || ''} onChange={(event) => update(index, { date: event.target.value })} placeholder="Jan 2025 – Present" />
             <Field data-review={`${sectionKey}|${index}|subtitle`} label={placeholders.subtitleLabel || 'Subtitle'} value={entry.subtitle || ''} onChange={(event) => update(index, { subtitle: event.target.value })} placeholder={placeholders.subtitle || 'Role or supporting title'} />
             <Field label="Location" value={entry.location || ''} onChange={(event) => update(index, { location: event.target.value })} placeholder="City, India or Remote" />
-            <div className="sm:col-span-2"><Field label="Technologies / Supporting details" value={entry.technologies || ''} onChange={(event) => update(index, { technologies: event.target.value })} placeholder="React, Node.js, MongoDB, AWS" /></div>
+            <div className="sm:col-span-2"><Field data-review={`${sectionKey}|${index}|technologies`} label="Technologies / Supporting details" value={entry.technologies || ''} onChange={(event) => update(index, { technologies: event.target.value })} placeholder="React, Node.js, MongoDB, AWS" /></div>
             <div className="sm:col-span-2"><Field label="Link" type="url" value={entry.link || ''} onChange={(event) => update(index, { link: event.target.value })} placeholder="https://..." /></div>
             <div className="sm:col-span-2"><BulletEditor reviewPrefix={`${sectionKey}|${index}|bullet`} bullets={entry.bullets || []} onChange={(bullets) => update(index, { bullets })} /></div>
           </div>

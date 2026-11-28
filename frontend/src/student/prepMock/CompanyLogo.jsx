@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { initialTone, initialsOf } from './prepMockModel';
 
 const SIZES = {
+  xs: { box: 'h-4 w-4 rounded-[5px] p-px', text: 'text-[7.5px]', px: 16 },
+  chip: { box: 'h-6 w-6 rounded-full p-[3px]', text: 'text-[9.5px]', px: 24 },
   sm: { box: 'h-9 w-9 rounded-lg p-1.5', text: 'text-[12px]', px: 36 },
   tile: { box: 'h-10 w-10 rounded-[11px] p-1.5', text: 'text-[13px]', px: 40 },
   spot: { box: 'h-12 w-12 rounded-[14px] p-2', text: 'text-[15px]', px: 48 },

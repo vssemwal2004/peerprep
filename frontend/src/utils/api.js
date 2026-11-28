@@ -507,7 +507,7 @@ export const api = {
   monthlyBadges: () => request('/auth/badges/monthly', { skipCache: true }),
   lifetimeBadges: () => request('/auth/badges/lifetime', { skipCache: true }),
   // The student's own Prep Score history: range '7d' | '30d' | '90d' | 'all'.
-  getPrepScoreHistory: (range = '30d') => request(`/auth/prep-score/history?range=${encodeURIComponent(range)}`, { skipCache: true }),
+  getPrepScoreHistory: (range = '30d', from = '') => request(`/auth/prep-score/history?range=${encodeURIComponent(range)}${from ? `&from=${encodeURIComponent(from)}` : ''}`, { skipCache: true }),
   // Prep Readiness (SBC/PBC coding practice targets): own data.
   getPrepReadiness: (range = '30d') => request(`/student/prep-readiness?range=${encodeURIComponent(range)}`, { skipCache: true }),
   getPrepReadinessSummary: () => request('/student/prep-readiness/summary', { skipCache: true }),
@@ -528,6 +528,8 @@ export const api = {
   }).toString()}`, { skipCache: true }),
   platformStudent: (id, studentId) => request(`/platform/admin/universities/${encodeURIComponent(id)}/students/${encodeURIComponent(studentId)}`, { skipCache: true }),
   listPracticeQuestions: (params = {}) => request(`/student/questions?${new URLSearchParams(params).toString()}`, { skipCache: true }),
+  /** { logos: { [lower-case company]: { url, width, height } } } for the Prep Coding company filters. */
+  practiceCompanyLogos: () => request('/student/questions/company-logos'),
   questionInterviewOptions: () => request('/student/questions/interview-options', { skipCache: true }),
   reportQuestionInterview: (source, id, body) => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}/interview-reports`, { method: 'POST', body, skipCache: true }),
   questionInterviewCompanies: (source, id) => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}/interview-companies`, { skipCache: true }),

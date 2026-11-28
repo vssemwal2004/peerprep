@@ -24,6 +24,11 @@ import { useJdMatch } from '../../features/resume/review/jdMatch/useJdMatch';
 import JdMatchPopup from '../../features/resume/review/jdMatch/JdMatchPopup';
 
 const ReviewPreview = memo(ResumePreview);
+const PANEL_WIDTH_KEY = 'prep-resume-review-panel-width';
+const PANEL_MIN = 420;
+const PANEL_MAX = 640;
+const PANEL_DEFAULT = 480;
+const clampPanel = (value) => Math.max(PANEL_MIN, Math.min(PANEL_MAX, Math.round(value)));
 
 const plainText = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
@@ -73,6 +78,22 @@ export default function ResumeReviewPage() {
   const [saveState, setSaveState] = useState('saved');
   const [downloading, setDownloading] = useState(false);
   const [mobileTab, setMobileTab] = useState('check');
+  // The check panel can be widened (drag its left edge or use the arrow keys); the width is remembered.
+  const [panelWidth, setPanelWidth] = useState(() => {
+    try { const value = Number(window.localStorage.getItem(PANEL_WIDTH_KEY)); return value >= PANEL_MIN && value <= PANEL_MAX ? value : PANEL_DEFAULT; } catch { return PANEL_DEFAULT; }
+  });
+  useEffect(() => { try { window.localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth)); } catch { /* not saved */ } }, [panelWidth]);
+  const startResize = useCallback((event) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = panelWidth;
+    const move = (moveEvent) => setPanelWidth(clampPanel(startWidth + (startX - moveEvent.clientX)));
+    const stop = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop); document.body.style.cursor = ''; document.body.style.userSelect = ''; };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop);
+  }, [panelWidth]);
   const measuredRef = useRef(null);
   const resumeRef = useRef(null);
   const dirtyRef = useRef(false);
@@ -280,7 +301,7 @@ export default function ResumeReviewPage() {
 
         {error ? <div className="mx-auto mt-3 w-full max-w-[1680px] px-4 sm:px-6"><div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300" role="alert">{error}{saveState === 'error' ? <button type="button" onClick={save} className="ml-3 font-semibold underline">Retry save</button> : null}</div></div> : null}
 
-        <main className="mx-auto grid w-full max-w-[1680px] flex-1 gap-5 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_480px]">
+        <main className="mx-auto grid w-full max-w-[1680px] flex-1 gap-5 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_var(--rr-panel)]" style={{ '--rr-panel': `${panelWidth}px` }}>
           {/* The resume, on a desk */}
           <section data-guide="rr-preview" className={`${mobileTab === 'resume' ? 'block' : 'hidden lg:block'} min-w-0`}>
             <div ref={previewRef} className="relative overflow-hidden rounded-3xl border border-[#e9eaee] bg-[#eef1f5] bg-[radial-gradient(rgba(15,23,42,0.07)_1px,transparent_1px)] [background-size:16px_16px] dark:border-white/[0.07] dark:bg-[#1e1e1e] dark:bg-[radial-gradient(rgba(255,255,255,0.05)_1px,transparent_1px)] lg:sticky lg:top-[80px]" style={panelHeight}>
@@ -289,11 +310,17 @@ export default function ResumeReviewPage() {
           </section>
 
           {/* ANVI */}
-          <aside data-guide="rr-check" className={`${mobileTab === 'check' ? 'block' : 'hidden lg:block'} min-w-0 lg:sticky lg:top-[80px] lg:self-start`}>
+          <aside data-guide="rr-check" className={`${mobileTab === 'check' ? 'block' : 'hidden lg:block'} relative min-w-0 lg:sticky lg:top-[80px] lg:self-start`}>
+            <div role="separator" aria-orientation="vertical" aria-label="Resize the check panel" aria-valuemin={PANEL_MIN} aria-valuemax={PANEL_MAX} aria-valuenow={panelWidth} tabIndex={0}
+              onPointerDown={startResize} onDoubleClick={() => setPanelWidth(PANEL_DEFAULT)}
+              onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setPanelWidth((value) => clampPanel(value + (event.key === 'ArrowLeft' ? 24 : -24))); } }}
+              className="group absolute -left-[14px] top-0 z-10 hidden h-full w-[10px] cursor-col-resize items-center justify-center lg:flex focus-visible:outline-none">
+              <span className="h-12 w-1 rounded-full bg-slate-300/80 transition group-hover:h-20 group-hover:bg-violet-400 group-focus-visible:bg-violet-500 dark:bg-white/15" />
+            </div>
             <AnviAura radius="1.5rem" innerClassName="!bg-[#f6f7f9] dark:!bg-[#1c1c1c]">
               <div className="h-[calc(100dvh-145px)] min-h-[365px] lg:h-[calc(100dvh-98px)]">
                 {hasContent ? (
-                  <ResumeCheckPanel key={initialTab + initialAction} className="h-full" initialTab={initialTab} initialAction={initialAction} check={panelCheck} resume={resume} hasContent={hasContent} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} jdMatch={jdMatch} viewRequest={viewRequest} />
+                  <ResumeCheckPanel key={initialTab + initialAction} className="h-full" initialTab={initialTab} initialAction={initialAction} check={panelCheck} resume={resume} hasContent={hasContent} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} onHighlight={highlightLine} jdMatch={jdMatch} viewRequest={viewRequest} />
                 ) : (
                   <div className="relative flex h-full flex-col items-center justify-center p-8 text-center">
                     <AnviGlowBackdrop />

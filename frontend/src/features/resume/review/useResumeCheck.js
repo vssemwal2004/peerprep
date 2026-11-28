@@ -17,6 +17,20 @@ export function readLastCheck(userId) {
   } catch { return null; }
 }
 
+/** Only a spelling slip with a suggested spelling may be applied for the student. */
+export const canAutoFix = (issue) => issue?.category === 'spelling' && Boolean(issue.suggestions?.length) && Boolean(issue.suggestions[0]);
+
+/** Issues minus the ones the student ignored (one finding, or a word marked as a name). */
+export function filterIgnored(issues = [], ignored = new Set()) {
+  return issues.filter((item) => !ignored.has(item.ignoreKey) && !(item.category === 'spelling' && ignored.has(`word:${String(item.problem || '').toLowerCase()}`)));
+}
+
+/** The saved writing findings, if they still describe this draft (for the hub's score). */
+export function savedIssuesFor(last, resume) {
+  if (!last?.grammar?.issues || last.grammar.signature !== grammarSignature(resume)) return null;
+  return filterIgnored(last.grammar.issues, new Set(last.ignored || []));
+}
+
 function writeLastCheck(userId, value) {
   try { window.localStorage.setItem(storageKey(userId), JSON.stringify(value)); } catch { /* private mode or full: results stay in memory */ }
 }
@@ -165,16 +179,14 @@ export function useResumeCheck({ userId, resume, buildPdf, onResumeChange }) {
     return changeLine(unit, raw, replacement);
   }, [changeLine]);
 
+  // ANVI never writes the student's content: only a spelling slip can be applied for them.
+  // Grammar and style findings are hints; the student rewrites the line in their own words.
   const applyFix = useCallback((issue, suggestion) => {
+    if (!canAutoFix(issue)) return { ok: false, reason: 'own-words' };
     const unit = collectTextUnits(resumeRef.current).find((item) => item.id === issue.unitId);
     const raw = unit && readUnitRaw(resumeRef.current, unit);
     if (!unit || toPlain(raw).text !== issue.plainText) return { ok: false, reason: 'changed' };
     return replaceLine(unit, raw, replaceInRaw(raw, toPlain(raw), issue.start, issue.end, suggestion));
-  }, [replaceLine]);
-
-  const replaceBullet = useCallback((id, raw, suggestion) => {
-    const unit = collectTextUnits(resumeRef.current).find((item) => item.id === id && item.field === 'bullet');
-    return replaceLine(unit, raw, suggestion);
   }, [replaceLine]);
 
   const undoFix = useCallback(() => {
@@ -183,11 +195,37 @@ export function useResumeCheck({ userId, resume, buildPdf, onResumeChange }) {
     return changeLine(undo.unit, undo.replacement, undo.raw);
   }, [changeLine, undo]);
 
+  /** Applies the first suggestion of many issues; one write per line, right to left so offsets stay valid. */
+  const applyMany = useCallback(async (list) => {
+    const byUnit = new Map();
+    list.filter((issue) => canAutoFix(issue)).forEach((issue) => byUnit.set(issue.unitId, [...(byUnit.get(issue.unitId) || []), issue]));
+    let applied = 0;
+    for (const [unitId, unitIssues] of byUnit) {
+      const unit = collectTextUnits(resumeRef.current).find((item) => item.id === unitId);
+      const raw = unit && readUnitRaw(resumeRef.current, unit);
+      if (!unit || toPlain(raw).text !== unitIssues[0].plainText) continue;
+      let next = raw;
+      let lastStart = Infinity;
+      for (const issue of [...unitIssues].sort((a, b) => b.start - a.start)) {
+        if (issue.end > lastStart) continue; // overlapping findings: keep the later one
+        next = replaceInRaw(next, toPlain(next), issue.start, issue.end, issue.suggestions[0]);
+        lastStart = issue.start;
+        applied += 1;
+      }
+      await changeLine(unit, raw, next); // one line at a time: each write re-lints that line
+
+    }
+    setUndo(null);
+    return { ok: true, applied };
+  }, [changeLine]);
+
   const ignore = useCallback((issue) => setIgnored((set) => new Set(set).add(issue.ignoreKey)), []);
+  // "It's a name": this word is accepted everywhere in the résumé, not just on this line.
+  const ignoreWord = useCallback((issue) => setIgnored((set) => new Set(set).add(`word:${String(issue.problem || '').toLowerCase()}`)), []);
   const unignoreAll = useCallback(() => setIgnored(new Set()), []);
 
   const grammarOutdated = grammar.status === 'done' && grammar.signature !== writingKey;
-  const visibleIssues = useMemo(() => grammarOutdated ? [] : grammar.issues.filter((item) => !ignored.has(item.ignoreKey)), [grammar.issues, grammarOutdated, ignored]);
+  const visibleIssues = useMemo(() => grammarOutdated ? [] : filterIgnored(grammar.issues, ignored), [grammar.issues, grammarOutdated, ignored]);
   const ignoredCount = grammarOutdated ? 0 : grammar.issues.length - visibleIssues.length;
   const atsOutdated = ats.status === 'done' && ats.signature !== draftKey;
   const currentAts = requirements.ready && ats.signature === draftKey ? ats : { ...ats, report: null };
@@ -214,6 +252,6 @@ export function useResumeCheck({ userId, resume, buildPdf, onResumeChange }) {
   return {
     grammar, ats: currentAts, explain: explain.key === explanationKey ? explain : { status: 'idle', data: null }, jobText, setJobText, visibleIssues, ignoredCount, requirements,
     grammarOutdated, atsOutdated, running, hasResult, resumePending: Boolean(initialScan?.jobId && initialScan.signature === draftKey),
-    runCheck, runJobMatch, applyFix, replaceBullet, undoFix, canUndoFix: Boolean(undo), ignore, unignoreAll, runExplain,
+    runCheck, runJobMatch, applyFix, applyMany, undoFix, canUndoFix: Boolean(undo), ignore, ignoreWord, unignoreAll, runExplain,
   };
 }

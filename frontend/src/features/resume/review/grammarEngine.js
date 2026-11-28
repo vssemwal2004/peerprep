@@ -10,36 +10,29 @@ import {
   dictionaryWords,
   grammarSignature,
   keepHarperLint,
+  nearestTechTerm,
   punctuationConsistency,
+  spellingConfidence,
   toPlain,
 } from './reviewModel';
 
-let enginePromise = null;
+import { typoDistance } from './techVocabulary';
 
-function editDistance(a, b) {
-  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
-  for (let i = 1; i <= a.length; i += 1) {
-    let previous = row[0];
-    row[0] = i;
-    for (let j = 1; j <= b.length; j += 1) {
-      const current = row[j];
-      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, previous + (a[i - 1] === b[j - 1] ? 0 : 1));
-      previous = current;
-    }
-  }
-  return row[b.length];
-}
+let enginePromise = null;
 
 const ENDINGS = ['ing', 'ed', 'es', 's', 'ly', 'tion', 'ment'];
 /** Spelling candidates ordered by closeness, keeping the word's ending ("maintaing" -> "maintaining"). */
 export function rankSpelling(problem, candidates) {
   const word = String(problem || '').toLowerCase();
   const ending = ENDINGS.find((suffix) => word.endsWith(suffix));
+  const letters = (value) => [...value].sort().join('');
   return [...candidates]
     .map((candidate, order) => {
       const lower = candidate.toLowerCase();
       const keepsEnding = ending ? lower.endsWith(ending) : true;
-      return { candidate, score: editDistance(word, lower) - (keepsEnding ? 1.5 : 0) + order * 0.01 };
+      // Swapped neighbours ("Sovling") are the commonest typo: same letters, one swap.
+      const sameLetters = letters(lower) === letters(word) ? 0.5 : 0;
+      return { candidate, score: typoDistance(word, lower) - (keepsEnding ? 1.5 : 0) - sameLetters + order * 0.01 };
     })
     .sort((a, b) => a.score - b.score)
     .map((item) => item.candidate);
@@ -101,7 +94,23 @@ export async function lintUnit(linter, unit, dictionary = new Set()) {
     // ANVI's own finding wins where both flag the same words.
     if (ours.some((own) => finding.start < own.end && finding.end > own.start)) continue;
     let suggestions = lint.suggestions().map((suggestion) => suggestion.get_replacement_text()).filter((text, index, list) => list.indexOf(text) === index).slice(0, 10);
-    if (kind === 'Spelling' || kind === 'Typo') suggestions = rankSpelling(problem, await withInflections(linter, problem, suggestions));
+    if (kind === 'Spelling' || kind === 'Typo') {
+      suggestions = rankSpelling(problem, await withInflections(linter, problem, suggestions));
+      // A misspelt tool ("Pyhton") is matched to the tool first: the dictionary would offer "Python" late or not at all.
+      // …but only when the tool is a closer match than the best dictionary word ("Aspirng" is "Aspiring", not "Spring").
+      let tech = nearestTechTerm(problem);
+      if (tech) {
+        const lower = problem.toLowerCase();
+        const dictionaryBest = Math.min(Infinity, ...suggestions.slice(0, 3).map((item) => typoDistance(lower, item.toLowerCase())));
+        const techDistance = typoDistance(lower, tech.toLowerCase());
+        if (!(techDistance < dictionaryBest || (techDistance === dictionaryBest && unit.scope === 'skills'))) tech = null;
+      }
+      if (tech) {
+        suggestions = [tech, ...suggestions.filter((item) => item.toLowerCase() !== tech.toLowerCase())];
+        finding.message = `“${problem}” looks like a misspelling of “${tech}”. ATS keyword search will miss it as written.`;
+      }
+      finding.confidence = spellingConfidence({ problem, text: plain.text, start: span.start, unit, techSuggestion: Boolean(tech), suggestions });
+    }
     theirs.push({ ...finding, suggestions: suggestions.slice(0, 3) });
   }
   return [...ours, ...theirs].map((finding) => buildIssue(unit, plain, finding));

@@ -29,7 +29,7 @@ function bulletsOf(resume) {
   return out;
 }
 
-const opensWithAction = (bullet) => {
+export const opensWithAction = (bullet) => {
   const first = (wordsIn(bullet)[0] || '').toLowerCase().replace(/[^a-z]/g, '');
   return ACTION_VERBS.has(first) || (first.endsWith('ed') && first.length > 4);
 };

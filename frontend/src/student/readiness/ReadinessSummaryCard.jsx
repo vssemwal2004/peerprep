@@ -87,7 +87,7 @@ function Track({ trackKey, track, hasEvidence, loading, trend }) {
  * and the explanation. `sharing`: the Prep Mate privacy state (own profile only).
  */
 export default function ReadinessSummaryCard({
-  summary, loading = false, error = null, onRetry, viewTo = '/student/analysis/prep-readiness#growth', onView, sharing, readOnly = false,
+  summary, loading = false, error = null, onRetry, viewTo = '/student/analysis/readiness#growth', onView, sharing, readOnly = false,
   title = 'Prep Readiness', className = '', guide = 'pf-readiness',
 }) {
   const [explain, setExplain] = useState(false);

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowDown, ArrowUp, ArrowUpDown, Building2, CheckCircle2, Layers3, LoaderCircle, Search, Shapes, Shuffle, SlidersHorizontal, Star, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Blocks, CheckCircle2, CodeXml, Dices, FolderHeart, LoaderCircle, Search, SlidersHorizontal, Star, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { buildTagsParam, PROBLEM_SORT_OPTIONS } from './problemUtils';
@@ -8,11 +8,12 @@ import QuestionPracticeDialog from './QuestionPracticeDialog';
 import AnviHero from './problems/AnviHero';
 import CompanyStrip from './problems/CompanyStrip';
 import LibrarySidebar from './problems/LibrarySidebar';
-import TopicsPanel from './problems/TopicsPanel';
+import TopicsDrawer, { TopicsButton } from './problems/TopicsDrawer';
 import PracticeCalendar from './problems/PracticeCalendar';
 import ProblemRow, { ProblemRowsSkeleton } from './problems/ProblemRow';
+import CompanyLogo from './prepMock/CompanyLogo';
 import { CreateListModal, SaveToListsModal } from './problems/ProblemListModals';
-import { DEFAULT_PAGE_SIZE, DIFFICULTY, fieldBase, focusRing, PAGE_SIZE_OPTIONS, problemStatus } from './problems/problemsUi';
+import { brandTile, DEFAULT_PAGE_SIZE, DIFFICULTY, fieldBase, focusRing, logoFor, PAGE_SIZE_OPTIONS, problemStatus } from './problems/problemsUi';
 import PracticePager from './problems/PracticePager';
 import { nextSort } from '../components/table';
 import PageGuideButton from '../guide/platform/PageGuideButton';
@@ -39,23 +40,6 @@ const STATUS_OPTIONS = [
 ];
 const STATUS_LABELS = Object.fromEntries(STATUS_OPTIONS.map((option) => [option.value, option.label]));
 
-// Laptop widths (MacBook 1280–1535px) are too narrow for three columns: Topics joins the left rail there,
-// so the question list keeps room for full titles and a one-line toolbar. Three columns return at 2xl.
-const TOPICS_IN_RAIL_QUERY = '(min-width: 1280px) and (max-width: 1535.98px)';
-
-function useMatchMedia(query) {
-  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia?.(query).matches);
-  useEffect(() => {
-    const media = window.matchMedia?.(query);
-    if (!media) return undefined;
-    const update = () => setMatches(media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, [query]);
-  return Boolean(matches);
-}
-
 function readFavorites() {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(FAVORITES_KEY) || '[]');
@@ -75,7 +59,7 @@ function ColumnSort({ sortKey, sort, onSort, align = 'left', className = '', chi
   const direction = sort?.key === sortKey ? sort.direction : null;
   const Icon = direction === 'asc' ? ArrowUp : direction === 'desc' ? ArrowDown : ArrowUpDown;
   return <button type="button" onClick={() => onSort(sortKey)} title={`Sort by ${children}`}
-    className={`group inline-flex items-center gap-1 rounded-md ${align === 'right' ? 'justify-end' : ''} ${direction ? 'text-sky-700 dark:text-sky-300' : 'hover:text-slate-800 dark:hover:text-zinc-100'} ${focusRing} ${className}`}>
+    className={`group inline-flex items-center gap-1 rounded-md ${align === 'right' ? 'justify-end' : ''} ${direction ? 'text-violet-700 dark:text-violet-300' : 'hover:text-slate-800 dark:hover:text-zinc-100'} ${focusRing} ${className}`}>
     <span>{children}</span>
     <Icon aria-hidden="true" className={`h-3 w-3 shrink-0 ${direction ? 'opacity-100' : 'opacity-40 group-hover:opacity-80'}`} />
     <span className="sr-only">{direction === 'asc' ? ', sorted ascending' : direction === 'desc' ? ', sorted descending' : ', not sorted'}</span>
@@ -106,25 +90,26 @@ function searchLabel(value) {
 }
 
 function FilterChip({ label, onRemove }) {
-  return <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 py-1 pl-2.5 pr-1 text-[12px] font-medium text-sky-800 ring-1 ring-inset ring-sky-100 dark:bg-sky-500/10 dark:text-sky-200 dark:ring-sky-400/15">
+  return <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 py-1 pl-2.5 pr-1 text-[12px] font-medium text-violet-800 ring-1 ring-inset ring-violet-100 dark:bg-violet-500/10 dark:text-violet-200 dark:ring-violet-400/15">
     {label}
-    <button type="button" onClick={onRemove} aria-label={`Remove filter: ${label}`} className={`rounded-full p-0.5 hover:bg-sky-100 dark:hover:bg-sky-500/20 ${focusRing}`}><X className="h-3 w-3" /></button>
+    <button type="button" onClick={onRemove} aria-label={`Remove filter: ${label}`} className={`rounded-full p-0.5 hover:bg-violet-100 dark:hover:bg-violet-500/20 ${focusRing}`}><X className="h-3 w-3" /></button>
   </span>;
 }
 
 const SELECTION_TONES = {
-  topic: { icon: Shapes, tile: 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300', wash: 'from-violet-50/80', label: 'Topic', noun: 'in this topic' },
-  company: { icon: Building2, tile: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300', wash: 'from-orange-50/80', label: 'Company', noun: 'tagged with this company' },
-  list: { icon: Layers3, tile: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300', wash: 'from-sky-50/80', label: 'Your list', noun: 'in this list' },
-  favorites: { icon: Star, tile: 'bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300', wash: 'from-amber-50/80', label: 'Favorites', noun: 'saved as favorites' },
+  topic: { icon: Blocks, tile: 'from-violet-500 to-indigo-600', wash: 'from-violet-50/80', label: 'Topic', noun: 'in this topic' },
+  company: { icon: null, tile: '', wash: 'from-indigo-50/70', label: 'Company', noun: 'tagged with this company' },
+  list: { icon: FolderHeart, tile: 'from-sky-400 to-cyan-600', wash: 'from-sky-50/80', label: 'Your list', noun: 'in this list' },
+  favorites: { icon: Star, tile: 'from-amber-400 to-orange-500', wash: 'from-amber-50/80', label: 'Favorites', noun: 'saved as favorites' },
 };
 
 /** What the list is focused on, with the real size of that topic, company or list. */
-function SelectionHeader({ kind, title, description, catalogCount, shownCount, filtered, loading, onClear }) {
+function SelectionHeader({ kind, title, logo, description, catalogCount, shownCount, filtered, loading, onClear }) {
   const tone = SELECTION_TONES[kind];
   const Icon = tone.icon;
-  return <section aria-labelledby="selection-title" className={`mb-4 flex flex-wrap items-center gap-4 rounded-2xl border border-[#e9eaee] bg-gradient-to-r ${tone.wash} via-white to-white px-5 py-4 dark:border-white/[0.07] dark:from-white/[0.04] dark:via-[#232325] dark:to-[#232325]`}>
-    <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${tone.tile}`} aria-hidden="true"><Icon className="h-6 w-6" /></span>
+  return <section aria-labelledby="selection-title" className={`mb-4 flex flex-wrap items-center gap-4 rounded-2xl border border-[#e9eaee] bg-gradient-to-r ${tone.wash} via-white to-white px-5 py-4 dark:border-white/[0.07] dark:from-violet-500/[0.07] dark:via-[#242424] dark:to-[#242424]`}>
+    {kind === 'company' ? <CompanyLogo name={title} logo={logo} size="spot" />
+      : <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-gradient-to-br text-white shadow-[0_10px_22px_-12px_rgba(109,40,217,0.8)] ${tone.tile}`} aria-hidden="true"><Icon className="h-6 w-6" /></span>}
     <div className="min-w-0 flex-1">
       <p className="text-[11.5px] font-medium text-slate-500 dark:text-zinc-400">{tone.label}</p>
       <h2 id="selection-title" className="truncate text-[22px] font-semibold leading-tight tracking-[-0.02em] text-slate-950 dark:text-zinc-50" title={title}>{title}</h2>
@@ -170,6 +155,10 @@ export default function ProblemsPage() {
   const [busyListId, setBusyListId] = useState('');
   const [openingProblemId, setOpeningProblemId] = useState('');
   const [companyCounts, setCompanyCounts] = useState([]);
+  const [companyLogos, setCompanyLogos] = useState({});
+  const [topicsOpen, setTopicsOpen] = useState(false);
+  const topicsButtonRef = useRef(null);
+  const closeTopics = useCallback(() => setTopicsOpen(false), []);
   const [response, setResponse] = useState({ problems: [], pagination: { page: 1, pages: 1, total: 0 }, filters: { availableTags: [], tagCounts: [] } });
   const resolvedSort = useMemo(() => QUESTION_SORT_OPTIONS.find((option) => option.value === sortValue) || QUESTION_SORT_OPTIONS[0], [sortValue]);
   const selectedList = useMemo(() => lists.find((list) => list._id === selectedListId), [lists, selectedListId]);
@@ -187,6 +176,8 @@ export default function ProblemsPage() {
     const timer = window.setTimeout(() => setDebouncedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [searchQuery]);
+  // Logos are decoration: without them the chips and tags show the company's initials.
+  useEffect(() => { let mounted = true; api.practiceCompanyLogos().then((result) => { if (mounted) setCompanyLogos(result?.logos || {}); }).catch(() => {}); return () => { mounted = false; }; }, []);
   useEffect(() => { let mounted = true; api.listProblemLists().then((result) => { if (mounted) setLists(result.lists || []); }).catch((error) => { if (mounted) toast.error(error.message || 'Could not load your lists.'); }); return () => { mounted = false; }; }, [toast]);
   useEffect(() => {
     let mounted = true;
@@ -267,44 +258,48 @@ export default function ProblemsPage() {
       : selectedList ? { kind: 'list', title: selectedList.title, description: selectedList.description, catalogCount: selectedList.problemCount ?? selectedList.problemIds?.length, clear: () => selectView({ kind: 'all' }) }
         : showFavorites ? { kind: 'favorites', title: 'Favorites', catalogCount: favorites.length, clear: () => selectView({ kind: 'all' }) } : null;
   const narrowed = selection && activeFilters.length > 1;
-  const topicsInRail = useMatchMedia(TOPICS_IN_RAIL_QUERY);
-  const topicsPanel = <TopicsPanel topics={topicCounts} selected={selectedTopic} onSelect={selectTopic} totalProblems={totalProblems} inRail={topicsInRail} />;
 
   return <div className="min-h-screen bg-[#f6f7f9] font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:text-zinc-100">
     <main className="mx-auto w-full max-w-[1600px] space-y-3.5 px-3 pb-12 pt-4 sm:px-5 lg:px-8">
       <AnviHero />
 
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5" data-guide="pc-header">
-          <h1 className="flex items-center gap-2 text-[20px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-zinc-50">PrepCoding<PageGuideButton /></h1>
-          <p className="text-[13px] text-slate-500 dark:text-zinc-400">
-            {initialLoad
-              ? <span className="inline-block h-3 w-52 animate-pulse rounded bg-slate-200/80 align-middle dark:bg-white/[0.08]" aria-label="Loading counts" />
-              : <>{Number(totalProblems).toLocaleString()} questions · {topicCounts.length.toLocaleString()} topics · {companyCounts.length.toLocaleString()} companies</>}
-          </p>
+      {/* Title bar: what the bank holds on the left; Topics and Surprise me in the right corner. */}
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5">
+        <div className="flex min-w-0 items-center gap-3" data-guide="pc-header">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] ${brandTile}`} aria-hidden="true"><CodeXml className="h-5 w-5" /></span>
+          <div className="min-w-0">
+            <h1 className="flex items-center gap-2 text-[20px] font-semibold leading-tight tracking-[-0.02em] text-slate-950 dark:text-zinc-50">PrepCoding<PageGuideButton /></h1>
+            <p className="text-[12.5px] text-slate-500 dark:text-zinc-400">
+              {initialLoad
+                ? <span className="inline-block h-3 w-52 animate-pulse rounded bg-slate-200/80 align-middle dark:bg-white/[0.08]" aria-label="Loading counts" />
+                : <><b className="font-semibold tabular-nums text-slate-800 dark:text-zinc-100">{Number(totalProblems).toLocaleString()}</b> questions · <b className="font-semibold tabular-nums text-slate-800 dark:text-zinc-100">{topicCounts.length.toLocaleString()}</b> topics · <b className="font-semibold tabular-nums text-slate-800 dark:text-zinc-100">{companyCounts.length.toLocaleString()}</b> companies</>}
+            </p>
+          </div>
         </div>
-        <button type="button" disabled={!problems.length} onClick={() => openProblem(problems[Math.floor(Math.random() * problems.length)])} data-guide="pc-surprise"
-          className={`group inline-flex items-center gap-2 rounded-xl border border-[#e4e7ec] bg-white px-3 py-1.5 text-[13px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-colors hover:border-sky-200 hover:text-sky-700 disabled:opacity-40 dark:border-white/10 dark:bg-[#232325] dark:text-zinc-200 dark:hover:text-sky-300 ${focusRing}`}>
-          <Shuffle className="h-4 w-4 transition-transform group-hover:rotate-12" aria-hidden="true" />Surprise me
-        </button>
+        <div className="flex items-center gap-2">
+          <TopicsButton count={topicCounts.length} selected={selectedTopic} open={topicsOpen} onOpen={() => setTopicsOpen(true)} buttonRef={topicsButtonRef} />
+          <button type="button" disabled={!problems.length} onClick={() => openProblem(problems[Math.floor(Math.random() * problems.length)])} data-guide="pc-surprise" aria-label="Surprise me: open a random question"
+            className={`group inline-flex h-9 items-center gap-2 rounded-xl border border-[#e6e7eb] bg-white px-3 text-[13px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-colors hover:border-violet-200 hover:text-violet-700 disabled:opacity-40 dark:border-white/[0.08] dark:bg-[#242424] dark:text-zinc-200 dark:hover:border-violet-400/30 dark:hover:text-violet-200 ${focusRing}`}>
+            <Dices className="h-4 w-4 transition-transform group-hover:rotate-12 motion-reduce:transform-none" aria-hidden="true" /><span className="hidden sm:inline">Surprise me</span>
+          </button>
+        </div>
       </header>
 
-      <CompanyStrip companies={companyCounts} loading={companiesLoading} selected={selectedCompany} onSelect={selectCompany} />
+      <CompanyStrip companies={companyCounts} logos={companyLogos} loading={companiesLoading} selected={selectedCompany} onSelect={selectCompany} />
 
-      <div className="grid gap-5 xl:grid-cols-[248px_minmax(0,1fr)] xl:gap-6 2xl:grid-cols-[232px_minmax(0,1fr)_312px]">
-        <aside aria-label={topicsInRail ? 'Library, topics and practice calendar' : 'Library and practice calendar'} className="order-2 xl:order-1">
+      <div className="grid gap-5 xl:grid-cols-[248px_minmax(0,1fr)] xl:gap-6 2xl:grid-cols-[264px_minmax(0,1fr)]">
+        <aside aria-label="Library and practice calendar" className="order-2 xl:order-1">
           {/* Capped to the viewport so the month view never hangs below the sticky column. */}
-          <div className="space-y-4 xl:sticky xl:top-5 xl:-mx-1 xl:max-h-[calc(100vh-2.5rem)] xl:overflow-y-auto xl:px-1 xl:pb-1 xl:[scrollbar-width:thin]">
+          <div className="space-y-4 xl:sticky xl:top-5 xl:-mx-1 xl:max-h-[calc(100vh-2.5rem)] xl:overflow-y-auto xl:px-1 xl:pb-1 xl:[scrollbar-width:none] xl:[&::-webkit-scrollbar]:hidden">
             <LibrarySidebar view={view} totalProblems={totalProblems} favoritesCount={favorites.length} lists={lists} busyListId={busyListId}
               onView={selectView} onCreateList={() => setCreateListOpen(true)} onDeleteList={deleteList} />
-            {topicsInRail && topicsPanel}
             <PracticeCalendar />
           </div>
         </aside>
 
         <section ref={listTopRef} aria-labelledby="question-list-title" className="order-1 min-w-0 scroll-mt-4 xl:order-2">
           <h2 id="question-list-title" className="sr-only">Questions</h2>
-          {selection && <SelectionHeader kind={selection.kind} title={selection.title} description={selection.description} catalogCount={selection.catalogCount}
+          {selection && <SelectionHeader kind={selection.kind} title={selection.title} logo={selection.kind === 'company' ? logoFor(companyLogos, selection.title) : null} description={selection.description} catalogCount={selection.catalogCount}
             shownCount={pagination.total || 0} filtered={narrowed} loading={loading} onClear={selection.clear} />}
           <div className="flex flex-wrap items-center gap-2">
             <label className="relative block min-w-[220px] flex-1" data-guide="pc-search">
@@ -315,18 +310,18 @@ export default function ProblemsPage() {
                 className={`w-full pl-10 pr-9 [&::-webkit-search-cancel-button]:hidden ${fieldBase}`} />
               {searchQuery && <button type="button" onClick={clearSearch} aria-label="Clear search" className={`absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700 ${focusRing}`}><X className="h-4 w-4" /></button>}
             </label>
-            <div role="radiogroup" aria-label="Difficulty" data-guide="pc-difficulty" className="flex h-10 items-center rounded-xl border border-[#e4e7ec] bg-white p-1 dark:border-white/10 dark:bg-[#1f1f21]">
+            <div role="radiogroup" aria-label="Difficulty" data-guide="pc-difficulty" className="flex h-10 items-center gap-0.5 rounded-xl bg-slate-100 p-1 dark:bg-white/[0.05]">
               {DIFFICULTY_OPTIONS.map((value) => {
                 const active = difficulty === value;
                 return <button key={value || 'all'} type="button" role="radio" aria-checked={active} onClick={() => setDifficulty(value)}
-                  className={`inline-flex h-full items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-medium transition-colors ${focusRing} ${active ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 hover:bg-[#f3f4f6] dark:text-zinc-300 dark:hover:bg-white/[0.06]'}`}>
+                  className={`inline-flex h-full items-center gap-1.5 rounded-[9px] px-2.5 text-[12.5px] font-semibold transition-colors ${focusRing} ${active ? 'bg-white text-violet-700 shadow-sm dark:bg-white/[0.12] dark:text-violet-200' : 'text-slate-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white'}`}>
                   {value && <span className={`h-1.5 w-1.5 rounded-full ${DIFFICULTY[value].dot}`} aria-hidden="true" />}{value || 'All'}
                 </button>;
               })}
             </div>
             <label className="relative" data-guide="pc-status">
               <span className="sr-only">Filter by your progress</span>
-              <CheckCircle2 className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${progressStatus ? 'text-emerald-500' : 'text-slate-400'}`} aria-hidden="true" />
+              <CheckCircle2 className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${progressStatus ? 'text-violet-500' : 'text-slate-400'}`} aria-hidden="true" />
               <select value={progressStatus} onChange={(event) => setProgressStatus(event.target.value)} className={`pl-9 pr-8 ${fieldBase}`}>
                 {STATUS_OPTIONS.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}
               </select>
@@ -345,16 +340,16 @@ export default function ProblemsPage() {
               {problems.length > 0 && <><span className="text-slate-400 dark:text-zinc-500"> · </span>{solvedOnPage} of {problems.length} solved on this page</>}</span>
             {activeFilters.map((filter) => <FilterChip key={filter.key} label={filter.label} onRemove={filter.clear} />)}
             {activeFilters.length > 1 && <button type="button" onClick={clearFilters} className={`rounded font-medium text-slate-600 underline-offset-2 hover:underline dark:text-zinc-300 ${focusRing}`}>Clear all</button>}
-            {loading && problems.length > 0 && <LoaderCircle className="h-3.5 w-3.5 animate-spin text-sky-500" aria-label="Updating" />}
+            {loading && problems.length > 0 && <LoaderCircle className="h-3.5 w-3.5 animate-spin text-violet-500" aria-label="Updating" />}
           </div>
 
           <div className="mt-3">
             {loading && !problems.length ? <ProblemRowsSkeleton />
-              : !problems.length ? <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-16 text-center dark:border-white/10 dark:bg-[#232325]">
-                <Search className="mx-auto h-6 w-6 text-slate-300" aria-hidden="true" />
+              : !problems.length ? <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-16 text-center dark:border-white/10 dark:bg-[#242424]">
+                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-[14px] bg-violet-50 text-violet-500 dark:bg-violet-500/10 dark:text-violet-300" aria-hidden="true"><Search className="h-5 w-5" /></span>
                 <h3 className="mt-3 text-[14px] font-semibold">No matching questions</h3>
                 <p className="mt-1 text-[12.5px] text-slate-500 dark:text-zinc-400">Try another topic, company, difficulty or list.</p>
-                {activeFilters.length > 0 && <button type="button" onClick={clearFilters} className={`mt-4 rounded-xl bg-slate-900 px-4 py-2 text-[12.5px] font-medium text-white dark:bg-white dark:text-slate-900 ${focusRing}`}>Clear filters</button>}
+                {activeFilters.length > 0 && <button type="button" onClick={clearFilters} className={`mt-4 rounded-xl px-4 py-2 text-[12.5px] font-semibold ${brandTile} ${focusRing}`}>Clear filters</button>}
               </div>
                 : <>
                   <ProblemColumns sort={columnSort} onSort={sortByColumn} />
@@ -363,22 +358,21 @@ export default function ProblemsPage() {
                     {problems.map((problem, index) => <ProblemRow key={problem._id} problem={problem}
                       number={Number(problem.displayOrder) > 0 && Number(problem.displayOrder) < NO_ORDER ? Number(problem.displayOrder) : (((pagination.page || 1) - 1) * (pagination.limit || pageSize)) + index + 1}
                       saved={favorites.includes(String(problem.listId)) || lists.some((list) => list.problemIds.includes(String(problem.listId)))}
-                      opening={openingProblemId === problem._id} onOpen={openProblem} onSave={setListPickerProblem} onCompany={selectCompany} />)}
+                      opening={openingProblemId === problem._id} logos={companyLogos} onOpen={openProblem} onSave={setListPickerProblem} onCompany={selectCompany} />)}
                   </ul>
                   <PracticePager busy={loading} page={pagination.page || 1} total={pagination.total || 0} pageSize={pageSize} onPage={goToPage} onPageSize={setPageSize} />
                 </>}
           </div>
         </section>
 
-        {!topicsInRail && <aside aria-label="Topics" className="order-3">
-          <div className="2xl:sticky 2xl:top-5">{topicsPanel}</div>
-        </aside>}
       </div>
 
+      <TopicsDrawer open={topicsOpen} onClose={closeTopics} topics={topicCounts} selected={selectedTopic} onSelect={selectTopic}
+        totalProblems={totalProblems} returnFocusRef={topicsButtonRef} />
       {activeQuestion && <QuestionPracticeDialog question={activeQuestion} onClose={() => setActiveQuestion(null)} onAnswered={() => setRefreshQuestions((value) => value + 1)} />}
       {createListOpen && <CreateListModal busy={creatingList} onClose={() => setCreateListOpen(false)} onCreate={createList} />}
       {listPickerProblem && <SaveToListsModal problem={listPickerProblem} favorites={favorites} lists={lists} busyListId={busyListId} onClose={() => setListPickerProblem(null)} onFavorite={() => toggleFavorite(listPickerProblem.listId)} onMembership={setMembership} onNewList={() => { setListPickerProblem(null); setCreateListOpen(true); }} />}
-      {openingProblemId && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/25 backdrop-blur-[1px]"><div className="flex items-center gap-3 rounded-xl bg-slate-900 px-5 py-4 text-[13.5px] text-white shadow-xl"><LoaderCircle className="h-5 w-5 animate-spin text-sky-400" />Opening coding workspace</div></div>}
+      {openingProblemId && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/25 backdrop-blur-[1px]"><div className="flex items-center gap-3 rounded-xl bg-slate-900 px-5 py-4 text-[13.5px] text-white shadow-xl"><LoaderCircle className="h-5 w-5 animate-spin text-violet-400" />Opening coding workspace</div></div>}
     </main>
   </div>;
 }

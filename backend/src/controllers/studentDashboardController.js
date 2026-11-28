@@ -68,10 +68,10 @@ export async function getStudentRanking(req, res) {
   res.json({ ranking: publicRanking(await getStudentUniversityRanking(req.user)) });
 }
 
-/** GET /auth/prep-score/history?range=7d|30d|90d|all: the student's own score history graph. */
+/** GET /auth/prep-score/history?range=7d|30d|90d|180d|365d|all|custom[&from=YYYY-MM-DD]: the student's own score history. */
 export async function getPrepScoreHistory(req, res) {
   res.set('Cache-Control', 'private, no-store');
-  res.json({ history: await getStudentPrepScoreHistory(req.user, { range: String(req.query?.range || '30d') }) });
+  res.json({ history: await getStudentPrepScoreHistory(req.user, { range: String(req.query?.range || '30d'), from: String(req.query?.from || '') }) });
 }
 
 export async function recordStudentProblemView(req, res) {

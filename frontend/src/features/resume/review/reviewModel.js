@@ -1,6 +1,9 @@
 // Prep Resume check (ANVI): pure logic shared by the review panel, the grammar
 // engine and the tests. Nothing here touches the DOM or the network.
 import { FIXED_SECTION_META, getSectionData, getSectionTitle, visibleSectionKeys } from '../resumeUtils';
+import { TECH_TERMS, nearestTechTerm, typoDistance } from './techVocabulary';
+
+export { TECH_TERMS, nearestTechTerm };
 
 // ───────────── where text lives ─────────────
 
@@ -13,23 +16,40 @@ const sectionLabelOf = (resume, key) => (key === 'basics'
     : FIXED_SECTION_META[key]?.label || key);
 
 /**
- * Every line of prose the check reads, with its exact place in the resume.
- * `scope: 'spelling'` lines (names, titles) only get spelling checks.
+ * Every line the check reads, with its exact place in the resume.
+ * `scope: 'spelling'` lines (names, titles, degree) only get spelling checks;
+ * `scope: 'skills'` lines (skill lists, tech stacks) get spelling and tech-name checks per item.
  */
 export function collectTextUnits(resume) {
   const units = [];
   const add = (unit) => { if (String(unit.raw || '').trim()) units.push(unit); };
   add({ id: 'basics|headline', section: 'basics', sectionLabel: 'Basic details', entryIndex: null, entryLabel: 'Headline', field: 'headline', bulletIndex: null, raw: resume.basics?.headline || '', scope: 'all' });
   visibleSectionKeys(resume).forEach((key) => {
-    if (key === 'education' || key === 'skills') return;
     const custom = key.startsWith('custom:');
     const sectionLabel = sectionLabelOf(resume, key);
+    if (key === 'education') {
+      getSectionData(resume, key).forEach((entry, entryIndex) => {
+        const entryLabel = String(entry.degree || entry.institute || `Education ${entryIndex + 1}`).trim();
+        add({ id: `education|${entryIndex}|degree`, section: key, sectionLabel, entryIndex, entryLabel, field: 'degree', bulletIndex: null, raw: entry.degree || '', scope: 'spelling' });
+      });
+      return;
+    }
+    if (key === 'skills') {
+      getSectionData(resume, key).forEach((entry, entryIndex) => {
+        const entryLabel = String(entry.category || `Skills ${entryIndex + 1}`).trim();
+        const base = { section: key, sectionLabel, entryIndex, entryLabel, bulletIndex: null };
+        add({ ...base, id: `skills|${entryIndex}|category`, field: 'category', raw: entry.category || '', scope: 'spelling' });
+        add({ ...base, id: `skills|${entryIndex}|skills`, field: 'skills', raw: entry.skills || '', scope: 'skills' });
+      });
+      return;
+    }
     getSectionData(resume, key).forEach((entry, entryIndex) => {
       const entryLabel = String(entry.title || entry.subtitle || `${DETAIL_NOUN[key] || 'Entry'} ${entryIndex + 1}`).trim();
       const base = { section: key, sectionLabel, entryIndex, entryLabel };
       add({ ...base, id: `${key}|${entryIndex}|title`, field: 'title', bulletIndex: null, raw: entry.title || '', scope: key === 'achievements' || custom ? 'all' : 'spelling' });
       add({ ...base, id: `${key}|${entryIndex}|subtitle`, field: 'subtitle', bulletIndex: null, raw: entry.subtitle || '', scope: 'spelling' });
       if (custom) add({ ...base, id: `${key}|${entryIndex}|paragraph`, field: 'paragraph', bulletIndex: null, raw: entry.technologies || '', scope: 'all' });
+      else add({ ...base, id: `${key}|${entryIndex}|technologies`, field: 'technologies', bulletIndex: null, raw: entry.technologies || '', scope: 'skills' });
       (entry.bullets || []).forEach((bullet, bulletIndex) => {
         add({ ...base, id: `${key}|${entryIndex}|bullet|${bulletIndex}`, field: 'bullet', bulletIndex, raw: String(bullet?.text ?? bullet ?? ''), scope: 'all' });
       });
@@ -38,7 +58,7 @@ export function collectTextUnits(resume) {
   return units;
 }
 
-const FIELD_KEY = { title: 'title', subtitle: 'subtitle', paragraph: 'technologies' };
+const FIELD_KEY = { title: 'title', subtitle: 'subtitle', paragraph: 'technologies', technologies: 'technologies', degree: 'degree', category: 'category', skills: 'skills' };
 
 export function readUnitRaw(resume, unit) {
   if (unit.field === 'headline') return resume.basics?.headline || '';
@@ -94,15 +114,7 @@ export function replaceInRaw(raw, plainInfo, start, end, replacement) {
 
 // ───────────── ANVI's resume rules (on top of harper) ─────────────
 
-/** Correct spellings of common tech names (ATS keyword match and recruiter polish). */
-export const TECH_TERMS = Object.fromEntries([
-  'JavaScript', 'TypeScript', 'Node.js', 'React', 'React Native', 'Next.js', 'Vue.js', 'Angular', 'Express.js', 'MongoDB', 'MySQL', 'PostgreSQL', 'SQLite', 'Redis', 'Valkey',
-  'GitHub', 'GitLab', 'Git', 'Docker', 'Kubernetes', 'AWS', 'GCP', 'Azure', 'Firebase', 'Supabase', 'HTML', 'CSS', 'Tailwind CSS', 'Bootstrap', 'jQuery',
-  'Python', 'Java', 'Kotlin', 'Swift', 'Flutter', 'Dart', 'Golang', 'Rust', 'C++', 'C#', 'PHP', 'Laravel', 'Django', 'Flask', 'FastAPI', 'Spring Boot',
-  'TensorFlow', 'PyTorch', 'scikit-learn', 'NumPy', 'pandas', 'Matplotlib', 'OpenCV', 'Keras', 'LangChain', 'Hugging Face',
-  'GraphQL', 'REST', 'API', 'APIs', 'JSON', 'Linux', 'Ubuntu', 'Jenkins', 'Terraform', 'Ansible', 'Figma', 'Postman', 'Jira', 'LinkedIn', 'LeetCode', 'Codeforces', 'CodeChef', 'HackerRank',
-  'DSA', 'DBMS', 'OOP', 'OOPs', 'SQL', 'NoSQL', 'CI/CD', 'MERN', 'MEAN', 'IoT', 'UI', 'UX', 'UI/UX', 'Power BI', 'Tableau', 'Excel',
-].map((term) => [term.toLowerCase(), term]));
+// Correct spellings of tech names live in techVocabulary.js (ATS keyword match and recruiter polish).
 const TECH_VARIANTS = [
   [/\bnode\s?js\b|\bnode\.?js\b|\bnodejs\b/gi, 'Node.js'], [/\breact\s?js\b|\breact\.js\b/gi, 'React'], [/\bnext\s?js\b|\bnextjs\b/gi, 'Next.js'], [/\bvue\s?js\b|\bvuejs\b/gi, 'Vue.js'],
   [/\bexpress\s?js\b|\bexpressjs\b/gi, 'Express.js'], [/\bjava\s?script\b/gi, 'JavaScript'], [/\btype\s?script\b/gi, 'TypeScript'], [/\bmongo\s?db\b/gi, 'MongoDB'],
@@ -114,7 +126,7 @@ const SHORT_UPPER = new Set(['html', 'css', 'aws', 'gcp', 'sql', 'api', 'apis', 
 
 const AGREEMENT_VERBS = ['help', 'give', 'allow', 'make', 'provide', 'enable', 'support', 'reduce', 'increase', 'improve', 'track', 'show', 'let', 'handle', 'manage', 'generate', 'process', 'store', 'run', 'use', 'predict', 'detect', 'send', 'display', 'create', 'convert', 'automate', 'monitor', 'recommend', 'connect', 'calculate', 'analyse', 'analyze', 'collect', 'fetch', 'sync', 'serve', 'host', 'match', 'notify', 'schedule', 'validate', 'visualize', 'visualise'];
 const thirdPerson = (verb) => (/(s|sh|ch|x|z)$/.test(verb) ? `${verb}es` : /[^aeiou]y$/.test(verb) ? `${verb.slice(0, -1)}ies` : `${verb}s`);
-const WEAK_OPENER = /^(responsible for|worked on|helped( with| in| to)?|involved in|participated in|assisted( with| in)?|tasked with|duties included|handled the)\b/i;
+export const WEAK_OPENER = /^(responsible for|worked on|helped( with| in| to)?|involved in|participated in|assisted( with| in)?|tasked with|duties included|handled the)\b/i;
 
 const issue = (ruleId, kind, category, message, start, end, suggestions = [], source = 'anvi') => ({ ruleId, kind, category, message, start, end, suggestions, source });
 
@@ -137,24 +149,33 @@ export function anviRules(text, unit) {
       found.push(issue('anvi.techName', 'Spelling', 'spelling', `Write “${canonical}” the way its makers do; recruiters and ATS keyword lists use this spelling.`, match.index, match.index + match[0].length, [canonical]));
     }
   });
+  const skillList = unit.scope === 'skills';
   for (const match of text.matchAll(/[A-Za-z][A-Za-z0-9.+#/-]*[A-Za-z0-9+#]|[A-Za-z]/g)) {
     const word = match[0].replace(/[.]+$/, '');
-    const canonical = TECH_TERMS[word.toLowerCase()];
-    if (!canonical || canonical === word || insideLink(match.index)) continue;
-    if (!SHORT_UPPER.has(word.toLowerCase()) && word.toLowerCase() === word && ['java', 'python', 'react', 'rust', 'swift', 'dart', 'git', 'excel', 'linux', 'flutter', 'docker'].includes(word) === false) continue;
     const start = match.index; const end = start + word.length;
-    if (claimed.some(([a, b]) => start < b && end > a)) continue;
+    if (insideLink(match.index) || claimed.some(([a, b]) => start < b && end > a)) continue;
+    const canonical = TECH_TERMS[word.toLowerCase()];
+    if (!canonical) {
+      // "JavaSrcipt", "TensorFLow": mixed case says a tech name was meant; the spell checker skips these.
+      const near = /[a-z][A-Z]|[A-Z]{2}[a-z]/.test(word) && /^[A-Za-z]+$/.test(word) ? nearestTechTerm(word) : null;
+      if (near) found.push(issue('anvi.techSpelling', 'Spelling', 'spelling', `“${word}” looks like a misspelling of “${near}”. ATS keyword search will miss it as written.`, start, end, [near]));
+      continue;
+    }
+    if (canonical === word) continue;
+    // In prose a lowercase "react" may be an ordinary word; in a skills list it is the tool.
+    if (!skillList && !SHORT_UPPER.has(word.toLowerCase()) && word.toLowerCase() === word && ['java', 'python', 'react', 'rust', 'swift', 'dart', 'git', 'excel', 'linux', 'flutter', 'docker'].includes(word) === false) continue;
     found.push(issue('anvi.techName', 'Spelling', 'spelling', `Write “${canonical}” with its standard capitalisation.`, start, end, [canonical]));
   }
-  if (unit.scope === 'spelling') return found;
+  if (unit.scope === 'spelling' || skillList) return found;
   // 2. "a dashboard that help" -> "helps"
-  const agreement = new RegExp(`\\b(a|an|the|this|one)\\s+([A-Za-z-]+)\\s+(that|which|who)\\s+(${AGREEMENT_VERBS.join('|')})\\b`, 'gi');
+  // The noun may follow up to two describing words: "a web app that help".
+  const agreement = new RegExp(`\\b(a|an|the|this|one)\\s+((?:[A-Za-z-]+\\s+){0,2}[A-Za-z-]+)\\s+(that|which|who)\\s+(${AGREEMENT_VERBS.join('|')})\\b`, 'gi');
   for (const match of text.matchAll(agreement)) {
-    const noun = match[2].toLowerCase();
+    const noun = match[2].split(/\s+/).pop().toLowerCase();
     if (/s$/.test(noun) && !/ss$/.test(noun)) continue;
     const verb = match[4];
     const start = match.index + match[0].length - verb.length;
-    found.push(issue('anvi.agreement', 'Agreement', 'grammar', `“${match[2]}” is singular, so the verb needs an -s: “${thirdPerson(verb.toLowerCase())}”.`, start, start + verb.length, [thirdPerson(verb.toLowerCase())]));
+    found.push(issue('anvi.agreement', 'Agreement', 'grammar', `“${match[2].split(/\s+/).pop()}” is singular, so the verb needs an -s: “${thirdPerson(verb.toLowerCase())}”.`, start, start + verb.length, [thirdPerson(verb.toLowerCase())]));
   }
   if (unit.field === 'bullet' || unit.field === 'headline') {
     // 3. first letter capital
@@ -223,7 +244,7 @@ export const categoryOfKind = (kind) => CATEGORY_OF_KIND[kind] || 'grammar';
  * "insert to" suggestion before -ing words.
  */
 export function keepHarperLint({ kind, message, problem, text, start, end }, unit, dictionary = new Set()) {
-  if (unit.scope === 'spelling' && !['Spelling', 'Typo'].includes(kind)) return false;
+  if ((unit.scope === 'spelling' || unit.scope === 'skills') && !['Spelling', 'Typo'].includes(kind)) return false;
   const word = problem.trim();
   if (!word) return /insert|add|missing/i.test(message);
   if (kind === 'Spelling' || kind === 'Typo') {
@@ -248,6 +269,7 @@ export function hashText(value) {
 export function buildIssue(unit, plain, finding) {
   const problem = plain.text.slice(finding.start, finding.end);
   return {
+    confidence: 'high',
     ...finding,
     id: `${unit.id}|${finding.ruleId}|${finding.start}|${hashText(problem)}`,
     ignoreKey: `${finding.ruleId}|${problem.toLowerCase()}|${hashText(plain.text)}`,
@@ -258,11 +280,31 @@ export function buildIssue(unit, plain, finding) {
   };
 }
 
+const FIELD_LABEL = { title: 'Title', subtitle: 'Subtitle', paragraph: 'Paragraph', technologies: 'Tech stack', degree: 'Degree', category: 'Group name', skills: 'Skills' };
 export const locationLabel = (unit) => [
   unit.sectionLabel,
   unit.field === 'headline' ? 'Headline' : unit.entryLabel,
-  unit.field === 'bullet' ? `Bullet ${unit.bulletIndex + 1}` : unit.field === 'title' ? 'Title' : unit.field === 'subtitle' ? 'Subtitle' : unit.field === 'paragraph' ? 'Paragraph' : '',
+  unit.field === 'bullet' ? `Bullet ${unit.bulletIndex + 1}` : FIELD_LABEL[unit.field] || '',
 ].filter(Boolean);
+
+/**
+ * How sure the checker is that a flagged spelling is a mistake. "low": a capitalised word in the
+ * middle of a line or in a title (likely a company, product or place name the dictionary does not
+ * know). Low-confidence findings are shown with "It's a name" and weigh less in the score.
+ */
+export function spellingConfidence({ problem, text, start, unit, techSuggestion = false, suggestions = [] }) {
+  if (techSuggestion) return 'high';
+  const word = String(problem || '');
+  if (!/^[A-Z]/.test(word)) return 'high';
+  // One slip away from a dictionary word with the same first letter ("Sovling" -> "Solving",
+  // "Attendence" -> "Attendance") is a typo, not a name. "Zomato" -> "Tomato" stays unsure.
+  const lower = word.toLowerCase();
+  if (lower.length >= 5 && suggestions.slice(0, 3).some((item) => item[0]?.toLowerCase() === lower[0] && typoDistance(lower, item.toLowerCase()) <= 1)) return 'high';
+  const before = String(text || '').slice(0, start).trimEnd();
+  const startsSentence = before === '' || /[.!?:]$/.test(before);
+  if (unit?.scope === 'spelling' || unit?.scope === 'skills' || !startsSentence) return 'low';
+  return 'high';
+}
 
 /** Issues grouped section → entry, in resume order. */
 export function groupIssues(issues, resume) {
@@ -346,8 +388,10 @@ export function fixFirst({ report = null, issues = [], resume }) {
     candidates.push({ key: `ats:${check.id}`, source: 'ats', weight, title: info.title, detail: check.fix, evidence: check.evidence, target: { section: info.section, template: info.template }, impact: check.scoreImpact });
   });
   const byCategory = { spelling: 7, grammar: 6, style: 2.5 };
+  // A misspelt skill outranks everything: an ATS keyword search will not find it.
+  const weightOf = (item) => (item.confidence === 'low' ? 1.5 : item.category === 'spelling' && ['skills', 'technologies'].includes(item.unit?.field) ? 9 : byCategory[item.category] || 2);
   issues.forEach((item) => {
-    candidates.push({ key: `grammar:${item.id}`, source: 'grammar', weight: byCategory[item.category] || 2, title: item.category === 'spelling' ? `Spelling: “${item.problem}”` : item.message.split(/[.:]/)[0].slice(0, 70), detail: item.suggestions[0] ? `Change “${item.problem}” to “${item.suggestions[0] || '(remove)'}”.` : item.message, evidence: item.plainText, target: { ...item.unit }, issueId: item.id });
+    candidates.push({ key: `grammar:${item.id}`, source: 'grammar', weight: weightOf(item), title: item.category === 'spelling' ? `Spelling: “${item.problem}”` : item.message.split(/[.:]/)[0].slice(0, 70), detail: item.category === 'spelling' && item.suggestions[0] ? `Change “${item.problem}” to “${item.suggestions[0]}”.` : item.suggestions[0] ? `${item.message.split(/(?<=\.)\s/)[0]} Hint: “${item.suggestions[0]}”. Edit the line yourself.` : item.message, evidence: item.plainText, target: { ...item.unit }, issueId: item.id });
   });
   return candidates.sort((a, b) => b.weight - a.weight).slice(0, 3);
 }
@@ -375,24 +419,32 @@ export function explainPayload({ resume, report, issues }) {
     } : {},
     grammar: issues.filter((item) => item.category !== 'style').slice(0, 15).map((item) => ({
       title: item.category === 'spelling' ? 'Fix spelling' : 'Fix grammar',
-      section: item.unit.section, entryIndex: item.unit.entryIndex, bulletIndex: item.unit.bulletIndex, message: item.message, original: item.plainText, suggestion: item.suggestions[0] !== undefined ? `${item.plainText.slice(0, item.start)}${item.suggestions[0]}${item.plainText.slice(item.end)}` : '',
+      // A pointer at the words, never a rewritten line: the student writes the fix.
+      section: item.unit.section, entryIndex: item.unit.entryIndex, bulletIndex: item.unit.bulletIndex, message: item.message, original: item.plainText,
+      suggestion: item.suggestions[0] ? (item.category === 'spelling' ? `Change “${item.problem}” to “${item.suggestions[0]}”.` : `Rework “${item.problem}” in your own words (hint: “${item.suggestions[0]}”).`) : '',
     })),
   };
 }
 
+// Organisation abbreviations that are not dictionary words.
+const ORG_WORDS = ['Pvt', 'Ltd', 'LLP', 'Inc', 'Corp', 'Govt', 'Dept', 'Univ', 'Hons', 'CGPA', 'SGPA', 'CBSE', 'ICSE'];
+
 /**
- * Words added to the grammar dictionary: proper nouns the student wrote in
- * fields that are not spell-checked as prose (name, institutes, companies,
- * project names, places, tools). Lines that are checked (achievement and
- * custom titles, subtitles, bullets) are never imported, so their typos stay visible.
+ * Words added to the grammar dictionary: proper nouns in fields that are never
+ * spell-checked or that hold organisation names (student name, places, institutes,
+ * employers, issuers). Skills, tech stacks, degrees, project titles, roles and
+ * bullets are NOT imported: a typo there ("Pyhton") must stay visible, and a
+ * word imported from one field would be accepted everywhere.
  */
 export function dictionaryWords(resume) {
   const sources = [
     resume.basics?.name, resume.basics?.location,
-    ...(resume.education || []).flatMap((entry) => [entry.institute, entry.degree]),
-    ...['experience', 'projects'].flatMap((key) => (resume[key] || []).flatMap((entry) => [entry.title, entry.location, entry.technologies])),
-    ...(resume.achievements || []).flatMap((entry) => [entry.location, entry.technologies]),
-    ...(resume.skills || []).flatMap((entry) => [entry.category, entry.skills]),
+    ...(resume.education || []).map((entry) => entry.institute),
+    ...['experience', 'projects', 'achievements'].flatMap((key) => (resume[key] || []).map((entry) => entry.location)),
+    ...(resume.experience || []).map((entry) => entry.title),
+    ...(resume.achievements || []).map((entry) => entry.subtitle),
+    ...(resume.customSections || []).flatMap((section) => (section.entries || []).map((entry) => entry.subtitle)),
+    ORG_WORDS.join(' '),
   ];
   const words = new Set();
   sources.forEach((value) => String(value || '').split(/[^A-Za-z0-9.+#-]+/).forEach((word) => {

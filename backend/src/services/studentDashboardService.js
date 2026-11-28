@@ -516,28 +516,90 @@ export async function prepStreakView(student, activityByDate = {}, now = new Dat
   return { current: prep.current, best: prep.best, todayDone: prep.todayDone, recent: prep.recent, activeDays: calculateActivityStreak(activityByDate, now).activeDays, kind: 'prep' };
 }
 
-const HISTORY_RANGES = { '7d': 7, '30d': 30, '90d': 90, all: null };
+const HISTORY_RANGES = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, '365d': 365, all: null };
+const HISTORY_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+/** The ledger's changes in the range, newest first (at most 60), with only what the student may see. */
+export function historyEvents(ledger, from = null, max = 60) {
+  return (ledger.events || [])
+    .filter((event) => (!from || event.day >= from) && Math.abs(event.delta) >= 0.005)
+    .slice(-max)
+    .reverse()
+    .map((event) => {
+      const meta = event.meta || {};
+      return {
+        day: event.day, kind: event.kind, delta: round2(event.delta),
+        ...(event.kind === 'solve' ? {
+          difficulty: meta.difficulty || null,
+          topics: (meta.parts || []).map((part) => ({ topic: part.topic, counted: Boolean(part.counted) })),
+        } : {}),
+        ...(event.kind === 'wrong' ? { count: Number(meta.count) || 0 } : {}),
+        ...(event.kind === 'inactive' ? { gap: Number(meta.gap) || 0 } : {}),
+        ...(event.kind === 'badge' ? { level: meta.level ?? null } : {}),
+      };
+    });
+}
+
+/**
+ * Today (IST) from the ledger: topic quota used per topic, whether the login and daily challenge
+ * counted, and the score gained so far. `limit` is the published daily solves per topic (0 = none).
+ */
+export function todayStatus(ledger, day, limit = 0) {
+  const topics = new Map();
+  const kinds = new Set();
+  let net = 0;
+  let solves = 0;
+  for (const event of ledger.events || []) {
+    if (event.day !== day) continue;
+    kinds.add(event.kind);
+    net += event.delta;
+    if (event.kind !== 'solve') continue;
+    solves += 1;
+    for (const part of event.meta?.parts || []) {
+      const key = part.key || String(part.topic || '').toLowerCase();
+      if (!key) continue;
+      const row = topics.get(key) || { key, topic: part.topic, used: 0 };
+      if (part.counted) row.used += 1;
+      else if (limit) row.used = Math.max(row.used, limit);
+      topics.set(key, row);
+    }
+  }
+  return {
+    day, limit, solves, net: round2(net), login: kinds.has('login'), challenge: kinds.has('challenge'),
+    topics: [...topics.values()]
+      .map((row) => ({ ...row, used: limit ? Math.min(row.used, limit) : row.used, full: Boolean(limit) && row.used >= limit }))
+      .sort((a, b) => Number(b.full) - Number(a.full) || b.used - a.used || a.topic.localeCompare(b.topic)),
+  };
+}
 
 /**
  * The student's own Prep Score history (profile graph): per-day gains/losses and running total,
  * where points came from (by kind) and which topics earned them. Same ledger as the stored score.
  */
-export async function getStudentPrepScoreHistory(student, { range = '30d' } = {}, now = new Date()) {
+export async function getStudentPrepScoreHistory(student, { range = '30d', from: customFrom = '' } = {}, now = new Date()) {
   const permissions = await dashboardPermissions(student);
   const sharedCatalog = permissions.questions ? await getSharedCodingCatalog() : [];
   const state = await ensurePrepScoreStore();
   const policy = await servingPolicy(state);
   const facts = (await loadPointFacts([student._id], { coding: permissions.questions === true, sharedCatalog })).get(String(student._id));
   const ledger = ledgerFor(facts, policy, { now, features: scoreFeatures(permissions) });
-  const key = Object.hasOwn(HISTORY_RANGES, range) ? range : '30d';
+  // A custom range starts on the given IST day (it always runs to today: the score is cumulative).
+  const custom = range === 'custom' && HISTORY_DAY.test(String(customFrom)) ? String(customFrom) : null;
+  const key = custom ? 'custom' : Object.hasOwn(HISTORY_RANGES, range) ? range : '30d';
   const days = HISTORY_RANGES[key];
-  const from = days ? new Date(now.getTime() - (days - 1) * DAY_MS + 330 * 60_000).toISOString().slice(0, 10) : null;
+  const from = custom || (days ? new Date(now.getTime() - (days - 1) * DAY_MS + 330 * 60_000).toISOString().slice(0, 10) : null);
   const summary = summarizeLedger(ledger, { from, places: policy.config?.points?.decimalPlaces ?? 2 });
+  const to = new Date(now.getTime() + 330 * 60_000).toISOString().slice(0, 10);
+  const limit = Number(policy.config?.modules?.coding?.dailyTopicLimit) || 0;
   return {
-    range: key, from, to: new Date(now.getTime() + 330 * 60_000).toISOString().slice(0, 10),
+    range: key, from, to,
     total: ledger.total, startTotal: summary.startTotal, activityPoints: ledger.rawTotal,
     change: Math.round((ledger.total - summary.startTotal) * 100) / 100,
     series: summary.series, byKind: summary.byKind, topics: summary.topics.slice(0, 12),
+    // Prep Analysis: what changed (newest first) and today's topic quota, from the same ledger.
+    events: historyEvents(ledger, from),
+    today: todayStatus(ledger, to, limit),
     // The live rules, so the "How it works" box always matches what the Master Admin published.
     rules: (({ points: p = {}, modules = {} }) => ({
       solve: p.solve, dailyTopicLimit: modules.coding?.dailyTopicLimit ?? 0, dailyChallenge: p.dailyChallenge, sheetCompleted: p.sheetCompleted,

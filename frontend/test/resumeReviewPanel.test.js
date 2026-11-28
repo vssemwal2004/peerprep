@@ -12,6 +12,7 @@ before(async () => {
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
   globalThis.HTMLElement = dom.window.HTMLElement;
+  globalThis.Element = dom.window.Element;
   globalThis.SVGElement = dom.window.SVGElement;
   globalThis.localStorage = dom.window.localStorage;
   globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
@@ -70,20 +71,36 @@ test('job match accepts a job description before the first scan', async () => {
   assert.equal(received, 'React developer');
 });
 
-test('ANVI rewrite previews both versions and applies only the selected suggestion', async () => {
+test('the bullet coach asks questions and never writes or applies wording', async () => {
   const calls = [];
-  api.resumeWritingAdvice = async ({ original }) => { calls.push(original); return { suggestion: 'Created a student job board.' }; };
-  const changes = [];
-  await mount(fixture({ replaceBullet: async (...args) => { changes.push(args); return { ok: true }; } }), { initialAction: 'rewrite' });
-  await click(button('Suggest a rewrite'));
-  assert.match(host.textContent, /Created a student job board/);
+  api.resumeWritingAdvice = async (body) => { calls.push(body); return { suggestion: 'AI text' }; };
+  let target;
+  await mount(fixture(), { initialAction: 'rewrite', onLocate: place => { target = place; } });
   assert.match(host.textContent, /Built a job board for students/);
-  await click(button('Keep original'));
-  assert.equal(changes.length, 0);
-  await click(button('Suggest a rewrite'));
-  await click(button('Apply rewrite'));
-  assert.deepEqual(changes[0], ['projects|0|bullet|0', 'Built a job board for students.', 'Created a student job board.']);
-  assert.equal(calls.length, 2);
+  assert.match(host.textContent, /Shows a result with a number/);
+  assert.match(host.textContent, /What changed because of your work/);
+  assert.equal(button('Suggest a rewrite'), undefined);
+  assert.equal(button('Apply rewrite'), undefined);
+  await click(button('Edit this bullet'));
+  assert.equal(target.id, 'projects|0|bullet|0');
+  assert.equal(calls.length, 0, 'no AI wording is requested');
+});
+
+test('only spelling can be fixed for the student; grammar shows a hint and an edit link', async () => {
+  const unit = { id: 'projects|0|bullet|0', section: 'projects', sectionLabel: 'Projects', entryIndex: 0, entryLabel: 'Campus App', field: 'bullet', bulletIndex: 0 };
+  const base = { unitId: unit.id, unit, plainText: 'Built a board that help studnets.', source: 'harper', confidence: 'high' };
+  const issues = [
+    { ...base, id: 'g1', ignoreKey: 'g1', ruleId: 'anvi.agreement', category: 'grammar', message: 'Use helps.', start: 19, end: 23, problem: 'help', suggestions: ['helps'] },
+    { ...base, id: 's1', ignoreKey: 's1', ruleId: 'harper.Spelling', category: 'spelling', message: 'Spelling.', start: 24, end: 32, problem: 'studnets', suggestions: ['students'] },
+  ];
+  const applied = [];
+  await mount(fixture({ grammar: { status: 'done', progress: { done: 1, total: 1 }, lineCount: 1 }, visibleIssues: issues, applyFix: async (issue, value) => { applied.push([issue.id, value]); return { ok: true }; }, applyMany: async () => ({ ok: true }) }), { initialTab: 'grammar' });
+  const fixButtons = [...host.querySelectorAll('button')].filter((element) => element.textContent.trim() === 'Fix spelling');
+  assert.equal(fixButtons.length, 1, 'one apply button: the spelling slip');
+  assert.match(host.textContent, /Hint: try “helps” here/);
+  assert.ok(button('Edit it yourself'));
+  await click(fixButtons[0]);
+  assert.deepEqual(applied, [['s1', 'students']]);
 });
 
 test('live review uses actual PDF stage and grammar counters', async () => {
@@ -95,12 +112,12 @@ test('live review uses actual PDF stage and grammar counters', async () => {
 
 test('grammar results stay available while the PDF is queued and a PDF retry checks only that lane', async () => {
   const stages = [];
-  const grammar = { status: 'done', progress: { done: 3, total: 3 } };
+  const grammar = { status: 'done', progress: { done: 3, total: 3 }, lineCount: 3 };
   await mount(fixture({ running: true, ats: { status: 'running', stage: 'queued' }, grammar }));
-  assert.match(host.textContent, /PDF is in the scan queue/);
-  await click(button('Grammar fixes (0)'));
-  assert.doesNotMatch(host.textContent, /PDF is in the scan queue/);
-  await click(host.querySelector('[aria-label="Back to review overview"]'));
+  assert.match(host.textContent, /PDF is in the scan queue/, 'progress stays visible at the top');
+  await click([...host.querySelectorAll('[role="tab"]')].find((element) => element.textContent.startsWith('Issues')));
+  assert.match(host.textContent, /No issues found/, 'finished grammar results open while the PDF is still queued');
+  await click([...host.querySelectorAll('[role="tab"]')].find((element) => element.textContent.startsWith('Summary')));
   await mount(fixture({ ats: { status: 'error', error: 'Scan interrupted' }, grammar, runCheck: options => stages.push(options) }));
   await click(button('Retry PDF check'));
   assert.deepEqual(stages, [{ only: 'ats' }]);

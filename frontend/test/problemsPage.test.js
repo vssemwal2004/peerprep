@@ -55,6 +55,7 @@ beforeEach(async () => {
       filters: { totalProblems: 20, tagCounts: [{ tag: 'Array', count: 12 }, { tag: 'Graph', count: 4 }], companyCounts: [{ company: 'Google', count: 7 }, { company: 'Amazon', count: 3 }] } };
   };
   api.listProblemLists = async () => ({ lists: [] });
+  api.practiceCompanyLogos = async () => ({ logos: { google: { url: 'https://res.cloudinary.com/demo/google.png', width: 64, height: 64 } } });
   api.refreshStudentEngagement = async () => ({ version: 2, domains: ['coding'], badges: [], awards: { awards: [] },
     activity: { breakdownByDate: { [today]: { coding: 1, challenges: 1 }, [shift(today, -1)]: { coding: 1 } } },
     month: { dailyPlans: [{ dayKey: today, completed: true }] },
@@ -86,17 +87,28 @@ async function mount() {
 const byText = (selector, pattern, scope = document) => [...scope.querySelectorAll(selector)].find((node) => pattern.test(node.textContent));
 const lastCall = () => calls.at(-1);
 const click = (node) => act(async () => node.click());
+const topicsDrawer = () => document.querySelector('[role="dialog"][aria-labelledby="topics-drawer-title"]');
+// Opens the Topics drawer from the title bar and returns it.
+async function openTopics() {
+  await click(document.querySelector('header button[data-guide="pc-topics"]'));
+  return topicsDrawer();
+}
+// The drawer slides out with an animation before it leaves the page.
+const waitForDrawerToClose = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 900)); });
 
-test('companies lead the page, lists and the calendar sit on the left, topics in their own rail', async () => {
+test('companies lead the page, lists and the calendar sit on the left, topics open from the title bar', async () => {
   await mount();
   const companies = document.querySelector('section[aria-labelledby="companies-title"]');
-  const rail = document.querySelector('aside[aria-label="Topics"]');
   const library = document.querySelector('aside[aria-label="Library and practice calendar"]');
-  assert.ok(companies && rail && library);
+  assert.ok(companies && library);
+  assert.equal(document.querySelector('aside[aria-label="Topics"]'), null, 'No topics column takes room from the list');
   assert.ok(companies.compareDocumentPosition(library) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING, 'Companies come before the columns');
-  assert.ok(rail.querySelector('#topics-title'), 'Topics have their own rail');
+  const topicsButton = document.querySelector('header button[data-guide="pc-topics"]');
+  assert.match(topicsButton.textContent, /Topics2/);
+  assert.equal(topicsDrawer(), null, 'The drawer is closed until asked for');
   assert.ok(library.querySelector('#practice-calendar-title'), 'The calendar sits under the lists');
-  assert.equal(companies.querySelector('#topics-title'), null);
+  assert.ok(companies.querySelector('img[alt="Google logo"]'), 'Companies show their logo');
+  assert.match(byText('section[aria-labelledby="companies-title"] button', /Amazon3$/).textContent, /^AmAmazon3$/, 'No logo: the initials stand in');
   assert.match(library.textContent, /All questions20.*Favorites0.*Your lists/);
   assert.doesNotMatch(document.body.textContent, /Question type|One line|Short answer/, 'The question-type filter is removed');
   assert.match(document.querySelector('h1').textContent, /^PrepCoding$/);
@@ -114,11 +126,14 @@ test('the Anvi banner describes only what Ask AnvI really does', async () => {
 
 test('company, topic and difficulty controls drive the real query and can be removed as chips', async () => {
   await mount();
-  await click(byText('section[aria-labelledby="companies-title"] button', /^GGoogle7$/));
+  await click(byText('section[aria-labelledby="companies-title"] button', /^Google7$/));
   assert.equal(lastCall().companies, 'Google');
   assert.equal(lastCall().sortBy, 'latestInterviewDate', 'A company view lists the most recently asked first');
-  await click(byText('aside[aria-label="Topics"] button', /^Graph4$/));
+  assert.ok(document.querySelector('section[aria-labelledby="selection-title"] img[alt="Google logo"]'), 'The company header shows its logo');
+  await click(byText('button', /^Graph4$/, await openTopics()));
   assert.equal(lastCall().tags, 'Graph');
+  await waitForDrawerToClose();
+  assert.equal(topicsDrawer(), null, 'Picking a topic closes the drawer');
   assert.equal('type' in lastCall(), false, 'No question-type filter is sent');
   await click(byText('[role="radiogroup"][aria-label="Difficulty"] button', /^Hard$/));
   assert.equal(lastCall().difficulty, 'Hard');
@@ -131,7 +146,8 @@ test('company, topic and difficulty controls drive the real query and can be rem
 
 test('choosing a topic shows its name and real question count above the list', async () => {
   await mount();
-  await click(byText('aside[aria-label="Topics"] button', /^Array12$/));
+  await click(byText('button', /^Array12$/, await openTopics()));
+  await waitForDrawerToClose();
   const header = document.querySelector('section[aria-labelledby="selection-title"]');
   assert.equal(header.querySelector('#selection-title').textContent, 'Array');
   assert.match(header.textContent, /Topic.*12 questions in this topic/);
@@ -143,31 +159,30 @@ test('choosing a topic shows its name and real question count above the list', a
   assert.equal(document.querySelector('section[aria-labelledby="selection-title"]'), null);
 });
 
-test('a catalogue with a thousand topics stays compact and opens a searchable topic browser', async () => {
+test('a catalogue with a thousand topics opens in a searchable drawer that loads in chunks', async () => {
   const many = Array.from({ length: 1200 }, (_, index) => ({ tag: `Topic ${String(index).padStart(4, '0')}`, count: 1200 - index }));
   const original = api.listPracticeQuestions;
   api.listPracticeQuestions = async (params) => ({ ...(await original(params)), filters: { totalProblems: 5000, tagCounts: many, companyCounts: [] } });
   await mount();
-  const panel = document.querySelector('section[aria-labelledby="topics-title"]');
-  // "All topics" + the 20 most common topics.
-  assert.ok(panel.querySelectorAll('ul > li').length <= 21, 'The rail shows only the most common topics');
-  await click(byText('button', /View all 1,200 topics/, panel));
-  const browser = document.querySelector('[role="dialog"][aria-labelledby="topic-browser-title"]');
-  assert.equal(browser.querySelectorAll('ul > li').length, 1200, 'Every topic is reachable');
-  const search = browser.querySelector('input');
+  const drawer = await openTopics();
+  assert.equal(drawer.querySelectorAll('ul > li').length, 150, 'The first chunk of topics');
+  await click(byText('button', /^Show more/, drawer));
+  assert.equal(drawer.querySelectorAll('ul > li').length, 300, 'Show more reaches the rest');
+  const search = drawer.querySelector('input');
   await act(async () => {
     Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(search, 'Topic 119');
     search.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   });
-  assert.equal(browser.querySelectorAll('ul > li').length, 10);
-  assert.match(browser.textContent, /10 matching topics/);
-  await click(byText('[role="radiogroup"][aria-label="Sort topics"] button', /^A–Z$/, browser));
-  assert.ok(browser.querySelector('section[aria-label="Topics starting with T"]'), 'A–Z groups topics by letter');
-  await click(byText('button', /^Topic 1195/, browser));
-  assert.equal(document.querySelector('[aria-labelledby="topic-browser-title"]'), null, 'Choosing a topic closes the browser');
+  assert.equal(drawer.querySelectorAll('ul > li').length, 10);
+  assert.match(drawer.textContent, /10 matching topics/);
+  await click(drawer.querySelector('[role="radiogroup"][aria-label="Sort topics"] button[aria-label="A–Z"]'));
+  assert.ok(drawer.querySelector('section[aria-label="Topics starting with T"]'), 'A–Z groups topics by letter');
+  await click(byText('button', /^Topic 1195/, drawer));
   assert.equal(lastCall().tags, 'Topic 1195');
+  await waitForDrawerToClose();
+  assert.equal(topicsDrawer(), null, 'Choosing a topic closes the drawer');
   assert.match(document.querySelector('section[aria-labelledby="selection-title"]').textContent, /Topic 1195.*5 questions in this topic/);
-  assert.match(panel.textContent, /Topic 1195/, 'The chosen topic stays visible in the rail');
+  assert.match(document.querySelector('header button[data-guide="pc-topics"]').textContent, /Topic 1195/, 'The title bar names the chosen topic');
 });
 
 test('rows show real solved and attempted status and open the coding workspace', async () => {

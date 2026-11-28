@@ -17,10 +17,12 @@ export function studentInsightAccess(user, permissions) {
     mock: platformAllows(permissions, 'events') && studentHasFeature(user, 'interviews'),
     ai: platformAllows(permissions, 'interviews') && studentHasFeature(user, 'ai_interviews'),
   };
+  // Prep Mock: company mock tests by role (assessments of kind "mock"), the university's "prepmock" module.
+  access.prepmock = platformAllows(permissions, 'prepmock') && studentHasFeature(user, 'prep_mock');
   // Company readiness weighs coding, tests, mock interviews and lessons together.
   access.company = access.coding && access.assessment && access.mock && access.learning;
   access.rankings = studentHasFeature(user, 'rankings');
   return access;
 }
 
-export const anyInsightAccess = (access) => ['coding', 'quickprep', 'learning', 'assessment', 'mock', 'ai'].some((key) => access[key]);
+export const anyInsightAccess = (access) => ['coding', 'quickprep', 'learning', 'assessment', 'mock', 'ai', 'prepmock'].some((key) => access[key]);

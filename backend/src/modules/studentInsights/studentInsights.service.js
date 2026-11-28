@@ -59,6 +59,8 @@ export function studentRange(query = {}) {
 export async function loadStudentTests(student, now = new Date()) {
   const local = await Assessment.find({
     lifecycleStatus: { $ne: 'draft' }, isVisible: { $ne: false }, startTime: { $ne: null }, endTime: { $ne: null },
+    // Company mocks (kind "mock") are Prep Mock, analysed on their own.
+    kind: { $ne: 'mock' },
     $or: [{ targetType: 'all' }, { assignedStudents: student._id }],
   }).select('_id title assessmentType lifecycleStatus isVisible manuallyCompletedAt startTime endTime targetType assignedStudents')
     .maxTimeMS(MAX_QUERY_MS).lean();
@@ -79,14 +81,33 @@ export async function loadStudentTests(student, now = new Date()) {
     }]));
 }
 
-/** Coding, test and interview facts for one period (the parts that change with the period). */
-async function loadPeriodFacts(id, access, range, tests) {
-  const [coding, assessment, interview] = await Promise.all([
+/**
+ * Prep Mock tests this student has taken (company mocks, kind "mock"), as assessment definitions.
+ * Only taken mocks: which mocks a student may start is the Prep Mock page's own rule.
+ */
+export async function loadStudentMocks(student) {
+  const taken = new Set((await AssessmentSubmission.distinct('assessmentId', { studentId: student._id }).maxTimeMS(MAX_QUERY_MS)).map(String));
+  if (!taken.size) return new Map();
+  const local = isUniversity() ? [] : await Assessment.find({ kind: 'mock', _id: { $in: [...taken].map(oid) } })
+    .select('_id title assessmentType startTime endTime manuallyCompletedAt').maxTimeMS(MAX_QUERY_MS).lean();
+  const shared = await sharedAssessments('mock', { includeHistorical: true }).catch(() => []);
+  return new Map([...local, ...(shared || [])]
+    .filter((test) => taken.has(String(test._id)))
+    .map((test) => [String(test._id), {
+      id: String(test._id), title: String(test.title || 'Mock').trim(), type: test.assessmentType || 'mixed', visible: true,
+      ended: true, startTime: test.startTime || null, endTime: test.endTime || null, forEveryone: true, assigned: new Set(),
+    }]));
+}
+
+/** Coding, test, interview and Prep Mock facts for one period (the parts that change with the period). */
+async function loadPeriodFacts(id, access, range, tests, mocks = new Map()) {
+  const [coding, assessment, interview, prepmock] = await Promise.all([
     access.coding ? loadCodingFacts({ studentIds: [id], range }) : EMPTY_CODING,
     access.assessment ? loadAssessmentFacts({ user: null, studentIds: [id], range, tests }) : null,
     access.mock || access.ai ? loadInterviewFacts({ studentIds: [id], range, peer: access.mock, ai: access.ai }) : null,
+    access.prepmock && mocks.size ? loadAssessmentFacts({ user: null, studentIds: [id], range, tests: mocks }) : null,
   ]);
-  return { coding, assessment, interview };
+  return { coding, assessment, interview, prepmock };
 }
 
 /** Active days of the last 12 months per feature, for the heatmap, the streak and the weekday pattern. */
@@ -180,6 +201,20 @@ function upcomingTests(tests, takenIds, now) {
     .map((test) => ({ id: test.id, title: test.title, startTime: new Date(test.startTime).toISOString(), endTime: new Date(test.endTime).toISOString(), live: new Date(test.startTime) <= now }));
 }
 
+/**
+ * Prep Mock in the period: the same figures as Prep Assessment (taken, average, best, each mock's
+ * score) from the admin profile builder's own Prep Mock part. `everTaken` counts all time.
+ */
+function prepMockSection(profileMock, previousRow, mocks) {
+  const { calendar, upcoming, missedTests, missed, ...tested } = profileMock || {};
+  const empty = { taken: 0, passed: 0, failed: 0, averageScore: null, bestScore: null, lastScore: null, passRate: null, minutes: 0, tests: [] };
+  return {
+    ...empty, ...tested,
+    everTaken: mocks.size,
+    previous: previousRow?.prepmock ? { taken: previousRow.prepmock.taken, averageScore: previousRow.prepmock.averageScore } : null,
+  };
+}
+
 async function computeInsights(user, permissions, range) {
   const access = studentInsightAccess(user, permissions);
   if (!anyInsightAccess(access)) throw new HttpError(403, 'No analysis features are enabled for your account.');
@@ -188,11 +223,14 @@ async function computeInsights(user, permissions, range) {
   if (!student) throw new HttpError(404, 'Student not found.');
   const id = String(student._id);
   const previous = previousRange(range, now);
-  const tests = access.assessment ? await loadStudentTests(student, now) : new Map();
+  const [tests, mocks] = await Promise.all([
+    access.assessment ? loadStudentTests(student, now) : new Map(),
+    access.prepmock ? loadStudentMocks(student).catch(() => new Map()) : new Map(),
+  ]);
 
   const [period, before, quickprep, learning, library, year, stored] = await Promise.all([
-    loadPeriodFacts(id, access, range, tests),
-    previous ? loadPeriodFacts(id, access, previous, tests) : null,
+    loadPeriodFacts(id, access, range, tests, mocks),
+    previous ? loadPeriodFacts(id, access, previous, tests, mocks) : null,
     // Sheet and course progress is where the student stands now, whatever the period.
     access.quickprep ? loadQuickPrepFacts({ studentIds: [id], range: {} }) : null,
     access.learning ? loadLearningFacts({ studentIds: [id], range: {} }) : null,
@@ -204,12 +242,12 @@ async function computeInsights(user, permissions, range) {
 
   const buildRow = (facts, rowRange, extras = {}) => buildStudentRows({
     students: [student], facts: facts.coding, problems: facts.coding.problems, now,
-    assessment: facts.assessment, interview: facts.interview, range: rowRange, ...extras,
+    assessment: facts.assessment, interview: facts.interview, prepmock: facts.prepmock, range: rowRange, ...extras,
   })[0];
   const row = buildRow(period, range, { quickprep, learning });
   const previousRow = before ? buildRow(before, previous) : null;
-  const modules = new Set(['coding', ...(access.learning ? ['learning'] : []), ...(access.assessment ? ['assessment'] : []), ...(access.mock || access.ai ? ['interview'] : [])]);
-  const profile = buildStudentProfile(row, { range, modules, sheets: quickprep?.sheets, tests });
+  const modules = new Set(['coding', ...(access.learning ? ['learning'] : []), ...(access.assessment ? ['assessment'] : []), ...(access.mock || access.ai ? ['interview'] : []), ...(access.prepmock ? ['prepmock'] : [])]);
+  const profile = buildStudentProfile(row, { range, modules, sheets: quickprep?.sheets, tests, mocks });
 
   const coverage = access.coding ? buildCoverage(library, work, { range, now }) : null;
   const firstSolves = (window) => [...work.values()].filter((entry) => entry.solved && inRange(entry.firstSolvedAt, window)).length;
@@ -282,6 +320,8 @@ async function computeInsights(user, permissions, range) {
     const done = (target) => (access.mock ? target.mockDone : 0) + (access.ai ? target.aiCompleted : 0);
     headline.push(kpi('interviews', 'Interviews', done(row.interview), previousRow?.interview ? done(previousRow.interview) : null, { section: 'interview' }));
   }
+
+  if (access.prepmock) sections.prepmock = prepMockSection(profile.prepmock, previousRow, mocks);
 
   const latestTest = sections.assessment?.tests?.[0] || null;
   const coach = buildCoachSteps({

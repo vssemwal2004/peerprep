@@ -11,31 +11,35 @@ export const PERIODS = Object.freeze([
 export const PERIOD_IDS = new Set([...PERIODS.map((period) => period.id), "custom"]);
 
 /**
- * Prep Analysis pages in tab order. The overview shows every part in brief; each feature has its
- * own page. `when(insights)` decides whether the student may open it (their granted features).
+ * Prep Analysis v2 pages in tab order (2026-11-28: Quick Prep, Learning and Badges pages removed;
+ * topics live in Prep Coding and Prep Readiness; companies in Prep Readiness).
+ * `when(insights, features)` decides whether the student may open it: `insights.access` from the
+ * server, `features` = { score, coins } from the student's own feature access.
+ * `period`: whether the page follows the period filter.
  */
 export const SECTIONS = Object.freeze([
-  { id: "overview", label: "Overview", when: () => true },
-  { id: "topics", label: "Topics", when: (data) => Boolean(data.coverage) },
-  { id: "coding", label: "Coding", when: (data) => Boolean(data.sections?.coding) },
-  // SBC/PBC coding practice targets (student/readiness/). Needs Prep Coding.
-  { id: "prep-readiness", label: "Prep Readiness", when: (data) => Boolean(data.access?.coding) },
-  { id: "quickprep", label: "QuickPrep", when: (data) => Boolean(data.sections?.quickprep) },
-  { id: "learning", label: "Learning", when: (data) => Boolean(data.sections?.learning) },
-  { id: "tests", label: "Tests", when: (data) => Boolean(data.sections?.assessment) },
-  { id: "interviews", label: "Interviews", when: (data) => Boolean(data.sections?.interview) },
-  { id: "activity", label: "Activity", when: () => true },
-  { id: "badges", label: "Badges", when: (data) => Boolean(data.access?.quickprep || data.access?.rankings) },
-  { id: "companies", label: "Companies", when: (data) => Boolean(data.access?.company) },
+  { id: "overview", label: "Overview", period: true, when: () => true },
+  { id: "score", label: "Prep Score", period: true, when: (data, features = {}) => Boolean(features.score) },
+  { id: "readiness", label: "Prep Readiness", period: false, when: (data) => Boolean(data.access?.coding) },
+  { id: "coins", label: "Prep Coins", period: false, when: (data, features = {}) => Boolean(features.coins) },
+  { id: "coding", label: "Prep Coding", period: true, when: (data) => Boolean(data.sections?.coding) },
+  { id: "assessment", label: "Prep Assessment", period: true, when: (data) => Boolean(data.sections?.assessment) },
+  { id: "mock", label: "Prep Mock", period: true, when: (data) => Boolean(data.access?.prepmock) },
+  { id: "interview", label: "Prep Interview", period: true, when: (data) => Boolean(data.sections?.interview) },
 ]);
 
 // Old addresses (/student/analysis/dsa …) still open the right page.
-const SECTION_ALIASES = { dsa: "coding", assessment: "tests", assessments: "tests", interview: "interviews", placement: "companies", readiness: "companies", "practice-readiness": "prep-readiness", sbc: "prep-readiness", pbc: "prep-readiness", learn: "learning", coach: "overview", next: "overview", awards: "badges" };
+const SECTION_ALIASES = {
+  dsa: "coding", topics: "coding", tests: "assessment", assessments: "assessment", interviews: "interview", prepmock: "mock", "prep-mock": "mock",
+  placement: "readiness", companies: "readiness", "prep-readiness": "readiness", "practice-readiness": "readiness", sbc: "readiness", pbc: "readiness",
+  "prep-score": "score", wallet: "coins", "prep-coins": "coins",
+  quickprep: "overview", learning: "overview", learn: "overview", activity: "overview", badges: "overview", awards: "overview", coach: "overview", next: "overview",
+};
 export const sectionFromParam = (value) => SECTION_ALIASES[value] || (SECTIONS.some((section) => section.id === value) ? value : "overview");
-export const visibleSections = (insights) => (insights ? SECTIONS.filter((section) => section.when(insights)) : []);
+export const visibleSections = (insights, features = {}) => (insights ? SECTIONS.filter((section) => section.when(insights, features)) : []);
 export const sectionPath = (id) => (id === "overview" ? "/student/analysis" : `/student/analysis/${id}`);
 // The KPI tiles name the backend section; the pages have their own ids.
-export const KPI_SECTION = { topics: "topics", coding: "coding", learning: "learning", assessment: "tests", interview: "interviews", activity: "activity" };
+export const KPI_SECTION = { topics: "coding", coding: "coding", learning: "overview", assessment: "assessment", interview: "interview", activity: "overview" };
 
 /** Strongest and weakest topics among those the student has worked on. */
 export function strengthsAndGaps(topics = [], limit = 4) {
@@ -123,6 +127,7 @@ export function normalizeInsights(raw) {
     };
   }
   if (sections.assessment) sections.assessment = { ...sections.assessment, upcoming: sections.assessment.upcoming || [] };
+  if (sections.prepmock) sections.prepmock = { taken: 0, ...sections.prepmock, tests: sections.prepmock.tests || [] };
   return {
     ...raw,
     coach: raw.coach || [],

@@ -299,6 +299,22 @@ async function reportSummaries(questionId = null) {
   return interviewReportSummaries(['control'], questionId && String(questionId));
 }
 
+// Logos for the Prep Coding company filters and tags: the Prep Mock catalogue (this deployment's logo,
+// then the built-in list). Keyed by lower-case company name; companies without a logo are left out.
+// Imported lazily because prepMockCatalog.js imports this file.
+router.get('/company-logos', asyncRoute(async (req, res) => {
+  const { logosForCompanies } = await import('../services/prepMockCatalog.js');
+  const names = (await practiceCompanyCounts()).map(({ company }) => company);
+  const logoFor = await logosForCompanies(names);
+  const logos = {};
+  for (const name of names) {
+    const logo = logoFor(name);
+    if (logo) logos[String(name).trim().toLowerCase()] = logo;
+  }
+  res.set('Cache-Control', 'private, max-age=600');
+  res.json({ logos });
+}));
+
 router.get('/interview-options', asyncRoute(async (req, res) => {
   res.json(isUniversity() ? await controlRequest('question-interviews/options') : await interviewReportOptions());
 }));

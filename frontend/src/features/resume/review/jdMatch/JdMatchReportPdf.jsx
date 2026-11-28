@@ -94,7 +94,7 @@ export default function JdMatchReportPdf({ match, studentName = '' }) {
         <View style={s.howBox} wrap={false}>
           <Text style={s.howTitle}>How to use this report</Text>
           <Text style={s.howItem}>1.  Go section by section below. Each card shows one line of your résumé and the keywords to add to it.</Text>
-          <Text style={s.howItem}>2.  "Write it like" is an example. Keep your own facts and numbers; change the words only if they are true.</Text>
+          <Text style={s.howItem}>2.  "For reference only" lines are pointers, not text to copy. Write your own line with your real facts and numbers.</Text>
           <Text style={s.howItem}>3.  Fix the MUST keywords first, then check again in PeerPrep to see your new match.</Text>
         </View>
 
@@ -112,7 +112,7 @@ export default function JdMatchReportPdf({ match, studentName = '' }) {
                 <Text style={s.label}>YOUR LINE{line.entry ? `  ·  ${safe(line.entry).toUpperCase()}` : ''}</Text>
                 <Text style={s.quote}>“{safe(line.text)}”</Text>
                 <View style={s.addRow}><Text style={s.label}>ADD HERE</Text>{line.add.map((item) => <Chip key={item.term} {...item} />)}</View>
-                {line.example ? <View style={s.example}><Text style={[s.label, { color: C.violet }]}>WRITE IT LIKE</Text><Text style={s.exampleText}>{safe(line.example)}</Text></View> : null}
+                {line.example ? <View style={s.example}><Text style={[s.label, { color: C.violet }]}>FOR REFERENCE ONLY</Text><Text style={s.exampleText}>{safe(line.example)}</Text></View> : null}
                 {line.tip ? <Text style={s.tip}>Tip: {safe(line.tip)}</Text> : null}
               </View>
             )),

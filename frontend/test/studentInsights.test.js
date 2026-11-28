@@ -16,16 +16,23 @@ const topics = [
   { key: 'shell', name: 'Shell', total: 4, solved: 4, target: 3, accuracy: 100, state: 'strong', core: false, lastAt: '2026-10-01T00:00:00Z' },
 ];
 
-test('only the pages the student may open are listed, in tab order', () => {
-  const insights = { coverage: {}, sections: { coding: {}, assessment: {} }, access: { company: false, quickprep: false, rankings: false } };
-  assert.deepEqual(visibleSections(insights).map((section) => section.id), ['overview', 'topics', 'coding', 'tests', 'activity']);
-  assert.deepEqual(visibleSections({ coverage: null, sections: { learning: {} }, access: { company: false, rankings: true } }).map((section) => section.id), ['overview', 'learning', 'activity', 'badges']);
+test('only the pages the student may open are listed, in tab order (v2: score, readiness, coins, features)', () => {
+  const insights = { coverage: {}, sections: { coding: {}, assessment: {} }, access: { coding: true, company: false, quickprep: true, prepmock: false } };
+  assert.deepEqual(visibleSections(insights).map((section) => section.id), ['overview', 'readiness', 'coding', 'assessment']);
+  assert.deepEqual(visibleSections(insights, { score: true, coins: true }).map((section) => section.id), ['overview', 'score', 'readiness', 'coins', 'coding', 'assessment']);
+  assert.deepEqual(visibleSections({ coverage: null, sections: { interview: {} }, access: { prepmock: true } }).map((section) => section.id), ['overview', 'mock', 'interview']);
+  // Removed pages (Quick Prep, Learning, Badges, Activity) and old addresses open their new home.
   assert.equal(sectionFromParam('dsa'), 'coding');
-  assert.equal(sectionFromParam('readiness'), 'companies');
-  assert.equal(sectionFromParam('next'), 'overview');
+  assert.equal(sectionFromParam('topics'), 'coding');
+  assert.equal(sectionFromParam('prep-readiness'), 'readiness');
+  assert.equal(sectionFromParam('companies'), 'readiness');
+  assert.equal(sectionFromParam('tests'), 'assessment');
+  assert.equal(sectionFromParam('interviews'), 'interview');
+  assert.equal(sectionFromParam('quickprep'), 'overview');
+  assert.equal(sectionFromParam('badges'), 'overview');
   assert.equal(sectionFromParam('nonsense'), 'overview');
   assert.equal(sectionPath('overview'), '/student/analysis');
-  assert.equal(sectionPath('badges'), '/student/analysis/badges');
+  assert.equal(sectionPath('score'), '/student/analysis/score');
 });
 
 test('an older answer without the newer fields is filled with empty values', () => {

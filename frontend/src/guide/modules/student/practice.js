@@ -81,8 +81,8 @@ export default [
       {
         id: "pc-topics", target: "pc-topics", chapter: "parts", quick: true,
         title: "Topics",
-        body: "The most common topics with their question counts. Click a topic to practise only that topic; click it again to clear it. Search topics here, or open View all to browse every topic.",
-        tryIt: "Click a topic to filter the list",
+        body: "Topics opens from the top-right corner of the title bar: every topic with its question count, searchable and sortable by most questions or A–Z. Pick a topic to practise only that topic; the button then shows its name. Pick it again, or use Clear topic, to see everything.",
+        tryIt: "Open Topics and pick one to filter the list",
       },
       {
         id: "pc-surprise", target: "pc-surprise", chapter: "actions",
