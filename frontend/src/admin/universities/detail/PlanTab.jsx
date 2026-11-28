@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { CalendarRange, Coins, Users } from 'lucide-react';
 import { api } from '../../../utils/api';
 import { daysLeft } from '../universityModel';
@@ -81,6 +82,7 @@ export default function PlanTab({ university, run, busy }) {
             topUpRequest.current = null;
             setTopUp('');
           }, `${Number(topUp).toLocaleString()} Prep Coins added.`)}>Add coins</Button>
+          <Link to={`/admin/prep-coins/remove?university=${encodeURIComponent(id)}`} className="inline-flex h-10 items-center rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Remove coins</Link>
         </div>
       </Card>
     </div>

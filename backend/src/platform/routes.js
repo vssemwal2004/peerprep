@@ -31,7 +31,7 @@ import { backfillTenantLoginDirectory } from './loginDirectory.js';
 import { seedEmailTemplates } from '../services/emailTemplateService.js';
 import { seedDefaultMasterData } from '../services/masterDataService.js';
 import { effectiveUniversityPermissions, prepMockAccessStatus, serviceDates } from './servicePeriod.js';
-import { coinAmount, coinRequestId, creditPlatformUser, PLATFORM_WALLET_SCOPE, topUpUniversity } from './coins.js';
+import { coinAmount, coinRequestId, creditPlatformUser, PLATFORM_WALLET_SCOPE, removeCoins, topUpUniversity } from './coins.js';
 import { accountLimit, withAccountCreationLocks } from './accountLimits.js';
 import { buildOverview, overviewRange, universitySnapshot } from '../services/overviewInsights.js';
 import { rangeEcho } from '../utils/dateRange.js';
@@ -315,12 +315,12 @@ async function walletScopeFor(value) {
   return { scope: university.universityId, name: university.name };
 }
 
-async function searchRecipients({ scope, name }, role, escaped) {
-  const find = () => User.find({ role, isActive: { $ne: false },
+async function searchRecipients({ scope, name }, role, escaped, includeInactive = false) {
+  const find = () => User.find({ role, ...(includeInactive ? {} : { isActive: { $ne: false } }),
     $or: ['name', 'email', role === 'student' ? 'studentId' : 'coordinatorId']
       .map((field) => ({ [field]: { $regex: escaped, $options: 'i' } })) })
     .select('name email studentId coordinatorId role').sort({ name: 1 }).limit(RECIPIENT_LIMIT).lean().maxTimeMS(4000);
-  const users = scope === PLATFORM_WALLET_SCOPE ? await runForPlatform(find) : await runForTenant(await getTenant(scope), find);
+  const users = scope === PLATFORM_WALLET_SCOPE ? await runForPlatform(find) : await runForTenant(await getTenant(scope, { includeInactive }), find);
   const wallets = users.length ? await PlatformCoinWallet.find({ universityId: scope,
     userId: { $in: users.map((user) => user._id) } }).select('userId balance').lean() : [];
   const balances = new Map(wallets.map((wallet) => [String(wallet.userId), wallet.balance]));
@@ -337,9 +337,10 @@ router.get('/admin/wallet-recipients', masterOnly, asyncRoute(async (req, res) =
   const search = String(req.query.search || '').trim().slice(0, 80);
   if (search.length < 2) throw new HttpError(400, 'Enter at least two characters to search');
   const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const includeInactive = req.query.includeInactive === '1';
   let scopes;
   if (String(req.query.university || '') === 'all') {
-    const universities = await University.find({ active: true, deletedAt: null, dbUriEncrypted: { $exists: true } }).select('universityId name').sort({ name: 1 }).lean();
+    const universities = await University.find({ ...(includeInactive ? {} : { active: true }), deletedAt: null, dbUriEncrypted: { $exists: true } }).select('universityId name').sort({ name: 1 }).lean();
     scopes = [{ scope: PLATFORM_WALLET_SCOPE, name: 'PeerPrep' }, ...universities.map((row) => ({ scope: row.universityId, name: row.name }))];
   } else {
     scopes = [await walletScopeFor(req.query.university)];
@@ -348,7 +349,7 @@ router.get('/admin/wallet-recipients', masterOnly, asyncRoute(async (req, res) =
   const unavailable = [];
   // A few universities at a time, so one search never opens every database at once.
   for (let offset = 0; offset < scopes.length && recipients.length < RECIPIENT_LIMIT; offset += 4) {
-    const batch = await Promise.all(scopes.slice(offset, offset + 4).map((scope) => searchRecipients(scope, role, escaped)
+    const batch = await Promise.all(scopes.slice(offset, offset + 4).map((scope) => searchRecipients(scope, role, escaped, includeInactive)
       .catch(() => { unavailable.push(scope.name); return []; })));
     recipients.push(...batch.flat());
   }
@@ -369,6 +370,23 @@ router.post('/admin/wallet-recipients/credit', masterOnly, asyncRoute(async (req
   const balance = wallet?.balance || 0;
   // Open tabs of that student update at once (same popup as earned coins).
   if (!result.alreadyProcessed && toRole === 'student') getIo()?.to(personalRoom(toUserId)).emit('prepcoin:earned', { kind: 'gift', amount, balance, note: 'Gift from PeerPrep' });
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ ...result, balance, universityName: name });
+}));
+
+router.post('/admin/wallets/remove', masterOnly, asyncRoute(async (req, res) => {
+  const targetRole = req.body?.targetRole;
+  const targetUserId = req.body?.targetUserId;
+  const amount = coinAmount(req.body?.amount);
+  const requestId = coinRequestId(req.body?.requestId);
+  const { scope, name } = await walletScopeFor(req.body?.universityId);
+  const result = await removeCoins({ scope, targetRole, targetUserId, amount, actorId: req.user._id, requestId, reason: req.body?.reason });
+  if (!result.alreadyProcessed) await audit(req, `prep_coin.removed_from_${targetRole}`, scope === PLATFORM_WALLET_SCOPE ? null : scope,
+    { targetUserId: targetRole === 'student' ? String(targetUserId) : null, amount, requestId, reason: String(req.body.reason).trim() });
+  const balance = targetRole === 'university'
+    ? (await University.findOne({ universityId: scope, deletedAt: null }).select('coinBalance').lean())?.coinBalance || 0
+    : (await PlatformCoinWallet.findOne({ universityId: scope, userId: targetUserId }).select('balance').lean())?.balance || 0;
+  if (!result.alreadyProcessed && targetRole === 'student') getIo()?.to(personalRoom(String(targetUserId))).emit('prepcoin:balance-changed');
   res.set('Cache-Control', 'private, no-store');
   res.json({ ...result, balance, universityName: name });
 }));

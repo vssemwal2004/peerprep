@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { AlertCircle, Building2, ReceiptText, Search, Send, Users } from 'lucide-react';
+import { AlertCircle, Building2, MinusCircle, ReceiptText, Search, Send, Users } from 'lucide-react';
 import { SortHeader, TablePager, nextSort, useClientTable } from '../../components/table';
 import { api } from '../../utils/api';
 import { CardHeader, EmptyHint, Glass, Segmented, SkeletonRows } from '../../overview/ui';
@@ -65,6 +65,7 @@ function UniversityWallets() {
                     <div className="flex justify-end gap-1.5">
                       <Link to={`/admin/prep-coins/ledger?scope=${encodeURIComponent(row.universityId)}`} className={`${buttonClass.secondary} h-8 px-2.5`}><ReceiptText className="h-3.5 w-3.5" />Ledger</Link>
                       <Link to={`/admin/prep-coins/issue?university=${encodeURIComponent(row.universityId)}`} className={`${buttonClass.primary} h-8 px-2.5`}><Send className="h-3.5 w-3.5" />Add coins</Link>
+                      <Link to={`/admin/prep-coins/remove?university=${encodeURIComponent(row.universityId)}`} className={`${buttonClass.secondary} h-8 px-2.5`}><MinusCircle className="h-3.5 w-3.5" />Remove</Link>
                     </div>
                   </td>
                 </tr>
@@ -132,6 +133,7 @@ function AccountWallets() {
                     <td className="px-2 py-3 text-slate-500">{relativeTime(account.updatedAt)}</td>
                     <td className="px-2 py-3 text-right">
                       <Link to={`/admin/prep-coins/issue?role=${account.role}&search=${encodeURIComponent(account.email || account.name)}`} className={`${buttonClass.primary} h-8 px-2.5`}><Send className="h-3.5 w-3.5" />Add coins</Link>
+                      {account.role === 'student' ? <Link to={`/admin/prep-coins/remove?role=student&where=platform&search=${encodeURIComponent(account.email || account.name)}`} className={`${buttonClass.secondary} ml-1 h-8 px-2.5`}><MinusCircle className="h-3.5 w-3.5" />Remove</Link> : null}
                     </td>
                   </tr>
                 ))}
@@ -155,6 +157,7 @@ export default function CoinWallets() {
         <Segmented label="Wallet type" value={tab} onChange={(value) => setParams(value === 'accounts' ? { tab: 'accounts' } : {}, { replace: true })}
           options={[{ value: 'universities', label: 'Universities' }, { value: 'accounts', label: 'PeerPrep accounts' }]} />
         <Link to="/admin/prep-coins/issue" className={buttonClass.primary}><Send className="h-4 w-4" />Issue coins</Link>
+        <Link to="/admin/prep-coins/remove" className={buttonClass.secondary}><MinusCircle className="h-4 w-4" />Remove coins</Link>
       </>}>
       {tab === 'accounts' ? <AccountWallets /> : <UniversityWallets />}
     </CoinPage>

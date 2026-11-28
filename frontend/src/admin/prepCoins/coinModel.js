@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Building2, RotateCcw, Sparkles } from 'lucide-react';
+import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Building2, MinusCircle, RotateCcw, Sparkles } from 'lucide-react';
 
 // Labels, formatting and the live-refresh hook shared by the Prep Coin console pages.
 
@@ -15,6 +15,8 @@ export const KIND_META = {
   topup: { label: 'University top-up', group: 'issued', Icon: Building2, chip: ISSUED },
   superadmin_to_coordinator: { label: 'Issued to coordinator', group: 'issued', Icon: ArrowDownLeft, chip: ISSUED },
   superadmin_to_student: { label: 'Issued to student', group: 'issued', Icon: ArrowDownLeft, chip: ISSUED },
+  superadmin_remove_university: { label: 'Removed from university', group: 'removed', Icon: MinusCircle, chip: NEUTRAL },
+  superadmin_remove_student: { label: 'Removed from student', group: 'removed', Icon: MinusCircle, chip: NEUTRAL },
   admin_to_coordinator: { label: 'Admin → coordinator', group: 'shared', Icon: ArrowRightLeft, chip: SHARED },
   coordinator_to_student: { label: 'Coordinator → student', group: 'shared', Icon: ArrowRightLeft, chip: SHARED },
   student_spend: { label: 'Spent', group: 'spent', Icon: ArrowUpRight, chip: SPENT },
@@ -32,6 +34,7 @@ export const KIND_META = {
 export const KIND_GROUPS = [
   { value: '', label: 'All movements' },
   { value: 'issued', label: 'Issued' },
+  { value: 'removed', label: 'Removed' },
   { value: 'shared', label: 'Passed on' },
   { value: 'earned', label: 'Earned by students' },
   { value: 'spent', label: 'Spent' },

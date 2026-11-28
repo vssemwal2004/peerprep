@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, ArrowDownLeft, ArrowUpRight, Building2, Gift, Layers, ReceiptText, RotateCcw, Send, Tag, Trophy, Users } from 'lucide-react';
+import { AlertCircle, ArrowDownLeft, ArrowUpRight, Building2, Gift, Layers, MinusCircle, ReceiptText, RotateCcw, Send, Tag, Trophy, Users } from 'lucide-react';
 import { api } from '../../utils/api';
 import { DonutChart, StackedBars } from '../../overview/charts';
 import { CardHeader, CardLink, EmptyHint, Glass, KpiTile, SkeletonRows } from '../../overview/ui';
@@ -71,6 +71,7 @@ export default function PrepCoinsOverview() {
       actions={<>
         <DateRangeFilter value={range} onChange={setRange} presets={COIN_PRESETS} align="right" label="Coin period" />
         <Link to="/admin/prep-coins/issue" className={buttonClass.primary}><Send className="h-4 w-4" />Issue coins</Link>
+        <Link to="/admin/prep-coins/remove" className={buttonClass.secondary}><MinusCircle className="h-4 w-4" />Remove coins</Link>
         <Link to="/admin/prep-coins/ledger" className={buttonClass.secondary}><ReceiptText className="h-4 w-4" />Ledger</Link>
       </>}>
       {error ? <div className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div> : null}
@@ -168,7 +169,7 @@ export default function PrepCoinsOverview() {
                   <span className="block truncate text-[11px] text-slate-500 sm:hidden">{row.scope} · {relativeTime(row.createdAt)}</span>
                 </span>
                 <span className="hidden truncate text-[11px] text-slate-500 sm:block">{row.scope} · {relativeTime(row.createdAt)}</span>
-                <span className="text-right"><CoinAmount value={row.amount} sign={row.kind === 'student_spend' ? '−' : '+'} className={row.kind === 'student_spend' ? 'text-xs text-amber-700 dark:text-amber-300' : 'text-xs text-emerald-700 dark:text-emerald-300'} /></span>
+                <span className="text-right"><CoinAmount value={row.amount} sign={row.kind === 'student_spend' || row.kind?.startsWith('superadmin_remove_') ? '−' : '+'} className={row.kind?.startsWith('superadmin_remove_') ? 'text-xs text-rose-700 dark:text-rose-300' : row.kind === 'student_spend' ? 'text-xs text-amber-700 dark:text-amber-300' : 'text-xs text-emerald-700 dark:text-emerald-300'} /></span>
               </li>
             ))}
           </ul>

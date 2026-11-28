@@ -121,7 +121,7 @@ export default function WalletPage() {
                       <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${out ? 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-200' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200'}`}>
                         {out ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownLeft className="h-4 w-4" />}
                       </span>
-                      <span className="min-w-0"><span className="block truncate text-xs font-medium text-slate-900 dark:text-white">{out ? `Sent to ${row.toName}` : `Received from ${row.fromName}`}</span><span className="block text-[11px] text-slate-500">{relativeTime(row.createdAt)}</span></span>
+                      <span className="min-w-0"><span className="block truncate text-xs font-medium text-slate-900 dark:text-white">{row.kind?.startsWith('superadmin_remove_') ? 'Removed by PeerPrep' : out ? `Sent to ${row.toName}` : `Received from ${row.fromName}`}</span><span className="block text-[11px] text-slate-500">{row.note ? `${row.note} · ` : ''}{relativeTime(row.createdAt)}</span></span>
                     </span>
                     <CoinAmount value={row.amount} sign={out ? '−' : '+'} className={out ? 'text-xs text-amber-700 dark:text-amber-300' : 'text-xs text-emerald-700 dark:text-emerald-300'} />
                   </li>

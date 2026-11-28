@@ -128,7 +128,7 @@ const coinMovementSchema = new mongoose.Schema({
   requestId: { type: String, required: true, unique: true },
   // earn_*: coins the platform mints for a student's own work (daily login, a solve, a badge level).
   // They never come out of a university balance. See platform/coinEarn.js.
-  kind: { type: String, enum: ['initial', 'topup', 'admin_to_coordinator', 'coordinator_to_student', 'superadmin_to_coordinator', 'superadmin_to_student', 'student_spend', 'student_refund', 'earn_login', 'earn_solve', 'earn_badge', 'earn_challenge', 'earn_sheet', 'earn_milestone', 'earn_level'], required: true },
+  kind: { type: String, enum: ['initial', 'topup', 'admin_to_coordinator', 'coordinator_to_student', 'superadmin_to_coordinator', 'superadmin_to_student', 'superadmin_remove_university', 'superadmin_remove_student', 'student_spend', 'student_refund', 'earn_login', 'earn_solve', 'earn_badge', 'earn_challenge', 'earn_sheet', 'earn_milestone', 'earn_level'], required: true },
   amount: { type: Number, required: true, min: 1 },
   actorId: { type: mongoose.Schema.Types.ObjectId, required: true },
   fromRole: { type: String, required: true },
@@ -138,7 +138,7 @@ const coinMovementSchema = new mongoose.Schema({
   // Spends and refunds only: what the coins paid for.
   featureKey: String,
   chargeId: mongoose.Schema.Types.ObjectId,
-  // Earnings only: what the coins were for, e.g. "Daily login" or "Problem Solver · Level 3".
+  // Earnings or Master Admin removals: what the movement was for.
   note: String,
 }, { timestamps: true });
 coinMovementSchema.index({ universityId: 1, createdAt: -1 });

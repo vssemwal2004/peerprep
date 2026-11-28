@@ -32,10 +32,11 @@ router.get('/', asyncRoute(async (req, res) => {
     movements: movements.map((row) => ({
       id: row._id, kind: row.kind, amount: row.amount, createdAt: row.createdAt,
       fromRole: row.fromRole, toRole: row.toRole,
-      // Spent coins leave the wallet (negative); everything else adds to it.
-      direction: row.fromUserId && String(row.fromUserId) === String(req.user._id) ? 'out' : 'in',
+      direction: req.user.role === 'admin'
+        ? (row.fromRole === 'university' ? 'out' : 'in')
+        : row.fromUserId && String(row.fromUserId) === String(req.user._id) ? 'out' : 'in',
       feature: row.featureKey ? features.get(row.featureKey) || 'PeerPrep feature' : null,
-      // Earned coins (earn_login / earn_solve / earn_badge): what they were for.
+      // Earnings and Master Admin adjustments include their reason.
       note: row.note || null,
       fromName: row.fromUserId ? names.get(String(row.fromUserId)) || 'Former user' : 'PeerPrep',
       toName: row.toUserId ? names.get(String(row.toUserId)) || 'Former user' : row.toRole === 'platform' ? 'PeerPrep' : 'University wallet',

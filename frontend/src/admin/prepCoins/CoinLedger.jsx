@@ -112,10 +112,10 @@ export default function CoinLedger() {
                       <span className="hidden sm:block"><KindChip kind={row.kind} /></span>
                       <span className="min-w-0">
                         <span className="block truncate text-xs font-medium text-slate-900 dark:text-white">{row.from} → {row.to}</span>
-                        <span className="block truncate text-[11px] text-slate-500">{row.feature || (row.kind === 'topup' || row.kind === 'initial' ? 'University wallet' : 'Transfer')}<span className="sm:hidden"> · {row.scope}</span></span>
+                        <span className="block truncate text-[11px] text-slate-500">{row.note || row.feature || (row.kind === 'topup' || row.kind === 'initial' ? 'University wallet' : 'Transfer')}<span className="sm:hidden"> · {row.scope}</span></span>
                       </span>
                       <span className="hidden truncate text-[11px] text-slate-500 sm:block">{row.scope}</span>
-                      <span className="text-right"><CoinAmount value={row.amount} sign={row.kind === 'student_spend' ? '−' : '+'} className={row.kind === 'student_spend' ? 'text-xs text-amber-700 dark:text-amber-300' : 'text-xs text-emerald-700 dark:text-emerald-300'} /></span>
+                      <span className="text-right"><CoinAmount value={row.amount} sign={row.kind === 'student_spend' || row.kind?.startsWith('superadmin_remove_') ? '−' : '+'} className={row.kind?.startsWith('superadmin_remove_') ? 'text-xs text-rose-700 dark:text-rose-300' : row.kind === 'student_spend' ? 'text-xs text-amber-700 dark:text-amber-300' : 'text-xs text-emerald-700 dark:text-emerald-300'} /></span>
                     </li>
                   ))}
                 </ul>

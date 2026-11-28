@@ -6,6 +6,7 @@ import { api } from "../../../utils/api";
 import { useAuth } from "../../../context/AuthContext";
 import { READINESS_EVENT } from "../../readiness/readinessModel";
 import { scoreRangeFor } from "../analysisModel";
+import { PREP_COIN_CHANGED } from "../../prepCoin/prepCoinEvents";
 
 const FRESH_MS = 60_000;
 const cache = new Map();
@@ -54,7 +55,7 @@ export function useWallet(enabled) {
   return useCached(key, async () => {
     const [wallet, pricing] = await Promise.all([api.wallet(), api.walletPricing().catch(() => null)]);
     return { balance: Number(wallet?.balance) || 0, movements: wallet?.movements || [], earning: pricing?.earning || null };
-  }, enabled);
+  }, enabled, { reloadOn: PREP_COIN_CHANGED });
 }
 
 /** Readiness summary (Service-Based / Product-Based) with its 30-day trend. Reloads after a solve. */

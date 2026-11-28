@@ -17,6 +17,7 @@ const FILTERS = [
 ];
 
 function describe(row) {
+  if (row.kind === 'superadmin_remove_student') return { title: `Removed by PeerPrep${row.note ? ` · ${row.note}` : ''}`, Icon: ArrowUpRight, sign: '−', group: 'out', tone: 'text-rose-700 dark:text-rose-300', chip: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300' };
   if (row.kind === 'student_spend') return { title: `Spent on ${row.feature || 'a PeerPrep feature'}${row.note ? ` · ${row.note}` : ''}`, Icon: ArrowUpRight, sign: '−', group: 'out', tone: 'text-slate-900 dark:text-zinc-100', chip: 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-zinc-300' };
   if (row.kind === 'student_refund') return { title: `Refunded: ${row.feature || 'a PeerPrep feature'}`, Icon: RotateCcw, sign: '+', group: 'refund', tone: 'text-emerald-700 dark:text-emerald-300', chip: 'bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300' };
   if (String(row.kind).startsWith('earn_')) {

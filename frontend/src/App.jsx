@@ -509,7 +509,8 @@ function AppContent() {
         {/* Universities keep one wallet page; the Master Admin has the Prep Coins console. */}
         <Route path="/admin/wallet" element={isUniversityDeployment ? <AdminShell><WalletPage /></AdminShell> : <Navigate to="/admin/prep-coins" replace />} />
         <Route path="/admin/prep-coins" element={canAdjustPrepScore ? <AdminShell><PrepCoinsOverview /></AdminShell> : <Navigate to="/admin/wallet" replace />} />
-        <Route path="/admin/prep-coins/issue" element={canAdjustPrepScore ? <AdminShell><IssueCoins /></AdminShell> : <Navigate to="/admin/wallet" replace />} />
+        <Route path="/admin/prep-coins/issue" element={canAdjustPrepScore ? <AdminShell><IssueCoins key="issue" /></AdminShell> : <Navigate to="/admin/wallet" replace />} />
+        <Route path="/admin/prep-coins/remove" element={canAdjustPrepScore ? <AdminShell><IssueCoins key="remove" mode="remove" /></AdminShell> : <Navigate to="/admin/wallet" replace />} />
         <Route path="/admin/prep-coins/wallets" element={canAdjustPrepScore ? <AdminShell><CoinWallets /></AdminShell> : <Navigate to="/admin/wallet" replace />} />
         <Route path="/admin/prep-coins/ledger" element={canAdjustPrepScore ? <AdminShell><CoinLedger /></AdminShell> : <Navigate to="/admin/wallet" replace />} />
         <Route path={LEGACY_PREP_COIN_PRICING_PATH} element={<Navigate to={PREP_COIN_PRICING_PATH} replace />} />

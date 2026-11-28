@@ -460,8 +460,9 @@ export const api = {
   topUpUniversityCoins: (id, body) => request(`/platform/admin/universities/${encodeURIComponent(id)}/coins/top-up`, { method: 'POST', body, skipCache: true }),
   platformWallets: () => request('/platform/admin/wallets', { skipCache: true }),
   // `university`: 'platform' (PeerPrep's own accounts), 'all', or one university ID.
-  platformWalletRecipients: (role, search, university = 'platform') => request(`/platform/admin/wallet-recipients?role=${encodeURIComponent(role)}&search=${encodeURIComponent(search)}&university=${encodeURIComponent(university)}`, { skipCache: true, timeoutMs: 60000 }),
+  platformWalletRecipients: (role, search, university = 'platform', includeInactive = false) => request(`/platform/admin/wallet-recipients?role=${encodeURIComponent(role)}&search=${encodeURIComponent(search)}&university=${encodeURIComponent(university)}${includeInactive ? '&includeInactive=1' : ''}`, { skipCache: true, timeoutMs: 60000 }),
   creditPlatformWalletUser: (body) => request('/platform/admin/wallet-recipients/credit', { method: 'POST', body, skipCache: true }),
+  removePlatformWalletCoins: (body) => request('/platform/admin/wallets/remove', { method: 'POST', body, skipCache: true }),
   universityAccountCounts: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/account-counts`, { skipCache: true }),
   resetUniversityAssessmentQuota: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/assessment-quota/reset`, { method: 'POST', skipCache: true }),
   universityAccountLimits: () => request('/platform/university/account-limits', { skipCache: true }),

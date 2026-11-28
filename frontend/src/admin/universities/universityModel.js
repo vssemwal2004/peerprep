@@ -75,6 +75,8 @@ const ACTION_LABELS = {
   'prep_score.policy_published': 'Prep Score policy published',
   'prep_score.version_restored': 'Prep Score version restored',
   'prep_coin.pricing_updated': 'Prep Coin prices changed',
+  'prep_coin.removed_from_university': 'Prep Coins removed from university',
+  'prep_coin.removed_from_student': 'Prep Coins removed from student',
 };
 export const actionLabel = (action) => ACTION_LABELS[action]
   || String(action || 'Activity').replace(/[._]/g, ' ').replace(/^\w/, (letter) => letter.toUpperCase());

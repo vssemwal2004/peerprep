@@ -98,15 +98,15 @@ async function mintToWallet({ expected, requestId, toRole, fromRole = 'superadmi
 }
 
 /** The coordinator or student `toUserId` in `scope` (PeerPrep's own database or one university's). */
-async function findRecipient(scope, toUserId, toRole) {
-  const find = () => User.findOne({ _id: toUserId, role: toRole, isActive: { $ne: false } }).select('_id name').lean();
+async function findRecipient(scope, toUserId, toRole, { includeInactive = false } = {}) {
+  const find = () => User.findOne({ _id: toUserId, role: toRole, ...(includeInactive ? {} : { isActive: { $ne: false } }) }).select('_id name').lean();
   if (scope === PLATFORM_WALLET_SCOPE) {
     const { runForPlatform } = await import('./tenantContext.js');
     return runForPlatform(find);
   }
   const [{ runForTenant }, { getTenant }] = await Promise.all([import('./tenantContext.js'), import('./tenantConnections.js')]);
   let tenant;
-  try { tenant = await getTenant(scope); } catch { throw new HttpError(404, 'This university is unavailable'); }
+  try { tenant = await getTenant(scope, { includeInactive }); } catch { throw new HttpError(404, 'This university is unavailable'); }
   return runForTenant(tenant, find);
 }
 
@@ -175,6 +175,77 @@ export async function creditPlatformUser({ actorId, toUserId, toRole, amount, re
   const target = await findRecipient(universityId, toUserId, toRole);
   if (!target) throw new HttpError(404, 'This coordinator or student is unavailable');
   return mintToWallet({ expected, requestId: id, toRole });
+}
+
+/** Master Admin removes available coins from a university or student, leaving historical charges intact. */
+export async function removeCoins({ scope, targetRole, targetUserId, amount, actorId, requestId, reason }) {
+  if (!['university', 'student'].includes(targetRole)) throw new HttpError(400, 'Choose a university or student wallet');
+  const count = coinAmount(amount);
+  const id = coinRequestId(requestId);
+  const note = String(reason || '').trim();
+  if (note.length < 3 || note.length > 200) throw new HttpError(400, 'Enter a reason from 3 to 200 characters');
+  const universityId = String(scope || '');
+  const studentId = targetRole === 'student' && mongoose.isValidObjectId(targetUserId)
+    ? new mongoose.Types.ObjectId(String(targetUserId)) : null;
+  if (targetRole === 'student' && !studentId) throw new HttpError(400, 'Choose a valid student');
+  if (targetRole === 'university') {
+    if (universityId === PLATFORM_WALLET_SCOPE || !(await University.exists({ universityId, deletedAt: null }))) throw new HttpError(404, 'University not found');
+  } else if (!(await findRecipient(universityId, studentId, 'student', { includeInactive: true }))) {
+    throw new HttpError(404, 'Student not found');
+  }
+  const expected = {
+    universityId, requestId: id, kind: targetRole === 'student' ? 'superadmin_remove_student' : 'superadmin_remove_university',
+    amount: count, actorId, fromRole: targetRole, ...(studentId ? { fromUserId: studentId } : {}), toRole: 'platform', note,
+  };
+  const same = (row) => row.universityId === universityId && row.kind === expected.kind && row.amount === count
+    && String(row.actorId) === String(actorId) && String(row.fromUserId || '') === String(studentId || '') && row.note === note;
+  const prior = await PlatformCoinMovement.findOne({ requestId: id }).lean();
+  if (prior) {
+    if (!same(prior)) throw new HttpError(409, 'This request ID was used for a different coin adjustment');
+    return { alreadyProcessed: true };
+  }
+  const debit = (session = null) => targetRole === 'university'
+    ? University.findOneAndUpdate({ universityId, deletedAt: null, coinBalance: { $gte: count } }, { $inc: { coinBalance: -count } }, { new: true, ...(session ? { session } : {}) })
+    : PlatformCoinWallet.findOneAndUpdate({ universityId, userId: studentId, role: 'student', balance: { $gte: count } }, { $inc: { balance: -count } }, { new: true, ...(session ? { session } : {}) });
+  const restore = () => targetRole === 'university'
+    ? University.updateOne({ universityId }, { $inc: { coinBalance: count } })
+    : PlatformCoinWallet.updateOne({ universityId, userId: studentId }, { $inc: { balance: count } });
+  const insufficient = () => new HttpError(409, `This wallet has fewer than ${count} Prep Coins. Refresh the balance and try again.`, { code: 'INSUFFICIENT_PREP_COINS' });
+  try {
+    let alreadyProcessed = false;
+    await mongoose.connection.transaction(async (session) => {
+      const existing = await PlatformCoinMovement.findOne({ requestId: id }).session(session);
+      if (existing) {
+        if (!same(existing)) throw new HttpError(409, 'This request ID was used for a different coin adjustment');
+        alreadyProcessed = true;
+        return;
+      }
+      if (!(await debit(session))) throw insufficient();
+      await PlatformCoinMovement.create([expected], { session });
+    });
+    return { alreadyProcessed };
+  } catch (error) {
+    if (!transactionsUnsupported(error)) {
+      if (error?.code === 11000) {
+        const existing = await PlatformCoinMovement.findOne({ requestId: id }).lean();
+        if (existing && same(existing)) return { alreadyProcessed: true };
+      }
+      throw error;
+    }
+  }
+  // Standalone MongoDB: the conditional debit is atomic; undo it if the ledger write fails.
+  if (!(await debit())) throw insufficient();
+  try {
+    await PlatformCoinMovement.create(expected);
+  } catch (error) {
+    await restore();
+    if (error?.code === 11000) {
+      const existing = await PlatformCoinMovement.findOne({ requestId: id }).lean();
+      if (existing && same(existing)) return { alreadyProcessed: true };
+    }
+    throw error;
+  }
+  return { alreadyProcessed: false };
 }
 
 export async function allocateCoins({ universityId, actorId, fromRole, fromUserId, toRole, toUserId, amount, requestId }) {

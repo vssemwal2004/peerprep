@@ -15,7 +15,8 @@ import { parseDateRange, parseDayKey, rangeDayKeys, rangeEcho } from '../utils/d
 const DAY_MS = 86_400_000;
 const QUERY_MS = 8_000;
 const EARN_KINDS = ['earn_login', 'earn_solve', 'earn_badge', 'earn_challenge', 'earn_sheet', 'earn_milestone', 'earn_level'];
-const KINDS = ['initial', 'topup', 'admin_to_coordinator', 'coordinator_to_student', 'superadmin_to_coordinator', 'superadmin_to_student', 'student_spend', 'student_refund', ...EARN_KINDS];
+const REMOVED_KINDS = ['superadmin_remove_university', 'superadmin_remove_student'];
+const KINDS = ['initial', 'topup', 'admin_to_coordinator', 'coordinator_to_student', 'superadmin_to_coordinator', 'superadmin_to_student', ...REMOVED_KINDS, 'student_spend', 'student_refund', ...EARN_KINDS];
 const featureLabel = new Map(COIN_FEATURES.map((feature) => [feature.key, feature.label]));
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -162,7 +163,7 @@ export async function coinLedger(query = {}) {
   const filter = {};
   const kind = String(query.kind || '');
   if (kind) {
-    const groups = { issued: ['initial', 'topup', 'superadmin_to_coordinator', 'superadmin_to_student'], shared: ['admin_to_coordinator', 'coordinator_to_student'], spent: ['student_spend'], refunded: ['student_refund'], earned: EARN_KINDS };
+    const groups = { issued: ['initial', 'topup', 'superadmin_to_coordinator', 'superadmin_to_student'], removed: REMOVED_KINDS, shared: ['admin_to_coordinator', 'coordinator_to_student'], spent: ['student_spend'], refunded: ['student_refund'], earned: EARN_KINDS };
     if (groups[kind]) filter.kind = { $in: groups[kind] };
     else if (KINDS.includes(kind)) filter.kind = kind;
     else throw new HttpError(400, 'Invalid movement type');

@@ -2,6 +2,7 @@
 // response (daily check-in, a submit) or the server's socket push. The same reward can arrive both
 // ways; each is shown once.
 import socketService from '../../utils/socket';
+import { announcePrepCoinChange } from '../prepCoin/prepCoinEvents';
 
 export const COINS_EARNED = 'peerprep:coins-earned';
 export const BADGE_LEVEL_EARNED = 'peerprep:badge-level-earned';
@@ -46,10 +47,12 @@ export function startRewardSocketBridge() {
   const onBadge = (payload) => announceBadgeLevel(payload);
   const onMilestone = (payload) => announceMilestone(payload);
   socketService.on('prepcoin:earned', onCoins);
+  socketService.on('prepcoin:balance-changed', announcePrepCoinChange);
   socketService.on('badge:earned', onBadge);
   socketService.on('milestone:earned', onMilestone);
   return () => {
     socketService.off('prepcoin:earned', onCoins);
+    socketService.off('prepcoin:balance-changed', announcePrepCoinChange);
     socketService.off('badge:earned', onBadge);
     socketService.off('milestone:earned', onMilestone);
   };

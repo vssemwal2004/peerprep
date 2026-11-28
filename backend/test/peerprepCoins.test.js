@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet, MongoMemoryServer } from 'mongodb-memory-server';
 import { University, PlatformCoinWallet, PlatformCoinMovement } from '../src/platform/models.js';
 import User from '../src/models/User.js';
-import { topUpUniversity, allocateCoins, creditPlatformUser, PLATFORM_WALLET_SCOPE, walletBalance } from '../src/platform/coins.js';
+import { topUpUniversity, allocateCoins, creditPlatformUser, removeCoins, PLATFORM_WALLET_SCOPE, walletBalance } from '../src/platform/coins.js';
 import { encryptTenantSecret } from '../src/platform/tenantSecrets.js';
 import { closeTenantConnections, getTenant, testTenantConnection } from '../src/platform/tenantConnections.js';
 import { runForTenant } from '../src/platform/tenantContext.js';
@@ -31,6 +31,23 @@ test('the Master Admin gives any university student coins directly, with no univ
     assert.equal(await walletBalance('north', { role: 'admin' }), 0, 'no university balance is used');
     assert.equal(await walletBalance(PLATFORM_WALLET_SCOPE, { role: 'student', _id: student._id }), 0);
     assert.equal(await PlatformCoinMovement.countDocuments({ universityId: 'north', kind: 'superadmin_to_student' }), 1);
+    const removalId = crypto.randomUUID();
+    const remove = { scope: 'north', targetRole: 'student', targetUserId: student._id, amount: 200, actorId: superadmin, requestId: removalId, reason: 'Correct mistaken credit' };
+    assert.equal((await removeCoins(remove)).alreadyProcessed, false);
+    assert.equal((await removeCoins(remove)).alreadyProcessed, true, 'retries remove coins once');
+    assert.equal(await walletBalance('north', student), 300);
+    await assert.rejects(removeCoins({ ...remove, amount: 201 }), (error) => error.status === 409, 'same request ID cannot change amount');
+    await assert.rejects(removeCoins({ ...remove, amount: 301, requestId: crypto.randomUUID() }), (error) => error.status === 409, 'cannot overdraw');
+    assert.equal(await walletBalance('north', student), 300);
+    assert.equal(await PlatformCoinMovement.countDocuments({ universityId: 'north', kind: 'superadmin_remove_student' }), 1);
+    const { coinLedger } = await import('../src/platform/coinConsole.js');
+    const removed = await coinLedger({ kind: 'removed', scope: 'north' });
+    assert.equal(removed.entries.length, 1);
+    assert.equal(removed.entries[0].note, 'Correct mistaken credit');
+    const inactive = await runForTenant(await getTenant('north'), () => User.create({ role: 'student', name: 'Inactive student', email: 'inactive-north@example.com', studentId: 'N-2', isActive: false, passwordHash: 'test' }));
+    await PlatformCoinWallet.create({ universityId: 'north', userId: inactive._id, role: 'student', balance: 12 });
+    await removeCoins({ scope: 'north', targetRole: 'student', targetUserId: inactive._id, amount: 12, actorId: superadmin, requestId: crypto.randomUUID(), reason: 'Close inactive wallet' });
+    assert.equal(await walletBalance('north', inactive), 0, 'inactive student wallets can also be corrected');
     await assert.rejects(creditPlatformUser({ actorId: superadmin, toUserId: student._id, toRole: 'student', amount: 5, requestId: crypto.randomUUID() }), /unavailable/, 'not a PeerPrep (main database) student');
     await assert.rejects(creditPlatformUser({ actorId: superadmin, toUserId: student._id, toRole: 'student', amount: 5, requestId: crypto.randomUUID(), scope: 'missing-uni' }), /unavailable/);
   } finally {
@@ -79,6 +96,16 @@ test('issuing coins works on a database without transactions (local standalone M
     assert.equal(await refundCharge(first.charge._id, 'test'), false, 'refunded once');
     assert.equal(await walletBalance(PLATFORM_WALLET_SCOPE, student), 10);
     assert.equal(await PlatformCoinMovement.countDocuments({ kind: 'student_refund' }), 1);
+    const removal = { scope: PLATFORM_WALLET_SCOPE, targetRole: 'student', targetUserId: student._id, amount: 5, actorId: superadmin, requestId: crypto.randomUUID(), reason: 'Manual balance correction' };
+    await removeCoins(removal);
+    assert.equal((await removeCoins(removal)).alreadyProcessed, true);
+    assert.equal(await walletBalance(PLATFORM_WALLET_SCOPE, student), 5);
+    const universityRemoval = { scope: 'north', targetRole: 'university', amount: 100, actorId: superadmin, requestId: crypto.randomUUID(), reason: 'Unused allocation' };
+    await removeCoins(universityRemoval);
+    assert.equal((await removeCoins(universityRemoval)).alreadyProcessed, true);
+    assert.equal(await walletBalance('north', { role: 'admin' }), 200);
+    await assert.rejects(removeCoins({ ...universityRemoval, requestId: crypto.randomUUID(), amount: 201 }), (error) => error.status === 409);
+    assert.equal(await PlatformCoinMovement.countDocuments({ kind: 'superadmin_remove_university' }), 1);
   } finally {
     await mongoose.disconnect();
     await mongo.stop();
@@ -108,6 +135,10 @@ test('coins move atomically within one university and retries do not duplicate c
     assert.equal(await walletBalance('north', { role: 'coordinator', _id: coordinator }), 35);
     assert.equal(await walletBalance('north', { role: 'student', _id: student }), 25);
     assert.equal(await walletBalance('south', { role: 'student', _id: student }), 0);
+    const removal = { scope: 'north', targetRole: 'university', amount: 10, actorId: superadmin, requestId: crypto.randomUUID(), reason: 'Reduce unused balance' };
+    await removeCoins(removal);
+    assert.equal((await removeCoins(removal)).alreadyProcessed, true);
+    assert.equal(await walletBalance('north', { role: 'admin' }), 30);
     await assert.rejects(allocateCoins({ universityId: 'north', actorId: coordinator, fromRole: 'coordinator', fromUserId: coordinator, toRole: 'student', toUserId: student, amount: 36, requestId: crypto.randomUUID() }), /Not enough/);
     assert.equal(await walletBalance('north', { role: 'student', _id: student }), 25);
 
