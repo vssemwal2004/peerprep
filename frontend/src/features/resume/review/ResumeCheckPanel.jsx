@@ -292,7 +292,8 @@ function AnviDeepCheck({ jd, text, role, company }) {
   const overview = jd.overview;
   const chars = text.trim().length;
   const short = chars < JD_MIN_CHARS;
-  const left = overview ? Math.max(0, overview.dailyLimit - overview.usedToday) : null;
+  // No daily limit any more (the server sends dailyLimit null): only coins limit the checks.
+  const left = overview && Number.isFinite(overview.dailyLimit) ? Math.max(0, overview.dailyLimit - overview.usedToday) : null;
   const price = overview ? overview.cost : null;
   const running = Boolean(jd.popup && ['quote', 'charging', 'running'].includes(jd.popup.phase));
   const turnedOff = jd.overviewError?.status === 403;
@@ -336,7 +337,7 @@ function AnviDeepCheck({ jd, text, role, company }) {
         </button>
       )}
       <p className={`mt-2 text-center text-[12px] leading-4 ${why ? 'text-amber-800 dark:text-amber-300' : 'text-slate-600 dark:text-zinc-400'}`}>
-        {why || `${left} of ${overview.dailyLimit} checks left today · coins come back automatically if ANVI can't finish · the same job again within 24 hours is free`}
+        {why || `${left !== null ? `${left} of ${overview.dailyLimit} checks left today · ` : ''}You confirm before any coins are used · coins come back automatically if ANVI can't finish · the same job again within 24 hours is free`}
         {jd.overviewError && !overview && !turnedOff ? <button type="button" onClick={jd.refresh} className="ml-1 font-semibold underline">Retry</button> : null}
       </p>
       {overview?.history?.length ? (
