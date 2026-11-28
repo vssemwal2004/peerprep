@@ -8,12 +8,14 @@ import {
 } from './prepAnalysis.controller.js';
 import { studentMailLimiter } from '../../middleware/rateLimiter.js';
 import { getGuideProgress, updateGuideProgress } from './prepAnalysis.guides.js';
+import { getPrepMatesAnalysis } from './prepMatesAnalysis.js';
 
 const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 
 router.use(requireAuth);
 router.use(requireAdmin);
+router.get('/peers', asyncRoute(async (req, res) => res.set('Cache-Control', 'private, no-store').json(await getPrepMatesAnalysis({ user: req.user, query: req.query }))));
 router.get('/catalog', getPrepAnalysisCatalog);
 router.get('/options', listPrepAnalysisOptions);
 router.post('/query', queryPrepAnalysis);

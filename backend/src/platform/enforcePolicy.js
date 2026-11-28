@@ -26,6 +26,8 @@ export function routeModule(path, { assessmentId, kind, scope } = {}) {
 }
 
 function hasAnalysisAccess(path, permissions = {}) {
+  // Prep Mates is granted per student, without a separate university module licence.
+  if (path.startsWith('/admin/prep-analysis/peers')) return true;
   // Prep Analysis also covers mock interviews (events) and AI interviews.
   const modules = path.startsWith('/admin/prep-analysis')
     ? ['questions', 'quickprep', 'assessments', 'prepmock', 'learning', 'events', 'interviews']

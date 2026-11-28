@@ -44,6 +44,7 @@ import {
   BadgeCheck,
   Wallet,
   Send,
+  MinusCircle,
   ReceiptText,
   Tag,
   SlidersHorizontal,
@@ -269,6 +270,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
     items: [
       { label: 'Overview', description: 'Live balances, coin flow and spending.', to: '/admin/prep-coins', icon: LayoutDashboard, match: (loc) => loc.pathname === '/admin/prep-coins' || loc.pathname === '/admin/wallet' },
       { label: 'Issue Coins', description: 'Add coins to a university or a PeerPrep account.', to: '/admin/prep-coins/issue', icon: Send },
+      { label: 'Remove Coins', description: 'Deduct available coins from a university or student wallet.', to: '/admin/prep-coins/remove', icon: MinusCircle },
       { label: 'Wallets', description: 'University wallets and PeerPrep account balances.', to: '/admin/prep-coins/wallets', icon: Wallet },
       { label: 'Ledger', description: 'Every coin movement, filterable.', to: '/admin/prep-coins/ledger', icon: ReceiptText },
       { label: 'Pricing', description: 'What paid features cost students.', to: PREP_COIN_PRICING_PATH, icon: Tag },

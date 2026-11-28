@@ -112,7 +112,12 @@ export default function IssueCoins({ mode = 'issue' }) {
 
   return (
     <CoinPage title={removing ? 'Remove coins' : 'Issue coins'} subtitle={removing ? 'Deduct available coins from a university or student wallet' : 'PeerPrep creates coins as needed: there is no Master Admin balance to run out'}
-      actions={<Link to={`/admin/prep-coins/ledger?kind=${removing ? 'removed' : 'issued'}`} className={buttonClass.secondary}><ReceiptText className="h-4 w-4" />{removing ? 'Removal' : 'Issue'} history</Link>}>
+      actions={<>
+        <Link to={`/admin/prep-coins/${removing ? 'issue' : 'remove'}`} className={removing ? buttonClass.secondary : buttonClass.primary}>
+          {removing ? <Send className="h-4 w-4" /> : <MinusCircle className="h-4 w-4" />}{removing ? 'Issue coins' : 'Remove coins'}
+        </Link>
+        <Link to={`/admin/prep-coins/ledger?kind=${removing ? 'removed' : 'issued'}`} className={buttonClass.secondary}><ReceiptText className="h-4 w-4" />{removing ? 'Removal' : 'Issue'} history</Link>
+      </>}>
       <div className="grid gap-4 xl:grid-cols-12">
         <Glass as="form" onSubmit={issue} className="p-5 xl:col-span-8">
           <CardHeader title={removing ? '1. Choose a wallet' : <InfoTitle title="1. Who receives the coins" step="ic-type" />} subtitle={removing ? 'Only available coins can be removed; past charges and results remain.' : 'Universities pass their wallet on to coordinators and students'} Icon={removing ? MinusCircle : Send}

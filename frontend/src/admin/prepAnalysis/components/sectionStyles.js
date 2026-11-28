@@ -1,6 +1,6 @@
-import { BookOpen, ClipboardCheck, Code2, LayoutGrid, ListChecks, MessagesSquare } from "lucide-react";
+import { BookOpen, ClipboardCheck, Code2, LayoutGrid, ListChecks, MessagesSquare, Users } from "lucide-react";
 
-export const AREA_ICONS = Object.freeze({ all: LayoutGrid, coding: Code2, quickprep: ListChecks, learning: BookOpen, interview: MessagesSquare, assessment: ClipboardCheck, prepmock: ClipboardCheck });
+export const AREA_ICONS = Object.freeze({ all: LayoutGrid, coding: Code2, quickprep: ListChecks, learning: BookOpen, interview: MessagesSquare, assessment: ClipboardCheck, prepmock: ClipboardCheck, peers: Users });
 
 // Every feature uses the app's sky theme; only the icon tells them apart.
 const SKY = {

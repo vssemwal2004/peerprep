@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { useLocation, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { AlertCircle, Crosshair, EyeOff, HelpCircle, LayoutGrid, Loader2, RefreshCw, Users, X } from "lucide-react";
 import { AnalysisScopeContext } from "./analysisScope";
 import { focusOn } from "./chartActions";
@@ -30,6 +30,7 @@ import TourProvider from "./guide/TourProvider";
 import GettingStarted from "./guide/GettingStarted";
 import HelpMenu from "./guide/HelpMenu";
 import { emitMilestone } from "./guide/tourContext";
+import PrepMatesAnalysis from "./PrepMatesAnalysis";
 
 /** "Only: Hard problems · Solved problems by difficulty (12)" with a clear button. */
 function FocusChip({ label, count, onClear }) {
@@ -86,6 +87,7 @@ function PageMessage({ icon: Icon = AlertCircle, title, children, action }) {
  * views, and the open chart is kept in memory instead of the address bar.
  */
 function PrepAnalysisView({ scope, embedded }) {
+  const navigate = useNavigate();
   const {
     catalog, catalogError, fieldMap, areas, area, chooseArea, state, update, layout, areaCharts, setLayout, updateChart, resetLayout,
     table, setTable, data, loading, error, refresh, refreshTick, focus, setFocus, applyView, compare, setCompare,
@@ -197,7 +199,7 @@ function PrepAnalysisView({ scope, embedded }) {
   return (
     <ToastProvider>
     <main className={`font-sans text-slate-900 dark:text-gray-100 ${embedded ? "overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-gray-800 dark:bg-gray-950" : "min-h-full bg-slate-50 dark:bg-gray-950"}`}>
-      <AnalysisHeader embedded={embedded} areas={areas} area={area} onArea={chooseArea} period={state.range} onPeriod={(range) => update({ ...state, range })}>
+      <AnalysisHeader embedded={embedded} areas={embedded ? areas : [...areas, { key: 'peers', label: 'Prep Mates' }]} area={area} onArea={(next) => next === 'peers' ? navigate('/admin/analysis?area=peers') : chooseArea(next)} period={state.range} onPeriod={(range) => update({ ...state, range })}>
         <span className="inline-flex" data-tour="compare"><CompareControl compare={compare} classCompare={classCompare} catalog={catalog} area={area} fieldMap={fieldMap} onApply={setCompare} onApplyClasses={setClassCompare} openRequest={compareOpenTick} /></span>
         {!embedded && <span className="inline-flex" data-tour="views-menu"><ViewsMenu area={area} state={state} layout={layout} onApply={applyView} /></span>}
         <span className="inline-flex" data-tour="charts-button"><Button onClick={() => setCustomizeOpen(true)} title="Choose charts" aria-label="Choose charts"><LayoutGrid className="h-3.5 w-3.5" /><span className="hidden 2xl:inline">Charts</span></Button></span>
@@ -304,6 +306,7 @@ function PrepAnalysisView({ scope, embedded }) {
 
 export default function PrepAnalysisPage({ scope = null, embedded = false }) {
   const location = useLocation();
+  if (!embedded && new URLSearchParams(location.search).get('area') === 'peers') return <PrepMatesAnalysis />;
   const pageKey = `${scope?.kind || 'assessment'}:${scope?.assessmentIds?.join(",") || "all"}:${location.search}`;
   // A new scope is a new analysis: start clean instead of carrying filters over.
   return (

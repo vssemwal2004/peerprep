@@ -58,12 +58,14 @@ export function pathAllowed(pathname, permissions, role = 'admin', search = '', 
   if (!moduleName) return true;
   if (moduleName !== 'analysis') return moduleEnabled(permissions, moduleName);
   const student = role === 'student';
+  // Prep Mates access is granted to individual students, not through a university module switch.
+  const area = new URLSearchParams(search || pathname.split('?')[1] || '').get('area');
+  if (!student && area === 'peers') return true;
   // A student's analysis is one page that shows only the parts their university and admin allow
   // (the server enforces that too), so any contributing module opens it, at any section address.
   const contributors = student ? ['questions', 'quickprep', 'assessments', 'prepmock', 'interviews', 'events', 'learning'] : ['questions', 'quickprep', 'assessments', 'prepmock', 'learning'];
   if (!contributors.some((name) => moduleEnabled(permissions, name))) return false;
   if (student) return true;
-  const area = new URLSearchParams(search || pathname.split('?')[1] || '').get('area');
   if (area === 'quickprep' || area === 'prepmock') return moduleEnabled(permissions, area);
   if (/^\/admin\/analysis\/assessments(?:\/|$)/.test(pathname)) {
     return moduleEnabled(permissions, 'assessments');

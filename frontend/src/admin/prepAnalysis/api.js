@@ -54,6 +54,7 @@ const scopeQuery = (scope) => (hasScope(scope) ? { assessmentIds: scope.assessme
 export function createPrepAnalysisApi(scope = null) {
   return {
   catalog: (signal) => request("/catalog", { signal }),
+  peers: (params, signal) => request(`/peers?${new URLSearchParams(params)}`, { signal }),
   options: (list, q = "", signal) => request(`/options?${new URLSearchParams({ list, q, ...scopeQuery(scope) })}`, { signal }),
   query: (body, { signal, refresh = false } = {}) => request("/query", {
     method: "POST",
