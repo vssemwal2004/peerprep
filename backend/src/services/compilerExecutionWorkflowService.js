@@ -54,6 +54,7 @@ import {
 import { getCodingQuestionScore } from './assessmentScoringService.js';
 import { mutateAssessmentSubmission } from './assessmentPersistenceService.js';
 import { isAssessmentAttemptExpired } from './assessmentExpiryPolicy.js';
+import { getAssessmentSectionLimitMs, isAssessmentSectionOpen } from './assessmentSectionTiming.js';
 import { notifyAssessmentReportChanged } from './assessmentReportRealtime.js';
 import {
   getVisibleCodeTemplate,
@@ -154,7 +155,7 @@ export function assessmentProblemCandidates(assessment, problemId, {
   return [];
 }
 
-export async function resolveActiveProblem(problemId, { userId, assessmentId, accessScope } = {}) {
+export async function resolveActiveProblem(problemId, { userId, assessmentId, accessScope, sectionCheckAt } = {}) {
   ensureObjectId(problemId, 'Problem ID');
   let localProblem = await Problem.findById(problemId).select('+executionHarnesses');
   let problem = localProblem || await sharedAssessmentProblem(assessmentId, problemId);
@@ -181,7 +182,7 @@ export async function resolveActiveProblem(problemId, { userId, assessmentId, ac
     assessmentId,
     studentId: userId,
     status: 'in_progress',
-  }).select('deliveryPreparedAt deliverySections').lean();
+  }).select(`deliveryPreparedAt deliverySections${sectionCheckAt ? ' status startedAt pausedDurationMs pauseStartedAt securityPauseReason sectionTimeStarts' : ''}`).lean();
   if ((assessment.platformPublished === false || assessment.lifecycleStatus === 'draft') && !activeSubmission) {
     throw new HttpError(404, 'Problem not found.');
   }
@@ -203,6 +204,20 @@ export async function resolveActiveProblem(problemId, { userId, assessmentId, ac
   });
   if (!candidateProblemIds.length) {
     throw new HttpError(404, 'Problem not found.');
+  }
+  if (sectionCheckAt && assessment.settings?.sectionWiseLock) {
+    const sections = assessmentSectionsForProblemAccess(assessment, userId, deliverySections);
+    const matchingSections = sections.flatMap((section, index) => (
+      (section.questions || []).some((question) => (question.type || section.type) === 'coding'
+        && codingQuestionProblemIds(question).includes(String(problemId))) ? [{ section, index }] : []
+    ));
+    const locked = matchingSections.length > 0 && matchingSections.every(({ section, index }) => (
+      getAssessmentSectionLimitMs(assessment.settings, section)
+      && (!activeSubmission || !activeSubmission.startedAt || activeSubmission.pauseStartedAt
+        || isAssessmentAttemptExpired(assessment, activeSubmission, sectionCheckAt)
+        || !isAssessmentSectionOpen(assessment.settings, section, activeSubmission, index, sectionCheckAt))
+    ));
+    if (locked) throw new HttpError(409, 'Open this section before its time expires to execute code.');
   }
 
   // Older assessments can contain a deleted clone ID or a library-row ID in
@@ -1160,6 +1175,7 @@ async function supersedeWaitingRuns({ queue, userId, problemId, assessmentId, ke
 }
 
 export async function enqueueCompilerRunJob({ user, body }) {
+  const sectionCheckAt = new Date();
   const { languageId, languageKey } = resolveLanguageRequest(body);
   const standardInput = sanitizeExecutionText(body.stdin, MAX_STDIN_SIZE_BYTES, 'Input');
   const problemId = String(body.problemId || '').trim();
@@ -1184,7 +1200,7 @@ export async function enqueueCompilerRunJob({ user, body }) {
   let sourceCode = '';
 
   if (problemId) {
-    problem = await resolveActiveProblem(problemId, { userId: user?._id, assessmentId, accessScope: user?.accessScope });
+    problem = await resolveActiveProblem(problemId, { userId: user?._id, assessmentId, accessScope: user?.accessScope, sectionCheckAt });
     validateProblemLanguage(problem, languageKey);
     sourceCode = validateProblemSourceCode(problem, languageKey, body.source_code, { action: 'run' });
     const jobId = undefined;
@@ -1239,10 +1255,11 @@ export async function enqueueCompilerRunJob({ user, body }) {
 }
 
 export async function enqueueCompilerSubmitJob({ user, body }) {
+  const sectionCheckAt = new Date();
   const problemId = String(body.problemId || '').trim();
   const assessmentId = String(body.assessmentId || '').trim();
   const { languageId, languageKey } = resolveLanguageRequest(body);
-  const problem = await resolveActiveProblem(problemId, { userId: user?._id, assessmentId, accessScope: user?.accessScope });
+  const problem = await resolveActiveProblem(problemId, { userId: user?._id, assessmentId, accessScope: user?.accessScope, sectionCheckAt });
   validateProblemLanguage(problem, languageKey);
   const sourceCode = validateProblemSourceCode(problem, languageKey, body.source_code, { action: 'submit' });
 
@@ -1277,6 +1294,7 @@ export async function enqueueCompilerSubmitJob({ user, body }) {
       assessment,
       userId: user._id,
       trackedSubmission: submission,
+      sectionCheckAt,
     });
   }
 
@@ -1333,7 +1351,7 @@ async function isNewerTrackedSubmission(currentSubmissionId, trackedSubmission) 
   );
 }
 
-async function persistAssessmentCodingDraft({ assessment, userId, trackedSubmission }) {
+async function persistAssessmentCodingDraft({ assessment, userId, trackedSubmission, sectionCheckAt }) {
   if (!assessment?._id || !trackedSubmission?.problem || !userId) return null;
   const updated = await mutateAssessmentSubmission({
     filter: { assessmentId: assessment._id, studentId: userId, status: 'in_progress' },
@@ -1346,6 +1364,7 @@ async function persistAssessmentCodingDraft({ assessment, userId, trackedSubmiss
       const answers = (current.answers || []).map((answer) => answer.toObject?.() || { ...answer });
       let changed = false;
       for (const match of matches) {
+        if (!isAssessmentSectionOpen(delivered.settings, match.section, current, match.sectionIndex, sectionCheckAt)) continue;
         const answerIndex = answers.findIndex((answer) => (
           Number(answer.sectionIndex) === match.sectionIndex && Number(answer.questionIndex) === match.questionIndex
         ));

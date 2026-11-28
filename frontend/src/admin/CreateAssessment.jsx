@@ -235,6 +235,19 @@ const DEFAULT_ASSESSMENT_SETTINGS = {
   aiProctoring: DEFAULT_AI_PROCTORING_SETTINGS,
 };
 
+const NEW_ASSESSMENT_PROCTORING_DEFAULTS = {
+  enableFullscreen: true,
+  tabSwitchDetection: true,
+  disableCopyPaste: true,
+  blockScreenshots: true,
+  questionWatermark: true,
+  watermarkTextType: 'candidate_name',
+  randomShuffle: true,
+  shuffleOptions: true,
+  preventMultipleTabs: true,
+  idleDetection: true,
+};
+
 const withAiProctoringSettings = (settings = {}) => {
   const source = settings && typeof settings === 'object' ? settings : {};
   const normalized = { ...DEFAULT_ASSESSMENT_SETTINGS, ...source };
@@ -309,11 +322,13 @@ const toUtcISOString = (value) => {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
-function Toggle({ value, onChange, disabled = false }) {
+function Toggle({ value, onChange, disabled = false, label }) {
   return (
     <button
       type="button"
       disabled={disabled}
+      aria-label={label}
+      aria-pressed={value}
       onClick={() => onChange(!value)}
       className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${value ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'}`}
     >
@@ -355,6 +370,7 @@ function Row({
   desc,
   badge,
   children,
+  showFieldsWhenOff = false,
   toggleKey,
   enabledOverride,
   onToggle,
@@ -376,9 +392,9 @@ function Row({
             <p className="mt-0.5 text-[11px] leading-4 text-slate-500 dark:text-gray-400">{desc}</p>
           </div>
         </div>
-        {hasToggle && <Toggle value={enabled} onChange={(v) => (onToggle ? onToggle(v) : onSettingChange?.(toggleKey, v))} />}
+        {hasToggle && <Toggle label={title} value={enabled} onChange={(v) => (onToggle ? onToggle(v) : onSettingChange?.(toggleKey, v))} />}
       </div>
-      {(enabled || !hasToggle) && children && <div className="mt-2 border-t border-slate-100 pt-2 dark:border-gray-700">{children}</div>}
+      {(enabled || !hasToggle || showFieldsWhenOff) && children && <div className="mt-2 border-t border-slate-100 pt-2 dark:border-gray-700">{children}</div>}
     </div>
   );
 }
@@ -444,10 +460,16 @@ export default function CreateAssessment({ viewOnly = false }) {
     passwordValue: '',
     settings: {
       ...DEFAULT_ASSESSMENT_SETTINGS,
+      ...NEW_ASSESSMENT_PROCTORING_DEFAULTS,
+      sectionTimingMode: 'custom',
     },
   });
   const [questionSets, setQuestionSets] = useState([{ setNumber: 1, label: 'Set 1', sections: [] }]);
   const [activeQuestionSet, setActiveQuestionSet] = useState(0);
+  // Section-wise Time Locking: which sections have their per-question times open ("set-section"),
+  // and the "same time for every question" box of each.
+  const [questionTimesOpen, setQuestionTimesOpen] = useState(() => new Set());
+  const [questionTimeBulk, setQuestionTimeBulk] = useState({});
   const sections = questionSets[activeQuestionSet]?.sections || [];
   const setSections = (nextSections) => {
     setQuestionSets((previous) => previous.map((entry, index) => {
@@ -1275,6 +1297,75 @@ export default function CreateAssessment({ viewOnly = false }) {
     };
   }, [form.settings?.questionSetEnabled, questionSets]);
 
+  const overallMinutes = Number(form.duration) || 0;
+  const sectionTimingPapers = questionSets.slice(0, form.settings?.questionSetEnabled ? Number(form.settings.questionSetCount) || 1 : 1)
+    .map((entry, index) => {
+      let timedMinutes = 0;
+      let problem = '';
+      const label = entry.label || `Set ${index + 1}`;
+      (entry.sections || []).forEach((section, sectionIndex) => {
+        if (section.timeLimitMinutes == null || section.timeLimitMinutes === '') return;
+        const minutes = Number(section.timeLimitMinutes);
+        if (!Number.isSafeInteger(minutes) || minutes < 1) {
+          problem ||= `Enter a positive whole number of minutes for ${section.sectionName || `Section ${sectionIndex + 1}`}.`;
+          return;
+        }
+        timedMinutes += minutes;
+      });
+      if (!problem && timedMinutes > overallMinutes) {
+        problem = `Section limits total ${timedMinutes} min, exceeding the ${overallMinutes} min overall timer.`;
+      }
+      return { label, sections: entry.sections || [], timedMinutes, problem };
+    });
+  const invalidTimingPaper = form.settings?.sectionWiseLock && sectionTimingPapers.find((paper) => paper.problem);
+  const sectionTimingProblem = invalidTimingPaper
+    ? `${form.settings?.questionSetEnabled ? `${invalidTimingPaper.label}: ` : ''}${invalidTimingPaper.problem}`
+    : '';
+  const updateSectionTimeLimit = (setIndex, sectionIndex, timeLimitMinutes) => {
+    setQuestionSets((previous) => previous.map((entry, index) => index === setIndex ? {
+      ...entry,
+      sections: entry.sections.map((section, idx) => idx === sectionIndex ? { ...section, timeLimitMinutes } : section),
+    } : entry));
+    setForm((previous) => ({
+      ...previous,
+      settings: {
+        ...previous.settings,
+        sectionTimingMode: 'custom',
+        sectionWiseLock: timeLimitMinutes !== undefined || previous.settings.sectionWiseLock,
+      },
+    }));
+    setDirty(true);
+  };
+  // One question's own time (seconds) inside a section; `questionIndex` 'all' sets every question.
+  // Blank clears it. Works for every question type.
+  const updateQuestionTime = (setIndex, sectionIndex, questionIndex, seconds) => {
+    const value = Number.isFinite(seconds) && seconds > 0 ? Math.min(14400, Math.round(seconds)) : undefined;
+    setQuestionSets((previous) => previous.map((entry, index) => index === setIndex ? {
+      ...entry,
+      sections: entry.sections.map((section, idx) => idx === sectionIndex ? {
+        ...section,
+        questions: (section.questions || []).map((question, qIndex) => (
+          questionIndex === 'all' || qIndex === questionIndex ? { ...question, timeLimitSeconds: value } : question
+        )),
+      } : section),
+    } : entry));
+    setDirty(true);
+  };
+  // Tests saved with the old assessment-wide Per-MCQ timer: copy that time onto every MCQ that has
+  // none, then switch the old timer off (the student page still honours it until then).
+  const moveLegacyMcqTimer = () => {
+    const seconds = Number(form.settings?.perMcqTimeSec) || 60;
+    setQuestionSets((previous) => previous.map((entry) => ({
+      ...entry,
+      sections: (entry.sections || []).map((section) => (section.type !== 'mcq' ? section : {
+        ...section,
+        questions: (section.questions || []).map((question) => (Number(question.timeLimitSeconds) > 0 ? question : { ...question, timeLimitSeconds: seconds })),
+      })),
+    })));
+    setForm((previous) => ({ ...previous, settings: { ...previous.settings, perMcqTimingEnabled: false, sectionWiseLock: true, sectionTimingMode: 'custom' } }));
+    setDirty(true);
+  };
+
   const questionTypeCounts = useMemo(() => (
     (sections || []).reduce((counts, section) => {
       const type = section.type || 'mcq';
@@ -1358,7 +1449,14 @@ export default function CreateAssessment({ viewOnly = false }) {
           problemDataSnapshot: snapshot || undefined,
         };
       });
-      return { ...section, questions };
+      const minutes = Number(section.timeLimitMinutes);
+      return {
+        ...section,
+        timeLimitMinutes: form.settings?.sectionWiseLock || (Number.isSafeInteger(minutes) && minutes > 0)
+          ? section.timeLimitMinutes
+          : undefined,
+        questions,
+      };
     });
     const normalizedQuestionSets = questionSets.map((entry, index) => ({
       setNumber: index + 1,
@@ -1461,6 +1559,11 @@ export default function CreateAssessment({ viewOnly = false }) {
   const saveDraft = async (silent = false, { showError = !silent } = {}) => {
     lastSaveErrorRef.current = '';
     if (isSavingRef.current) return false;
+    if (isPublishedEdit && sectionTimingProblem) {
+      lastSaveErrorRef.current = sectionTimingProblem;
+      if (showError) toast.error(sectionTimingProblem);
+      return false;
+    }
     isSavingRef.current = true;
     setAutoSaveStatus(isPublishedEdit ? 'Saving changes...' : 'Saving draft...');
       const payload = buildPayload(isPublishedEdit ? 'published' : 'draft');
@@ -1559,6 +1662,10 @@ export default function CreateAssessment({ viewOnly = false }) {
       toast.error('All coding questions must be published and validated before publishing the assessment.');
       return false;
     }
+    if (sectionTimingProblem) {
+      toast.error(sectionTimingProblem);
+      return false;
+    }
     if (!isMock && assignedSummary.count === 0) {
       toast.error('Select at least one student before publishing.');
       return false;
@@ -1616,7 +1723,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     if (assessmentValidation.totalQuestions === 0 || assessmentValidation.emptySection) return 'Add questions and make sure no section is empty (Add questions step).';
     if (assessmentValidation.invalidCodingCount > 0) return 'Every coding question must be published and validated (Add questions step).';
     if (!(Number(form.duration) > 0)) return 'Set the test length (Schedule step).';
-    return '';
+    return sectionTimingProblem;
   };
   const saveMockReady = async () => {
     const problem = mockReadyProblem();
@@ -1785,7 +1892,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     sections: assessmentValidation.totalQuestions > 0 && !assessmentValidation.emptySection && questionDeliveryValid && multiSetParityValid,
     schedule: singleScheduleValid,
     target: candidateSelectionValid,
-    settings: settingsGroupIds.every((group) => visitedSettingsGroups.includes(group)),
+    settings: !sectionTimingProblem && settingsGroupIds.every((group) => visitedSettingsGroups.includes(group)),
     preview: false,
   };
   let maxUnlockedStepIndex = 0;
@@ -2499,6 +2606,7 @@ export default function CreateAssessment({ viewOnly = false }) {
       const upd = (key, val) => updateForm({ settings: withAiProctoringSettings({ ...(form.settings || {}), [key]: val }) });
       const updateAiProctoring = (nextValue) => upd('aiProctoring', normalizeAiProctoringSettings(nextValue));
       const rowProps = { settings: s, onSettingChange: upd };
+      const usesAutomaticSectionTiming = s.sectionWiseLock && s.sectionTimingMode !== 'custom' && !sectionTimingPapers.some((paper) => paper.timedMinutes > 0);
       const settingsGroups = [
         { id: 'access', label: 'Access', description: 'Visibility and entry', Icon: Lock },
         { id: 'allocation', label: 'Set allocation', description: 'Assign papers to students', Icon: Layers },
@@ -2795,14 +2903,130 @@ export default function CreateAssessment({ viewOnly = false }) {
               <Navigation className="h-3.5 w-3.5" /> Candidate Behavior
             </h3>
             <div className="space-y-2">
-              {questionTypeCounts.mcq > 0 && (
-                <Row {...rowProps} icon={<Timer className="h-4 w-4" />} iconBg="bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300"
-                  title="Per-MCQ Timer" desc="Set an individual countdown for every MCQ; expiry automatically advances the candidate." toggleKey="perMcqTimingEnabled">
-                  <FieldRow label="Time allowed for each MCQ">
-                    <NumInput value={s.perMcqTimeSec} onChange={(value) => upd('perMcqTimeSec', value)} min={10} max={3600} placeholder="60" unit="sec" />
-                  </FieldRow>
-                </Row>
-              )}
+              {/* The old assessment-wide Per-MCQ timer now lives per question, under Section-wise Time Locking. */}
+              <Row {...rowProps} icon={<Layers className="h-4 w-4" />} iconBg="bg-cyan-50 text-cyan-600 dark:bg-cyan-900/20 dark:text-cyan-400"
+                title="Section-wise Time Locking" desc="Time each section, and if you want, each question inside it." toggleKey="sectionWiseLock"
+                onToggle={(enabled) => updateForm({ settings: { ...s, sectionWiseLock: enabled, sectionTimingMode: 'custom' } })}>
+                <div className="space-y-3 text-xs text-slate-600 dark:text-gray-300">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-semibold text-slate-800 dark:text-gray-100">Overall timer · {overallMinutes} min</p>
+                    <p className="text-[11px] text-slate-400 dark:text-gray-500">Blank = no limit</p>
+                  </div>
+                  {usesAutomaticSectionTiming && (
+                    <div className="space-y-2 rounded-lg bg-slate-50 px-3 py-2 dark:bg-gray-800/60">
+                      <p>This paper uses automatic section limits based on question counts.</p>
+                      <FieldRow label="Grace period before lock (seconds)">
+                        <NumInput value={s.sectionGraceSec} onChange={(v) => upd('sectionGraceSec', v)} min={0} max={120} placeholder="10" unit="sec" />
+                      </FieldRow>
+                      <button type="button" onClick={() => upd('sectionTimingMode', 'custom')} className="font-semibold text-sky-700 dark:text-sky-300">Set section limits by hand</button>
+                    </div>
+                  )}
+                  {s.perMcqTimingEnabled && (
+                    <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                      <span>This test still uses the old {Number(s.perMcqTimeSec) || 60} s timer for every MCQ.</span>
+                      <button type="button" onClick={moveLegacyMcqTimer} className="font-semibold underline underline-offset-2">Set it on each MCQ instead</button>
+                    </div>
+                  )}
+                  {sectionTimingPapers.map(({ label, sections: paperSections, timedMinutes, problem }, setIndex) => (
+                    <fieldset key={setIndex} className="space-y-2">
+                      {s.questionSetEnabled && <legend className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400">{label}</legend>}
+                      {paperSections.length === 0 && <p className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-center dark:border-gray-700">Add sections to the question paper to time them.</p>}
+                      {paperSections.map((section, sectionIndex) => {
+                        const timeKey = `${setIndex}-${sectionIndex}`;
+                        const questions = section.questions || [];
+                        const isCoding = section.type === 'coding';
+                        // Coding questions are timed in minutes, the rest in seconds (stored as seconds).
+                        const unit = isCoding ? 'min' : 'sec';
+                        const toInput = (seconds) => (Number(seconds) > 0 ? (isCoding ? Math.round(Number(seconds) / 60) : Number(seconds)) : '');
+                        const fromInput = (value) => (value === '' || !Number.isFinite(Number(value)) ? undefined : Number(value) * (isCoding ? 60 : 1));
+                        const timedQuestions = questions.filter((question) => Number(question.timeLimitSeconds) >= (isCoding ? 60 : 5));
+                        const questionSeconds = timedQuestions.reduce((sum, question) => sum + Number(question.timeLimitSeconds), 0);
+                        const sectionSeconds = (Number(section.timeLimitMinutes) || 0) * 60;
+                        const open = questionTimesOpen.has(timeKey);
+                        const name = section.sectionName || `Section ${sectionIndex + 1}`;
+                        const typeLabel = { mcq: 'MCQ', coding: 'Coding', short: 'Short answer', one_line: 'One line' }[section.type] || 'Questions';
+                        return (
+                          <div key={section.__key || sectionIndex} className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5">
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold text-slate-800 dark:text-gray-100">{name}</p>
+                                <p className="text-[11px] text-slate-400 dark:text-gray-500">{typeLabel} · {questions.length} {questions.length === 1 ? 'question' : 'questions'}{timedQuestions.length ? ` · ${timedQuestions.length} timed` : ''}</p>
+                              </div>
+                              <label className="flex shrink-0 items-center gap-2">
+                                <span className="text-[11px] text-slate-500 dark:text-gray-400">Section time</span>
+                                <input type="number" min="1" max={overallMinutes || undefined} step="1" placeholder={usesAutomaticSectionTiming ? 'Auto' : 'No limit'} aria-label={`${name} section time in minutes`}
+                                  value={section.timeLimitMinutes ?? ''} onChange={(event) => updateSectionTimeLimit(setIndex, sectionIndex, event.target.value === '' ? undefined : event.target.valueAsNumber)}
+                                  className="w-24 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800" />
+                                <span>min</span>
+                              </label>
+                              {questions.length > 0 && (
+                                <button type="button" aria-expanded={open} onClick={() => setQuestionTimesOpen((current) => { const next = new Set(current); if (next.has(timeKey)) next.delete(timeKey); else next.add(timeKey); return next; })}
+                                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${open || timedQuestions.length ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+                                  <Timer className="h-3.5 w-3.5" aria-hidden="true" />Question times
+                                  <span aria-hidden="true" className={`transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
+                                </button>
+                              )}
+                            </div>
+                            {open && (
+                              <div className="space-y-2.5 border-t border-slate-100 bg-slate-50/70 px-3 py-3 dark:border-gray-800 dark:bg-gray-800/40">
+                                <p className="text-slate-600 dark:text-gray-300">
+                                  <b className="font-semibold text-slate-800 dark:text-gray-100">Optional:</b> give each question in this section its own time limit, in {isCoding ? 'minutes' : 'seconds'}. Leave a box empty if that question should have no limit of its own.
+                                </p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-[11px] text-slate-500 dark:text-gray-400">Give every question</span>
+                                  {/* A real starting value (not a grey placeholder), so "Apply to all" works straight away. */}
+                                  <input type="number" min="1" step="1" aria-label={`Time for every ${name} question in ${unit === 'min' ? 'minutes' : 'seconds'}`}
+                                    value={questionTimeBulk[timeKey] ?? (isCoding ? '30' : '60')} onChange={(event) => setQuestionTimeBulk((current) => ({ ...current, [timeKey]: event.target.value }))}
+                                    className="w-20 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800" />
+                                  <span>{unit}</span>
+                                  <button type="button" disabled={!(Number(questionTimeBulk[timeKey] ?? (isCoding ? 30 : 60)) > 0)} onClick={() => updateQuestionTime(setIndex, sectionIndex, 'all', fromInput(questionTimeBulk[timeKey] ?? (isCoding ? '30' : '60')))}
+                                    className="rounded-lg bg-sky-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-sky-500 disabled:opacity-40">Apply to all</button>
+                                  {timedQuestions.length > 0 && <button type="button" onClick={() => updateQuestionTime(setIndex, sectionIndex, 'all', undefined)} className="px-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:text-gray-400 dark:hover:text-white">Clear all</button>}
+                                </div>
+                                <ol className="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white dark:divide-gray-800 dark:border-gray-700 dark:bg-gray-900">
+                                  {questions.map((question, questionIndex) => {
+                                    const text = String(question.questionText || question.problemDataSnapshot?.title || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                                    const questionType = question.type || section.type;
+                                    // What the question is, in plain words, so the admin knows which one this is.
+                                    const kind = { coding: 'Coding problem', mcq: 'MCQ', short: 'Short answer', one_line: 'One-line answer' }[questionType] || 'Question';
+                                    const difficulty = String(question.problemDataSnapshot?.difficulty || question.difficulty || '').trim();
+                                    const marks = Number(question.points ?? question.marks) || 0;
+                                    const details = [kind, difficulty, marks ? `${marks} ${marks === 1 ? 'mark' : 'marks'}` : ''].filter(Boolean).join(' · ');
+                                    return (
+                                      <li key={question.questionId || question.__key || questionIndex} className="flex items-center gap-3 px-3 py-2">
+                                        <span className="shrink-0 whitespace-nowrap font-semibold text-slate-500 dark:text-gray-400">Question {questionIndex + 1}</span>
+                                        <span className="min-w-0 flex-1">
+                                          <span className="block truncate font-medium text-slate-800 dark:text-gray-100" title={text}>{text || 'Untitled question'}</span>
+                                          <span className="block truncate text-[11px] text-slate-400 dark:text-gray-500">{details}</span>
+                                        </span>
+                                        <input type="number" min="1" step="1" placeholder="No limit" aria-label={`Q${questionIndex + 1} time in ${unit === 'min' ? 'minutes' : 'seconds'}`}
+                                          value={toInput(question.timeLimitSeconds)} onChange={(event) => updateQuestionTime(setIndex, sectionIndex, questionIndex, fromInput(event.target.value))}
+                                          className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800" />
+                                        <span className="w-6 shrink-0">{unit}</span>
+                                      </li>
+                                    );
+                                  })}
+                                </ol>
+                                <p className="text-slate-500 dark:text-gray-400">
+                                  {timedQuestions.length
+                                    ? `${timedQuestions.length} of ${questions.length} ${questions.length === 1 ? 'question has' : 'questions have'} a time limit (${Math.round(questionSeconds / 6) / 10} min in total).`
+                                    : 'No question has its own time limit yet.'}
+                                </p>
+                                {sectionSeconds > 0 && questionSeconds > sectionSeconds && (
+                                  <p className="text-amber-700 dark:text-amber-300">These times add up to more than the {section.timeLimitMinutes} min section time, so the section will end before every question's time is used.</p>
+                                )}
+                                <p className="text-slate-500 dark:text-gray-400">How it works for the student: a timer shows on the question. When it reaches zero, the student is taken to the next question and cannot change that answer any more.</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {paperSections.length > 0 && <p className="text-slate-500 dark:text-gray-400">{timedMinutes} of {overallMinutes} min given to section times</p>}
+                      {s.sectionWiseLock && problem && <p role="alert" className="text-rose-700 dark:text-rose-300">{problem}</p>}
+                    </fieldset>
+                  ))}
+                </div>
+              </Row>
 
               <Row {...rowProps} icon={<Timer className="h-4 w-4" />} iconBg="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400"
                 title="Auto-Submit on Timer End" desc="Automatically submits the test when the timer reaches zero." badge="recommended" toggleKey="autoSubmitOnEnd">
@@ -2823,13 +3047,6 @@ export default function CreateAssessment({ viewOnly = false }) {
               <Row {...rowProps} icon={<Navigation className="h-4 w-4" />} title="Restrict Backward Navigation" desc="Shows a clear warning and prevents candidates from reopening locked previous questions." toggleKey="restrictNavigation">
                 <FieldRow label="Allow reviewing within same section">
                   <Toggle value={Boolean(s.allowSectionReview)} onChange={(v) => upd('allowSectionReview', v)} />
-                </FieldRow>
-              </Row>
-
-              <Row {...rowProps} icon={<Layers className="h-4 w-4" />} iconBg="bg-cyan-50 text-cyan-600 dark:bg-cyan-900/20 dark:text-cyan-400"
-                title="Section-wise Time Locking" desc="Each section has its own time limit; once time is up, that section locks automatically." toggleKey="sectionWiseLock">
-                <FieldRow label="Grace period before lock (seconds)">
-                  <NumInput value={s.sectionGraceSec} onChange={(v) => upd('sectionGraceSec', v)} min={0} max={120} placeholder="10" unit="sec" />
                 </FieldRow>
               </Row>
 
@@ -2981,6 +3198,10 @@ export default function CreateAssessment({ viewOnly = false }) {
       return;
     }
     if (activeStep === 'settings') {
+      if (activeSettingsGroup === 'behavior' && sectionTimingProblem) {
+        toast.error(sectionTimingProblem);
+        return;
+      }
       const groupIndex = settingsGroupIds.indexOf(activeSettingsGroup);
       const nextVisitedGroups = visitedSettingsGroups.includes(activeSettingsGroup)
         ? visitedSettingsGroups

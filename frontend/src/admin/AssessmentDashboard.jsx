@@ -25,7 +25,7 @@ import GridSortButton from './assessment/components/GridSortButton';
 import {
   assessmentLifecycleLabel, assignedCountOf, statusStyles, displayStatus, formatShortDate, formatTime,
 } from './assessment/assessmentListShared';
-import MockWorkspace, { MockFilterBar, NO_ROLE } from './prepMock/MockWorkspace';
+import MockWorkspace, { MockFilterBar, MockHeaderButton, MockPageHeader, NO_ROLE } from './prepMock/MockWorkspace';
 import BulkAssignDialog from './prepMock/BulkAssignDialog';
 import BulkPublishDialog from './prepMock/BulkPublishDialog';
 import { PublishConfirmDialog } from './prepMock/PublishToggle';
@@ -1383,6 +1383,13 @@ export default function AssessmentDashboard() {
 
   const bulkMocks = useMemo(() => canAssignOwnStudents ? mocksForScope(assessments, { all: true }) : [], [assessments, canAssignOwnStudents]);
   const pickedMocks = useMemo(() => selectedMockIds.size ? bulkMocks.filter((mock) => selectedMockIds.has(String(mock._id))) : [], [bulkMocks, selectedMockIds]);
+  // All Mocks header chips: every mock on the page, before filters.
+  const mockTotals = useMemo(() => (isMock ? {
+    companies: new Set(assessments.map((mock) => (String(mock.company || 'Uncategorized').trim() || 'Uncategorized').toLocaleLowerCase())).size,
+    mocks: assessments.length,
+    live: assessments.filter(isLiveMock).length,
+    drafts: assessments.filter((mock) => mock.lifecycleStatus === 'draft').length,
+  } : null), [assessments, isMock]);
   const onToggleMockSelection = (ids, on) => setSelectedMockIds((current) => toggleSelection(current, ids, on));
   const clearMockSelection = () => setSelectedMockIds(new Set());
   const openBulkAction = (kind, title, mocks) => {
@@ -1496,8 +1503,23 @@ export default function AssessmentDashboard() {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-slate-50 dark:bg-gray-950">
+    <div className={`h-screen overflow-hidden ${isMock ? 'bg-[#f6f7f9] font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:text-zinc-100' : 'bg-slate-50 dark:bg-gray-950'}`}>
       <motion.div className="flex h-full min-h-0 flex-col" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+        {isMock ? (
+          // Same title row as the student's Prep Mock page.
+          <header data-page-header className="shrink-0">
+            <div className="mx-auto max-w-[1600px] px-4 pt-4 sm:px-6 lg:pt-5">
+              <MockPageHeader totals={mockTotals}>
+                {!readOnlyMock && <MockHeaderButton onClick={() => navigate('/admin/prepmock/companies')}>
+                  <Building2 className="h-4 w-4" /> <span className="hidden sm:inline">Companies &amp; roles</span><span className="sm:hidden">Companies</span>
+                </MockHeaderButton>}
+                {canCreateAssessments && <MockHeaderButton primary data-guide="as-create" onClick={() => navigate(`${assessmentRoot}/create`)}>
+                  <Plus className="h-4 w-4" /> Create mock
+                </MockHeaderButton>}
+              </MockPageHeader>
+            </div>
+          </header>
+        ) : (
         <header data-page-header className="shrink-0 border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950">
           <div className="mx-auto flex min-h-16 max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
             <div data-guide="as-title">
@@ -1514,6 +1536,7 @@ export default function AssessmentDashboard() {
             </div>
           </div>
         </header>
+        )}
 
         <div className={`mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 overflow-y-auto lg:overflow-hidden ${isMock ? '' : 'lg:grid-cols-[60px_minmax(0,1fr)]'}`}>
           {!isMock && <AssessmentLifecycleSidebar
@@ -1530,7 +1553,7 @@ export default function AssessmentDashboard() {
             testTypes={testTypes}
             onTestTypeChange={(value) => setFilters((current) => ({ ...current, testType: value }))}
           />}
-          <main className="min-w-0 px-4 py-4 sm:px-6 lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden">
+          <main className={`min-w-0 px-4 sm:px-6 lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden ${isMock ? 'pb-0 pt-4' : 'py-4'}`}>
             {isMock ? <>
               <MockFilterBar
                 filters={filters}
@@ -1546,19 +1569,19 @@ export default function AssessmentDashboard() {
                 actions={globalActions}
               />
               {bulkActionsReady && pickedMocks.length > 0 && (
-                <section aria-label="Selected mock actions" className="mt-3 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 dark:border-sky-500/30 dark:bg-sky-500/10">
-                  <p role="status" className="mr-auto flex items-center gap-2 text-xs font-semibold text-sky-900 dark:text-sky-100">
+                <section aria-label="Selected mock actions" className="mt-3 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-violet-200 bg-violet-50 px-3 py-2 dark:border-violet-500/30 dark:bg-violet-500/10">
+                  <p role="status" className="mr-auto flex items-center gap-2 text-xs font-semibold text-violet-900 dark:text-violet-100">
                     <ListChecks className="h-4 w-4" aria-hidden="true" />{pickedMocks.length.toLocaleString()} {pickedMocks.length === 1 ? 'mock' : 'mocks'} selected
                   </p>
                   <button type="button" onClick={() => openBulkAction('assign', 'Selected mocks', pickedMocks)}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-sky-600 px-2.5 text-xs font-semibold text-white hover:bg-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 text-xs font-semibold text-white hover:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2">
                     <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />Assign students
                   </button>
                   <button type="button" onClick={() => openBulkAction('remove', 'Selected mocks', pickedMocks)}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-sky-800 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-100 dark:hover:bg-sky-500/20">
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-violet-800 hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:text-violet-100 dark:hover:bg-violet-500/20">
                     <UserMinus className="h-3.5 w-3.5" aria-hidden="true" />Remove students
                   </button>
-                  <button type="button" onClick={clearMockSelection} className="h-8 rounded-lg px-2 text-xs font-semibold text-sky-800 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-100 dark:hover:bg-sky-500/20">Clear selection</button>
+                  <button type="button" onClick={clearMockSelection} className="h-8 rounded-lg px-2 text-xs font-semibold text-violet-800 hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:text-violet-100 dark:hover:bg-violet-500/20">Clear selection</button>
                 </section>
               )}
               <MockWorkspace

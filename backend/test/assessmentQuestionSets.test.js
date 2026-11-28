@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assessmentSectionTimingProblem,
   buildCandidateSetAssignments,
   appendCandidateSetAssignments,
   compareCandidatesForSetAllocation,
   buildDeliverySections,
+  normalizeAssessmentSections,
   normalizeAssessmentSettings,
   sanitizeStudentAssessmentForResponse,
 } from '../src/controllers/assessmentController.js';
@@ -30,6 +32,51 @@ test('settings normalization preserves toggles from a mongoose assessment subdoc
   assert.equal(normalized.showResultsAfterSubmit, true);
   assert.equal(normalized.aiProctoring.enabled, true);
   assert.equal(normalized.aiProctoring.detectMobile, false);
+});
+
+test('new assessments default to browser proctoring and keep explicit overrides', () => {
+  const defaults = normalizeAssessmentSettings({}, { creating: true });
+  const legacy = normalizeAssessmentSettings();
+  const overrides = {};
+  for (const key of [
+    'enableFullscreen', 'tabSwitchDetection', 'disableCopyPaste', 'blockScreenshots',
+    'questionWatermark', 'randomShuffle', 'shuffleOptions', 'preventMultipleTabs', 'idleDetection',
+  ]) {
+    assert.equal(defaults[key], true, key);
+    assert.equal(legacy[key], false, key);
+    overrides[key] = false;
+  }
+  assert.equal(defaults.watermarkTextType, 'candidate_name');
+  assert.equal(legacy.watermarkTextType, 'platform');
+  assert.equal(legacy.sectionTimingMode, undefined);
+  assert.equal(defaults.cameraMonitoring, false);
+  assert.equal(defaults.audioMonitoring, false);
+  assert.equal(defaults.aiProctoring.enabled, false);
+  const customized = normalizeAssessmentSettings({ ...overrides, watermarkTextType: 'custom' }, { creating: true });
+  for (const key of Object.keys(overrides)) assert.equal(customized[key], false, key);
+  assert.equal(customized.watermarkTextType, 'custom');
+});
+
+test('section limits round-trip with their paper and fit within its overall timer', () => {
+  const settings = { sectionWiseLock: true, sectionTimingMode: 'custom', questionSetEnabled: true };
+  assert.equal(normalizeAssessmentSettings(settings).sectionTimingMode, 'custom');
+  const sections = normalizeAssessmentSections([
+    { sectionName: 'Aptitude', type: 'mcq', timeLimitMinutes: '15', suggestedMinutes: 10, questions: [{ type: 'mcq' }] },
+    { sectionName: 'Untimed', type: 'mcq', timeLimitMinutes: '', questions: [{ type: 'mcq' }] },
+    { sectionName: 'Reasoning', type: 'mcq', timeLimitMinutes: 25, questions: [{ type: 'mcq' }] },
+  ]);
+  const papers = [{ setNumber: 1, sections }, { setNumber: 2, label: 'Paper B', sections }];
+  assert.equal(assessmentSectionTimingProblem(papers, settings, 40), '');
+  assert.equal(assessmentSectionTimingProblem(papers, settings, 60), '');
+  assert.match(assessmentSectionTimingProblem(papers.slice(1), settings, 39), /Paper B: Section limits total 40 min/);
+  assert.equal(assessmentSectionTimingProblem(papers, { ...settings, sectionWiseLock: false }, 39), '');
+  assert.throws(() => normalizeAssessmentSections([{ sectionName: 'Writing', timeLimitMinutes: 2.5 }]), { status: 400 });
+
+  const assessment = new Assessment({ createdBy: '507f1f77bcf86cd799439011', settings, sections, questionSets: papers });
+  assert.equal(assessment.validateSync(), undefined);
+  const delivered = buildDeliverySections(assessment, 'student').sections;
+  assert.deepEqual(delivered.map((section) => section.timeLimitMinutes), [15, undefined, 25]);
+  assert.equal(delivered[0].suggestedMinutes, 10);
 });
 
 test('assessment AI proctoring never flags looking away and defaults out-of-frame grace to 8 s', () => {

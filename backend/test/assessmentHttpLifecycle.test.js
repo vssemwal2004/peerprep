@@ -26,6 +26,7 @@ before(async () => {
   app.post('/assessment/:id/start', c.startStudentAssessment);
   app.post('/assessment/:id/setup-step', c.markStudentAssessmentSetupStep);
   app.post('/assessment/:id/begin', c.beginStudentAssessment);
+  app.post('/assessment/:id/section', c.openStudentAssessmentSection);
   app.patch('/assessment/:id/answers', c.saveAssessmentProgress);
   app.post('/assessment/:id/heartbeat', c.logStudentHeartbeat);
   app.post('/assessment/:id/monitoring', c.logStudentMonitoring);
@@ -94,6 +95,45 @@ test('HTTP lifecycle persists ordered deltas, ignores forged grading, and issues
   assert.equal(stored.evaluationStatus, 'processing');
   assert.equal((await request(`${root}/start`)).status, 409); // no implicit retake during grading
 });
+test('optional section timers persist first visits and discard only expired section changes', async () => {
+  const section = (sectionName, timeLimitMinutes) => ({
+    sectionName, timeLimitMinutes, type: 'mcq', questions: [{ questionText: 'Pick A or B?', options: ['A', 'B'], correctOptionIndex: 0 }],
+  });
+  const assessment = await fixture({
+    settings: { sectionWiseLock: true, sectionTimingMode: 'custom', sectionGraceSec: 0 },
+    sections: [section('First', 1), section('Untimed'), section('Last', 1)],
+  });
+  const root = await begin(assessment);
+  const read = await request(root, null, 'GET');
+  assert.deepEqual(read.body.sectionTimeStarts, { 0: 0 });
+  const identity = { ...context, submissionId: read.body.submission._id };
+  const opened = await Promise.all(Array.from({ length: 2 }, () => request(`${root}/section`, { ...identity, sectionIndex: 2 })));
+  assert.ok(opened.every(({ status }) => status === 200), JSON.stringify(opened));
+  assert.equal(opened[0].body.sectionTimeStarts[2], opened[1].body.sectionTimeStarts[2]);
+  const refreshed = await request(root, null, 'GET');
+  assert.deepEqual(refreshed.body.sectionTimeStarts, opened[0].body.sectionTimeStarts);
+
+  const saved = await request(`${root}/answers`, { ...identity, mutationId: 'timed-save', saveSequence: 1,
+    answers: [{ sectionIndex: 0, questionIndex: 0, answer: 0 }] }, 'PATCH');
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  await moveDeadline(assessment, { startedAt: new Date(Date.now() - 240000) });
+  const reopened = await request(`${root}/section`, { ...identity, sectionIndex: 0 });
+  assert.equal(reopened.status, 409);
+  assert.equal(reopened.body.code, 'SECTION_TIME_EXPIRED');
+  const final = { ...identity, assessmentId: String(assessment._id), status: 'submitted', mutationId: 'timed-final', saveSequence: 2,
+    answers: [{ sectionIndex: 0, questionIndex: 0, answer: 1 }, { sectionIndex: 1, questionIndex: 0, answer: 1 }] };
+  for (let i = 0; i < 2; i += 1) {
+    const result = await request('/assessment/submit', final);
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.deepEqual(result.body.ignoredSectionIndexes, [0]);
+    assert.ok(result.body.receipt);
+  }
+  const attempt = await AssessmentSubmission.findById(identity.submissionId).lean();
+  assert.deepEqual(attempt.answers.map(({ sectionIndex, answer }) => ({ sectionIndex, answer })), [
+    { sectionIndex: 0, answer: 0 }, { sectionIndex: 1, answer: 1 },
+  ]);
+});
+
 test('deadline closes using accepted answers; retry cannot silently accept late edits', async () => {
   const assessment = await fixture();
   const root = await begin(assessment);

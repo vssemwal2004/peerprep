@@ -31,7 +31,7 @@ export function assessmentWriteAcknowledgement(doc) {
 export async function mutateAssessmentSubmission({ filter, mutate, select, maxRetries = 8 }) {
   for (let attempt = 0; attempt < maxRetries; attempt += 1) {
     let query = AssessmentSubmission.findOne(filter);
-    query = select ? query.select(`${select} +__v`) : query.select('-proctoringSnapshots -monitoringEvents');
+    query = select ? query.select(`${select} __v`) : query.select('-proctoringSnapshots -monitoringEvents');
     const submission = await query;
     if (!submission) return { submission: null, result: null, changed: false };
     const expectedVersion = submission.__v;
@@ -49,7 +49,7 @@ export async function mutateAssessmentSubmission({ filter, mutate, select, maxRe
       { $and: [filter, { _id: submission._id }, versionFilter] },
       changes,
       { new: true, runValidators: true },
-    ).select(select ? `${select} +__v` : '-proctoringSnapshots -monitoringEvents');
+    ).select(select ? `${select} __v` : '-proctoringSnapshots -monitoringEvents');
     if (updated) return { submission: updated, result, changed: true };
     // Bound retry pressure and avoid synchronized contenders spinning on Mongo.
     await new Promise((resolve) => setTimeout(resolve, 3 + Math.random() * (attempt + 1) * 7));

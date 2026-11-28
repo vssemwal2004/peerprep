@@ -6,6 +6,7 @@ import {
   getAssessmentSubmitGraceMs,
   isAssessmentAttemptExpired,
 } from '../src/services/assessmentExpiryPolicy.js';
+import { filterTimedAssessmentAnswerChanges, getActiveAssessmentElapsedMs, isAssessmentSectionOpen } from '../src/services/assessmentSectionTiming.js';
 
 test('attempt deadline uses the earlier duration or assessment closing time', () => {
   const startedAt = new Date('2026-09-23T09:00:00.000Z');
@@ -71,4 +72,28 @@ test('unresolved security pause expires at the configured recheck timeout', () =
     pauseStartedAt: new Date('2026-09-23T09:10:00.000Z'),
   };
   assert.equal(getAssessmentAttemptDeadline(assessment, submission).toISOString(), '2026-09-23T09:12:00.000Z');
+});
+
+test('a section first-visit clock uses the capped security pause credit and locks at its exact limit', () => {
+  const startedAt = new Date('2026-09-23T09:00:00.000Z');
+  const submission = {
+    startedAt, sectionTimeStarts: { 0: 30000 }, pausedDurationMs: 10000,
+    pauseStartedAt: new Date(startedAt.getTime() + 50000), securityPauseReason: 'tab_switch',
+  };
+  const settings = { sectionWiseLock: true, sectionGraceSec: 30 };
+  const section = { timeLimitMinutes: 1 };
+  assert.equal(getActiveAssessmentElapsedMs(submission, new Date(startedAt.getTime() + 75000)), 40000);
+  assert.equal(isAssessmentSectionOpen(settings, section, submission, 0, new Date(startedAt.getTime() + 129999)), true);
+  assert.equal(isAssessmentSectionOpen(settings, section, submission, 0, new Date(startedAt.getTime() + 130000)), false);
+  assert.equal(isAssessmentSectionOpen(settings, section, submission, 1, new Date(startedAt.getTime() + 65000)), false);
+});
+
+test('answer batches preserve accepted timed answers and allow untimed sections after a section expires', () => {
+  const startedAt = new Date('2026-09-23T09:00:00.000Z');
+  const assessment = { settings: { sectionWiseLock: true }, sections: [{ timeLimitMinutes: 1 }, {}, { timeLimitMinutes: 1 }] };
+  const submission = { startedAt, sectionTimeStarts: { 0: 0 }, answers: [{ sectionIndex: 0, questionIndex: 1, answer: 'saved' }] };
+  const answer = (sectionIndex, questionIndex, value) => ({ sectionIndex, questionIndex, answer: value });
+  const final = [answer(0, 0, 'late'), answer(0, 1, 'saved'), answer(1, 0, 'on time'), answer(2, 0, 'never opened')];
+  const result = filterTimedAssessmentAnswerChanges(assessment, submission, final, new Date(startedAt.getTime() + 240000));
+  assert.deepEqual(result, { answers: [final[2]], ignoredSectionIndexes: [0, 2] });
 });

@@ -77,9 +77,9 @@ const sectionSchema = new mongoose.Schema({
   marksPerQuestion: { type: Number, default: 1 },
   negativeMarksPerQuestion: { type: Number, default: 0 },
   totalMarks: { type: Number, default: 0 },
-  // Prep Mock pattern: suggested minutes for this section (guidance only; the test enforces
-  // only the mock's total duration).
+  // Prep Mock pattern pacing guidance.
   suggestedMinutes: { type: Number, min: 0, max: 1440 },
+  timeLimitMinutes: { type: Number, min: 1, validate: Number.isSafeInteger },
   questions: { type: [questionSchema], default: [] },
 }, { _id: false });
 

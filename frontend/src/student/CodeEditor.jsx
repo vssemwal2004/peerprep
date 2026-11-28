@@ -207,6 +207,8 @@ function CodeEditor({
   onLiveCodeChange,
   valueVersion = 0,
   executionMode = 'code',
+  // Locks the editor (e.g. the question's own time is over); Run/Submit follow executionDisabled.
+  readOnly = false,
 }) {
   const isSqlMode = executionMode === 'sql' || language === 'sql';
   const rootRef = useRef(null);
@@ -783,8 +785,9 @@ function CodeEditor({
             {clipboardNotice}
           </div>
         ) : null}
-        <Suspense fallback={<CodeEditorLoading value={code} onChange={handleLoadingEditorCodeChange} />}>
+        <Suspense fallback={<CodeEditorLoading value={code} onChange={handleLoadingEditorCodeChange} readOnly={readOnly} />}>
           <MonacoCodeEditor
+            readOnly={readOnly}
             language={language}
             value={code}
             onChange={handleEditorCodeChange}

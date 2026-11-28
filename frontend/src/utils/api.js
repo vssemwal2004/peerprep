@@ -1579,6 +1579,13 @@ export const api = {
       method: "POST",
       body: { sessionId, ...(attemptGeneration === undefined ? {} : { attemptGeneration }), ...(submissionId ? { submissionId } : {}) },
     }),
+  startStudentAssessmentSection: (id, sectionIndex, attemptContext) =>
+    request(`/student/assessment/${id}/section`, {
+      method: "POST",
+      body: { sectionIndex, ...attemptContext },
+      timeoutMs: 10000,
+      skipQueue: true,
+    }),
   getStudentAssessment: (id) => request(`/student/assessment/${id}`, { skipCache: true }),
   createStudentAssessmentEvidenceUpload: (id, body) =>
     request(`/student/assessment/${id}/evidence/upload-url`, { method: "POST", body, timeoutMs: 10000 }),

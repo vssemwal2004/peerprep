@@ -87,7 +87,7 @@ function PatternTable({ pattern }) {
 export function PatternSection({ role, company, rolePattern, headingRef }) {
   const { pattern, from, fromLong, differ, number, mock } = rolePattern;
   const notes = [];
-  if (pattern.hasTimes) notes.push(`Section times are a guide to pace yourself. The timer runs for the whole test (${formatDurationMinutes(mock.duration)}).`);
+  if (pattern.hasTimes) notes.push(`The pattern lists suggested section times. The overall test timer is ${formatDurationMinutes(mock.duration)}.`);
   if (pattern.hasNegative) notes.push('Negative marks are taken off for each wrong answer in that section. Skipping a question costs nothing.');
   else if (pattern.negativeMarking) notes.push('This mock takes marks off for wrong answers in some sections. Skipping a question costs nothing.');
   return (

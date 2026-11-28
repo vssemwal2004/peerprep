@@ -60,6 +60,11 @@ const formatTime = (ms) => {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 };
 
+const sectionLimitMinutes = (section) => {
+  const minutes = Number(section?.timeLimitMinutes);
+  return Number.isInteger(minutes) && minutes > 0 ? minutes : 0;
+};
+
 const FULLSCREEN_RECOVERY_SECONDS = 15;
 
 // A static import would pull the 3 MB Monaco chunk into every attempt page,
@@ -144,9 +149,9 @@ const ShortAnswerInput = memo(function ShortAnswerInput({ value, commitKey, onCo
   const flush = useCallback(() => {
     if (pendingRef.current === null) return null;
     clearTimeout(pendingRef.current.timer);
-    const text = pendingRef.current.text;
+    const { text, editedAt } = pendingRef.current;
     pendingRef.current = null;
-    if (onCommitRef.current?.(text) === false) {
+    if (onCommitRef.current?.(text, editedAt) === false) {
       setDraft(valueRef.current);
       return null;
     }
@@ -166,7 +171,7 @@ const ShortAnswerInput = memo(function ShortAnswerInput({ value, commitKey, onCo
         const text = event.target.value;
         setDraft(text);
         if (pendingRef.current) clearTimeout(pendingRef.current.timer);
-        pendingRef.current = { text, timer: setTimeout(flush, 250) };
+        pendingRef.current = { text, editedAt: Date.now(), timer: setTimeout(flush, 250) };
       }}
       onBlur={flush}
       maxLength={maxLength}
@@ -677,6 +682,8 @@ export default function AssessmentAttempt() {
   const [activeQuestion, setActiveQuestion] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
   const [mcqTimeLeft, setMcqTimeLeft] = useState(0);
+  // Seconds left on each timed MCQ this session, by answerKey (kept when the student moves on).
+  const mcqTimeLeftRef = useRef({});
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -718,6 +725,11 @@ export default function AssessmentAttempt() {
   const [, setLocationData] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
   const [allowedEndTime, setAllowedEndTime] = useState(null);
+  const [sectionTiming, setSectionTiming] = useState(null);
+  const [sectionStartError, setSectionStartError] = useState(null);
+  const [startingSection, setStartingSection] = useState(null);
+  const [skippedTimedAnswers, setSkippedTimedAnswers] = useState(false);
+  const sectionStartRequestRef = useRef(false);
   const [securityRecheckStartedAt, setSecurityRecheckStartedAt] = useState(null);
   const [securityRecheckRemainingSec, setSecurityRecheckRemainingSec] = useState(0);
   const [violationMessage, setViolationMessage] = useState('');
@@ -944,9 +956,41 @@ export default function AssessmentAttempt() {
   const idleThresholdMs = Math.max(1, Number(securitySettings.idleThresholdMin || 5)) * 60 * 1000;
   const idleAction = securitySettings.idleAction || 'warn';
   const sectionWiseLock = Boolean(securitySettings.sectionWiseLock);
-  const sectionGraceSec = Number(securitySettings.sectionGraceSec || 10);
+  const customSectionTiming = sectionWiseLock && (
+    securitySettings.sectionTimingMode === 'custom'
+    || [assessment?.sections, assessment?.sectionSummary].some((sections) => sections?.some(sectionLimitMinutes))
+  );
+  const sectionGraceSec = Number(securitySettings.sectionGraceSec ?? 10);
+  const sectionIndexes = useMemo(() => (assessment?.sections || []).map((section, index) => (
+    Number(section.questions?.[0]?.__originSectionIndex ?? index)
+  )), [assessment?.sections]);
+  const needsSectionStart = useCallback((sectionIndex) => customSectionTiming
+    && sectionLimitMinutes(assessment?.sections?.[sectionIndex]) > 0
+    && !Number.isFinite(sectionTiming?.starts[sectionIndexes[sectionIndex]]),
+  [customSectionTiming, assessment?.sections, sectionTiming, sectionIndexes]);
   const perMcqTimingEnabled = Boolean(securitySettings.perMcqTimingEnabled);
   const perMcqTimeSec = Math.min(3600, Math.max(10, Number(securitySettings.perMcqTimeSec || 60)));
+  /**
+   * Seconds a student gets on one question (0 = untimed): its own limit, set for any question type
+   * under Section-wise Time Locking, or the old assessment-wide Per-MCQ timer for older MCQ tests.
+   */
+  const questionTimeSecOf = (section, questionIndex) => {
+    if (!section) return 0;
+    const own = Number(section.questions?.[questionIndex]?.timeLimitSeconds);
+    // Coding times are set in whole minutes; anything under a minute is a judge CPU limit copied
+    // from a problem, never a time to answer.
+    const minimum = section.type === 'coding' ? 60 : 5;
+    if (sectionWiseLock && Number.isFinite(own) && own >= minimum) return Math.min(14400, Math.round(own));
+    return perMcqTimingEnabled && section.type === 'mcq' ? perMcqTimeSec : 0;
+  };
+  // A timed question whose time has run out (this session) takes no more changes.
+  const isQuestionTimeUp = (sectionIndex, questionIndex) => {
+    if (!questionTimeSecOf(assessment?.sections?.[sectionIndex], questionIndex)) return false;
+    const left = sectionIndex === activeSection && questionIndex === activeQuestion
+      ? mcqTimeLeft
+      : mcqTimeLeftRef.current[answerKey(sectionIndex, questionIndex)];
+    return left !== undefined && left <= 0;
+  };
   const totalViolations = tabSwitches + fullscreenExits + cameraFlags + copyPasteCount;
   const totalWarnings = totalViolations + screenshotWarnings + aiWarnings;
   const forcePauseActive = isPaused && phase === 'violation' && !isSubmitted;
@@ -1038,8 +1082,9 @@ export default function AssessmentAttempt() {
   }, [cameraRequired, cameraIndicator, securityStatus.cameraActive, securityNotice]);
 
   const buildAnswersPayload = useCallback((sourceMap = answersMap) => (
-    Object.entries(sourceMap).map(([key, value]) => {
+    Object.entries(sourceMap).flatMap(([key, value]) => {
       const [sectionIndex, questionIndex] = key.split('-').map(Number);
+      if (needsSectionStart(sectionIndex)) return [];
       const displayQuestion = assessment?.sections?.[sectionIndex]?.questions?.[questionIndex];
       const originSectionIndex = Number(displayQuestion?.__originSectionIndex ?? sectionIndex);
       const originQuestionIndex = Number(displayQuestion?.__originQuestionIndex ?? questionIndex);
@@ -1054,7 +1099,7 @@ export default function AssessmentAttempt() {
       }
       return { sectionIndex: originSectionIndex, questionIndex: originQuestionIndex, ...payload };
     })
-  ), [answersMap, assessment]);
+  ), [answersMap, assessment, needsSectionStart]);
 
   const answersArray = useMemo(() => buildAnswersPayload(), [buildAnswersPayload]);
   buildLatestAnswersRef.current = buildAnswersPayload;
@@ -1161,7 +1206,7 @@ export default function AssessmentAttempt() {
     return list;
   }, [assessment]);
   const sectionLockPlan = useMemo(() => {
-    if (!assessment?.sections?.length || !sectionWiseLock) return [];
+    if (!assessment?.sections?.length || !sectionWiseLock || customSectionTiming) return [];
     const totalDurationMs = Math.max(0, Number(assessment.duration || 0)) * 60 * 1000;
     const totalQuestionCount = Math.max(1, flatQuestions.length);
     let elapsed = 0;
@@ -1175,31 +1220,63 @@ export default function AssessmentAttempt() {
         endsAtMs: elapsed,
       };
     });
-  }, [assessment, sectionWiseLock, flatQuestions.length]);
+  }, [assessment, sectionWiseLock, customSectionTiming, flatQuestions.length]);
 
-  // Section locks only need coarse time; a 5 s clock keeps the page from
-  // re-rendering every second (the visible countdown owns its own ticker).
   const [lockClock, setLockClock] = useState(() => Date.now());
+  const syncSectionTiming = useCallback((data, reset = false) => {
+    const serverTime = Date.parse(data?.serverTime);
+    if (!Object.keys(data?.sectionTimeStarts || {}).length || !Number.isFinite(data.elapsedActiveMs) || !Number.isFinite(serverTime)) {
+      if (reset) setSectionTiming(null);
+      return;
+    }
+    setSectionTiming((previous) => {
+      const starts = reset ? data.sectionTimeStarts : { ...previous?.starts, ...data.sectionTimeStarts };
+      if (!reset && previous?.serverTime > serverTime) return { ...previous, starts };
+      return { starts, serverStart: serverTime - data.elapsedActiveMs, serverTime };
+    });
+    setLockClock(Date.now());
+  }, []);
+
+  const localAllowedEnd = allowedEndTime ? allowedEndTime - offset : Infinity;
+  const sectionDeadlines = useMemo(() => {
+    if (!customSectionTiming || !sectionTiming) return [];
+    return (assessment.sections || []).map((section, index) => {
+      const minutes = sectionLimitMinutes(section);
+      const startedAt = sectionTiming.starts[sectionIndexes[index]];
+      if (!minutes || !Number.isFinite(startedAt)) return null;
+      return Math.min(sectionTiming.serverStart - offset + startedAt + minutes * 60000, localAllowedEnd);
+    });
+  }, [assessment?.sections, customSectionTiming, sectionTiming, sectionIndexes, offset, localAllowedEnd]);
+
   useEffect(() => {
-    if (!sectionWiseLock || phase !== 'active' || isPaused) return undefined;
+    if (!sectionWiseLock || customSectionTiming || phase !== 'active' || isPaused) return undefined;
     setLockClock(Date.now());
     const timer = setInterval(() => setLockClock(Date.now()), 5000);
     return () => clearInterval(timer);
-  }, [sectionWiseLock, phase, isPaused]);
+  }, [sectionWiseLock, customSectionTiming, phase, isPaused]);
 
-  const elapsedAssessmentMs = useMemo(() => {
-    if (!assessment?.duration) return 0;
-    const totalDurationMs = Math.max(0, Number(assessment.duration || 0)) * 60 * 1000;
-    const remainingMs = allowedEndTime ? allowedEndTime - (lockClock + offset) : timeLeft;
-    return Math.max(0, totalDurationMs - remainingMs);
-  }, [assessment?.duration, allowedEndTime, lockClock, offset, timeLeft]);
+  // Wake the workspace only at section deadlines. The countdown has its own ticker.
+  useEffect(() => {
+    if (!customSectionTiming || phase !== 'active' || isPaused) return undefined;
+    const nextDeadline = Math.min(...sectionDeadlines.filter((deadline) => deadline && deadline > lockClock));
+    if (!Number.isFinite(nextDeadline)) return undefined;
+    const timer = setTimeout(() => setLockClock(Date.now()), Math.max(1, nextDeadline - Date.now()));
+    return () => clearTimeout(timer);
+  }, [customSectionTiming, sectionDeadlines, phase, isPaused, lockClock]);
 
-  const isSectionLocked = useCallback((sectionIndex) => {
+  const isSectionLocked = useCallback((sectionIndex, now) => {
     if (!sectionWiseLock) return false;
+    if (customSectionTiming) return Boolean(sectionDeadlines[sectionIndex] && now >= sectionDeadlines[sectionIndex]);
     const plan = sectionLockPlan[sectionIndex];
     if (!plan) return false;
-    return elapsedAssessmentMs > plan.endsAtMs + (sectionGraceSec * 1000);
-  }, [sectionWiseLock, sectionLockPlan, elapsedAssessmentMs, sectionGraceSec]);
+    const remainingMs = Number.isFinite(localAllowedEnd) ? localAllowedEnd - now : timeLeft;
+    const elapsedMs = Number(assessment?.duration || 0) * 60 * 1000 - remainingMs;
+    return elapsedMs > plan.endsAtMs + sectionGraceSec * 1000;
+  }, [sectionWiseLock, customSectionTiming, sectionDeadlines, sectionLockPlan, localAllowedEnd, timeLeft, assessment?.duration, sectionGraceSec]);
+
+  const canEditSection = (sectionIndex, now = Date.now()) => (
+    !isSectionLocked(sectionIndex, now) && !needsSectionStart(sectionIndex)
+  );
 
   const sectionSummaries = useMemo(() => {
     let mcqStart = 0;
@@ -1226,7 +1303,6 @@ export default function AssessmentAttempt() {
     flatQuestions.findIndex((item) => item.sectionIndex === activeSection && item.questionIndex === activeQuestion)
   ), [flatQuestions, activeSection, activeQuestion]);
 
-  const totalQuestions = flatQuestions.length;
   const questionTypeTotals = useMemo(() => flatQuestions.reduce((totals, item) => {
     totals[item.kind] += 1;
     return totals;
@@ -1244,8 +1320,14 @@ export default function AssessmentAttempt() {
     : [];
   const currentNavigationStartIndex = currentPassageFlatIndexes.length ? Math.min(...currentPassageFlatIndexes) : currentFlatIndex;
   const currentNavigationEndIndex = currentPassageFlatIndexes.length ? Math.max(...currentPassageFlatIndexes) : currentFlatIndex;
-  const hasPrevQuestion = currentNavigationStartIndex > 0;
-  const hasNextQuestion = currentNavigationEndIndex >= 0 && currentNavigationEndIndex < totalQuestions - 1;
+  const previousQuestion = customSectionTiming
+    ? flatQuestions.findLast((item, index) => index < currentNavigationStartIndex && !isSectionLocked(item.sectionIndex, lockClock))
+    : flatQuestions[currentNavigationStartIndex - 1];
+  const nextQuestion = customSectionTiming
+    ? flatQuestions.find((item, index) => index > currentNavigationEndIndex && !isSectionLocked(item.sectionIndex, lockClock))
+    : flatQuestions[currentNavigationEndIndex + 1];
+  const hasPrevQuestion = Boolean(previousQuestion);
+  const hasNextQuestion = Boolean(nextQuestion);
 
   const questionStatus = useCallback((secIdx, qIdx) => {
     const key = `${secIdx}-${qIdx}`;
@@ -1404,6 +1486,16 @@ export default function AssessmentAttempt() {
     }
   }, [assessment, isSubmitted, phase]);
 
+  const flushSectionAnswers = useCallback(() => {
+    shortAnswerFlushRef.current?.();
+    // The next task picks up any debounced short answer committed above. The
+    // save reads the live coding draft and starts after an in-flight batch.
+    setTimeout(async () => {
+      await autoSavePromiseRef.current?.catch(() => {});
+      void handleSave();
+    }, 0);
+  }, [handleSave]);
+
   const handleSubmit = useCallback(async (auto = false, autoMessage = '') => {
     if (!assessment || submissionInFlightRef.current || !saveProtocolRef.current) return false;
     if (!auto && !saveProtocolRef.current.finalizing && assessment.settings?.questionSelectionEnabled) {
@@ -1434,6 +1526,7 @@ export default function AssessmentAttempt() {
     setSaving(true);
     let submissionCompleted = false;
     let finalAnswersAccepted = true;
+    let ignoredTimedAnswers = false;
     try {
       // Commit typing that is still debounced in the short-answer box or editor.
       const pendingShortAnswer = shortAnswerFlushRef.current?.();
@@ -1455,6 +1548,7 @@ export default function AssessmentAttempt() {
         sessionId: assessmentSessionIdRef.current,
       });
       finalAnswersAccepted = result?.answersAccepted !== false;
+      ignoredTimedAnswers = Boolean(result?.ignoredSectionIndexes?.length) || skippedTimedAnswers;
       submissionCompleted = true;
     } catch (err) {
       if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
@@ -1493,14 +1587,16 @@ export default function AssessmentAttempt() {
     } catch (cleanupError) {
       console.warn('Assessment cleanup after submit failed:', cleanupError);
     }
-    if (finalAnswersAccepted) {
+    if (finalAnswersAccepted && ignoredTimedAnswers) {
+      toast.info('Assessment submitted. Some section edits reached the server too late to count.');
+    } else if (finalAnswersAccepted) {
       toast.success(auto ? (autoMessage || 'Time is up. Assessment auto-submitted.') : 'Assessment submitted successfully');
     } else {
       toast.info('The assessment had already ended. Your last server-saved answers were submitted; newer device edits were not accepted.');
     }
     navigate(`/student/assessment/${assessment._id}/feedback`, { replace: true });
     return true;
-  }, [assessment, answersMap, buildAnswersPayload, flushAnswerCheckpoint, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, stopAiProctoring, toast, navigate, draftStorageKey]);
+  }, [assessment, answersMap, buildAnswersPayload, flushAnswerCheckpoint, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, stopAiProctoring, toast, navigate, draftStorageKey, skippedTimedAnswers]);
 
   const triggerForcePause = useCallback((type, message, serverState = {}) => {
     if (type !== 'tab_switch') {
@@ -1789,6 +1885,9 @@ export default function AssessmentAttempt() {
       setOffset(serverTime - localNow);
       setTimeLeft(allowedEnd - serverTime);
       setAllowedEndTime(allowedEnd);
+      syncSectionTiming(data, true);
+      setSectionStartError(null);
+      setSkippedTimedAnswers(Boolean(data.submission?.lastAcceptedBatch?.ignoredSectionIndexes?.length));
       const attemptAssessment = data.assessment;
       exitPathRef.current = data.kind === 'mock' ? '/student/prep-mock' : '/student/assessments';
       setAssessment(attemptAssessment);
@@ -1878,8 +1977,11 @@ export default function AssessmentAttempt() {
         recovered: canRecover ? localDraft.protocol : undefined,
         sendSave: (body) => api.saveStudentAssessmentProgress(id, body),
         sendSubmit: (body) => api.submitStudentAssessment(body),
-        onAcknowledged: (answers) => {
+        onAcknowledged: (answers, result) => {
           if (protocol && saveProtocolRef.current !== protocol) return;
+          if ((result?.ignoredSectionIndexes ?? result?.lastAcceptedBatch?.ignoredSectionIndexes)?.length) {
+            setSkippedTimedAnswers(true);
+          }
           answers.forEach((answer) => savedAnswerSignaturesRef.current.set(answerPayloadKey(answer), answerPayloadSignature(answer)));
         },
         onState: (state, saveFailure) => {
@@ -1958,7 +2060,7 @@ export default function AssessmentAttempt() {
     } finally {
       setLoading(false);
     }
-  }, [id, rulesSeenStorageKey, draftStorageKey, syncCompletedSecuritySteps]);
+  }, [id, rulesSeenStorageKey, draftStorageKey, syncCompletedSecuritySteps, syncSectionTiming]);
 
   useEffect(() => {
     loadAssessment();
@@ -2122,18 +2224,18 @@ export default function AssessmentAttempt() {
 
   // Preload the next question's images so its options don't shift on arrival.
   useEffect(() => {
-    const nextQuestion = flatQuestions[currentNavigationEndIndex + 1]?.question;
-    if (!nextQuestion) return;
+    const question = nextQuestion?.question;
+    if (!question) return;
     [
-      nextQuestion.questionImage?.url,
-      nextQuestion.passage?.image?.url,
-      ...(nextQuestion.optionImages || []).map((image) => image?.url),
+      question.questionImage?.url,
+      question.passage?.image?.url,
+      ...(question.optionImages || []).map((image) => image?.url),
     ].filter(Boolean).forEach((url) => {
       const image = new Image();
       image.decoding = 'async';
       image.src = url;
     });
-  }, [currentNavigationEndIndex, flatQuestions]);
+  }, [nextQuestion]);
 
   useEffect(() => {
     if (!securityRecheckActive || !securityRecheckStartedAt) return undefined;
@@ -3122,6 +3224,7 @@ export default function AssessmentAttempt() {
             setAllowedEndTime(allowedEnd);
           }
         }
+        syncSectionTiming(result);
         if (typeof result?.violationScore === 'number') setViolationScore(result.violationScore);
         if (typeof result?.pauseCount === 'number') setPauseCount(result.pauseCount);
         if (result?.lastPauseAt) setLastPauseAt(result.lastPauseAt);
@@ -3182,7 +3285,7 @@ export default function AssessmentAttempt() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [secureActive, isSubmitted, assessment?._id, fullscreenRequired, fullscreenRecovery.active, tabGuardEnabled, cameraRequired, cameraFlags, patchSecurityStatus]);
+  }, [secureActive, isSubmitted, assessment?._id, fullscreenRequired, fullscreenRecovery.active, tabGuardEnabled, cameraRequired, cameraFlags, patchSecurityStatus, syncSectionTiming]);
 
   const wouldExceedQuestionAttemptLimit = (sectionIndex, questionIndex, nextValue) => {
     const sectionItem = assessment?.sections?.[sectionIndex];
@@ -3206,8 +3309,12 @@ export default function AssessmentAttempt() {
 
   // Returns false when the change was refused, so uncontrolled inputs can
   // revert instead of showing text that was never saved.
-  const updateAnswer = (sectionIndex, questionIndex, value) => {
-    if (saveProtocolRef.current?.finalizing || isSubmitted) return false;
+  const updateAnswer = (sectionIndex, questionIndex, value, editedAt) => {
+    if (saveProtocolRef.current?.finalizing || isSubmitted || !canEditSection(sectionIndex, editedAt)) return false;
+    if (isQuestionTimeUp(sectionIndex, questionIndex)) {
+      toast.error('Time for this question is over.');
+      return false;
+    }
     const key = answerKey(sectionIndex, questionIndex);
     const nextValue = { ...(answersMap[key] || {}), ...value };
     if (wouldExceedQuestionAttemptLimit(sectionIndex, questionIndex, nextValue)) {
@@ -3224,7 +3331,7 @@ export default function AssessmentAttempt() {
   };
 
   const updateCodingLanguage = (sectionIndex, questionIndex, nextLanguage) => {
-    if (saveProtocolRef.current?.finalizing || isSubmitted) return;
+    if (saveProtocolRef.current?.finalizing || isSubmitted || !canEditSection(sectionIndex)) return;
     const sectionItem = assessment?.sections?.[sectionIndex];
     const questionItem = sectionItem?.questions?.[questionIndex];
     if (!questionItem || sectionItem?.type !== 'coding') {
@@ -3580,6 +3687,7 @@ export default function AssessmentAttempt() {
       setOffset(serverTime - Date.now());
       setTimeLeft(serverAllowedEnd - serverTime);
       setAllowedEndTime(serverAllowedEnd);
+      syncSectionTiming(data);
       setSubmission(data.submission);
       if (data.candidate) setCandidate(data.candidate);
       setIsPaused(false);
@@ -3619,7 +3727,7 @@ export default function AssessmentAttempt() {
 
 
   const handleRunCoding = (sourceOverride) => {
-    if (!assessment || isSubmitted || saveProtocolRef.current?.finalizing) return;
+    if (!assessment || isSubmitted || saveProtocolRef.current?.finalizing || !canEditSection(activeSection) || isQuestionTimeUp(activeSection, activeQuestion)) return;
     const section = assessment?.sections?.[activeSection];
     if (!section || section.type !== 'coding') return;
     const question = section?.questions?.[activeQuestion];
@@ -3695,7 +3803,7 @@ export default function AssessmentAttempt() {
   };
 
   const handleSubmitCoding = (sourceOverride) => {
-    if (saveProtocolRef.current?.finalizing) return;
+    if (saveProtocolRef.current?.finalizing || !canEditSection(activeSection) || isQuestionTimeUp(activeSection, activeQuestion)) return;
     if (!assessment || isSubmitted) return;
     const section = assessment?.sections?.[activeSection];
     if (!section || section.type !== 'coding') return;
@@ -3788,7 +3896,7 @@ export default function AssessmentAttempt() {
   };
 
   const handleResetCoding = () => {
-    if (saveProtocolRef.current?.finalizing || isSubmitted) return;
+    if (saveProtocolRef.current?.finalizing || isSubmitted || !canEditSection(activeSection)) return;
     const key = answerKey(activeSection, activeQuestion);
     const section = assessment?.sections?.[activeSection];
     if (!section || section.type !== 'coding') return;
@@ -3828,7 +3936,7 @@ export default function AssessmentAttempt() {
   };
 
   const getNavigationRestrictionMessage = (sectionIndex, questionIndex) => {
-    if (isSectionLocked(sectionIndex)) {
+    if (isSectionLocked(sectionIndex, Date.now())) {
       const targetSummary = sectionSummaries[sectionIndex];
       return `${targetSummary?.label || `Section ${sectionIndex + 1}`} is locked by the section timer. You can continue only in unlocked sections.`;
     }
@@ -3850,6 +3958,45 @@ export default function AssessmentAttempt() {
     return !getNavigationRestrictionMessage(sectionIndex, questionIndex);
   };
 
+  const openQuestion = useCallback(async (sectionIndex, questionIndex) => {
+    if (sectionStartRequestRef.current || isSectionLocked(sectionIndex, Date.now())) return;
+    if (sectionIndex !== activeSection && sectionDeadlines[activeSection] && !isSectionLocked(activeSection, Date.now())) {
+      flushSectionAnswers();
+    }
+    if (needsSectionStart(sectionIndex)) {
+      if (!secureActive || Date.now() >= localAllowedEnd) return;
+      sectionStartRequestRef.current = true;
+      setStartingSection(sectionIndex);
+      setSectionStartError(null);
+      try {
+        const deliveredSectionIndex = sectionIndexes[sectionIndex];
+        const result = await api.startStudentAssessmentSection(assessment._id, deliveredSectionIndex, {
+          sessionId: assessmentSessionIdRef.current,
+          attemptGeneration: saveProtocolRef.current?.generation || 1,
+          submissionId: saveProtocolRef.current?.submissionId,
+        });
+        if (!Number.isFinite(result?.sectionTimeStarts?.[deliveredSectionIndex])) {
+          throw new Error('The server did not confirm the section timer. Try opening the section again.');
+        }
+        syncSectionTiming(result);
+      } catch (err) {
+        if (err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') setActiveSessionConflict(true);
+        syncSectionTiming(err?.response?.data);
+        setSectionStartError({ sectionIndex, questionIndex });
+        toast.error(err.message || 'Could not start the section timer. Try opening the section again.');
+        return;
+      } finally {
+        sectionStartRequestRef.current = false;
+        setStartingSection(null);
+      }
+    }
+    setSectionStartError(null);
+    setActiveSection(sectionIndex);
+    setActiveQuestion(questionIndex);
+  }, [assessment?._id, isSectionLocked, activeSection, sectionDeadlines, flushSectionAnswers, needsSectionStart, localAllowedEnd, sectionIndexes, secureActive, syncSectionTiming, toast]);
+  const openQuestionRef = useRef(openQuestion);
+  openQuestionRef.current = openQuestion;
+
   const navigateToQuestion = (sectionIndex, questionIndex) => {
     const restrictionMessage = getNavigationRestrictionMessage(sectionIndex, questionIndex);
     if (restrictionMessage) {
@@ -3861,45 +4008,42 @@ export default function AssessmentAttempt() {
       });
       return false;
     }
-    setActiveSection(sectionIndex);
-    setActiveQuestion(questionIndex);
+    void openQuestion(sectionIndex, questionIndex);
     return true;
   };
 
   const goToNextQuestion = () => {
-    const target = flatQuestions[currentNavigationEndIndex + 1];
-    if (target) navigateToQuestion(target.sectionIndex, target.questionIndex);
+    if (nextQuestion) navigateToQuestion(nextQuestion.sectionIndex, nextQuestion.questionIndex);
   };
 
   const goToPrevQuestion = () => {
-    const target = flatQuestions[currentNavigationStartIndex - 1];
-    if (target) navigateToQuestion(target.sectionIndex, target.questionIndex);
+    if (previousQuestion) navigateToQuestion(previousQuestion.sectionIndex, previousQuestion.questionIndex);
   };
 
+  // Per-question time on the open MCQ: the question's own limit (set under Section-wise Time
+  // Locking), or the old assessment-wide Per-MCQ timer for tests saved before that.
+  const activeQuestionTimeSec = questionTimeSecOf(assessment?.sections?.[activeSection], activeQuestion);
   useEffect(() => {
-    const isTimedMcq = perMcqTimingEnabled && assessment?.sections?.[activeSection]?.type === 'mcq';
-    setMcqTimeLeft(isTimedMcq ? perMcqTimeSec : 0);
-  }, [perMcqTimingEnabled, perMcqTimeSec, assessment?.sections, activeSection, activeQuestion]);
+    // Time already used on a question is kept, so leaving and coming back does not reset it.
+    const key = answerKey(activeSection, activeQuestion);
+    const left = mcqTimeLeftRef.current[key];
+    setMcqTimeLeft(activeQuestionTimeSec ? (left ?? activeQuestionTimeSec) : 0);
+  }, [activeQuestionTimeSec, activeSection, activeQuestion]);
+
+  const waitingForSectionStart = secureActive && needsSectionStart(activeSection);
 
   useEffect(() => {
-    const isTimedMcq = perMcqTimingEnabled && assessment?.sections?.[activeSection]?.type === 'mcq';
-    if (!isTimedMcq || phase !== 'active' || isSubmitted || mcqTimeLeft <= 0) return undefined;
+    if (!activeQuestionTimeSec || !secureActive || waitingForSectionStart || mcqTimeLeft <= 0) return undefined;
     const timer = window.setTimeout(() => {
-      setMcqTimeLeft((current) => {
-        if (current > 1) return current - 1;
-        const target = flatQuestions[currentNavigationEndIndex + 1];
-        if (target) window.setTimeout(() => {
-          setActiveSection(target.sectionIndex);
-          setActiveQuestion(target.questionIndex);
-        }, 0);
-        return 0;
-      });
+      mcqTimeLeftRef.current[answerKey(activeSection, activeQuestion)] = mcqTimeLeft - 1;
+      setMcqTimeLeft(mcqTimeLeft - 1);
+      if (mcqTimeLeft === 1 && nextQuestion) void openQuestionRef.current(nextQuestion.sectionIndex, nextQuestion.questionIndex);
     }, 1000);
     return () => window.clearTimeout(timer);
-  }, [perMcqTimingEnabled, assessment?.sections, activeSection, phase, isSubmitted, mcqTimeLeft, flatQuestions, currentNavigationEndIndex]);
+  }, [activeQuestionTimeSec, activeSection, activeQuestion, secureActive, waitingForSectionStart, mcqTimeLeft, nextQuestion]);
 
   const clearResponse = () => {
-    if (saveProtocolRef.current?.finalizing || isSubmitted) return;
+    if (saveProtocolRef.current?.finalizing || isSubmitted || !canEditSection(activeSection)) return;
     const section = assessment?.sections?.[activeSection];
     const key = answerKey(activeSection, activeQuestion);
     if (!section) return;
@@ -3953,23 +4097,31 @@ export default function AssessmentAttempt() {
   const handleOptionChange = useCallback((sectionIndex, questionIndex, answer) => {
     updateAnswerRef.current(sectionIndex, questionIndex, { answer });
   }, []);
-  const handleShortAnswerCommit = useCallback((sectionIndex, questionIndex, text) => (
-    updateAnswerRef.current(sectionIndex, questionIndex, { answer: text })
+  const handleShortAnswerCommit = useCallback((sectionIndex, questionIndex, text, editedAt) => (
+    updateAnswerRef.current(sectionIndex, questionIndex, { answer: text }, editedAt)
   ), []);
   const registerShortAnswerFlush = useCallback((flush) => {
     shortAnswerFlushRef.current = flush;
   }, []);
 
+  const activeSectionLocked = secureActive && isSectionLocked(activeSection, lockClock);
+
   useEffect(() => {
-    if (!sectionWiseLock || !assessment?.sections?.length) return;
-    if (!isSectionLocked(activeSection)) return;
-    const nextAvailableSection = assessment.sections.findIndex((_, index) => !isSectionLocked(index));
-    if (nextAvailableSection >= 0 && nextAvailableSection !== activeSection) {
-      setActiveSection(nextAvailableSection);
-      setActiveQuestion(0);
-      toast.info('The previous section has been locked based on the assessment timing settings.');
+    if (!activeSectionLocked || Date.now() >= localAllowedEnd) return;
+    flushSectionAnswers();
+    toast.info('Section time is up. This section is now locked.');
+  }, [activeSectionLocked, flushSectionAnswers, localAllowedEnd, toast]);
+
+  useEffect(() => {
+    if ((!activeSectionLocked && !waitingForSectionStart) || startingSection !== null || Date.now() >= localAllowedEnd) return;
+    let target = nextQuestion || (!restrictNavigation ? previousQuestion : null);
+    if (waitingForSectionStart) target = { sectionIndex: activeSection, questionIndex: activeQuestion };
+    else if (!customSectionTiming) target = flatQuestions.find((item) => !isSectionLocked(item.sectionIndex, lockClock));
+    if (target && sectionStartError?.sectionIndex !== target.sectionIndex) {
+      void openQuestion(target.sectionIndex, target.questionIndex);
     }
-  }, [sectionWiseLock, assessment, activeSection, isSectionLocked, toast]);
+  }, [activeSectionLocked, waitingForSectionStart, startingSection, localAllowedEnd, activeSection, activeQuestion,
+    nextQuestion, previousQuestion, restrictNavigation, sectionStartError, openQuestion, customSectionTiming, flatQuestions, isSectionLocked, lockClock]);
 
   const watermarkColumns = useMemo(() => {
     const spacing = Math.max(120, watermarkConfig.spacing);
@@ -4062,6 +4214,8 @@ export default function AssessmentAttempt() {
   const isSubmitting = Boolean(isSubmittingMap[activeAnswerKey]);
   const runInputUsed = runInputUsedMap[activeAnswerKey] ?? null;
   const currentSectionLabel = section?.sectionName || `Section ${activeSection + 1}`;
+  const activeSectionDeadline = sectionDeadlines[activeSection];
+  const sectionUnavailable = activeSectionLocked || waitingForSectionStart;
   const breadcrumbLabel = `${currentSectionLabel} / ${currentQuestionTypeLabel} ${currentTypeQuestionNumber}`;
   const currentAttemptType = question?.type || section?.type || currentQuestionKind;
   const currentAttemptLimit = Number(assessment?.settings?.questionAttemptRequirements?.[currentAttemptType] || 0);
@@ -4082,6 +4236,8 @@ export default function AssessmentAttempt() {
     securitySettings.restrictNavigation && (allowSectionReview
       ? 'You can review questions only inside your current section. Earlier sections cannot be reopened.'
       : 'You cannot go back. Once you move forward, earlier questions cannot be reopened.'),
+    customSectionTiming && (assessment.sections?.length ? assessment.sections : assessment.sectionSummary)?.some(sectionLimitMinutes)
+      && 'A timed section starts counting down when it opens and keeps counting if you leave it. The overall test timer applies to every section.',
     'Your answers are saved automatically as you work.',
     securitySettings.autoSubmitOnEnd && 'The test submits automatically when the timer reaches zero.',
   ].filter(Boolean);
@@ -4112,7 +4268,7 @@ export default function AssessmentAttempt() {
       isSubmitted={isSubmitted}
       saving={saving}
       dockable={isCoding}
-      navigationRevision={`${restrictNavigation}:${allowSectionReview}:${sectionLockPlan.map((_, index) => (isSectionLocked(index) ? '1' : '0')).join('')}`}
+      navigationRevision={`${restrictNavigation}:${allowSectionReview}:${sectionSummaries.map(({ index }) => (isSectionLocked(index, lockClock) ? '1' : '0')).join('')}`}
     />
   );
 
@@ -4155,7 +4311,9 @@ export default function AssessmentAttempt() {
       && proctoringStatus
       && Object.entries(aiFooterIssueStates).some(([key, states]) => states.includes(proctoringStatus[key])),
   );
-  const saveIndicator = !draftStorageAvailable && saveStatus !== 'saved'
+  const saveIndicator = skippedTimedAnswers && saveStatus === 'saved'
+    ? { tone: 'warn', text: 'Some timed edits were late' }
+    : !draftStorageAvailable && saveStatus !== 'saved'
     ? { tone: 'warn', text: 'Keep this page open until saved' }
     : saveStatus === 'saved'
       ? { tone: 'ok', text: 'All answers saved' }
@@ -4168,6 +4326,7 @@ export default function AssessmentAttempt() {
     ? assessment.sections.map((sec) => ({
       sectionName: sec?.sectionName,
       type: sec?.type,
+      timeLimitMinutes: sectionLimitMinutes(sec),
       questionCount: sec?.questions?.length || 0,
       marksEach: Number(sec?.marksPerQuestion || sec?.questions?.[0]?.points || sec?.questions?.[0]?.marks || 0) || 0,
       totalMarks: Number(sec?.totalMarks || 0),
@@ -4175,6 +4334,7 @@ export default function AssessmentAttempt() {
     : (assessment.sectionSummary || []).map((sec) => ({
       sectionName: sec?.sectionName,
       type: sec?.type,
+      timeLimitMinutes: sectionLimitMinutes(sec),
       questionCount: Number(sec?.questionCount || 0),
       marksEach: Number(sec?.marksPerQuestion || 0),
       totalMarks: Number(sec?.totalMarks || 0),
@@ -4303,9 +4463,21 @@ export default function AssessmentAttempt() {
               Attempted {currentAttemptedCount}/{currentAttemptLimit}
             </div>
           )}
-          {perMcqTimingEnabled && section?.type === 'mcq' && (
+          {secureActive && activeSectionDeadline && !activeSectionLocked && (
+            <div className="flex h-9 shrink-0 items-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 text-sky-800 dark:border-sky-900/40 dark:bg-sky-900/20 dark:text-sky-200">
+              <Timer className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="text-[10px] font-semibold">Section time</span>
+              <AssessmentCountdown endAt={activeSectionDeadline} offset={0} running={!isPaused} />
+            </div>
+          )}
+          {!sectionUnavailable && startingSection !== null && (
+            <span role="status" className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-gray-400">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> Starting section…
+            </span>
+          )}
+          {activeQuestionTimeSec > 0 && (
             <div className={`flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-bold tabular-nums ${mcqTimeLeft <= 10 ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300' : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300'}`}>
-              <Timer className="h-3.5 w-3.5" /> MCQ {formatTime(mcqTimeLeft * 1000)}
+              <Timer className="h-3.5 w-3.5" /> Question {formatTime(mcqTimeLeft * 1000)}
             </div>
           )}
           <div className="flex flex-1 items-center justify-end gap-2">
@@ -4341,7 +4513,7 @@ export default function AssessmentAttempt() {
             )}
             <div className="flex h-9 shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-950 px-3 text-white shadow-sm dark:border-gray-700">
               <Clock className="h-3.5 w-3.5 text-sky-300" />
-              <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Time left</span>
+              <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Overall time</span>
               <AssessmentCountdown
                 endAt={allowedEndTime}
                 offset={offset}
@@ -4349,7 +4521,7 @@ export default function AssessmentAttempt() {
                 onExpire={handleTimeUp}
               />
             </div>
-            {isCoding && (
+            {isCoding && !sectionUnavailable && (
               <AssessmentLanguagePicker
                 languages={codingLanguages}
                 value={activeLanguage}
@@ -4357,7 +4529,7 @@ export default function AssessmentAttempt() {
                 disabled={isRunning || isSubmitting || isSubmitted}
               />
             )}
-            {isCoding && (
+            {isCoding && !sectionUnavailable && (
               <button
                 type="button"
                 onClick={handleResetCoding}
@@ -4381,7 +4553,22 @@ export default function AssessmentAttempt() {
           </div>
         </div>
       </header>
-      {isCoding ? (
+      {sectionUnavailable ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3 lg:flex-row">
+          <section className="flex min-h-48 flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-6 text-center dark:border-gray-700 dark:bg-gray-900" aria-live="polite">
+            <h2 className="text-lg font-semibold">{activeSectionLocked ? `${currentSectionLabel} is locked` : currentSectionLabel}</h2>
+            <p className="text-sm text-slate-600 dark:text-gray-300">
+              {startingSection !== null ? 'Starting the section timer…' : activeSectionLocked ? 'The section timer ended. Continue to an available question or submit the assessment.' : 'The section timer must start before you can answer.'}
+            </p>
+            {sectionStartError && startingSection === null && !isSectionLocked(sectionStartError.sectionIndex, lockClock) && (
+              <button type="button" className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white" onClick={() => void openQuestion(sectionStartError.sectionIndex, sectionStartError.questionIndex)}>
+                Retry section timer
+              </button>
+            )}
+          </section>
+          {questionNavigatorPanel}
+        </div>
+      ) : isCoding ? (
         <div className={`w-full p-2 pb-16 dark:!bg-[#1a1a1a] lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:pb-2 ${
           cameraStatusLine && !cameraStatusLine.ok
             ? 'bg-rose-50'
@@ -4466,8 +4653,10 @@ export default function AssessmentAttempt() {
                         language={answerValue.language || codingLanguages[0]}
                         code={answerValue.code ?? getStarterCodeForLanguage(codingData, answerValue.language || codingLanguages[0])}
                         onLanguageChange={(lang) => updateCodingLanguage(activeSection, activeQuestion, lang)}
+                        readOnly={isSubmitted || isQuestionTimeUp(activeSection, activeQuestion)}
+                        executionDisabled={isQuestionTimeUp(activeSection, activeQuestion)}
                         onCodeChange={(code) => {
-                          if (saveProtocolRef.current?.finalizing) return;
+                          if (saveProtocolRef.current?.finalizing || isQuestionTimeUp(activeSection, activeQuestion)) return;
                           // CodeEditor flushes a pending commit through the
                           // handler of the language it was typed in. After a
                           // language switch that text must only update its own
@@ -4516,7 +4705,7 @@ export default function AssessmentAttempt() {
                         editorKey={key}
                         valueVersion={codeValueVersion}
                         onLiveCodeChange={(code) => {
-                          if (saveProtocolRef.current?.finalizing) return;
+                          if (saveProtocolRef.current?.finalizing || !canEditSection(activeSection)) return;
                           // The ref is the source of truth for payloads; the
                           // IndexedDB checkpoint is throttled so a keystroke
                           // never re-renders this page.
@@ -4577,7 +4766,7 @@ export default function AssessmentAttempt() {
                           <div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${status === 'answered' || status === 'answered_review' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-white text-slate-500 dark:bg-gray-900 dark:text-gray-400'}`}>{status === 'answered' || status === 'answered_review' ? 'Answered' : 'Not answered'}</span><span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600 dark:bg-gray-900 dark:text-gray-300">{passageQuestion.marks ?? passageQuestion.points ?? section?.marksPerQuestion ?? 0} marks</span></div>
                         </div>
                         <ReservedImage image={passageQuestion.questionImage} className="mt-4" />
-                        <AssessmentMcqOptions question={passageQuestion} answer={response} sectionIndex={activeSection} questionIndex={questionIndex} onChange={handleOptionChange} disabled={isSubmitted || (perMcqTimingEnabled && mcqTimeLeft <= 0)} />
+                        <AssessmentMcqOptions question={passageQuestion} answer={response} sectionIndex={activeSection} questionIndex={questionIndex} onChange={handleOptionChange} disabled={isSubmitted || isQuestionTimeUp(activeSection, questionIndex)} />
                       </section>
                     );
                   })}
@@ -4588,7 +4777,7 @@ export default function AssessmentAttempt() {
                     <div className="whitespace-pre-wrap break-words text-lg font-bold leading-snug text-slate-900 [overflow-wrap:anywhere] dark:text-white md:text-[1.15rem]">{question?.questionText || 'Question'}</div>
                     <ReservedImage image={question?.questionImage} className="mt-4" />
                   </div>
-                  {section?.type === 'mcq' && <div className="px-5 pb-5 md:px-6"><AssessmentMcqOptions question={question} answer={answersMap[answerKey(activeSection, activeQuestion)]?.answer} sectionIndex={activeSection} questionIndex={activeQuestion} onChange={handleOptionChange} disabled={isSubmitted || (perMcqTimingEnabled && mcqTimeLeft <= 0)} /></div>}
+                  {section?.type === 'mcq' && <div className="px-5 pb-5 md:px-6"><AssessmentMcqOptions question={question} answer={answersMap[answerKey(activeSection, activeQuestion)]?.answer} sectionIndex={activeSection} questionIndex={activeQuestion} onChange={handleOptionChange} disabled={isSubmitted || (activeQuestionTimeSec > 0 && mcqTimeLeft <= 0)} /></div>}
                 </>
               )}
 
@@ -4601,7 +4790,7 @@ export default function AssessmentAttempt() {
                     onCommit={(text) => handleShortAnswerCommit(activeSection, activeQuestion, text)}
                     registerFlush={registerShortAnswerFlush}
                     maxLength={section?.type === 'one_line' ? 500 : 10000}
-                    disabled={isSubmitted}
+                    disabled={isSubmitted || isQuestionTimeUp(activeSection, activeQuestion)}
                   />
                 </div>
               )}
@@ -5189,6 +5378,9 @@ export default function AssessmentAttempt() {
                                 <div className="text-xs text-slate-500 dark:text-slate-400">
                                   {sectionType} · Q{summary?.start || 1}–Q{summary?.end || questionCount}
                                 </div>
+                                {customSectionTiming && sec.timeLimitMinutes > 0 && (
+                                  <div className="text-xs font-medium text-sky-700 dark:text-sky-300">{sec.timeLimitMinutes} min section limit</div>
+                                )}
                               </div>
                               <div className="shrink-0 text-right">
                                 <div className="text-sm font-semibold tabular-nums text-slate-900 dark:text-white">{totalSectionMarks} {totalSectionMarks === 1 ? 'mark' : 'marks'}</div>

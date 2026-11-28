@@ -4,7 +4,7 @@ import { assessmentAdmission } from '../middleware/assessmentAdmission.js';
 import Assessment from '../models/Assessment.js';
 import mongoose from 'mongoose';
 import { isUniversity } from '../platform/deployment.js';
-import { beginStudentAssessment, listStudentAssessments, getStudentAssessment, getStudentAssessmentDashboard, logStudentHeartbeat, logStudentMonitoring, logStudentViolation, markStudentAssessmentSetupStep, saveAssessmentProgress, startStudentAssessment, submitAssessment, createStudentEvidenceUpload } from '../controllers/assessmentController.js';
+import { beginStudentAssessment, listStudentAssessments, getStudentAssessment, getStudentAssessmentDashboard, logStudentHeartbeat, logStudentMonitoring, logStudentViolation, markStudentAssessmentSetupStep, openStudentAssessmentSection, saveAssessmentProgress, startStudentAssessment, submitAssessment, createStudentEvidenceUpload } from '../controllers/assessmentController.js';
 
 const router = Router();
 const requireAssessmentList = requireStudentFeature('assessments');
@@ -27,6 +27,7 @@ router.get('/assessment-dashboard', requireAuth, requireStudent, requireAssessme
 router.post('/assessment/:id/start', assessmentAdmission([requireAuth, requireStudent, requireAssessments, startStudentAssessment]));
 router.post('/assessment/:id/setup-step', assessmentAdmission([requireAuth, requireStudent, requireAssessments, markStudentAssessmentSetupStep]));
 router.post('/assessment/:id/begin', assessmentAdmission([requireAuth, requireStudent, requireAssessments, beginStudentAssessment]));
+router.post('/assessment/:id/section', assessmentAdmission([requireAuth, requireStudent, requireAssessments, openStudentAssessmentSection]));
 router.patch('/assessment/:id/answers', assessmentAdmission([requireAuth, requireStudent, requireAssessments, saveAssessmentProgress]));
 router.post('/assessment/:id/violations', assessmentAdmission([requireAuth, requireStudent, requireAssessments, logStudentViolation]));
 router.post('/assessment/:id/heartbeat', assessmentAdmission([requireAuth, requireStudent, requireAssessments, logStudentHeartbeat]));

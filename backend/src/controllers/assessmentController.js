@@ -58,6 +58,10 @@ import {
   normalizeAssessmentAnswerChanges, acceptAssessmentBatch, assessmentBatchMatches, assertAssessmentWriteProtocol,
 } from '../services/assessmentPersistenceService.js';
 import { getAssessmentAttemptDeadline, getAssessmentSubmitGraceMs, SECURITY_PAUSE_CREDIT_CAP_MS } from '../services/assessmentExpiryPolicy.js';
+import {
+  assessmentSectionClock, filterTimedAssessmentAnswerChanges, getActiveAssessmentElapsedMs,
+  getAssessmentSectionEndMs, getAssessmentSectionLimitMs, getAssessmentSectionStartMs,
+} from '../services/assessmentSectionTiming.js';
 import { concealHiddenSubmitResult } from './compilerHelpers.js';
 import { notifyAssessmentReportChanged } from '../services/assessmentReportRealtime.js';
 import { authorizeAssessmentReportAccess } from '../services/assessmentReportAccess.js';
@@ -625,6 +629,7 @@ function sanitizeStudentSubmissionForResponse(submission) {
   if (!submission) return submission;
   const source = typeof submission.toObject === 'function' ? submission.toObject() : { ...submission };
   delete source.deliverySections;
+  delete source.sectionTimeStarts;
   delete source.pendingWork;
   delete source.proctoringSnapshots;
   delete source.monitoringEvents;
@@ -821,11 +826,27 @@ function normalizeReleaseDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export function normalizeAssessmentSettings(settings = {}) {
+const NEW_ASSESSMENT_PROCTORING_DEFAULTS = {
+  enableFullscreen: true,
+  tabSwitchDetection: true,
+  disableCopyPaste: true,
+  blockScreenshots: true,
+  questionWatermark: true,
+  watermarkTextType: 'candidate_name',
+  randomShuffle: true,
+  shuffleOptions: true,
+  preventMultipleTabs: true,
+  idleDetection: true,
+};
+
+export function normalizeAssessmentSettings(settings = {}, { creating = false } = {}) {
   const plainSettings = settings && typeof settings?.toObject === 'function'
     ? settings.toObject({ getters: false, virtuals: false })
     : settings;
-  const source = plainSettings && typeof plainSettings === 'object' ? { ...plainSettings } : {};
+  const source = {
+    ...(creating ? NEW_ASSESSMENT_PROCTORING_DEFAULTS : {}),
+    ...(plainSettings && typeof plainSettings === 'object' ? plainSettings : {}),
+  };
   delete source.negativeMarking;
   delete source.negativeMarkValue;
   delete source.negativeCoding;
@@ -876,6 +897,7 @@ export function normalizeAssessmentSettings(settings = {}) {
     restrictNavigation: Boolean(source.restrictNavigation),
     allowSectionReview: source.allowSectionReview !== false,
     sectionWiseLock: Boolean(source.sectionWiseLock),
+    ...(creating || source.sectionTimingMode === 'custom' ? { sectionTimingMode: 'custom' } : {}),
     sectionGraceSec: clampSettingNumber(source.sectionGraceSec, 10, { min: 0, max: 300 }),
     idleDetection: Boolean(source.idleDetection),
     idleThresholdMin: clampSettingNumber(source.idleThresholdMin, 5, { min: 1, max: 60 }),
@@ -1755,7 +1777,8 @@ function stripAssessmentSnapshotPrivateFields(snapshot) {
 
 export function normalizeAssessmentSections(sections = []) {
   if (!Array.isArray(sections)) return [];
-  return sections.map((section) => {
+  return sections.map((entry) => {
+    const section = entry?.toObject?.() || entry;
     const sectionType = section?.type;
     const questions = Array.isArray(section?.questions) ? section.questions : [];
     const normalizedQuestions = questions.map((question) => {
@@ -1800,10 +1823,19 @@ export function normalizeAssessmentSections(sections = []) {
       };
     });
     const minutes = Number(section?.suggestedMinutes);
+    const limit = section?.timeLimitMinutes;
+    let timeLimitMinutes;
+    if (limit != null && !(typeof limit === 'string' && limit.trim() === '')) {
+      timeLimitMinutes = typeof limit === 'number' || typeof limit === 'string' ? Number(limit) : NaN;
+      if (!Number.isSafeInteger(timeLimitMinutes) || timeLimitMinutes < 1) {
+        throw Object.assign(new Error(`Enter a positive whole number of minutes for ${section.sectionName || 'each timed section'}.`), { status: 400 });
+      }
+    }
     return {
       ...section,
       // Whole minutes 1–1440, or none (an empty box clears it).
       suggestedMinutes: Number.isFinite(minutes) && minutes >= 1 ? Math.min(1440, Math.round(minutes)) : undefined,
+      timeLimitMinutes,
       questions: normalizedQuestions,
     };
   });
@@ -1853,6 +1885,19 @@ function normalizeAssessmentQuestionSets(questionSets = [], fallbackSections = [
       totalMarks: marksPayload.totalMarks,
     };
   });
+}
+
+export function assessmentSectionTimingProblem(questionSets, settings, duration) {
+  if (!settings?.sectionWiseLock) return '';
+  const overallMinutes = Number(duration) || 0;
+  for (const [index, paper] of questionSets.entries()) {
+    const timedMinutes = (paper.sections || []).reduce((total, section) => total + (section.timeLimitMinutes || 0), 0);
+    if (timedMinutes > overallMinutes) {
+      const label = settings.questionSetEnabled ? `${paper.label || `Set ${index + 1}`}: ` : '';
+      return `${label}Section limits total ${timedMinutes} min, exceeding the ${overallMinutes} min overall timer.`;
+    }
+  }
+  return '';
 }
 
 function naturalValueCompare(left = '', right = '') {
@@ -2108,8 +2153,9 @@ function buildStudentSectionSummary(sections = []) {
       totalMarks: Number(section?.totalMarks || 0) || (questionCount * marksPerQuestion),
       // Shown in the exam pattern before a student starts (Prep Mock overview), like any test paper.
       negativeMarksPerQuestion: Math.max(0, Number(section?.negativeMarksPerQuestion || 0) || 0),
-      // Suggested minutes for this section (guidance; only the total duration is enforced).
+      // Suggested minutes for pacing, independent of enforced section limits.
       suggestedMinutes: Number(section?.suggestedMinutes) > 0 ? Number(section.suggestedMinutes) : null,
+      timeLimitMinutes: section?.timeLimitMinutes,
     };
   });
 }
@@ -2514,7 +2560,7 @@ export async function createAssessment(req, res) {
     }
 
     // Results release is server-owned; a new assessment always starts unreleased.
-    const normalizedSettings = { ...normalizeAssessmentSettings(settings), resultsReleasedAt: null };
+    const normalizedSettings = { ...normalizeAssessmentSettings(settings, { creating: true }), resultsReleasedAt: null };
     const normalizedSections = normalizeAssessmentSections(sections);
     const normalizedQuestionSets = normalizeAssessmentQuestionSets(questionSets, normalizedSections);
     if (lifecycleStatus !== 'draft' && normalizedSettings.questionSetEnabled && normalizedQuestionSets.length < normalizedSettings.questionSetCount) {
@@ -2571,6 +2617,10 @@ export async function createAssessment(req, res) {
       start = startTime ? parseDate(startTime) : null;
       end = endTime ? parseDate(endTime) : null;
       durationNum = duration !== undefined ? Number(duration) : null;
+    }
+    if (!isDraft) {
+      const problem = assessmentSectionTimingProblem(effectiveQuestionSets, normalizedSettings, durationNum);
+      if (problem) return res.status(400).json({ error: problem });
     }
 
     const normalizedTarget = mockKind ? 'selected' : targetType === 'selected' ? 'selected' : 'all';
@@ -2982,6 +3032,8 @@ export async function mockPublishProblem(assessment) {
     !(Number(assessment.duration) > 0) && 'the test length (Schedule step)',
   ].filter(Boolean);
   if (missing.length) return `Add ${missing.join(', ')} before publishing. Open Edit mock to complete it.`;
+  const timingProblem = assessmentSectionTimingProblem([assessment], assessment.settings, assessment.duration);
+  if (timingProblem) return `${timingProblem} Open Edit mock to fix it.`;
   const patternProblem = mockPatternProblem({ mockPattern: assessment.mockPattern, patternFrom: assessment.patternFrom, sections: assessment.sections || [], duration: assessment.duration });
   if (patternProblem) return `${patternProblem} Open Edit mock to fix it.`;
   try {
@@ -3195,7 +3247,7 @@ export async function updateAssessment(req, res) {
     if (settings !== undefined) {
       // Editing never releases or withdraws results; only release-results does.
       const releasedAt = normalizeAssessmentSettings(assessment.settings || {}).resultsReleasedAt;
-      assessment.settings = { ...normalizeAssessmentSettings(settings), resultsReleasedAt: releasedAt };
+      assessment.settings = { ...normalizeAssessmentSettings({ sectionTimingMode: assessment.settings?.sectionTimingMode, ...settings }), resultsReleasedAt: releasedAt };
     }
     await applyAssessmentPassword(assessment, { passwordEnabled, password });
 
@@ -3255,7 +3307,11 @@ export async function updateAssessment(req, res) {
 
     if (sections || questionSets) {
       const normalized = normalizeAssessmentSections(sections || assessment.sections || []);
-      const normalizedSets = normalizeAssessmentQuestionSets(questionSets || assessment.questionSets, normalized);
+      const existingSets = assessment.questionSets || [];
+      const inputSets = questionSets || (sections
+        ? [{ label: existingSets[0]?.label, sections: normalized }, ...existingSets.slice(1)]
+        : existingSets);
+      const normalizedSets = normalizeAssessmentQuestionSets(inputSets, normalized);
       const setCount = assessment.settings?.questionSetEnabled
         ? Math.min(normalizedSets.length, Number(assessment.settings.questionSetCount) || normalizedSets.length)
         : 1;
@@ -3283,6 +3339,8 @@ export async function updateAssessment(req, res) {
       .find(Boolean);
     if (duplicateQuestionError) return res.status(400).json({ error: duplicateQuestionError });
     if (!isDraft) {
+      const problem = assessmentSectionTimingProblem(assessmentQuestionSets, assessment.settings, assessment.duration);
+      if (problem) return res.status(400).json({ error: problem });
       for (const questionSet of assessmentQuestionSets) {
         await validatePublishedAssessmentSections(questionSet.sections || []);
       }
@@ -4525,6 +4583,7 @@ async function studentAttemptResponse(assessment, submission, student, now, mess
     candidate: buildCandidateIdentity(student),
     serverTime: now,
     allowedEnd: computeAllowedEnd(delivered, submission.startedAt || now, submission.pausedDurationMs),
+    ...assessmentSectionClock(submission, now),
     securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(assessment.settings || {}),
     requiresSecuritySetup: !isTerminalAssessmentSubmission(submission) && !submission.securityCompletedAt,
     requiredSecuritySteps: getRequiredSecuritySteps(assessment.settings || {}, submission),
@@ -4594,6 +4653,7 @@ export async function startStudentAssessment(req, res) {
           doc.lastAcceptedBatch = { id: '', sequence: 0, hash: '' };
           doc.submissionReceipt = '';
           doc.startedAt = undefined;
+          doc.sectionTimeStarts = undefined;
           doc.submittedAt = undefined;
           doc.pendingWork = undefined;
           doc.evaluationStatus = 'completed';
@@ -4667,6 +4727,9 @@ export async function beginStudentAssessment(req, res) {
         if (!doc.startedAt || doc.status === 'not_started') {
           doc.startedAt = now;
           doc.status = 'in_progress';
+          if (getAssessmentSectionLimitMs(assessment.settings, doc.deliverySections?.[0])) {
+            doc.sectionTimeStarts = { 0: 0 };
+          }
         }
         doc.securityCompletedAt = doc.securityCompletedAt || now;
         if (doc.pauseStartedAt) finishSubmissionSecurityPause(doc, now);
@@ -4680,6 +4743,54 @@ export async function beginStudentAssessment(req, res) {
     if (!submission) throw new AssessmentWriteError(404, 'ATTEMPT_NOT_FOUND', 'Unlock the assessment first.');
     notifyAssessmentReportChanged(assessment._id, isTerminalAssessmentSubmission(submission) ? 'expired' : 'started');
     return res.json(await studentAttemptResponse(assessment, submission, req.user, now, isTerminalAssessmentSubmission(submission) ? 'Assessment already submitted' : 'Assessment started'));
+  } catch (error) { return respondAssessmentWriteError(res, error); }
+}
+
+export async function openStudentAssessmentSection(req, res) {
+  try {
+    const input = req.body || {};
+    const { sectionIndex, submissionId, attemptGeneration, sessionId } = input;
+    if (!Number.isSafeInteger(sectionIndex) || sectionIndex < 0) {
+      throw new AssessmentWriteError(400, 'INVALID_SECTION', 'Choose a section from this assessment.');
+    }
+    if (!mongoose.isValidObjectId(submissionId) || !Number.isSafeInteger(attemptGeneration) || attemptGeneration < 1
+      || typeof sessionId !== 'string' || !sessionId) {
+      throw new AssessmentWriteError(400, 'SESSION_REQUIRED', 'An active assessment session is required.');
+    }
+    const assessment = await requireStudentAssessment(req.params.id, req.user, { metadataOnly: true });
+    const now = new Date();
+    const { submission } = await mutateAssessmentSubmission({
+      filter: { assessmentId: assessment._id, studentId: req.user._id },
+      mutate: (doc) => {
+        assertAssessmentSession(doc, input);
+        if (doc.status !== 'in_progress' || !doc.startedAt || !doc.securityCompletedAt || doc.pauseStartedAt) {
+          throw new AssessmentWriteError(409, 'ASSESSMENT_NOT_STARTED', 'An active assessment is required to open a section.');
+        }
+        if (isAttemptPastDeadline(doc, assessment, now)) {
+          throw new AssessmentWriteError(409, 'ASSESSMENT_CLOSED', 'The assessment time has ended.');
+        }
+        const section = doc.deliverySections?.[sectionIndex];
+        if (!section) throw new AssessmentWriteError(400, 'INVALID_SECTION', 'Choose a section from this assessment.');
+        if (!getAssessmentSectionLimitMs(assessment.settings, section)) return;
+        const elapsed = getActiveAssessmentElapsedMs(doc, now);
+        const end = getAssessmentSectionEndMs(assessment.settings, section, doc, sectionIndex);
+        if (end !== null && elapsed >= end) {
+          throw new AssessmentWriteError(409, 'SECTION_TIME_EXPIRED', 'This section is locked because its time has ended.', {
+            ...assessmentSectionClock(doc, now), serverTime: now,
+          });
+        }
+        if (getAssessmentSectionStartMs(doc, sectionIndex) === null) {
+          doc.sectionTimeStarts = { ...doc.sectionTimeStarts, [sectionIndex]: elapsed };
+        }
+      },
+      select: 'status startedAt activeSessionId securityCompletedAt pauseStartedAt securityPauseReason pausedDurationMs attemptGeneration deliverySections sectionTimeStarts',
+    });
+    if (!submission) throw new AssessmentWriteError(404, 'ATTEMPT_NOT_FOUND', 'Unlock the assessment first.');
+    return res.json({
+      ...assessmentSectionClock(submission, now),
+      allowedEnd: computeAllowedEnd(assessment, submission.startedAt, submission.pausedDurationMs),
+      serverTime: now,
+    });
   } catch (error) { return respondAssessmentWriteError(res, error); }
 }
 
@@ -4724,8 +4835,9 @@ async function persistStudentAnswers(req, res, { autosave = false } = {}) {
           // Starting a retake is an explicit start transition with a new generation.
           if (!doc.submissionReceipt) doc.submissionReceipt = crypto.randomUUID();
           const incoming = normalizeAssessmentAnswerChanges(input.answers ?? [], assessmentForSubmission(assessment, doc).sections);
-          return { alreadySubmitted: true, answersAccepted: doc.lastAcceptedBatch?.answersAccepted !== false
-            && assessmentBatchMatches(doc, { mutationId: input.mutationId, saveSequence: input.saveSequence, answers: incoming, final }) };
+          const matches = assessmentBatchMatches(doc, { mutationId: input.mutationId, saveSequence: input.saveSequence, answers: incoming, final });
+          return { alreadySubmitted: true, answersAccepted: matches && doc.lastAcceptedBatch?.answersAccepted !== false,
+            ignoredSectionIndexes: matches ? doc.lastAcceptedBatch?.ignoredSectionIndexes : undefined };
         }
         if (doc.status !== 'in_progress' || !doc.startedAt) {
           throw new AssessmentWriteError(409, 'ASSESSMENT_NOT_STARTED', 'Complete setup and begin the assessment before saving.');
@@ -4746,14 +4858,21 @@ async function persistStudentAnswers(req, res, { autosave = false } = {}) {
         if (!passwordCheck.ok) throw new AssessmentWriteError(passwordCheck.status, 'ASSESSMENT_LOCKED', passwordCheck.error);
         const incoming = normalizeAssessmentAnswerChanges(input.answers ?? [], delivered.sections);
         if (!acceptAssessmentBatch(doc, { mutationId: input.mutationId, saveSequence: input.saveSequence, answers: incoming, final })) {
-          return { duplicate: true, answersAccepted: doc.lastAcceptedBatch?.answersAccepted !== false };
+          return { duplicate: true, answersAccepted: doc.lastAcceptedBatch?.answersAccepted !== false,
+            ignoredSectionIndexes: doc.lastAcceptedBatch?.ignoredSectionIndexes };
         }
         // A terminal transition caused by the deadline grades the last accepted
         // answer set. Offline edits do not silently extend the exam deadline.
         const acceptAnswers = !expired || assessment.allowLateSubmission;
+        let ignoredSectionIndexes;
         if (input.mutationId && !acceptAnswers) doc.lastAcceptedBatch.answersAccepted = false;
         if (acceptAnswers) {
-          const merged = mergeAssessmentAnswers(doc.answers, incoming);
+          const timedChanges = filterTimedAssessmentAnswerChanges(delivered, doc, incoming, now);
+          if (timedChanges.ignoredSectionIndexes.length) {
+            ignoredSectionIndexes = timedChanges.ignoredSectionIndexes;
+            if (input.mutationId) doc.lastAcceptedBatch.ignoredSectionIndexes = ignoredSectionIndexes;
+          }
+          const merged = mergeAssessmentAnswers(doc.answers, timedChanges.answers);
           const error = validateQuestionAttemptCounts(delivered, merged, final && !expired);
           if (error) throw new AssessmentWriteError(400, 'QUESTION_ATTEMPT_LIMIT', error);
           doc.answers = merged;
@@ -4784,7 +4903,7 @@ async function persistStudentAnswers(req, res, { autosave = false } = {}) {
           });
         }
         doc.deadlineAt = getAssessmentAttemptDeadline(delivered, doc);
-        return { expired, answersAccepted: acceptAnswers };
+        return { expired, answersAccepted: acceptAnswers, ignoredSectionIndexes };
       },
     });
     if (!submission) return res.status(404).json({ error: 'Submission not found. Start the assessment first.' });
@@ -4800,6 +4919,7 @@ async function persistStudentAnswers(req, res, { autosave = false } = {}) {
       allowedEnd: computeAllowedEnd(assessmentForSubmission(assessment, submission), submission.startedAt || now, submission.pausedDurationMs),
       evaluationStatus: submission.evaluationStatus,
       answersAccepted: result?.answersAccepted !== false,
+      ...(result?.ignoredSectionIndexes?.length ? { ignoredSectionIndexes: result.ignoredSectionIndexes } : {}),
       ...assessmentWriteAcknowledgement(submission),
     });
   } catch (error) {
@@ -6601,7 +6721,7 @@ export async function logStudentHeartbeat(req, res) {
       },
       updatePipeline,
       { new: true },
-    ).select('status startedAt pausedDurationMs violationScore pauseCount lastPauseAt pauseStartedAt');
+    ).select('status startedAt pausedDurationMs violationScore pauseCount lastPauseAt pauseStartedAt securityPauseReason sectionTimeStarts');
 
     if (!submission) {
       const existingSubmission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId })
@@ -6630,6 +6750,7 @@ export async function logStudentHeartbeat(req, res) {
       securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
       allowedEnd,
       serverTime: now,
+      ...assessmentSectionClock(submission, now),
     };
     await writePresenceCheckpoint(studentId, assessment._id, req.body || {}, response);
     return res.json(response);
