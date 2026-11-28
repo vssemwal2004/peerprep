@@ -1,4 +1,4 @@
-// Prep Mock builder, Pattern step: the exam pattern students read before they start, written per
+// Prep Mock builder pattern dialog: the exam pattern students read before they start, written per
 // company + role like a test paper (S.No · Section · Type · Questions · Duration · Marks) and
 // versioned by the month/year the company used it. The admin picks a version or writes one.
 // Display only: it does not have to match the questions (the Questions step shows soft warnings).

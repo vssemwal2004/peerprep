@@ -122,7 +122,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
       let changed = false;
       sectionsWithIds.forEach((section) => {
         if (typeof next[section.__key] === 'undefined') {
-          next[section.__key] = true;
+          next[section.__key] = (section.questions?.length || 0) > 0;
           changed = true;
         }
       });

@@ -875,7 +875,7 @@ function PatternBlock({ mock, pattern, onEditPattern }) {
 
 function MockDetails({ mock, onOpenPath, openPath, assessmentRoot }) {
   const pattern = mockPattern(mock);
-  const editPattern = mock.shared ? null : () => onOpenPath(`${assessmentRoot}/${mock._id}/edit?step=pattern`);
+  const editPattern = mock.shared ? null : () => onOpenPath(`${assessmentRoot}/${mock._id}/edit?pattern=1`);
   return (
     <div className="space-y-3 border-t border-slate-100 bg-slate-50/70 px-4 py-4 dark:border-gray-800 dark:bg-gray-950/40">
       <PatternFacts pattern={pattern} mock={mock} />
@@ -1106,7 +1106,7 @@ function RolePattern({ mocks, onOpenPath, assessmentRoot }) {
   if (!group) return null;
   const { pattern, sample } = group;
   const written = writtenPatternOf(sample);
-  const editPattern = sample.shared || !onOpenPath ? null : () => onOpenPath(`${assessmentRoot}/${sample._id}/edit?step=pattern`);
+  const editPattern = sample.shared || !onOpenPath ? null : () => onOpenPath(`${assessmentRoot}/${sample._id}/edit?pattern=1`);
   return (
     <section aria-label="Role pattern" className="rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
