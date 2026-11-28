@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Lock } from 'lucide-react';
 import MockHero, { PrepMockHeader } from './MockHero';
@@ -11,7 +11,7 @@ import { TowerGlyph, GlyphTile } from './prepMockGlyphs';
 import { usePrepMocks } from './usePrepMocks';
 import { countsOf, findCompany, journeyOf, pickMock, spotlightOf, summarize } from './prepMockModel';
 import AssessmentLaunchModal from '../assessment-dashboard/AssessmentLaunchModal';
-import AssessmentReportModal from '../assessment-dashboard/AssessmentReportModal';
+import MockResultModal from './MockResultModal';
 import { useAssessmentLauncher } from '../assessment-dashboard/useAssessmentLauncher';
 import { card, focusRing, Skeleton, Unavailable } from '../dashboard/ui';
 import { firstStudentFeaturePath } from '../studentFeatureAccess';
@@ -162,6 +162,16 @@ export default function PrepMockPage() {
   const { loading, error, disabled, data, mocks, companies, reports, refresh } = usePrepMocks();
   const launcher = useAssessmentLauncher();
   const [report, setReport] = useState(null);
+  // The mock a result belongs to (logo, company, role in the result header).
+  const reportMock = report ? mocks.find((entry) => String(entry._id) === String(report.assessmentId)) || null : null;
+  // ?result=<mock id> (e.g. back from the feedback page) opens that mock's result once.
+  const resultParam = params.get('result');
+  useEffect(() => {
+    if (!resultParam || loading) return;
+    const found = reports.get(String(resultParam));
+    if (found) setReport(found);
+    setParams((current) => { const next = new URLSearchParams(current); next.delete('result'); return next; }, { replace: true });
+  }, [resultParam, loading, reports, setParams]);
   const company = companyParam ? findCompany(companies, companyParam) : null;
   const roleParam = params.get('role');
   const mockParam = params.get('mock');
@@ -241,7 +251,8 @@ export default function PrepMockPage() {
       {error && data && <Unavailable message={`Could not refresh: ${error}`} onRetry={refresh} className="mb-4" />}
       {body}
       <AssessmentLaunchModal {...launcher.modalProps} />
-      <AssessmentReportModal report={report} open={Boolean(report)} onClose={() => setReport(null)} />
+      <MockResultModal report={report} mock={reportMock} open={Boolean(report)} onClose={() => setReport(null)}
+        onFeedback={report ? () => navigate(`/student/assessment/${report.assessmentId}/feedback?from=prep-mock`) : undefined} />
     </Shell>
   );
 }

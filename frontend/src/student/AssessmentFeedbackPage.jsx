@@ -10,6 +10,7 @@ import {
   MessageSquareText,
   Send,
   Star,
+  Trophy,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import PageGuideButton from '../guide/platform/PageGuideButton';
@@ -149,17 +150,17 @@ export default function AssessmentFeedbackPage() {
     <div className="min-h-screen overflow-y-auto bg-[radial-gradient(circle_at_top_right,_rgba(14,165,233,0.14),_transparent_35%),linear-gradient(135deg,#f8fbff_0%,#eef4ff_55%,#f8fafc_100%)] px-4 py-8 dark:bg-gray-950 sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-3xl items-center justify-center">
         <main className="w-full overflow-hidden rounded-[32px] border border-white/80 bg-white/95 shadow-[0_30px_100px_-45px_rgba(15,23,42,0.38)] backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
-          <div data-guide="afb-header" className="bg-[linear-gradient(135deg,#075985_0%,#0ea5e9_55%,#38bdf8_100%)] px-6 py-7 text-white sm:px-10 sm:py-9">
+          <div data-guide="afb-header" className={`${fromMock ? 'bg-[linear-gradient(135deg,#4c1d95_0%,#7c3aed_55%,#a78bfa_100%)]' : 'bg-[linear-gradient(135deg,#075985_0%,#0ea5e9_55%,#38bdf8_100%)]'} px-6 py-7 text-white sm:px-10 sm:py-9`}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-50"><ClipboardCheck className="h-3.5 w-3.5" /> Assessment complete</div>
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-50"><ClipboardCheck className="h-3.5 w-3.5" /> {fromMock ? 'Mock complete' : 'Assessment complete'}</div>
                 <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight sm:text-3xl">Share your experience<PageGuideButton size="sm" /></h1>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-sky-50/90">Your feedback helps us improve the assessment experience for every student.</p>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-sky-50/90">{fromMock ? 'Your feedback helps us make every company mock feel closer to the real test.' : 'Your feedback helps us improve the assessment experience for every student.'}</p>
               </div>
               <MessageSquareText className="hidden h-10 w-10 text-white/60 sm:block" />
             </div>
             <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-sky-50/90">
-              <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4" /> {assessment.title}</span>
+              <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4" /> {assessment.title}{fromMock && (assessment.company || assessment.role) ? ` · ${[assessment.company, assessment.role].filter(Boolean).join(' · ')}` : ''}</span>
               <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4" /> Submitted {formatDateTime(submission.submittedAt)}</span>
             </div>
           </div>
@@ -167,7 +168,7 @@ export default function AssessmentFeedbackPage() {
           <div className="p-6 sm:p-10">
             {/* No score here: this form opens before results may be released. */}
             <div className="grid gap-3 sm:grid-cols-2" data-guide="afb-summary">
-              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-gray-800 dark:bg-gray-800/70"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-gray-500">Assessment</p><p className="mt-1 line-clamp-2 text-sm font-bold text-slate-900 dark:text-white">{assessment.title || 'Assessment'}</p></div>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-gray-800 dark:bg-gray-800/70"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-gray-500">{fromMock ? 'Mock' : 'Assessment'}</p><p className="mt-1 line-clamp-2 text-sm font-bold text-slate-900 dark:text-white">{assessment.title || (fromMock ? 'Mock' : 'Assessment')}</p></div>
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-gray-800 dark:bg-gray-800/70"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-gray-500">Submitted on</p><p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">{formatDateTime(submission.submittedAt)}</p></div>
             </div>
 
@@ -176,14 +177,18 @@ export default function AssessmentFeedbackPage() {
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300"><CheckCircle2 className="h-6 w-6" /></div>
                 <h2 className="mt-4 text-lg font-bold text-emerald-900 dark:text-emerald-200">Feedback submitted</h2>
                 <p className="mt-2 text-sm leading-6 text-emerald-800/80 dark:text-emerald-200/80">Thank you for helping us make the platform better.</p>
-                <button type="button" onClick={() => navigate(backPath)} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-emerald-700"><ArrowLeft className="h-4 w-4" /> {fromMock ? 'Return to Prep Mock' : 'Return to assessments'}</button>
+                <div className="mt-5 flex flex-wrap justify-center gap-2">
+                  {/* After a mock, the result window opens straight from here (Prep Mock reads ?result=). */}
+                  {fromMock && <button type="button" onClick={() => navigate(`/student/prep-mock?result=${encodeURIComponent(id)}`)} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-violet-700"><Trophy className="h-4 w-4" /> See your result</button>}
+                  <button type="button" onClick={() => navigate(backPath)} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors ${fromMock ? 'border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:bg-transparent dark:text-emerald-300' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}><ArrowLeft className="h-4 w-4" /> {fromMock ? 'Back to Prep Mock' : 'Return to assessments'}</button>
+                </div>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="mt-8">
                 <div data-guide="afb-rating">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                      <h2 className="flex items-center gap-1.5 text-lg font-bold text-slate-950 dark:text-white">How was your assessment experience?<GuideInfo step="afb-rating" /></h2>
+                      <h2 className="flex items-center gap-1.5 text-lg font-bold text-slate-950 dark:text-white">{fromMock ? 'How was this mock?' : 'How was your assessment experience?'}<GuideInfo step="afb-rating" /></h2>
                       <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Please select one rating to continue.</p>
                     </div>
                     <span className="text-xs font-semibold text-rose-500">Required</span>
@@ -202,10 +207,10 @@ export default function AssessmentFeedbackPage() {
 
                 {error && <div className="mt-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
 
-                <button type="submit" data-guide="afb-submit" disabled={!rating || submitting} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-sky-900/15 transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700">
+                <button type="submit" data-guide="afb-submit" disabled={!rating || submitting} className={`mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-sm font-bold text-white shadow-lg transition-colors ${fromMock ? 'bg-violet-600 shadow-violet-900/15 hover:bg-violet-700' : 'bg-sky-600 shadow-sky-900/15 hover:bg-sky-700'} disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none dark:disabled:bg-gray-700`}>
                   {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Submitting...</> : <><Send className="h-4 w-4" /> Submit feedback</>}
                 </button>
-                <p className="mt-3 text-center text-xs text-slate-400 dark:text-gray-500">Your response is linked to this assessment and can only be submitted once.</p>
+                <p className="mt-3 text-center text-xs text-slate-400 dark:text-gray-500">Your response is linked to this {fromMock ? 'mock' : 'assessment'} and can only be submitted once.</p>
               </form>
             )}
           </div>

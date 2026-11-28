@@ -1281,9 +1281,11 @@ function buildStudentResultPermissions(assessment = {}, submission = {}, now = n
   const resultReleased = isTerminalAssessmentSubmission(submission) && graded && (immediateRelease
     || Boolean(settings.resultsReleasedAt)
     || Boolean(delayedReleaseAt && delayedReleaseAt.getTime() <= now.getTime()));
-  // Classmates may still be writing until the window closes for everyone.
-  const answersReleased = resultReleased && isAssessmentClosedForStudents(assessment, now)
-    && Boolean(settings.showCorrectAnswers);
+  // Classmates may still be writing until the window closes for everyone. A Prep Mock is always
+  // open practice with no window: its correct answers follow the admin's switch once the
+  // student's own attempt is finished and graded.
+  const windowClosed = assessment.kind === 'mock' || isAssessmentClosedForStudents(assessment, now);
+  const answersReleased = resultReleased && windowClosed && Boolean(settings.showCorrectAnswers);
 
   return {
     resultReleased,
@@ -1647,6 +1649,8 @@ function buildStudentReportRow(assessment = {}, submission = {}, { rankInfo = nu
     startedAt: submission.startedAt,
     sectionBreakdown,
     questionWise,
+    // The pass mark (%) the result is judged against, shown beside the student's own score.
+    passPercentage: permissions.canViewScore ? passPercentageOf(assessment.settings) : null,
     permissions,
     rank: permissions.canViewRank && !evaluationUnavailable ? rankInfo?.rank || null : null,
     percentile: permissions.canViewRank && !evaluationUnavailable ? rankInfo?.percentile || null : null,
@@ -5908,10 +5912,20 @@ export async function getStudentAssessmentReport(req, res) {
         ? Number(((score / totalMarks) * 100).toFixed(2))
         : 0;
 
+    // Who took it, so a report opened straight from a link can still name the student.
+    const studentDoc = submission.studentId
+      ? await User.findById(submission.studentId).select('name email studentId college branch').lean()
+      : null;
+
     return res.json({
       submissionId: submission._id,
       assessmentId: assessment._id,
       assessmentTitle: assessment.title || 'Untitled Assessment',
+      student: studentDoc ? {
+        name: studentDoc.name || '', email: studentDoc.email || '', rollNo: studentDoc.studentId || '',
+        college: studentDoc.college || '', branch: studentDoc.branch || '',
+      } : null,
+      submittedAt: submission.submittedAt || null,
       evaluationStatus: submission.evaluationStatus || 'completed',
       score,
       totalMarks,

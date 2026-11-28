@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
   CalendarDays,
@@ -50,7 +51,8 @@ const toTime = (value) => (value ? new Date(value) : null);
 const isAssessmentCompleted = (assessment) => Boolean(assessment.endTime && new Date(assessment.endTime).getTime() < Date.now());
 
 const assessmentSortValue = (assessment, key) => {
-  if (key === 'startTime') return toTime(assessment.startTime);
+  // Prep Mocks are always open: their date is when the mock was created.
+  if (key === 'startTime') return toTime(assessment.kind === 'mock' ? assessment.createdAt : assessment.startTime);
   if (key === 'status') return isAssessmentCompleted(assessment) ? 'Completed' : 'Open';
   return assessment?.[key];
 };
@@ -125,14 +127,14 @@ function SummaryTile({ icon: Icon, label, value, helper, tone = 'sky' }) {
   );
 }
 
-function AssessmentTable({ table, onOpen }) {
+function AssessmentTable({ table, onOpen, isMock = false }) {
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:border-gray-800 dark:bg-gray-800/80 dark:text-gray-400">
             <tr>
-              {ASSESSMENT_COLUMNS.map((column) => <SortHeader key={column.key} sortKey={column.key} sort={table.sort} onSort={table.toggleSort} align={column.align} className={column.className}>{column.label}</SortHeader>)}
+              {ASSESSMENT_COLUMNS.map((column) => <SortHeader key={column.key} sortKey={column.key} sort={table.sort} onSort={table.toggleSort} align={column.align} className={column.className}>{isMock && column.key === 'title' ? 'Mock' : isMock && column.key === 'startTime' ? 'Created' : column.label}</SortHeader>)}
               <SortHeader sortable={false} align="right" className="px-4 py-3">Action</SortHeader>
             </tr>
           </thead>
@@ -141,8 +143,8 @@ function AssessmentTable({ table, onOpen }) {
               const isCompleted = isAssessmentCompleted(assessment);
               return (
                 <tr key={assessment._id} tabIndex={0} role="button" onClick={() => onOpen(assessment)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(assessment); } }} className="group cursor-pointer transition-colors hover:bg-sky-50/60 focus:bg-sky-50/60 focus:outline-none dark:hover:bg-gray-800/50 dark:focus:bg-gray-800/50">
-                  <td className="px-4 py-3"><p className="max-w-sm truncate font-bold text-slate-900 dark:text-white">{assessment.title}</p><p className="mt-0.5 text-[11px] capitalize text-slate-500 dark:text-gray-400">{assessment.assessmentType || 'Mixed'} assessment</p></td>
-                  <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-600 dark:text-gray-300">{formatDate(assessment.startTime)}</td>
+                  <td className="px-4 py-3"><p className="max-w-sm truncate font-bold text-slate-900 dark:text-white">{assessment.title}</p><p className="mt-0.5 text-[11px] capitalize text-slate-500 dark:text-gray-400">{isMock ? [assessment.company, assessment.role].filter(Boolean).join(' · ') || 'Prep Mock' : `${assessment.assessmentType || 'Mixed'} assessment`}</p></td>
+                  <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-600 dark:text-gray-300">{formatDate(isMock ? assessment.createdAt : assessment.startTime)}</td>
                   <td className="px-3 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${isCompleted ? 'bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/25 dark:text-emerald-300'}`}>{isCompleted ? 'Completed' : 'Open'}</span></td>
                   <td className="px-3 py-3 text-center font-bold text-slate-800 dark:text-gray-200">{assessment.completedStudents}</td>
                   <td className="px-3 py-3 text-center font-bold text-slate-800 dark:text-gray-200">{assessment.feedbackCount}</td>
@@ -155,7 +157,7 @@ function AssessmentTable({ table, onOpen }) {
           </tbody>
         </table>
       </div>
-      <TablePager {...table.pager} noun="assessments" />
+      <TablePager {...table.pager} noun={isMock ? 'mocks' : 'assessments'} />
     </div>
   );
 }
@@ -278,7 +280,7 @@ function StudentFeedbackModal({ row, onClose }) {
   );
 }
 
-function AssessmentFeedbackDetail({ assessment, onBack }) {
+function AssessmentFeedbackDetail({ assessment, onBack, isMock = false }) {
   const [filters, setFilters] = useState({ search: '', from: '', to: '' });
   const [data, setData] = useState({ rows: [], summary: {} });
   const [loading, setLoading] = useState(true);
@@ -315,20 +317,20 @@ function AssessmentFeedbackDetail({ assessment, onBack }) {
           className="mb-3 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition-colors hover:border-sky-300 hover:text-sky-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-sky-700 dark:hover:text-sky-300"
         >
           <ArrowLeft className="h-4 w-4" />
-          All assessments
+          {isMock ? 'All mocks' : 'All assessments'}
         </button>
 
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-1.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-600 dark:text-sky-300">
-              <MessageSquareText className="h-4 w-4" /> Assessment feedback
+              <MessageSquareText className="h-4 w-4" /> {isMock ? 'Mock feedback' : 'Assessment feedback'}
             </div>
             <h1 data-guide="af-detail-title" className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{assessment.title} <PageGuideButton /></h1>
             <p className="mt-1.5 flex items-center gap-2 text-xs text-slate-500 dark:text-gray-400">
               <CalendarDays className="h-4 w-4" />
-              {formatDateTime(assessment.startTime)}
+              {formatDateTime(isMock ? assessment.createdAt : assessment.startTime)}
               <span className="text-slate-300 dark:text-gray-600">•</span>
-              {assessment.assessmentType || 'Mixed'} assessment
+              {isMock ? [assessment.company, assessment.role].filter(Boolean).join(' · ') || 'Prep Mock' : `${assessment.assessmentType || 'Mixed'} assessment`}
             </p>
           </div>
           <button type="button" onClick={() => void loadRows()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-sm transition-colors hover:border-sky-300 hover:text-sky-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-sky-700 dark:hover:text-sky-300">
@@ -337,7 +339,7 @@ function AssessmentFeedbackDetail({ assessment, onBack }) {
         </div>
 
         <div data-guide="af-detail-summary" className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryTile icon={Users} label="Completed students" value={summary.completedStudents ?? 0} helper="Finished assessment attempts" />
+          <SummaryTile icon={Users} label="Completed students" value={summary.completedStudents ?? 0} helper={isMock ? 'Finished mock attempts' : 'Finished assessment attempts'} />
           <SummaryTile icon={MessageSquareText} label="Feedback received" value={summary.feedbackCount ?? 0} helper="Submitted responses" tone="emerald" />
           <SummaryTile icon={Clock3} label="Pending feedback" value={summary.pendingFeedback ?? 0} helper="Students still to review" tone="amber" />
           <SummaryTile icon={Star} label="Average rating" value={summary.averageRating ? `${summary.averageRating}/5` : '—'} helper="Student experience rating" tone="slate" />
@@ -437,6 +439,8 @@ function AssessmentFeedbackDetail({ assessment, onBack }) {
 }
 
 export default function AssessmentFeedback() {
+  // /admin/prepmock/feedback lists Prep Mocks; the assessment pages list Prep Assessments.
+  const isMock = useLocation().pathname.startsWith('/admin/prepmock');
   const [filters, setFilters] = useState({ search: '', from: '', to: '' });
   const [assessments, setAssessments] = useState([]);
   const [selectedAssessment, setSelectedAssessment] = useState(null);
@@ -447,14 +451,14 @@ export default function AssessmentFeedback() {
     setLoading(true);
     setError('');
     try {
-      const response = await api.listAssessmentFeedbackAssessments(buildQuery(filters));
+      const response = await api.listAssessmentFeedbackAssessments(buildQuery({ ...filters, kind: isMock ? 'mock' : '' }));
       setAssessments(response.assessments || []);
     } catch (requestError) {
       setError(requestError.message || 'Unable to load assessment feedback.');
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, isMock]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => { void loadAssessments(); }, 250);
@@ -471,7 +475,7 @@ export default function AssessmentFeedback() {
   }), { assessments: 0, completed: 0, responses: 0, pending: 0 }), [assessments]);
 
   if (selectedAssessment) {
-    return <AssessmentFeedbackDetail assessment={selectedAssessment} onBack={() => setSelectedAssessment(null)} />;
+    return <AssessmentFeedbackDetail assessment={selectedAssessment} isMock={isMock} onBack={() => setSelectedAssessment(null)} />;
   }
 
   return (
@@ -480,10 +484,10 @@ export default function AssessmentFeedback() {
         <header data-page-header data-guide="af-header" className="flex flex-col gap-3 bg-[#f8fbff] py-2 dark:bg-gray-950 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-1.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-600 dark:text-sky-300">
-              <MessageSquareText className="h-4 w-4" /> Admin workspace
+              <MessageSquareText className="h-4 w-4" /> {isMock ? 'PrepMock' : 'Admin workspace'}
             </div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">Assessment Feedback <PageGuideButton /></h1>
-            <p className="mt-1.5 max-w-2xl text-xs leading-5 text-slate-500 dark:text-gray-400">Review student experience after each assessment. Select an assessment to open its feedback table.</p>
+            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{isMock ? 'Mock Feedback' : 'Assessment Feedback'} <PageGuideButton /></h1>
+            <p className="mt-1.5 max-w-2xl text-xs leading-5 text-slate-500 dark:text-gray-400">{isMock ? 'How students rated each company mock. Select a mock to open its feedback table.' : 'Review student experience after each assessment. Select an assessment to open its feedback table.'}</p>
           </div>
           <button type="button" onClick={() => void loadAssessments()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-sm transition-colors hover:border-sky-300 hover:text-sky-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-sky-700 dark:hover:text-sky-300">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
@@ -491,7 +495,7 @@ export default function AssessmentFeedback() {
         </header>
 
         <div data-guide="af-summary" className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryTile icon={ClipboardCheck} label="Assessments" value={overview.assessments} helper="Published assessment windows" />
+          <SummaryTile icon={ClipboardCheck} label={isMock ? 'Mocks' : 'Assessments'} value={overview.assessments} helper={isMock ? 'Published company mocks' : 'Published assessment windows'} />
           <SummaryTile icon={Users} label="Completed attempts" value={overview.completed} helper="Students eligible for feedback" tone="emerald" />
           <SummaryTile icon={MessageSquareText} label="Feedback received" value={overview.responses} helper="Submitted student responses" tone="sky" />
           <SummaryTile icon={Clock3} label="Pending responses" value={overview.pending} helper="Awaiting student feedback" tone="amber" />
@@ -500,18 +504,18 @@ export default function AssessmentFeedback() {
         <section data-guide="af-filters" className="mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <div className="flex flex-col gap-2.5 xl:flex-row xl:items-end">
             <label className="min-w-0 flex-1">
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-gray-400">Search assessments</span>
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-gray-400">{isMock ? 'Search mocks' : 'Search assessments'}</span>
               <span className="relative block">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Search by assessment name" className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-sky-600 dark:focus:bg-gray-900 dark:focus:ring-sky-900/40" />
+                <input value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder={isMock ? 'Mock name, company or role' : 'Search by assessment name'} className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-sky-600 dark:focus:bg-gray-900 dark:focus:ring-sky-900/40" />
               </span>
             </label>
             <label>
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-gray-400">Assessment from</span>
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-gray-400">{isMock ? 'Created from' : 'Assessment from'}</span>
               <input type="date" value={filters.from} onChange={(event) => setFilters((current) => ({ ...current, from: event.target.value }))} className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-sky-600" />
             </label>
             <label>
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-gray-400">Assessment to</span>
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-gray-400">{isMock ? 'Created to' : 'Assessment to'}</span>
               <input type="date" value={filters.to} onChange={(event) => setFilters((current) => ({ ...current, to: event.target.value }))} className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-sky-600" />
             </label>
             <button type="button" onClick={() => setFilters({ search: '', from: '', to: '' })} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
@@ -525,8 +529,8 @@ export default function AssessmentFeedback() {
         <section data-guide="af-list" className="mt-4">
           <div className="mb-3 flex items-end justify-between gap-3">
             <div>
-              <h2 className="flex items-center gap-1.5 text-lg font-bold text-slate-950 dark:text-white">Assessments<GuideInfo step="af-list" /></h2>
-              <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Sorted by assessment date, newest first.</p>
+              <h2 className="flex items-center gap-1.5 text-lg font-bold text-slate-950 dark:text-white">{isMock ? 'Mocks' : 'Assessments'}<GuideInfo step="af-list" /></h2>
+              <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">{isMock ? 'Newest mocks first.' : 'Sorted by assessment date, newest first.'}</p>
             </div>
             <span className="text-xs font-semibold text-slate-500 dark:text-gray-400">{assessments.length} found</span>
           </div>
@@ -538,11 +542,11 @@ export default function AssessmentFeedback() {
           ) : assessments.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center dark:border-gray-700 dark:bg-gray-900">
               <ClipboardCheck className="mx-auto h-10 w-10 text-slate-300 dark:text-gray-600" />
-              <h3 className="mt-3 text-sm font-bold text-slate-800 dark:text-gray-200">No assessments found</h3>
+              <h3 className="mt-3 text-sm font-bold text-slate-800 dark:text-gray-200">{isMock ? 'No mocks found' : 'No assessments found'}</h3>
               <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Try a different assessment name or date range.</p>
             </div>
           ) : (
-            <AssessmentTable table={assessmentTable} onOpen={setSelectedAssessment} />
+            <AssessmentTable table={assessmentTable} onOpen={setSelectedAssessment} isMock={isMock} />
           )}
         </section>
       </div>

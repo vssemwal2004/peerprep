@@ -4,6 +4,7 @@ import AssessmentFeedback from '../models/AssessmentFeedback.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import User from '../models/User.js';
 import { HttpError } from '../utils/errors.js';
+import { studentHasFeature } from '../services/studentFeatureAccess.js';
 
 const COMPLETED_SUBMISSION_STATUSES = new Set(['submitted', 'expired', 'violation', 'incomplete']);
 
@@ -56,6 +57,11 @@ function getAssessmentSummary(assessment = {}, submissionStats = {}, feedbackSta
     pendingFeedback: Math.max(0, completedStudents - feedbackCount),
     averageRating,
     latestFeedbackAt: feedbackStats.latestFeedbackAt || null,
+    kind: assessment.kind || 'assessment',
+    company: assessment.company || '',
+    role: assessment.role || '',
+    companyLogo: assessment.companyLogo || null,
+    createdAt: assessment.createdAt || null,
   };
 }
 
@@ -76,11 +82,19 @@ async function getStudentAssessmentContext(req, assessmentId) {
   }
 
   const assessment = await Assessment.findById(assessmentId)
-    .select('_id title description assessmentType startTime endTime duration totalMarks targetType assignedStudents lifecycleStatus')
+    .select('_id title description assessmentType startTime endTime duration totalMarks targetType assignedStudents lifecycleStatus kind company role companyLogo')
     .lean();
   if (!assessment) throw new HttpError(404, 'Assessment not found.');
-  if (assessment.lifecycleStatus === 'draft') throw new HttpError(403, 'Assessment is not published yet.');
-  if (!isStudentAssigned(assessment, req.user)) throw new HttpError(403, 'Not assigned to this assessment.');
+  const isMock = assessment.kind === 'mock';
+  if (isMock) {
+    // A mock reaches students through Prep Mock (own students, universities); the finished attempt
+    // checked below is the proof that this student could take it. Drafts may keep old attempts.
+    if (!studentHasFeature(req.user, 'prep_mock')) throw new HttpError(403, 'Prep Mock is not turned on for your account.');
+  } else {
+    if (!studentHasFeature(req.user, 'assessments')) throw new HttpError(403, 'This feature is not enabled for your account.');
+    if (assessment.lifecycleStatus === 'draft') throw new HttpError(403, 'Assessment is not published yet.');
+    if (!isStudentAssigned(assessment, req.user)) throw new HttpError(403, 'Not assigned to this assessment.');
+  }
 
   // The feedback form opens before results may be released, so it never carries
   // scores; students see those on the results page, which honours the release setting.
@@ -155,15 +169,24 @@ export async function submitStudentAssessmentFeedback(req, res) {
 
 export async function listAssessmentFeedbackAssessments(req, res) {
   const search = String(req.query?.search || '').trim();
-  const assessmentFilter = { lifecycleStatus: { $ne: 'draft' } };
+  // ?kind=mock lists Prep Mocks (always open: no start time, so dates filter on creation);
+  // anything else lists Prep Assessments only.
+  const isMock = req.query?.kind === 'mock';
+  const assessmentFilter = isMock
+    ? { kind: 'mock', $or: [{ lifecycleStatus: { $ne: 'draft' } }, { mockHasHistory: true }] }
+    : { kind: { $ne: 'mock' }, lifecycleStatus: { $ne: 'draft' } };
   const assessmentDateFilter = buildDateFilter(req.query?.from, req.query?.to);
 
-  if (search) assessmentFilter.title = { $regex: escapeRegex(search), $options: 'i' };
-  if (Object.keys(assessmentDateFilter).length) assessmentFilter.startTime = assessmentDateFilter;
+  if (search) {
+    const pattern = { $regex: escapeRegex(search), $options: 'i' };
+    if (isMock) assessmentFilter.$and = [{ $or: [{ title: pattern }, { company: pattern }, { role: pattern }] }];
+    else assessmentFilter.title = pattern;
+  }
+  if (Object.keys(assessmentDateFilter).length) assessmentFilter[isMock ? 'createdAt' : 'startTime'] = assessmentDateFilter;
 
   const assessments = await Assessment.find(assessmentFilter)
-    .select('_id title description assessmentType lifecycleStatus startTime endTime duration totalMarks')
-    .sort({ startTime: -1, createdAt: -1 })
+    .select('_id title description assessmentType lifecycleStatus startTime endTime duration totalMarks kind company role companyLogo createdAt')
+    .sort(isMock ? { createdAt: -1 } : { startTime: -1, createdAt: -1 })
     .lean();
 
   if (!assessments.length) return res.json({ assessments: [], total: 0 });
@@ -211,7 +234,7 @@ export async function listAssessmentFeedbackForAssessment(req, res) {
   if (!mongoose.Types.ObjectId.isValid(assessmentId)) throw new HttpError(400, 'Invalid assessment id.');
 
   const assessment = await Assessment.findById(assessmentId)
-    .select('_id title description assessmentType startTime endTime duration totalMarks lifecycleStatus')
+    .select('_id title description assessmentType startTime endTime duration totalMarks lifecycleStatus kind company role companyLogo createdAt')
     .lean();
   if (!assessment) throw new HttpError(404, 'Assessment not found.');
 

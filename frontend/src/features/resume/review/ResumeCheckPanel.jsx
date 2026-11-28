@@ -715,8 +715,12 @@ function ResultsBanner({ banner, onOpen, onDismiss }) {
 
 // ───────────── panel ─────────────
 
-export default function ResumeCheckPanel({ check, resume, hasContent, onLocate, onBrowseTemplates, onClose = null, onHighlight = null, className = '', initialTab = 'overview', initialAction = '', jdMatch = null, viewRequest = null }) {
+export default function ResumeCheckPanel({ check, resume, hasContent, onLocate, onBrowseTemplates, onClose = null, onHighlight = null, className = '', initialTab = 'overview', initialAction = '', jdMatch = null, viewRequest = null, onViewChange = null }) {
   const [view, setView] = useState(initialAction === 'rewrite' ? 'rewrite' : initialTab);
+  // The page remembers the open tab, so "Go to" → builder → back returns to the same tab.
+  const onViewChangeRef = useRef(onViewChange);
+  onViewChangeRef.current = onViewChange;
+  useEffect(() => { onViewChangeRef.current?.(view); }, [view]);
   const [fresh, setFresh] = useState(() => new Set()); // tabs with results the student has not opened yet
   const [banner, setBanner] = useState(null);
   // The page can ask for a view (e.g. the job view when an ANVI report is ready).

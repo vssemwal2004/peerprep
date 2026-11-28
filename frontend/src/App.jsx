@@ -34,6 +34,7 @@ const Footer = lazy(() => import('./components/Footer').then(m => ({ default: m.
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const StudentLogin = lazy(() => import("./auth/StudentLogin"));
 const MockStudentUploadPage = lazy(() => import('./admin/prepMock/MockStudentUploadPage'));
+const MockResultsPage = lazy(() => import('./admin/prepMock/MockResultsPage'));
 const ResetPassword = lazy(() => import("./auth/ResetPassword"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsAndConditions = lazy(() => import("./pages/TermsAndConditions"));
@@ -580,6 +581,8 @@ function AppContent() {
         <Route path="/admin/prepmock/companies" element={<AdminShell><MockCompaniesPage /></AdminShell>} />
         <Route path="/admin/prepmock/analysis" element={<Navigate to="/admin/analysis?area=prepmock" replace />} />
         <Route path="/admin/prepmock/reports" element={<AdminShell><AssessmentReports /></AdminShell>} />
+        <Route path="/admin/prepmock/results" element={<AdminShell><MockResultsPage /></AdminShell>} />
+        <Route path="/admin/prepmock/feedback" element={<AdminShell><AssessmentFeedback /></AdminShell>} />
         <Route path="/admin/prepmock/preview/:id" element={<AdminShell layout={false}><AdminAssessmentPreview /></AdminShell>} />
         <Route path="/admin/prepmock/:id/edit" element={<AdminShell><CreateAssessment /></AdminShell>} />
         <Route path="/admin/prepmock/:id" element={<AdminShell><CreateAssessment viewOnly /></AdminShell>} />

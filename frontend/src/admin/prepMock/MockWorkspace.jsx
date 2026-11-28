@@ -415,15 +415,27 @@ function TitleUnderline() {
  * The All Mocks title row (same as the student's Prep Mock header): the title, what the page is,
  * at-a-glance chips, and the page buttons on the right. `totals`: { companies, mocks, live, drafts }.
  */
-export function MockPageHeader({ totals, children }) {
+export function MockPageHeader({ totals, children, label = 'All mocks', icon: LabelIcon = Layers, chips = null }) {
   return (
     <header className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
         <h1 className="text-[24px] font-medium leading-tight tracking-[-0.03em] text-slate-900 sm:text-[26px] dark:text-zinc-50">
           Prep <span className="relative inline-block font-bold text-violet-600 dark:text-violet-400">Mock<TitleUnderline /></span>
         </h1>
-        <p className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-[0.13em] text-violet-700 dark:text-violet-300"><Layers className="h-4 w-4" aria-hidden="true" />All mocks</p>
-        {totals && (
+        <p className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-[0.13em] text-violet-700 dark:text-violet-300"><LabelIcon className="h-4 w-4" aria-hidden="true" />{label}</p>
+        {/* Other Prep Mock pages pass their own at-a-glance chips: [{ key, value, text, live }]. */}
+        {chips && (
+          <ul aria-label={`${label} at a glance`} className="flex flex-wrap gap-1.5 text-[12px]">
+            {chips.map((chip) => (
+              <li key={chip.key} className={chip.live
+                ? 'inline-flex h-8 items-center gap-1.5 rounded-full bg-emerald-50 px-3 font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200/70 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/20'
+                : 'inline-flex h-8 items-center gap-1 rounded-full bg-white px-3 text-slate-500 ring-1 ring-inset ring-[#e6e7eb] dark:bg-[#242424] dark:text-zinc-400 dark:ring-white/[0.08]'}>
+                {chip.live && <StaticDot />}<b className={chip.live ? 'font-semibold' : 'font-semibold text-slate-800 dark:text-zinc-100'}>{chip.value}</b> {chip.text}
+              </li>
+            ))}
+          </ul>
+        )}
+        {totals && !chips && (
           <ul aria-label="All mocks at a glance" className="flex flex-wrap gap-1.5 text-[12px]">
             {totals.live > 0 && <li className="inline-flex h-8 items-center gap-1.5 rounded-full bg-emerald-50 px-3 font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200/70 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/20"><StaticDot />{totals.live} live</li>}
             <li className="inline-flex h-8 items-center gap-1 rounded-full bg-white px-3 text-slate-500 ring-1 ring-inset ring-[#e6e7eb] dark:bg-[#242424] dark:text-zinc-400 dark:ring-white/[0.08]"><b className="font-semibold text-slate-800 dark:text-zinc-100">{totals.companies}</b> {totals.companies === 1 ? 'company' : 'companies'}</li>
@@ -1207,14 +1219,15 @@ function RolesTable({ company, onOpenRole, roleMenu }) {
 /**
  * The role's exam pattern as students meet it (the student page's "Exam pattern" card): the facts
  * line, a section table with totals, and the admin's own instructions beside it. Mocks that use the
- * same written pattern (or, for older mocks, the same structure) form one pattern; tabs switch between
- * several.
+ * same written pattern (or, for older mocks, the same structure) form one pattern. Only the latest
+ * pattern is shown (the one whose newest mock was made last): no "Pattern 1 / Pattern 2" tabs.
  */
 function RolePattern({ mocks, onOpenPath, assessmentRoot }) {
   const [open, setOpen] = useState(true);
-  const groups = useMemo(() => patternGroups(mocks), [mocks]);
-  const [active, setActive] = useState(0);
-  const group = groups[Math.min(active, groups.length - 1)];
+  const group = useMemo(() => {
+    const newest = (entry) => Math.max(...entry.mocks.map((mock) => timeOf(mock.createdAt || mock.updatedAt)));
+    return patternGroups(mocks).reduce((latest, entry) => (!latest || newest(entry) > newest(latest) ? entry : latest), null);
+  }, [mocks]);
   if (!group) return null;
   const { pattern, sample } = group;
   const written = writtenPatternOf(sample);
@@ -1241,16 +1254,6 @@ function RolePattern({ mocks, onOpenPath, assessmentRoot }) {
       </div>
       {open && (
         <div className="space-y-3.5 px-4 pb-4 sm:px-5">
-          {groups.length > 1 && (
-            <div role="tablist" aria-label="Patterns" className="flex flex-wrap gap-1.5">
-              {groups.map((entry, index) => (
-                <button key={entry.key} type="button" role="tab" aria-selected={index === active} onClick={() => setActive(index)}
-                  className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold transition-colors ${focusRing} ${index === active ? 'bg-violet-600 text-white shadow-[0_8px_18px_-12px_rgba(109,40,217,0.9)]' : 'bg-[#f3f4f6] text-slate-600 hover:bg-[#eceef1] hover:text-slate-900 dark:bg-white/[0.05] dark:text-zinc-300 dark:hover:bg-white/[0.09]'}`}>
-                  {entry.pattern.patternFrom || `Pattern ${index + 1}`}<span className={`tabular-nums ${index === active ? 'text-white/75' : faint}`}>{plural(entry.mocks.length, 'mock')}</span>
-                </button>
-              ))}
-            </div>
-          )}
           {/* The OA month is in the badge above, so the facts line leaves it out. */}
           <PatternFacts pattern={pattern} mock={sample} hideOa={Boolean(pattern.patternFrom)} />
           <div className={PATTERN_GRID}>
@@ -1289,10 +1292,13 @@ function Crumbs({ company, role, onCompany, onOverview }) {
  * The title card of the chosen company or role (like the student page's banner): logo, name and a
  * short line, the actions on the right, and its numbers inside the card along the bottom.
  */
-function TitleCard({ company, role, canCreate, onCreateMock, menu }) {
+function TitleCard({ company, role, canCreate, onCreateMock, menu, onSelectRole }) {
   const realRole = role && role.key !== NO_ROLE ? role : null;
   const mocks = role ? role.mocks : company.mocks;
   const avg = meanScore(mocks);
+  const chip = (active) => `inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-semibold transition-colors ${insetRing} ${active
+    ? 'bg-violet-600 text-white shadow-[0_8px_18px_-12px_rgba(109,40,217,0.9)]'
+    : 'bg-[#f3f4f6] text-slate-600 hover:bg-[#eceef1] hover:text-slate-900 dark:bg-white/[0.05] dark:text-zinc-300 dark:hover:bg-white/[0.09] dark:hover:text-white'}`;
   return (
     <header className={`${surface} overflow-hidden`}>
       <div className="relative">
@@ -1301,7 +1307,8 @@ function TitleCard({ company, role, canCreate, onCreateMock, menu }) {
           <div className="flex min-w-0 flex-1 items-center gap-3.5">
             <CompanyLogo name={company.name} logo={company.logo} size="spot" />
             <div className="min-w-0">
-              <h2 className={`truncate text-[20px] font-semibold leading-tight tracking-[-0.02em] ${role?.key === NO_ROLE ? 'text-amber-800 dark:text-amber-200' : 'text-slate-900 dark:text-zinc-50'}`} title={role ? role.label : company.name}>{role ? role.label : company.name}</h2>
+              {/* The company stays the title; the chosen role is the highlighted chip below. */}
+              <h2 className="truncate text-[20px] font-semibold leading-tight tracking-[-0.02em] text-slate-900 dark:text-zinc-50" title={company.name}>{company.name}</h2>
               <p className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] ${muted}`}>
                 {!role && company.domain && <a href={`https://${company.domain}`} target="_blank" rel="noreferrer noopener" className={`inline-flex items-center gap-1 rounded font-medium text-violet-700 hover:underline dark:text-violet-300 ${focusRing}`}><Globe className="h-3 w-3" />{company.domain}</a>}
                 {!role && company.domain && <span aria-hidden="true">·</span>}
@@ -1319,6 +1326,28 @@ function TitleCard({ company, role, canCreate, onCreateMock, menu }) {
             {menu}
           </div>
         </div>
+        {/* Every role of the company as chips, like the student's role picker: one click opens it. */}
+        {company.roles.length > 0 && onSelectRole && (
+          <div className="relative border-t border-[#eef0f3] px-4 py-2.5 sm:px-5 dark:border-white/[0.06]">
+            <div role="tablist" aria-label={`${company.name} roles`} className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <button type="button" role="tab" aria-selected={!role} onClick={() => onSelectRole('')} className={chip(!role)}>
+                All roles<span className={`tabular-nums ${!role ? 'text-white/75' : faint}`}>{company.roleCount}</span>
+              </button>
+              {company.roles.map((entry) => {
+                const active = role?.key === entry.key;
+                const noRole = entry.key === NO_ROLE;
+                return (
+                  <button key={entry.key} type="button" role="tab" aria-selected={active} onClick={() => onSelectRole(entry.key)} title={`${entry.label}: ${plural(entry.count, 'mock')}, ${entry.live} live`}
+                    className={`${chip(active)} ${noRole && !active ? '!bg-amber-50 !text-amber-800 dark:!bg-amber-500/10 dark:!text-amber-200' : ''}`}>
+                    {noRole ? <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" /> : <BriefcaseBusiness className={`h-3.5 w-3.5 ${active ? '' : 'opacity-60'}`} aria-hidden="true" />}
+                    <span className="max-w-[14rem] truncate">{entry.label}</span>
+                    <span className={`tabular-nums ${active ? 'text-white/75' : faint}`}>{entry.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
       <StatRow cols={role ? 5 : 6}>
         {role ? <>
@@ -1353,7 +1382,7 @@ function CompanyDetail({
     <div className="min-w-0 space-y-4">
       <Crumbs company={company} role={activeRole} onCompany={() => onSelectRole('')} onOverview={onClose} />
 
-      <TitleCard company={company} role={activeRole} canCreate={canCreate} onCreateMock={onCreateMock}
+      <TitleCard company={company} role={activeRole} canCreate={canCreate} onCreateMock={onCreateMock} onSelectRole={onSelectRole}
         menu={<DotsMenu label={`${company.name}${activeRole ? ` ${activeRole.label}` : ''} actions`} items={activeRole
           ? roleMenu(company, activeRole, { inDetail: true })
           : companyMenu(company, { inDetail: true, onClose })} />} />

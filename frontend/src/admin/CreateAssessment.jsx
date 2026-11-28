@@ -462,6 +462,8 @@ export default function CreateAssessment({ viewOnly = false }) {
       ...DEFAULT_ASSESSMENT_SETTINGS,
       ...NEW_ASSESSMENT_PROCTORING_DEFAULTS,
       sectionTimingMode: 'custom',
+      // A Prep Mock is practice: by default each student sees their result as soon as it is graded.
+      ...(isMock ? { showResultsAfterSubmit: true, showSectionBreakdown: true } : {}),
     },
   });
   const [questionSets, setQuestionSets] = useState([{ setNumber: 1, label: 'Set 1', sections: [] }]);
@@ -3097,7 +3099,7 @@ export default function CreateAssessment({ viewOnly = false }) {
 
               <Row {...rowProps} icon={<Eye className="h-4 w-4" />} title="What students see once results are out" desc="Applies whenever a result is visible to the student, after submission or after you release results.">
                 <div className="space-y-3">
-                  <FieldRow label="Show correct answers (after the assessment window closes)">
+                  <FieldRow label={isMock ? 'Show correct answers (once the student submits)' : 'Show correct answers (after the assessment window closes)'}>
                     <Toggle value={Boolean(s.showCorrectAnswers)} onChange={(v) => upd('showCorrectAnswers', v)} />
                   </FieldRow>
                   <FieldRow label="Show section-wise breakdown">

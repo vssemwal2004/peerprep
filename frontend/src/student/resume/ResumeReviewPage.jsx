@@ -187,7 +187,18 @@ export default function ResumeReviewPage() {
     runCheck: async (options) => { if (await save()) return check.runCheck(options); },
     runJobMatch: async (text) => { if (await save()) return check.runJobMatch(text); },
   };
-  const go = useCallback(async (to) => { if (await save()) navigate(to); }, [navigate, save]);
+  // The panel's open tab, so the builder's back arrow returns to this page on that same tab.
+  const panelView = useRef(initialAction === 'rewrite' ? 'rewrite' : initialTab);
+  const reviewLink = () => {
+    const view = panelView.current;
+    if (['grammar', 'ats', 'job'].includes(view)) return `/student/resume/review?tab=${view}`;
+    return view === 'rewrite' ? '/student/resume/review?action=rewrite' : '/student/resume/review';
+  };
+  const go = useCallback(async (to) => {
+    if (!(await save())) return;
+    // Only builder links carry the way back; the Prep Resume home needs none.
+    navigate(to.startsWith('/student/resume/create') ? `${to}${to.includes('?') ? '&' : '?'}back=${encodeURIComponent(reviewLink())}` : to);
+  }, [navigate, save]);
   const onLocate = useCallback((target) => go(focusLink(target)), [go]);
   const onBrowseTemplates = useCallback(() => go('/student/resume/create?templates=1'), [go]);
 
@@ -320,7 +331,8 @@ export default function ResumeReviewPage() {
             <AnviAura radius="1.5rem" innerClassName="!bg-[#f6f7f9] dark:!bg-[#1c1c1c]">
               <div className="h-[calc(100dvh-145px)] min-h-[365px] lg:h-[calc(100dvh-98px)]">
                 {hasContent ? (
-                  <ResumeCheckPanel key={initialTab + initialAction} className="h-full" initialTab={initialTab} initialAction={initialAction} check={panelCheck} resume={resume} hasContent={hasContent} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} onHighlight={highlightLine} jdMatch={jdMatch} viewRequest={viewRequest} />
+                  <ResumeCheckPanel key={initialTab + initialAction} className="h-full" initialTab={initialTab} initialAction={initialAction} check={panelCheck} resume={resume} hasContent={hasContent} onLocate={onLocate} onBrowseTemplates={onBrowseTemplates} onHighlight={highlightLine} jdMatch={jdMatch} viewRequest={viewRequest}
+                    onViewChange={(view) => { panelView.current = view; }} />
                 ) : (
                   <div className="relative flex h-full flex-col items-center justify-center p-8 text-center">
                     <AnviGlowBackdrop />

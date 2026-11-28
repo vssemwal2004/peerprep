@@ -1594,7 +1594,7 @@ export default function AssessmentAttempt() {
     } else {
       toast.info('The assessment had already ended. Your last server-saved answers were submitted; newer device edits were not accepted.');
     }
-    navigate(`/student/assessment/${assessment._id}/feedback`, { replace: true });
+    navigate(`/student/assessment/${assessment._id}/feedback${assessment.kind === 'mock' ? '?from=prep-mock' : ''}`, { replace: true });
     return true;
   }, [assessment, answersMap, buildAnswersPayload, flushAnswerCheckpoint, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, stopAiProctoring, toast, navigate, draftStorageKey, skippedTimedAnswers]);
 
@@ -2071,7 +2071,7 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     if (!assessment?._id || !submission?.submittedAt) return;
     if (!COMPLETED_ASSESSMENT_STATUSES.has(String(submission.status || '').toLowerCase())) return;
-    navigate(`/student/assessment/${assessment._id}/feedback`, { replace: true });
+    navigate(`/student/assessment/${assessment._id}/feedback${assessment.kind === 'mock' ? '?from=prep-mock' : ''}`, { replace: true });
   }, [assessment?._id, submission?.status, submission?.submittedAt, navigate]);
 
   useEffect(() => {

@@ -64,23 +64,31 @@ export async function saveCoinPricing({ features, expectedVersion, reason, actor
 
 const chargeKeyFor = (scope, userId, featureKey, resourceKey) => `${scope}:${userId}:${featureKey}:${resourceKey}`;
 
-// Transactions need a replica set. Production has one; a local standalone mongod does not, and there
-// every paid action failed with "Transaction numbers are only allowed on a replica set member".
+// Transactions need a replica set. A standalone mongod (local copies, and a production server that
+// was set up without one) rejects them with "Transaction numbers are only allowed on a replica set
+// member". Then every paid action used to fail (2026-11-28: résumé JD Match in production). The
+// compensating path below keeps the student whole without a transaction, like earning does.
 let transactionSupport = null;
+let warnedNoTransactions = false;
+const isNoTransactionSupport = (error) => error?.code === 20
+  || /Transaction numbers are only allowed|replica set member or mongos|transactions are not supported/i.test(String(error?.message || ''));
+function noteNoTransactions() {
+  transactionSupport = false;
+  if (warnedNoTransactions) return;
+  warnedNoTransactions = true;
+  console.warn('[PrepCoin] MongoDB has no transaction support (not a replica set); coin charges use the compensating path. Run MongoDB as a replica set to use transactions.');
+}
 async function transactionsUnavailable() {
   if (transactionSupport === null) {
     try {
       const hello = await mongoose.connection.db.admin().command({ hello: 1 });
       transactionSupport = Boolean(hello.setName || hello.msg === 'isdbgrid');
     } catch { return false; }
-  }
-  // The compensating path is for local copies only; production must use a replica set.
-  if (!transactionSupport && process.env.NODE_ENV === 'production') {
-    throw new HttpError(503, 'Prep Coin payments need a replica-set database. No coins were taken.', { code: 'PREP_COIN_NO_TRANSACTIONS' });
+    if (!transactionSupport) noteNoTransactions();
   }
   return !transactionSupport;
 }
-export function resetTransactionSupportCache() { transactionSupport = null; }
+export function resetTransactionSupportCache() { transactionSupport = null; warnedNoTransactions = false; }
 
 /**
  * The same charge without a transaction. Every step is a single atomic write, ordered so a failure
@@ -158,9 +166,10 @@ export async function chargeFeature({ scope, userId, featureKey, resourceKey, ex
   const chargeKey = chargeKeyFor(scope, user, featureKey, resourceKey);
   const month = quotaMonth(now);
   let result = null;
+  const plain = () => chargeWithoutTransaction({ scope, user, featureKey, resourceKey, chargeKey, month, price, freePerMonth, pricing, expectedCost, note, now });
   try {
-    // A standalone database (e.g. a local copy) has no transactions: use the compensating path.
-    if (await transactionsUnavailable()) return await chargeWithoutTransaction({ scope, user, featureKey, resourceKey, chargeKey, month, price, freePerMonth, pricing, expectedCost, note, now });
+    // A standalone database has no transactions: use the compensating path.
+    if (await transactionsUnavailable()) return await plain();
     await mongoose.connection.transaction(async (session) => {
       result = null;
       const existing = await PlatformCoinCharge.findOne({ chargeKey }).session(session);
@@ -201,6 +210,15 @@ export async function chargeFeature({ scope, userId, featureKey, resourceKey, ex
   } catch (error) {
     // A parallel request created the same charge first: this one is already paid for.
     if (error?.code === 11000) return { alreadyEntitled: true };
+    // The server said no to transactions (the check above could not tell): nothing was committed,
+    // so the same charge runs once more on the compensating path.
+    if (isNoTransactionSupport(error)) {
+      noteNoTransactions();
+      try { return await plain(); } catch (fallbackError) {
+        if (fallbackError?.code === 11000) return { alreadyEntitled: true };
+        throw fallbackError;
+      }
+    }
     throw error;
   }
   return result;
@@ -210,42 +228,51 @@ export async function captureCharge(chargeId) {
   await PlatformCoinCharge.updateOne({ _id: chargeId, status: 'pending' }, { $set: { status: 'captured', capturedAt: new Date() } });
 }
 
-/** Returns a charge's coins (and free use). Idempotent: a settled or refunded charge is left alone. */
-export async function refundCharge(chargeId, reason = 'Action did not complete') {
-  let refunded = false;
-  if (await transactionsUnavailable()) {
-    // No transactions: claiming the refund on the charge row first makes it happen once.
-    const charge = await PlatformCoinCharge.findOneAndUpdate(
-      { _id: chargeId, status: { $in: ['pending', 'captured'] } },
-      { $set: { status: 'refunded', refundedAt: new Date(), refundReason: String(reason).slice(0, 200) } },
-      { new: true },
-    );
-    if (!charge) return false;
-    if (charge.price) {
-      await PlatformCoinWallet.updateOne({ universityId: charge.universityId, userId: charge.userId }, { $inc: { balance: charge.price } });
-      await PlatformCoinMovement.create({
-        universityId: charge.universityId, requestId: `charge:${charge._id}:${charge.attempt}:refund`, kind: 'student_refund', amount: charge.price,
-        actorId: charge.userId, fromRole: 'platform', toRole: 'student', toUserId: charge.userId, featureKey: charge.featureKey, chargeId: charge._id,
-      }).catch((error) => console.warn(`[PrepCoin] Refund row for charge ${charge._id} not written: ${error.message}`));
-    }
-    return true;
-  }
-  await mongoose.connection.transaction(async (session) => {
-    refunded = false;
-    const charge = await PlatformCoinCharge.findOneAndUpdate(
-      { _id: chargeId, status: { $in: ['pending', 'captured'] } },
-      { $set: { status: 'refunded', refundedAt: new Date(), refundReason: String(reason).slice(0, 200) } },
-      { new: true, session },
-    );
-    if (!charge) return;
-    refunded = true;
-    if (!charge.price) return;
-    await PlatformCoinWallet.updateOne({ universityId: charge.universityId, userId: charge.userId }, { $inc: { balance: charge.price } }, { session });
-    await PlatformCoinMovement.create([{
+/** A refund without a transaction: claiming the refund on the charge row first makes it happen once. */
+async function refundWithoutTransaction(chargeId, reason) {
+  const charge = await PlatformCoinCharge.findOneAndUpdate(
+    { _id: chargeId, status: { $in: ['pending', 'captured'] } },
+    { $set: { status: 'refunded', refundedAt: new Date(), refundReason: String(reason).slice(0, 200) } },
+    { new: true },
+  );
+  if (!charge) return false;
+  if (charge.price) {
+    await PlatformCoinWallet.updateOne({ universityId: charge.universityId, userId: charge.userId }, { $inc: { balance: charge.price } });
+    await PlatformCoinMovement.create({
       universityId: charge.universityId, requestId: `charge:${charge._id}:${charge.attempt}:refund`, kind: 'student_refund', amount: charge.price,
       actorId: charge.userId, fromRole: 'platform', toRole: 'student', toUserId: charge.userId, featureKey: charge.featureKey, chargeId: charge._id,
-    }], { session });
-  });
+    }).catch((error) => console.warn(`[PrepCoin] Refund row for charge ${charge._id} not written: ${error.message}`));
+  }
+  return true;
+}
+
+/** Returns a charge's coins (and free use). Idempotent: a settled or refunded charge is left alone. */
+export async function refundCharge(chargeId, reason = 'Action did not complete') {
+  if (await transactionsUnavailable()) return refundWithoutTransaction(chargeId, reason);
+  let refunded = false;
+  try {
+    await mongoose.connection.transaction(async (session) => {
+      refunded = false;
+      const charge = await PlatformCoinCharge.findOneAndUpdate(
+        { _id: chargeId, status: { $in: ['pending', 'captured'] } },
+        { $set: { status: 'refunded', refundedAt: new Date(), refundReason: String(reason).slice(0, 200) } },
+        { new: true, session },
+      );
+      if (!charge) return;
+      refunded = true;
+      if (!charge.price) return;
+      await PlatformCoinWallet.updateOne({ universityId: charge.universityId, userId: charge.userId }, { $inc: { balance: charge.price } }, { session });
+      await PlatformCoinMovement.create([{
+        universityId: charge.universityId, requestId: `charge:${charge._id}:${charge.attempt}:refund`, kind: 'student_refund', amount: charge.price,
+        actorId: charge.userId, fromRole: 'platform', toRole: 'student', toUserId: charge.userId, featureKey: charge.featureKey, chargeId: charge._id,
+      }], { session });
+    });
+  } catch (error) {
+    // Nothing committed: the server refused transactions, so refund on the compensating path.
+    if (!isNoTransactionSupport(error)) throw error;
+    noteNoTransactions();
+    return refundWithoutTransaction(chargeId, reason);
+  }
   return refunded;
 }
 

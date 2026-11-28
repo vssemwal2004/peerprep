@@ -404,6 +404,12 @@ export default function StudentResume() {
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryInitial, setGalleryInitial] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
+  // Opened from the review panel's "Go to" (?back=/student/resume/review...): the back arrow returns
+  // there, on the same tab, instead of the Prep Resume home. Kept after the URL is cleaned below.
+  const [returnTo] = useState(() => {
+    const back = searchParams.get('back') || '';
+    return /^\/student\/resume\/review(?:\?[\w=&-]*)?$/.test(back) ? back : '';
+  });
   const [undoAction, setUndoAction] = useState(null);
   const savingRef = useRef(null);
   const savedRevisionRef = useRef(0);
@@ -800,7 +806,7 @@ export default function StudentResume() {
       <div className="min-h-screen bg-slate-50 pb-24 text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:pb-10">
         <div className="sticky top-0 z-30 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
           <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6" data-guide="rs-toolbar">
-            <button type="button" onClick={async () => { if (importSession) cancelImport(); else if (!dirty || await saveResume()) navigate('/student/resume'); }} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Back to Prep Resume" title="Back to Prep Resume"><ArrowLeft className="h-4 w-4" /></button>
+            <button type="button" onClick={async () => { if (importSession) cancelImport(); else if (!dirty || await saveResume()) navigate(returnTo || '/student/resume'); }} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={returnTo ? 'Back to your résumé check' : 'Back to Prep Resume'} title={returnTo ? 'Back to your résumé check' : 'Back to Prep Resume'}><ArrowLeft className="h-4 w-4" /></button>
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <div className="hidden h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white sm:flex"><FileText className="h-5 w-5" /></div>
               <div className="min-w-0"><div className="flex items-center gap-2"><h1 className="truncate text-base font-black text-slate-950 dark:text-white sm:text-lg"><span className="hidden font-semibold text-slate-400 sm:inline">Prep Resume / </span>Resume editor</h1><PageGuideButton /><span className="hidden rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[.13em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 sm:inline">{RESUME_TEMPLATE_CATALOG.length} templates · A4</span></div><p className="hidden text-[11px] text-slate-500 sm:block">Enter your details once, then switch between professional templates freely.</p></div>
