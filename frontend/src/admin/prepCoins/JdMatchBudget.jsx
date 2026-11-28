@@ -5,10 +5,10 @@ import { CardHeader, Glass } from '../../overview/ui';
 import { buttonClass, inputClass } from './coinModel';
 import { InfoTitle } from './shared';
 
+// The per-check cost cap and the per-student daily limit were removed (2026-11-28): a student's
+// Prep Coins are the only limit. Their stored values are kept but no longer edited or enforced.
 const FIELDS = [
-  ['perCheckCapInr', 'Cost cap per check (₹)', 'Hard limit for one Gemini check. A job description or résumé too long for it is refused before any coins are taken (the student is told what to shorten). Minimum ₹0.30.', 0.3, 5, 0.05],
   ['monthlyBudgetInr', 'Monthly budget (₹)', 'Kill switch: checks pause (no coins taken) once this month’s spend reaches it. 0 pauses now.', 0, 1000000, 100],
-  ['dailyChecksPerStudent', 'Checks per student per day', 'Stops spam even when a student has coins.', 1, 50, 1],
   ['usdToInr', '₹ per US$', 'Used to convert Gemini’s dollar prices.', 50, 200, 0.5],
 ];
 const rupees = (value, digits = 2) => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
@@ -30,7 +30,6 @@ export default function JdMatchBudget() {
     if (!limits) return '';
     const bad = FIELDS.find(([key, , , min, max]) => !Number.isFinite(limits[key]) || limits[key] < min || limits[key] > max);
     if (bad) return `${bad[1]} must be from ${bad[3]} to ${bad[4]}.`;
-    if (!Number.isInteger(limits.dailyChecksPerStudent)) return 'Checks per student per day must be a whole number.';
     return '';
   }, [limits]);
   const unsaved = saved && limits && JSON.stringify(limits) !== JSON.stringify(saved.limits);

@@ -347,7 +347,7 @@ export default function ResumeReviewPage() {
             </AnviAura>
           </aside>
         </main>
-        {jdEnabled && jd.popup && !jd.popup.hidden ? <JdMatchPopup state={jd.popup} onClose={jd.closePopup} onRetry={jd.retry} onShowReport={showReport} /> : null}
+        {jdEnabled && jd.popup && !jd.popup.hidden ? <JdMatchPopup state={jd.popup} onClose={jd.closePopup} onRetry={jd.retry} onShowReport={showReport} onConfirm={jd.confirm} /> : null}
         {revealMiss ? <div role="status" className="fixed inset-x-4 bottom-4 z-[70] mx-auto max-w-sm rounded-xl bg-slate-900 px-4 py-3 text-[13px] text-white shadow-lg dark:bg-white dark:text-slate-900">{revealMiss}</div> : null}
       </div>
     </RequirePasswordChange>

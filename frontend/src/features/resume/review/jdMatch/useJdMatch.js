@@ -102,6 +102,33 @@ export function useJdMatch({ enabled, userId }) {
     }, delay);
   }, [finish, refresh]);
 
+  /** Sends the charge and starts the check (after the student confirmed, or for a free check). */
+  const charge = useCallback(async (request, quote) => {
+    setPopup({ phase: 'charging', quote, stage: 'queued' });
+    try {
+      const result = await api.startJdMatch(request, quote.cost);
+      if (!live.current) return;
+      if (result.cached) {
+        setPopup({ phase: 'done', quote, cached: true, stage: 'done' });
+        finish(result.match, { cached: true });
+        return;
+      }
+      if (result.charge?.cost) announcePrepCoinChange();
+      const next = result.match;
+      if (next.status === 'done') {
+        setPopup({ phase: 'done', quote, charge: result.charge, stage: 'done', joined: Boolean(result.joined) });
+        finish(next, { joined: Boolean(result.joined) });
+        return;
+      }
+      joinedRun.current = Boolean(result.joined);
+      setPopup({ phase: 'running', quote, charge: result.charge, joined: Boolean(result.joined), stage: next.stage || 'queued' });
+      poll(next.id);
+    } catch (error) {
+      if (!live.current) return;
+      setPopup({ phase: 'blocked', quote, error: describeStartError(error) });
+    }
+  }, [finish, poll]);
+
   /**
    * Start a paid check. `shownCost` is the price on the button: if the server's price differs the
    * student is asked again, never charged a price they did not see.
@@ -126,30 +153,16 @@ export function useJdMatch({ enabled, userId }) {
       setPopup({ phase: 'blocked', quote, error: { kind: 'shortfall', required: quote.cost, balance: quote.balance } });
       return;
     }
-    setPopup({ phase: 'charging', quote, stage: 'queued' });
-    try {
-      const result = await api.startJdMatch(request, quote.cost);
-      if (!live.current) return;
-      if (result.cached) {
-        setPopup({ phase: 'done', quote, cached: true, stage: 'done' });
-        finish(result.match, { cached: true });
-        return;
-      }
-      if (result.charge?.cost) announcePrepCoinChange();
-      const next = result.match;
-      if (next.status === 'done') {
-        setPopup({ phase: 'done', quote, charge: result.charge, stage: 'done', joined: Boolean(result.joined) });
-        finish(next, { joined: Boolean(result.joined) });
-        return;
-      }
-      joinedRun.current = Boolean(result.joined);
-      setPopup({ phase: 'running', quote, charge: result.charge, joined: Boolean(result.joined), stage: next.stage || 'queued' });
-      poll(next.id);
-    } catch (error) {
-      if (!live.current) return;
-      setPopup({ phase: 'blocked', quote, error: describeStartError(error) });
-    }
-  }, [finish, poll, refresh]);
+    // A paid check waits for the student's "Confirm & pay" (confirm() below); a free one starts now.
+    if (quote.cost > 0) { setPopup({ phase: 'confirm', quote, stage: 'queued' }); return; }
+    await charge(request, quote);
+  }, [charge, refresh]);
+
+  /** The student pressed "Confirm & pay" in the popup. */
+  const confirm = useCallback(() => {
+    if (popup?.phase !== 'confirm' || !lastRequest.current) return;
+    charge(lastRequest.current, popup.quote);
+  }, [popup, charge]);
 
   const retry = useCallback(() => {
     if (lastRequest.current) start(lastRequest.current, overview?.cost ?? null);
@@ -157,6 +170,8 @@ export function useJdMatch({ enabled, userId }) {
 
   /** Closing never cancels: a running check keeps going and the popup comes back when it ends. */
   const closePopup = useCallback(() => setPopup((state) => {
+    // Closing the confirmation is "Cancel": nothing was charged.
+    if (state?.phase === 'confirm') return null;
     if (!state || ['quote', 'charging'].includes(state.phase)) return state;
     return state.phase === 'running' ? { ...state, hidden: true } : null;
   }), []);
@@ -195,5 +210,5 @@ export function useJdMatch({ enabled, userId }) {
     });
   }, [enabled, refresh, resume, openReport, userId]);
 
-  return { overview, overviewError, popup, match, opening, previousScore, start, retry, closePopup, showPopup, openReport, resume, clearReport, refresh, lastRequest: lastRequest.current };
+  return { overview, overviewError, popup, match, opening, previousScore, start, confirm, retry, closePopup, showPopup, openReport, resume, clearReport, refresh, lastRequest: lastRequest.current };
 }

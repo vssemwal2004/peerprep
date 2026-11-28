@@ -25,6 +25,10 @@ export const JD_MATCH_COIN_FEATURE = 'resume.jd_match';
 const CACHE_HOURS = 24;
 const STALE_MS = 4 * 60_000;
 const HISTORY = 10;
+// No per-check cost cap and no daily limit (user, 2026-11-28): the student's Prep Coins are the
+// limit. Only the JD box size (JD_MAX_CHARS) and the résumé size still bound one check, and the
+// Master Admin's monthly budget stays as the platform's safety switch.
+const NO_CAP_USD = Number.POSITIVE_INFINITY;
 
 // The JD and report are encrypted at rest. Without the tenant secret key this fails closed (the
 // check is refused before any charge) instead of storing a student's data in plain text.
@@ -148,12 +152,16 @@ export function createJdMatchService({ gemini = null, rates = jdMatchModel(), co
       const lines = buildResumeLines(resume || {});
       if (!lines.length) throw new HttpError(400, 'Your résumé has no content yet.', { code: 'JD_MATCH_EMPTY_RESUME' });
       const { limits } = await getJdMatchLimits();
-      const capUsd = limits.perCheckCapInr / limits.usdToInr;
+      const capUsd = NO_CAP_USD;
       const plan = planPrompt({ jd: input.jd, lines, company: row.company, role: row.role, rates, capUsd, maxOutputTokens: rates.maxOutputTokens });
       if (!plan) throw new HttpError(422, 'This job description and résumé are too long to check within the cost limit. Shorten the job description and try again.', { code: 'JD_MATCH_TOO_LONG' });
       await ResumeJdMatch.updateOne({ _id: row._id }, { $set: { stage: 'matching' } });
       const ai = getClient();
-      if (!ai.configured) throw new HttpError(503, 'ANVI is not available right now.', { code: 'JD_MATCH_UNAVAILABLE' });
+      if (!ai.configured) {
+        // The usual cause of "ANVI is not available right now" on a server: no GEMINI_API_KEY in its .env.
+        console.warn('[resume-jd-match] GEMINI_API_KEY is not set on this server; the check was refunded.');
+        throw new HttpError(503, 'ANVI is not available right now.', { code: 'JD_MATCH_UNAVAILABLE' });
+      }
       // The monthly budget again, right before the paid call: queued checks passed it earlier.
       await assertJdBudget(limits);
       let usage = null;
@@ -212,12 +220,12 @@ export function createJdMatchService({ gemini = null, rates = jdMatchModel(), co
     const live = await expireIfStale(active);
     // This student's own size limits, so the page can warn before the button is pressed.
     const lines = buildResumeLines((await Resume.findOne({ student: user._id }).lean()) || {});
-    const capUsd = limits.perCheckCapInr / limits.usdToInr;
+    const capUsd = NO_CAP_USD;
     const full = maxJdChars({ lines, rates, capUsd, maxOutputTokens: rates.maxOutputTokens });
     const jdMaxChars = full >= 600 ? full : maxJdChars({ lines, rates, capUsd, maxOutputTokens: MIN_OUTPUT_TOKENS });
     return {
       history: rows.map((row) => publicMatch(row, { withReport: false })),
-      usedToday, dailyLimit: limits.dailyChecksPerStudent, paused: spend,
+      usedToday, dailyLimit: null, paused: spend,
       jdMaxChars, resumeTooLong: (lines.overflow || 0) > 0,
       active: live && ['queued', 'running'].includes(live.status) ? publicMatch(live, { withReport: false }) : null,
     };
@@ -254,13 +262,9 @@ export function createJdMatchService({ gemini = null, rates = jdMatchModel(), co
 
     const { limits } = await getJdMatchLimits();
     // Size first, before any coin is taken: the whole JD and résumé must fit one check under the cap.
-    const fits = checkFits({ jd, lines, company, role, rates, capUsd: limits.perCheckCapInr / limits.usdToInr, maxOutputTokens: rates.maxOutputTokens });
+    const fits = checkFits({ jd, lines, company, role, rates, capUsd: NO_CAP_USD, maxOutputTokens: rates.maxOutputTokens });
     if (!fits.ok) throw tooLongError(fits, jd.length);
     await assertJdBudget(limits);
-    const usedToday = await ResumeJdMatch.countDocuments(countedToday(user._id));
-    if (usedToday >= limits.dailyChecksPerStudent) {
-      throw new HttpError(429, `You have used today's ${limits.dailyChecksPerStudent} ANVI JD checks. Try again tomorrow. No coins were taken.`, { code: 'JD_MATCH_DAILY_LIMIT', dailyLimit: limits.dailyChecksPerStudent });
-    }
 
     // `active: true` + a unique index: two parallel requests (any process) cannot both start one.
     await ensureIndexes();

@@ -352,17 +352,17 @@ test('size is checked before any charge: a long résumé or JD is refused with w
   assert.equal(gemini.calls.length, 0);
   assert.equal((await service.overview(big)).resumeTooLong, true, 'the page can warn before the button is pressed');
 
-  // With a low cap, a long JD is refused and the student is told the limit for their résumé.
+  // No cost cap any more (2026-11-28): even with a low cap saved, the whole JD box is allowed and a
+  // long JD is checked (paid with coins) instead of being refused.
   await saveJdMatchLimits({ limits: { perCheckCapInr: 0.4 }, expectedVersion: 0, actorId: admin });
   const student = await studentWith(30);
-  const limit = (await service.overview(student)).jdMaxChars;
-  assert.ok(limit > 600 && limit < 12000, `limit ${limit}`);
-  const longJd = `${JD}\n${'Experience building distributed backend services with Java and Node.js. '.repeat(Math.ceil(limit / 60))}`;
-  await assert.rejects(service.start(student, { jobDescription: longJd.slice(0, 11900) }, { expectedCost: 10 }), (error) => error.status === 413 && error.details.code === 'JD_MATCH_JD_TOO_LONG' && error.details.jdMaxChars === limit);
-  assert.equal(await walletBalance(PLATFORM_WALLET_SCOPE, student), 30, 'no coins taken');
+  assert.equal((await service.overview(student)).jdMaxChars, 12000, 'the full box, whatever the cap says');
+  const longJd = `${JD}\n${'Experience building distributed backend services with Java and Node.js. '.repeat(160)}`.slice(0, 11900);
+  const started = await service.start(student, { jobDescription: longJd }, { expectedCost: 10 });
+  assert.equal(started.charge.cost, 10);
 });
 
-test('parallel starts charge once, and billed failures count toward the daily limit', async (t) => {
+test('parallel starts charge once, and there is no daily limit', async (t) => {
   if (skipped) return t.skip('Local sockets are unavailable');
   const student = await studentWith(50);
   const service = createJdMatchService({ gemini: fakeGemini(), concurrency: 0 });
@@ -379,10 +379,12 @@ test('parallel starts charge once, and billed failures count toward the daily li
   const first = await failing.start(other, { jobDescription: JD }, { expectedCost: 10 });
   await waitFor(async () => (await ResumeJdMatch.findById(first.match.id).lean()).refunded);
   assert.equal((await ResumeJdMatch.findById(first.match.id).lean()).billed, true);
-  await assert.rejects(failing.start(other, { jobDescription: `${JD}\nAgain` }, { expectedCost: 10 }), (error) => error.status === 429, 'a refunded but billed check still uses the daily check');
+  // The student's coins are the only limit: a second check the same day starts and is paid.
+  const again = await failing.start(other, { jobDescription: `${JD}\nAgain` }, { expectedCost: 10 });
+  assert.equal(again.charge.cost, 10);
 });
 
-test('short JDs, empty balances, the daily limit and a spent budget never take coins', async (t) => {
+test('short JDs, empty balances and a spent budget never take coins; no daily limit', async (t) => {
   if (skipped) return t.skip('Local sockets are unavailable');
   const gemini = fakeGemini();
   const service = createJdMatchService({ gemini });
@@ -398,11 +400,12 @@ test('short JDs, empty balances, the daily limit and a spent budget never take c
   const first = await call(app(service, busy), 'POST', '/jd', { jobDescription: JD }, { 'X-Prep-Coin-Cost': '10' });
   await waitFor(async () => (await ResumeJdMatch.findById(first.body.match.id).lean()).status === 'done');
   const second = await call(app(service, busy), 'POST', '/jd', { jobDescription: `${JD}\nAlso: Kotlin` }, { 'X-Prep-Coin-Cost': '10' });
-  assert.equal(second.status, 429);
-  assert.equal(await walletBalance(PLATFORM_WALLET_SCOPE, busy), 40);
+  assert.equal(second.status, 202, 'a second check the same day is allowed');
+  await waitFor(async () => (await ResumeJdMatch.findById(second.body.match.id).lean()).status === 'done');
+  assert.equal(await walletBalance(PLATFORM_WALLET_SCOPE, busy), 30);
 
   await saveJdMatchLimits({ limits: { dailyChecksPerStudent: 5, monthlyBudgetInr: 0 }, expectedVersion: 1, actorId: admin });
-  const paused = await call(app(service, busy), 'POST', '/jd', { jobDescription: `${JD}\nAlso: Kotlin` }, { 'X-Prep-Coin-Cost': '10' });
+  const paused = await call(app(service, busy), 'POST', '/jd', { jobDescription: `${JD}\nAlso: Swift` }, { 'X-Prep-Coin-Cost': '10' });
   assert.equal(paused.status, 503);
-  assert.equal(await walletBalance(PLATFORM_WALLET_SCOPE, busy), 40);
+  assert.equal(await walletBalance(PLATFORM_WALLET_SCOPE, busy), 30);
 });
